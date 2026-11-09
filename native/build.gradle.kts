@@ -40,10 +40,11 @@ val exportDir = rootDir.resolve("../artifacts/native")
 val exportAars by tasks.registering {
     group = "dshmobile"
     description = "Build release AARs and export them to artifacts/native/."
-    dependsOn(":native-bridge:assembleRelease", ":dshbox-common:assembleRelease")
+    dependsOn(":native-bridge:assembleRelease", ":common:assembleRelease", ":sandbox-manager:assembleRelease", ":native-bridge:exportRuntimeJars")
     val outputs = mapOf(
         "dsh-native-bridge-release.aar" to project(":native-bridge").layout.buildDirectory.file("outputs/aar/native-bridge-release.aar"),
-        "dshbox-common-release.aar" to project(":dshbox-common").layout.buildDirectory.file("outputs/aar/dshbox-common-release.aar"),
+        "dshbox-common-release.aar" to project(":common").layout.buildDirectory.file("outputs/aar/common-release.aar"),
+        "dshbox-sandbox-manager-release.aar" to project(":sandbox-manager").layout.buildDirectory.file("outputs/aar/sandbox-manager-release.aar"),
     )
     doLast {
         exportDir.mkdirs()

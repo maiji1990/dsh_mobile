@@ -1,3 +1,5 @@
+import java.security.MessageDigest
+
 plugins {
     alias(libs.plugins.android.library)
 }
@@ -44,8 +46,66 @@ extensions.configure<com.android.build.api.dsl.LibraryExtension> {
 }
 
 dependencies {
-    implementation(project(":dshbox-common"))
+    implementation(project(":common"))
+    implementation(project(":sandbox-manager"))
+    implementation(libs.kotlinx.coroutines.android)
     testImplementation(libs.junit)
     // android.jar's org.json is a stub in JVM unit tests; use the real implementation.
     testImplementation("org.json:json:20250517")
 }
+
+// ---------------------------------------------------------------------------------------------
+// Runtime dependency export for .NET (ADR-0002). Kotlin/AndroidX come from NuGet bindings; every
+// other external jar is exported here and packaged by DshMobile.NativeBinding with Bind="false".
+// An unknown group fails the build: new transitive deps must be license-audited and classified.
+// ---------------------------------------------------------------------------------------------
+val providedByNuGet = listOf("org.jetbrains.kotlin", "org.jetbrains.kotlinx", "org.jetbrains", "androidx.", "com.google.guava")
+val exportedGroups = setOf(
+    "org.apache.commons", "commons-io", "commons-codec", // commons-compress + its runtime deps
+    "org.bouncycastle", // bcpg/bcprov/bcutil: Debian Release.gpg verification
+    "org.tukaani", // xz
+)
+
+val exportRuntimeJars by tasks.registering {
+    group = "dshmobile"
+    description = "Export non-NuGet runtime jars + DSHBox prebuilt native libs to artifacts/native/."
+    val runtimeClasspath = configurations.named("releaseRuntimeClasspath")
+    val outDir = rootDir.resolve("../artifacts/native")
+    val dshboxDir = rootDir.resolve("../third_party/dshbox")
+    doLast {
+        val jarsDir = outDir.resolve("jars").apply { deleteRecursively(); mkdirs() }
+        val view = runtimeClasspath.get().incoming.artifactView {
+            attributes { attribute(Attribute.of("artifactType", String::class.java), "jar") }
+            componentFilter { it is org.gradle.api.artifacts.component.ModuleComponentIdentifier }
+        }
+        val manifest = StringBuilder("# coordinate  sha256  (exported jars; Kotlin/AndroidX come from NuGet)\n")
+        val unknown = mutableListOf<String>()
+        view.artifacts.artifacts.forEach { a ->
+            val id = a.id.componentIdentifier as org.gradle.api.artifacts.component.ModuleComponentIdentifier
+            val coord = "${id.group}:${id.module}:${id.version}"
+            when {
+                providedByNuGet.any { id.group == it || (it.endsWith(".") && id.group.startsWith(it)) } -> Unit
+                id.group in exportedGroups -> {
+                    val dst = jarsDir.resolve("${id.module}-${id.version}.jar")
+                    a.file.copyTo(dst, overwrite = true)
+                    manifest.append("$coord  ${sha256(dst)}\n")
+                }
+                else -> unknown += coord
+            }
+        }
+        check(unknown.isEmpty()) { "Unclassified runtime dependencies (audit license, then add to exportedGroups or NuGet): $unknown" }
+        // Note: :sandbox-manager's file dependency (zstd-jni classes jar) is already embedded in its AAR's
+        // libs/, so it is NOT exported here (a second copy breaks the .NET build with XA1014).
+        jarsDir.resolve("MANIFEST.txt").writeText(manifest.toString())
+
+        // PRoot/talloc/shmem/zstd-jni prebuilt .so files shipped by DSHBox (GPL-2.0 / LGPL / BSD, see its licenses/).
+        val libsOut = outDir.resolve("jniLibs").apply { deleteRecursively(); mkdirs() }
+        val libsIn = dshboxDir.resolve("app/src/main/jniLibs")
+        check(libsIn.isDirectory) { "DSHBox jniLibs not found at $libsIn" }
+        libsIn.copyRecursively(libsOut, overwrite = true)
+        logger.lifecycle("exported ${jarsDir.listFiles()!!.size - 1} jars and ${libsOut.walk().count { it.isFile }} native libs")
+    }
+}
+
+fun sha256(f: File): String = MessageDigest.getInstance("SHA-256")
+    .digest(f.readBytes()).joinToString("") { "%02x".format(it) }

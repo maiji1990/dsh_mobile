@@ -7,4 +7,12 @@
     <string name="action_clear">清空日志</string>
     <string name="status_idle">空闲</string>
     <string name="status_running">运行中…</string>
+    <string name="section_runtime">运行环境（DSHBox sandbox-manager）</string>
+    <string name="action_prepare">准备运行环境</string>
+    <string name="action_import">导入运行环境包</string>
+    <string name="action_start">启动 DSH</string>
+    <string name="action_stop">停止</string>
+    <string name="action_diagnostics">诊断</string>
+    <string name="fgs_channel">运行环境</string>
+    <string name="fgs_text">Linux 沙箱与 DSH 正在运行</string>
 </resources>

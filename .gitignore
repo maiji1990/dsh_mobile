@@ -12,6 +12,7 @@ native/.gradle/
 native/build/
 native/**/build/
 native/local.properties
+native/libs/
 .kotlin/
 *.iml
 .idea/
@@ -21,6 +22,8 @@ native/local.properties
 artifacts/native/*.aar
 artifacts/native/*.sha256
 artifacts/native/*.txt
+artifacts/native/jars/
+artifacts/native/jniLibs/
 artifacts/*.log
 
 # Signing material must never be committed
@@ -31,3 +34,6 @@ artifacts/*.log
 # OS
 .DS_Store
 Thumbs.db
+
+# Upstream runtime layers (hundreds of MB; fetched + hash-verified, never committed)
+artifacts/runtime/

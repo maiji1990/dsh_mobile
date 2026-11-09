@@ -29,7 +29,7 @@
 | Android 10 / ARM64 | 待测 | — | — | |
 | Android 14 / ARM64 | 待测 | — | — | |
 | Android 16 / ARM64 | 待测 | — | — | |
-| Android 17 / ARM64 | **通过（见下）**，旋转未测 | — | — | Honor PTP-AN10，厂商 ROM `11.0.0.117`，2026-11-09 |
+| Android 17 / ARM64 | **通过（见下）**，旋转未测 | **通过**（DSH 0.2.1-rc.5 READY） | web 就绪；其余未测 | Honor PTP-AN10，厂商 ROM `11.0.0.117`，4 KB 页，2026-11-09 |
 | x86_64 模拟器 | 待测 | 不保证 | 不保证 | |
 
 ## 真机记录
@@ -53,3 +53,22 @@
 - 该 ROM 首次 USB 安装需在手机上手动确认“来历不明的应用”提示；覆盖安装未再弹出。
 - 该 ROM 的 logcat 环形缓冲很快被冲掉；长压测请把 `adb logcat -s DshMobile:I` 持续写入文件，而不是事后 `logcat -d`。
 - 发现并修复：根布局 `fitsSystemWindows` 覆盖了 16dp 内边距（已改为外层包裹）。
+
+### 2026-11-09 · M2 运行时 · 同一设备
+
+APK 110 MB（含 DSH 层 93 MB + android-side 层）；运行环境包 `dshapp-runtime-debian-arm64-0.1.0.zip`（202 MB）经 `adb push` 到 App 专属外部目录后导入。
+
+| 步骤 | 结果 |
+|---|---|
+| `runtime.prepare`（全新安装） | 通过：APK 无完整分层包（预期），提示需导入 base/node |
+| `runtime.importBundle` | 首次失败：`BUNDLE_IMPORT_FAILED … base/var/run: The source file doesn't exist`（上游 `swapRuntimeBody` 在 `runtime-current/` 不存在时的回退路径问题）。调用前创建该目录后通过：**12.0 s**，`runtime=True node=True`，DSH 0.2.1-rc.5 装配 |
+| `sandbox.start` | 通过：7 ms |
+| `dsh.start` | 通过：**18.5 s / 19.0 s** 到 READY，launch token 已解析，`http://127.0.0.1:3080` |
+| `runtime.health` | 通过：process / port / webUi 全 true |
+| `runtime.diagnostics`（guest 内真实执行） | `aarch64`、Debian `13.6`、Node `v24.19.0`、`dsh 0.2.1-rc.5` |
+| 进程树 | App → 2×`libproot.so` → `bash`(keepalive) / `node`(DSH，RSS ≈ 385 MB)；App 进程 RSS ≈ 350 MB |
+| 后台 90 s | 通过：进程全部存活，返回后健康与 `dsh --version` 正常；前台服务 `types=0x40000000`(specialUse) |
+| 停止（dsh.stop → sandbox.stop） | 通过：仅剩 App 进程，无孤儿 |
+| `am force-stop` | 通过：App UID 下零进程，无孤儿 |
+
+备注：`libproot.so` 非 16 KB 页对齐（构建警告 XA0141），本机为 4 KB 页不受影响。

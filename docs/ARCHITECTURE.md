@@ -30,6 +30,21 @@ DshMobile.Android (net11.0-android, C#)
 | `native/native-bridge` | Gradle Android Library | Java Facade，内部调用 DSHBox Kotlin |
 | `tests/DshMobile.Core.Tests` | `net11.0` | 协议契约测试 |
 
+## M2 / TASK-004 新增
+
+```text
+MainActivity ─▶ BridgeHost ─▶ BridgeClient ─JNI─▶ DshNativeFacade ─▶ RuntimeController (Kotlin, IO 协程, Mutex 串行)
+     │                                                                   │
+     └─ HarnessForegroundService (specialUse)                            ▼
+                                                     DSHBox DefaultSandboxManager / BundledRuntimeInstaller
+                                                                         │ exec nativeLibraryDir/libproot.so
+                                                                         ▼
+                                                     PRoot → Debian 13 → Node 24 → DSH (web, 127.0.0.1:3080)
+```
+
+- APK 携带 `assets/dsh/<ver>.tar.zst` 与 `assets/runtime/android-side.tar.zst`（与 DSHBox ≥ 1.4 相同）；base/node 由运行环境包导入。
+- `extractNativeLibs=true`：PRoot 以可执行文件方式从 nativeLibraryDir 启动。
+
 ## 线程与生命周期
 
 - Facade 所有请求在单线程 Executor 上串行执行；回调永远不在调用线程。

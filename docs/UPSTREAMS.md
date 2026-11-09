@@ -14,8 +14,10 @@
 
 | 模块 | 当前状态 | 引入位置 | 是否生成 C# 绑定 |
 |---|---|---|---|
-| `common` | **已引入**（TASK-003） | `native/settings.gradle.kts` 以 `:dshbox-common` 引用源码目录，构建输出重定向到 `native/build/` | 否（`Bind="false"`） |
-| `sandbox-manager` | 计划 TASK-004 | — | 否 |
+| `common` | **已引入**（TASK-003） | `native/settings.gradle.kts` 以 `:common`（与 DSHBox 同名，其脚本按此引用）引用源码目录，构建输出重定向到 `native/build/upstream/` | 否（`Bind="false"`） |
+| `app/src/main/jniLibs`（PRoot、talloc、android-shmem、zstd-jni 预编译 `.so`） | **已引入**（TASK-004） | `:native-bridge:exportRuntimeJars` 复制到 `artifacts/native/jniLibs/` | — |
+| Release 运行层（DSH `0.2.1-rc.5.tar.zst`、`dshapp-runtime-debian-arm64-0.1.0.zip`） | **已引入**（TASK-004） | `runtime-bundle/runtime-assets.lock`（GitHub 发布摘要 SHA-256）+ `fetch-runtime.ps1` | — |
+| `sandbox-manager` | **已引入**（TASK-004） | `native/settings.gradle.kts` 以 `:sandbox-manager` 引用源码目录 | 否（`Bind="false"`） |
 | `terminal-*` | 计划 TASK-008 | — | 否（仅 View 适配） |
 | `pilot/interlock-relay-core` | 计划 TASK-010（优先使用 Apache-2.0 独立仓库） | — | 否 |
 | `browser/*` | 计划 TASK-011 | — | 否 |
@@ -30,10 +32,12 @@
 
 | 日期 | 上游 | 文件 | 修改理由 |
 |---|---|---|---|
-| — | — | — | 目前无修改；子模块保持原样 |
+| 2026-11-09 | DSHBox | （未修改子模块）`SandboxService.provisionBundledDsh` 逻辑移植进 `RuntimeController.kt` | 该函数位于 DSHBox `app` 模块（我们不引入 app）；同语义、去 UI 副作用，GPL-3.0 注明来源 |
+| 2026-11-09 | DSHBox | （未修改子模块）导入前创建 `runtime/runtime-current/` | 规避上游全新安装离线导入的 rename 失败 → `copyRecursively` 卡在悬空 `/var/run` 符号链接的问题；建议向上游报告 |
 
 ## 同步记录
 
 | 日期 | 上游 | 从 | 到 | 说明 / 兼容性结论 |
 |---|---|---|---|---|
 | 2026-11-09 | DSHBox | — | `v1.5.1` (`7c9d33c`) | 初次引入；仅使用 `common` 模块 |
+| 2026-11-09 | DSHBox | `v1.5.1` | `v1.5.1` | 新增使用 `sandbox-manager`、预编译 `.so` 与 v1.5.1 Release 运行层；Maven 运行时依赖审计清单见 `artifacts/native/jars/MANIFEST.txt`（Kotlin/AndroidX 由 NuGet 提供） |

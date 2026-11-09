@@ -58,7 +58,8 @@ C# `BridgeClient` 在 `deadlineMs + 2s` 内未收到响应时，本地合成 `DE
 | `DEADLINE_EXCEEDED` | 超过 deadline | 可重试 |
 | `CANCELLED` | 预留给 Native 侧取消长任务（v1 尚无此类方法）。C# 侧调用方取消时 `ExecuteAsync` 抛 `OperationCanceledException` | — |
 | `CLOSED` | Facade 已关闭 | 重建 Facade |
-| `UNAVAILABLE` | 平台/设备限制导致能力不可用 | 显示限制原因，不得伪装成功 |
+| `UNAVAILABLE` | 平台/设备限制导致能力不可用（例如无 Context 时调用 runtime.*） | 显示限制原因，不得伪装成功 |
+| `RUNTIME_ERROR` | DSHBox `sandbox-manager` 返回失败；`payload` 带 `upstreamCode`、`recoverable` | 按 upstreamCode 显示与恢复 |
 | `INTERNAL` | 未预期异常 | 记录日志 / 上报 |
 
 ### 1.6 v1 方法
@@ -68,8 +69,20 @@ C# `BridgeClient` 在 `deadlineMs + 2s` 内未收到响应时，本地合成 `DE
 | `bridge.info` | `{}` | `bridgeVersion`, `protocol`, `upstream`, `kotlinVersion`, `sdkInt`, `abis[]`, `deviceModel` |
 | `bridge.ping` | 任意对象 | `{"echo": <原 payload>, "seq": <long>}` |
 | `dshbox.versions.compare` | `{"a":"0.1.1","b":"0.1.1-rc.2"}` | `{"result": -1|0|1}`；由 DSHBox `common` 的 Kotlin `Versions.compare` 计算（验证 C# → Java → DSHBox Kotlin → C#） |
+| `runtime.status` | `{}` | `RuntimeStatus`：`sandboxState`、`dshState`、`dshVersion`、`dshUnresponsive`、`runtimeInstalled`、`nodeLayerInstalled`、`hasLaunchToken`、`endpoint`、`freeBytes` |
+| `runtime.prepare` | `{}` | `RuntimeStatus` + `steps[]`：安装 APK 内置层；base/node 在位时装配内置 DSH 层 |
+| `runtime.importBundle` | `{"path": "<App 自有存储内的 zip>"}` | `RuntimeStatus` + `dshProvision`；路径必须规范化后位于 filesDir / cacheDir / App 专属外部目录 |
+| `runtime.health` | `{}` | `dshProcessRunning`、`portOpen`、`webUiReady`、`lastError` |
+| `runtime.diagnostics` | `{}` | `{arch, debian, node, dsh}` → `{ok, output, error}`；**固定命令**，不接受调用方命令 |
+| `sandbox.start` / `sandbox.stop` | `{}` | `RuntimeStatus` |
+| `dsh.start` | `{}` | `RuntimeStatus` + `dsh{version, baseUrl, ready}` |
+| `dsh.stop` | `{}` | `RuntimeStatus` |
 
-后续方法（`runtime.*`、`terminal.*` 等）在对应 TASK 中追加到此表，**只增不改**；破坏性变更需要 `protocol: 2`。
+`runtime.* / sandbox.* / dsh.*` 在 IO 协程上异步执行（不阻塞控制线程），彼此串行；deadline 内未完成返回 `DEADLINE_EXCEEDED`（底层操作可能仍在收尾）。DSH launch token **不经过**控制面 JSON，只暴露 `hasLaunchToken`。
+
+事件 `runtime.state`：`{sandboxState, dshState, dshVersion}`，状态变化时推送。
+
+后续方法（`terminal.*` 等）在对应 TASK 中追加到此表，**只增不改**；破坏性变更需要 `protocol: 2`。
 
 ### 1.7 非目标
 

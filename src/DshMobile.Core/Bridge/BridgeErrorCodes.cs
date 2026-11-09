@@ -16,12 +16,14 @@ public static class BridgeErrorCodes
     public const string Cancelled = "CANCELLED";
     public const string Closed = "CLOSED";
     public const string Unavailable = "UNAVAILABLE";
+    /// <summary>DSHBox sandbox-manager returned a failure; payload carries <c>upstreamCode</c> and <c>recoverable</c>.</summary>
+    public const string RuntimeError = "RUNTIME_ERROR";
     public const string Internal = "INTERNAL";
 
     public static IReadOnlyList<string> All { get; } =
     [
         Ok, BadRequest, ProtocolMismatch, MethodNotFound, NotInitialized, DuplicateRequest,
-        DeadlineExceeded, Cancelled, Closed, Unavailable, Internal,
+        DeadlineExceeded, Cancelled, Closed, Unavailable, RuntimeError, Internal,
     ];
 
     /// <summary>Codes after which retrying the same request may succeed.</summary>

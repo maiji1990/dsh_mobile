@@ -2,7 +2,7 @@
 
 基于 [DSHBox](https://github.com/WSK-build/DSHBox) 原生组件与 **.NET 11 for Android** 的实用型 DeepSeek Harness Android 客户端。原样运行上游 DSH，.NET 只承担 Android 宿主、控制面与系统集成。
 
-> 状态：**M1（POC）**。目前只有 C# ↔ Java ↔ DSHBox Kotlin 的 Bridge 纵切片；尚未运行 DSH。见 [docs/FEATURES.md](docs/FEATURES.md)。
+> 状态：**M2（POC）**。C# App 经 Bridge 驱动 DSHBox `sandbox-manager`，已在 Android 17 真机上导入运行环境并启动官方 DSH 0.2.1-rc.5（WebUI 承载尚未做）。见 [docs/FEATURES.md](docs/FEATURES.md)。
 > 本项目与 DSHBox、DeepSeek 无隶属关系，不是官方客户端。
 
 ## 目录
@@ -28,6 +28,12 @@ git submodule update --init --depth 1
 
 ```bash
 pwsh native/build-native.ps1
+```
+
+运行层（DSH 层 + android-side，约 300 MB 下载，按固定 SHA-256 校验；不入库）：
+
+```bash
+pwsh runtime-bundle/fetch-runtime.ps1
 ```
 
 ```bash

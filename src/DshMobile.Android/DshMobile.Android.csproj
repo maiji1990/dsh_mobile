@@ -16,6 +16,21 @@
     <TrimMode>full</TrimMode>
   </PropertyGroup>
 
+  <!--
+    Runtime layers from the pinned DSHBox release (runtime-bundle/fetch-runtime.ps1 -> artifacts/runtime/).
+    Packaged as assets/runtime/* and assets/dsh/* exactly like DSHBox, stored uncompressed (already zstd).
+  -->
+  <PropertyGroup>
+    <RuntimeAssetsDir>$(RepoRoot)artifacts\runtime\android-assets\</RuntimeAssetsDir>
+    <AndroidStoreUncompressedFileExtensions>$(AndroidStoreUncompressedFileExtensions);.zst</AndroidStoreUncompressedFileExtensions>
+  </PropertyGroup>
+  <ItemGroup Condition="Exists('$(RuntimeAssetsDir)')">
+    <AndroidAsset Include="$(RuntimeAssetsDir)**\*" LogicalName="%(RecursiveDir)%(Filename)%(Extension)" />
+  </ItemGroup>
+  <Target Name="DshWarnMissingRuntimeAssets" BeforeTargets="PrepareForBuild" Condition="!Exists('$(RuntimeAssetsDir)')">
+    <Warning Text="Runtime layers not staged ($(RuntimeAssetsDir)); the APK will not contain android-side/DSH. Run: pwsh runtime-bundle/fetch-runtime.ps1" />
+  </Target>
+
   <ItemGroup>
     <ProjectReference Include="..\DshMobile.Core\DshMobile.Core.csproj" />
     <ProjectReference Include="..\DshMobile.NativeBinding\DshMobile.NativeBinding.csproj" />

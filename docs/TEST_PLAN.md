@@ -18,3 +18,15 @@
 5. `adb shell am kill` 结束进程后重开：Facade 重新初始化，显示正常。
 6. 重复第 3 步至少 10 次。以每轮日志 `stress: after GC managed=… java=… grefs=…`（强制双端 GC 后测量）判断泄漏：`grefs` 与 `java` 不应随轮次持续增长。`dumpsys meminfo` 未 GC 的数值只作参考。
 7. 在 Android 10 与 Android 16/17 至少各一台执行，结果写入 `docs/COMPATIBILITY.md` 真机矩阵。
+
+## M2 验收（需真机）
+
+前置：`pwsh runtime-bundle/fetch-runtime.ps1`；`adb push artifacts/runtime/downloads/dshapp-runtime-debian-arm64-0.1.0.zip /sdcard/Android/data/<applicationId>/files/`。
+
+1. 全新安装后点「准备运行环境」：提示 base/node 缺失。
+2. 点「导入运行环境包」：`runtime=True node=True`，DSH 层已装配；记录耗时。
+3. 点「启动 DSH」：sandbox RUNNING、dsh READY、`token=True`；记录耗时。
+4. 点「诊断」：health 全 true；`node`/`dsh` 版本与 `runtime-assets.lock` 一致。
+5. `adb shell ps -A | grep <app user>`：运行中有 `libproot.so` / `node`；HOME 后台 ≥ 90 s 仍在。
+6. 点「停止」后再 `ps`：仅剩 App 进程。启动后 `am force-stop`：App 用户下零进程。
+7. 待补：磁盘不足、层缺失（删除 `runtime-current/node`）、损坏的 zip、导入中断、强杀后再次启动。

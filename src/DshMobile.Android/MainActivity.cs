@@ -8,6 +8,7 @@ public class MainActivity : Activity
 {
     private BridgeHost _bridge = null!;
     private TextView _status = null!;
+    private TextView _runtimeState = null!;
     private TextView _log = null!;
     private ScrollView _logScroll = null!;
     private Button[] _actions = [];
@@ -20,6 +21,7 @@ public class MainActivity : Activity
 
         _bridge = DshMobileApplication.Current.Bridge;
         _status = FindViewById<TextView>(Resource.Id.status)!;
+        _runtimeState = FindViewById<TextView>(Resource.Id.runtime_state)!;
         _log = FindViewById<TextView>(Resource.Id.log)!;
         _logScroll = FindViewById<ScrollView>(Resource.Id.log_scroll)!;
 
@@ -27,7 +29,12 @@ public class MainActivity : Activity
         var kotlin = FindViewById<Button>(Resource.Id.btn_kotlin)!;
         var stress = FindViewById<Button>(Resource.Id.btn_stress)!;
         var clear = FindViewById<Button>(Resource.Id.btn_clear)!;
-        _actions = [info, kotlin, stress];
+        var prepare = FindViewById<Button>(Resource.Id.btn_prepare)!;
+        var import = FindViewById<Button>(Resource.Id.btn_import)!;
+        var start = FindViewById<Button>(Resource.Id.btn_start)!;
+        var stop = FindViewById<Button>(Resource.Id.btn_stop)!;
+        var diag = FindViewById<Button>(Resource.Id.btn_diag)!;
+        _actions = [info, kotlin, stress, prepare, import, start, stop, diag];
 
         // Fire-and-forget is intentional: BridgeHost owns the task and reports through its log,
         // so an Activity recreated mid-run (rotation) still sees the result.
@@ -35,6 +42,19 @@ public class MainActivity : Activity
         kotlin.Click += (_, _) => _ = _bridge.RunKotlinCompareAsync();
         stress.Click += (_, _) => _ = _bridge.RunStressAsync(1000);
         clear.Click += (_, _) => _bridge.ClearLog();
+        prepare.Click += (_, _) => _ = _bridge.RunPrepareAsync();
+        import.Click += (_, _) => _ = _bridge.RunImportAsync();
+        start.Click += (_, _) => _ = _bridge.RunStartAsync();
+        stop.Click += (_, _) => _ = _bridge.RunStopAsync();
+        diag.Click += (_, _) => _ = _bridge.RunDiagnosticsAsync();
+
+        // The foreground-service notification is only visible with this permission (Android 13+).
+        // The service itself runs either way, so a denial is not an error.
+        if (OperatingSystem.IsAndroidVersionAtLeast(33)
+            && CheckSelfPermission(Android.Manifest.Permission.PostNotifications) != Android.Content.PM.Permission.Granted)
+        {
+            RequestPermissions([Android.Manifest.Permission.PostNotifications], 1);
+        }
     }
 
     protected override void OnStart()
@@ -67,6 +87,7 @@ public class MainActivity : Activity
     {
         var busy = _bridge.IsBusy;
         _status.SetText(busy ? Resource.String.status_running : Resource.String.status_idle);
+        _runtimeState.Text = _bridge.RuntimeState;
         foreach (var b in _actions)
         {
             b.Enabled = !busy;

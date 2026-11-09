@@ -16,6 +16,20 @@ require(dshboxDir.resolve("settings.gradle.kts").isFile) {
     "DSHBox submodule missing at $dshboxDir. Run: git submodule update --init --depth 1"
 }
 
+// DSHBox modules reference `$rootDir/libs/...` (prebuilt zstd-jni classes jar). Mirror that
+// directory from the submodule so the unmodified build scripts resolve (native/libs is gitignored).
+run {
+    val from = dshboxDir.resolve("libs")
+    val to = file("libs")
+    from.listFiles()?.filter { it.isFile }?.forEach { src ->
+        val dst = to.resolve(src.name)
+        if (!dst.isFile || dst.length() != src.length()) {
+            to.mkdirs()
+            src.copyTo(dst, overwrite = true)
+        }
+    }
+}
+
 dependencyResolutionManagement {
     repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
     repositories {
@@ -33,6 +47,9 @@ rootProject.name = "dsh-mobile-native"
 
 include(":native-bridge")
 
-// Reused DSHBox modules (add one at a time; audit transitive deps each time).
-include(":dshbox-common")
-project(":dshbox-common").projectDir = dshboxDir.resolve("common")
+// Reused DSHBox modules, under the SAME project paths DSHBox uses (its scripts reference
+// e.g. project(":common")). Add one at a time; audit transitive deps each time (ADR-0002).
+include(":common")
+project(":common").projectDir = dshboxDir.resolve("common")
+include(":sandbox-manager")
+project(":sandbox-manager").projectDir = dshboxDir.resolve("sandbox-manager")

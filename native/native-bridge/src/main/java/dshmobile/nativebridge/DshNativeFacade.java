@@ -40,6 +40,8 @@ public final class DshNativeFacade {
     static final String DUPLICATE_REQUEST = "DUPLICATE_REQUEST";
     static final String DEADLINE_EXCEEDED = "DEADLINE_EXCEEDED";
     static final String CLOSED = "CLOSED";
+    static final String UNAVAILABLE = "UNAVAILABLE";
+    static final String RUNTIME_ERROR = "RUNTIME_ERROR";
     static final String INTERNAL = "INTERNAL";
 
     private final ExecutorService worker;
@@ -50,6 +52,7 @@ public final class DshNativeFacade {
 
     private volatile PlatformInfo platform;
     private volatile Context appContext;
+    private volatile RuntimeController runtime;
     private volatile boolean closed;
 
     public DshNativeFacade() {
@@ -82,6 +85,10 @@ public final class DshNativeFacade {
             appContext = context.getApplicationContext() != null ? context.getApplicationContext() : context;
         }
         platform = injectedInfo != null ? injectedInfo : PlatformInfo.fromDevice();
+        if (appContext != null) {
+            // DSHBox sandbox-manager needs a real Context; JVM unit tests run without one.
+            runtime = new RuntimeController(appContext, this::publishEvent);
+        }
         publishLifecycle("INITIALIZED");
     }
 
@@ -107,8 +114,29 @@ public final class DshNativeFacade {
             return;
         }
         dispatch(callback, request.requestId, () -> {
+            JSONObject immediate = null;
             try {
-                deliver(callback, run(request, receivedNanos));
+                immediate = preflight(request, receivedNanos);
+                if (immediate == null && runtime != null && runtime.handles(request.method)) {
+                    // Long-running runtime operation: completes later on an IO coroutine.
+                    long remaining = request.deadlineMs - TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - receivedNanos);
+                    runtime.execute(request.method, request.payload, Math.max(1, remaining), (ok, code, message, payload) -> {
+                        try {
+                            deliver(callback, ok ? okSafe(request.requestId, payload) : error(request.requestId, code, message, payload));
+                        } finally {
+                            inFlight.remove(request.requestId);
+                        }
+                    });
+                    return;
+                }
+                if (immediate == null) {
+                    immediate = run(request);
+                }
+            } catch (RuntimeException e) {
+                immediate = error(request.requestId, INTERNAL, e.getClass().getSimpleName() + ": " + e.getMessage());
+            }
+            try {
+                deliver(callback, immediate);
             } finally {
                 inFlight.remove(request.requestId);
             }
@@ -136,6 +164,10 @@ public final class DshNativeFacade {
             return;
         }
         closed = true;
+        RuntimeController rc = runtime;
+        if (rc != null) {
+            rc.close();
+        }
         publishLifecycle("CLOSED");
         worker.shutdown();
         try {
@@ -149,7 +181,8 @@ public final class DshNativeFacade {
 
     // ---------------------------------------------------------------- internals
 
-    private JSONObject run(Request request, long receivedNanos) {
+    /** Common checks for every request; returns an error response, or null to proceed. */
+    private JSONObject preflight(Request request, long receivedNanos) {
         if (closed) {
             return error(request.requestId, CLOSED, "facade closed");
         }
@@ -157,10 +190,17 @@ public final class DshNativeFacade {
         if (waitedMs > request.deadlineMs) {
             return error(request.requestId, DEADLINE_EXCEEDED, "queued " + waitedMs + "ms > deadline " + request.deadlineMs + "ms");
         }
-        PlatformInfo info = platform;
-        if (info == null) {
+        if (platform == null) {
             return error(request.requestId, NOT_INITIALIZED, "initialize() not called");
         }
+        if (runtime == null && RuntimeController.Companion.getMETHODS().contains(request.method)) {
+            return error(request.requestId, UNAVAILABLE, "runtime requires initialize(context) with a real Context");
+        }
+        return null;
+    }
+
+    private JSONObject run(Request request) {
+        PlatformInfo info = platform;
         try {
             return ok(request.requestId, handle(request, info));
         } catch (BridgeException e) {
@@ -224,13 +264,21 @@ public final class DshNativeFacade {
     }
 
     private void publishLifecycle(String state) {
+        try {
+            publishEvent("bridge.lifecycle", new JSONObject().put("state", state));
+        } catch (JSONException ignored) {
+            // cannot happen for a constant key
+        }
+    }
+
+    private void publishEvent(String event, JSONObject payload) {
         final String json;
         try {
             json = new JSONObject()
                     .put("protocol", PROTOCOL_VERSION)
                     .put("type", "event")
-                    .put("event", "bridge.lifecycle")
-                    .put("payload", new JSONObject().put("state", state))
+                    .put("event", event)
+                    .put("payload", payload)
                     .toString();
         } catch (JSONException e) {
             return;
@@ -263,9 +311,21 @@ public final class DshNativeFacade {
         return envelope(requestId, true, OK, null).put("payload", payload);
     }
 
-    private static JSONObject error(String requestId, String code, String message) {
+    private static JSONObject okSafe(String requestId, JSONObject payload) {
         try {
-            return envelope(requestId, false, code, message).put("payload", JSONObject.NULL);
+            return ok(requestId, payload == null ? new JSONObject() : payload);
+        } catch (JSONException e) {
+            return error(requestId, INTERNAL, "response encoding failed");
+        }
+    }
+
+    private static JSONObject error(String requestId, String code, String message) {
+        return error(requestId, code, message, null);
+    }
+
+    private static JSONObject error(String requestId, String code, String message, JSONObject details) {
+        try {
+            return envelope(requestId, false, code, message).put("payload", details == null ? JSONObject.NULL : details);
         } catch (JSONException e) {
             throw new IllegalStateException(e);
         }

@@ -1,8 +1,8 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <!--
-    Binds ONLY the DSH Mobile Java facade (dshmobile.nativebridge.*). Reused DSHBox module AARs
-    ship with Bind="false" (ADR-0002): C# never sees DSHBox Kotlin types directly.
-    AARs come from `native/build-native.ps1` (or .sh) -> artifacts/native/.
+    Binds ONLY the DSH Mobile Java facade (dshmobile.nativebridge.*). Reused DSHBox module AARs, their
+    exported Maven jars and DSHBox's prebuilt .so files ship with Bind="false" (ADR-0002): C# never sees
+    DSHBox Kotlin types directly. Everything below comes from `native/build-native.ps1` -> artifacts/native/.
   -->
   <PropertyGroup>
     <TargetFramework>net11.0-android</TargetFramework>
@@ -15,22 +15,29 @@
 
   <ItemGroup>
     <AndroidLibrary Include="$(NativeArtifactsDir)dsh-native-bridge-release.aar" />
-    <!-- DSHBox `common` (GPL-3.0, unmodified source at the pinned submodule SHA). Packaged, not bound. -->
+    <!-- DSHBox modules (GPL-3.0, unmodified source at the pinned submodule SHA). Packaged, not bound. -->
     <AndroidLibrary Include="$(NativeArtifactsDir)dshbox-common-release.aar" Bind="false" />
+    <AndroidLibrary Include="$(NativeArtifactsDir)dshbox-sandbox-manager-release.aar" Bind="false" />
+    <!-- Non-Kotlin/AndroidX runtime jars, audited list in artifacts/native/jars/MANIFEST.txt. -->
+    <AndroidLibrary Include="$(NativeArtifactsDir)jars\*.jar" Bind="false" />
+    <!-- PRoot / talloc / shmem / zstd-jni prebuilt by DSHBox (licenses: third_party/dshbox/licenses). -->
+    <AndroidNativeLibrary Include="$(NativeArtifactsDir)jniLibs\arm64-v8a\*.so" Abi="arm64-v8a" />
+    <AndroidNativeLibrary Include="$(NativeArtifactsDir)jniLibs\x86_64\*.so" Abi="x86_64" />
   </ItemGroup>
 
   <ItemGroup>
     <!--
-      Maven runtime deps of the AARs above, mapped to NuGet bindings. Re-audit the POMs whenever a
-      DSHBox module is added (ADR-0002). `common` also declares core-ktx + coroutines, but no class the
-      facade loads uses them yet; add Xamarin.AndroidX.Core.Core.Ktx / Xamarin.KotlinX.Coroutines.Android
-      when sandbox-manager arrives (TASK-004).
+      Maven runtime deps of the AARs above that have official .NET bindings. Versions are >= what Gradle
+      resolves (kotlin-stdlib 2.4.20 api 2.2, coroutines 1.9.0, core-ktx 1.15.0) and binary compatible.
+      Re-audit when a DSHBox module is added (ADR-0002).
     -->
     <PackageReference Include="Xamarin.Kotlin.StdLib" Version="2.4.0.1" />
+    <PackageReference Include="Xamarin.KotlinX.Coroutines.Android" Version="1.11.0.1" />
+    <PackageReference Include="Xamarin.AndroidX.Core.Core.Ktx" Version="1.19.1" />
   </ItemGroup>
 
   <Target Name="DshVerifyNativeArtifacts" BeforeTargets="PrepareForBuild">
-    <Error Condition="!Exists('$(NativeArtifactsDir)dsh-native-bridge-release.aar') Or !Exists('$(NativeArtifactsDir)dshbox-common-release.aar')"
-           Text="Native AARs missing in $(NativeArtifactsDir). Build them first: pwsh native/build-native.ps1 (or bash native/build-native.sh)." />
+    <Error Condition="!Exists('$(NativeArtifactsDir)dsh-native-bridge-release.aar') Or !Exists('$(NativeArtifactsDir)dshbox-sandbox-manager-release.aar') Or !Exists('$(NativeArtifactsDir)jars\MANIFEST.txt') Or !Exists('$(NativeArtifactsDir)jniLibs\arm64-v8a\libproot.so')"
+           Text="Native artifacts missing or stale in $(NativeArtifactsDir). Build them first: pwsh native/build-native.ps1 (or bash native/build-native.sh)." />
   </Target>
 </Project>

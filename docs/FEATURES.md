@@ -7,8 +7,8 @@
 
 | 功能 | 状态 | 证据 / 备注 |
 |---|---|---|
-| DSH 启动与停止 | 未开始 | TASK-004 |
-| `web` profile | 未开始 | TASK-005 |
+| DSH 启动与停止 | 通过（Android 17 真机） | 导入→启动→READY 18.5 s→停止，无孤儿进程；见 COMPATIBILITY.md「M2 运行时」 |
+| `web` profile | 进行中 | DSHBox 以 web profile 启动，`/` 健康探测与 WebUI 就绪通过；WebView 承载待 TASK-006 |
 | `headless` profile | 未开始 | TASK-005 |
 | `sdk` profile | 未开始 | TASK-005 |
 | `sdk-minimal` profile | 未开始 | TASK-005 |
@@ -22,7 +22,7 @@
 | Bash / PTY / 子进程 | 未开始 | TASK-008 |
 | 文件、工作目录、附件 | 未开始 | TASK-007 |
 | MCP / Skills / 自定义工具 | 未开始 | TASK-010 |
-| 更新与诊断 | 未开始 | TASK-004 / 013 |
+| 更新与诊断 | 部分 | 离线导入 + 固定诊断（arch/debian/node/dsh 版本）+ 健康探测；在线更新与回滚 UI 未做 |
 
 ## 宿主基础设施
 
@@ -30,7 +30,8 @@
 |---|---|---|
 | .NET 11 Android 空壳（TASK-002） | 通过（Android 17 真机） | Release（full trim，CoreCLR）在 Honor PTP-AN10 / Android 17 运行，冷启动约 220–290 ms；Android 10 未测。证据见 COMPATIBILITY.md 真机记录 |
 | C# ↔ Java ↔ DSHBox Kotlin Bridge（TASK-003） | 通过（Android 17 真机），旋转与 Android 10 未测 | 31 轮×1000 次全部成功、双端在途为 0；强制 GC 后 JNI GREF 恒为 37、Java 存活持平。证据见 COMPATIBILITY.md 真机记录 |
-| 前台服务 | 未开始 | TASK-004 |
+| 前台服务 | 通过（Android 17 真机） | `specialUse`，后台 90 s DSH 存活 |
+| Runtime 层管理（TASK-004） | 通过（Android 17 真机），部分验收未测 | 磁盘不足 / 层缺失 / 更新失败未测；见 milestones/M2.md |
 
 ## 可选模块（方案 4.3）
 

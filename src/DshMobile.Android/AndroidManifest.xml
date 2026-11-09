@@ -1,11 +1,33 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
-  <!-- No permissions yet: INTERNET etc. are added by the milestone that needs them (least privilege). -->
+  <!-- Loopback health checks + DSH's own model/API traffic (TASK-004). -->
+  <uses-permission android:name="android.permission.INTERNET" />
+  <!-- Keeps the Debian/PRoot sandbox and DSH alive while the UI is in the background (plan 6.3). -->
+  <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+  <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+  <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+  <!--
+    extractNativeLibs: PRoot (libproot.so / libproot-loader.so) is exec'd as a program from
+    nativeLibraryDir, so the .so files must exist on disk (same as DSHBox).
+  -->
   <application
       android:allowBackup="false"
+      android:extractNativeLibs="true"
       android:icon="@mipmap/appicon"
       android:roundIcon="@mipmap/appicon_round"
       android:label="@string/app_name"
+      android:networkSecurityConfig="@xml/network_security_config"
+      android:usesCleartextTraffic="false"
       android:supportsRtl="true">
+
+    <service
+        android:name="dshmobile.app.HarnessForegroundService"
+        android:exported="false"
+        android:foregroundServiceType="specialUse">
+      <property
+          android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+          android:value="Runs a user-started local Linux sandbox (PRoot) hosting the DeepSeek Harness developer agent and its loopback web UI." />
+    </service>
   </application>
 </manifest>

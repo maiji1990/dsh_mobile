@@ -15,6 +15,24 @@ public static class BridgeMethods
     public const string Info = "bridge.info";
     public const string Ping = "bridge.ping";
     public const string DshboxVersionsCompare = "dshbox.versions.compare";
+
+    // TASK-004: DSHBox sandbox-manager (long-running; executed off the control thread, serialized).
+    public const string RuntimeStatus = "runtime.status";
+    public const string RuntimePrepare = "runtime.prepare";
+    public const string RuntimeImportBundle = "runtime.importBundle";
+    public const string RuntimeHealth = "runtime.health";
+    public const string RuntimeDiagnostics = "runtime.diagnostics";
+    public const string SandboxStart = "sandbox.start";
+    public const string SandboxStop = "sandbox.stop";
+    public const string DshStart = "dsh.start";
+    public const string DshStop = "dsh.stop";
+}
+
+/// <summary>Event names pushed by the native side.</summary>
+public static class BridgeEvents
+{
+    public const string Lifecycle = "bridge.lifecycle";
+    public const string RuntimeState = "runtime.state";
 }
 
 public sealed record BridgeRequest(
@@ -60,6 +78,39 @@ public sealed record VersionsCompareRequest(
 public sealed record VersionsCompareResult(
     [property: JsonPropertyName("result")] int Result);
 
+/// <summary>Payload of runtime.* / sandbox.* / dsh.* responses (and, partially, of runtime.state events).</summary>
+public sealed record RuntimeStatus(
+    [property: JsonPropertyName("sandboxState")] string SandboxState,
+    [property: JsonPropertyName("dshState")] string DshState,
+    [property: JsonPropertyName("dshVersion")] string? DshVersion,
+    [property: JsonPropertyName("dshUnresponsive")] bool DshUnresponsive,
+    [property: JsonPropertyName("runtimeInstalled")] bool RuntimeInstalled,
+    [property: JsonPropertyName("nodeLayerInstalled")] bool NodeLayerInstalled,
+    [property: JsonPropertyName("hasLaunchToken")] bool HasLaunchToken,
+    [property: JsonPropertyName("endpoint")] string Endpoint,
+    [property: JsonPropertyName("freeBytes")] long FreeBytes,
+    [property: JsonPropertyName("steps")] string[]? Steps = null,
+    [property: JsonPropertyName("dshProvision")] string? DshProvision = null);
+
+public sealed record RuntimeStateEvent(
+    [property: JsonPropertyName("sandboxState")] string SandboxState,
+    [property: JsonPropertyName("dshState")] string DshState,
+    [property: JsonPropertyName("dshVersion")] string? DshVersion);
+
+public sealed record ImportBundleRequest(
+    [property: JsonPropertyName("path")] string Path);
+
+public sealed record RuntimeHealth(
+    [property: JsonPropertyName("dshProcessRunning")] bool DshProcessRunning,
+    [property: JsonPropertyName("portOpen")] bool PortOpen,
+    [property: JsonPropertyName("webUiReady")] bool WebUiReady,
+    [property: JsonPropertyName("lastError")] string? LastError);
+
+public sealed record DiagnosticResult(
+    [property: JsonPropertyName("ok")] bool Ok,
+    [property: JsonPropertyName("output")] string Output,
+    [property: JsonPropertyName("error")] string? Error);
+
 [JsonSourceGenerationOptions(DefaultIgnoreCondition = JsonIgnoreCondition.Never)]
 [JsonSerializable(typeof(BridgeRequest))]
 [JsonSerializable(typeof(BridgeResponse))]
@@ -67,5 +118,10 @@ public sealed record VersionsCompareResult(
 [JsonSerializable(typeof(BridgeInfo))]
 [JsonSerializable(typeof(VersionsCompareRequest))]
 [JsonSerializable(typeof(VersionsCompareResult))]
+[JsonSerializable(typeof(RuntimeStatus))]
+[JsonSerializable(typeof(RuntimeStateEvent))]
+[JsonSerializable(typeof(ImportBundleRequest))]
+[JsonSerializable(typeof(RuntimeHealth))]
+[JsonSerializable(typeof(Dictionary<string, DiagnosticResult>))]
 [JsonSerializable(typeof(JsonElement))]
 public sealed partial class BridgeJsonContext : JsonSerializerContext;
