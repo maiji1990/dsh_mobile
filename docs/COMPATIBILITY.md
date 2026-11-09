@@ -29,5 +29,27 @@
 | Android 10 / ARM64 | 待测 | — | — | |
 | Android 14 / ARM64 | 待测 | — | — | |
 | Android 16 / ARM64 | 待测 | — | — | |
-| Android 17 / ARM64 | 待测 | — | — | |
+| Android 17 / ARM64 | **通过（见下）**，旋转未测 | — | — | Honor PTP-AN10，厂商 ROM `11.0.0.117`，2026-11-09 |
 | x86_64 模拟器 | 待测 | 不保证 | 不保证 | |
+
+## 真机记录
+
+### 2026-11-09 · Honor PTP-AN10 · Android 17 (API 37) · arm64-v8a · ROM `PTP-AN10 11.0.0.117(SP2C00E117R102P1)`
+
+构建：Release（full trim，CoreCLR），`org.example.dshmobile` 0.1.0；Bridge 0.1.0，DSHBox `v1.5.1-0-g7c9d33c`。
+
+| TEST_PLAN M1 步骤 | 结果 |
+|---|---|
+| 1. 启动 + `bridge.info` | 通过：冷启动 287 / 225 / 219 ms，热启动 42 ms；`sdk=37 abis=[arm64-v8a]`；Kotlin 运行时 `2.4.0`（NuGet `Xamarin.Kotlin.StdLib` 提供；编译用 2.4.20、apiVersion 2.2，兼容） |
+| 2. DSHBox Kotlin 调用 | 通过：`Versions.compare` → `("0.1.1","0.1.1-rc.2")=1`、`("0.1.0-rc.9","0.1.0-rc.10")=-1`、`("v1.5.1","1.5.1")=0`，与 DSHBox 语义一致 |
+| 3. 1000 次压测 | 通过：31 轮全部 `ok=1000 failed=0`，单轮平均约 22 ms（最大 32 ms）；每轮结束 `inFlight C#=0 native=0 orphans=0 malformed=0` |
+| 4a. 压测中切后台再回来 | 通过：结果完整，计数一致，无异常 |
+| 4b. 压测中旋转屏幕 | **未测**：需手动旋转（未通过修改系统旋转设置来模拟） |
+| 5. 后台被杀后重开 | 通过：`am kill` 后进程消失，冷启动 219 ms，Facade 重新初始化并正常响应 |
+| 6. 内存（30 轮，每轮强制双端 GC 后测量） | 通过：JNI 全局引用恒为 **37**；Java 存活约 2.6 MB 持平；托管堆 727→810 KiB（与应用内日志缓冲增长一致，上限 400 行）。未强制 GC 时 `dumpsys` 的 Java Heap 会随轮次上涨，属 GC 延迟，不应据此判断泄漏 |
+| 回调线程 | 通过：logcat 显示回调在 Bridge 工作线程（非主线程） |
+
+备注：
+- 该 ROM 首次 USB 安装需在手机上手动确认“来历不明的应用”提示；覆盖安装未再弹出。
+- 该 ROM 的 logcat 环形缓冲很快被冲掉；长压测请把 `adb logcat -s DshMobile:I` 持续写入文件，而不是事后 `logcat -d`。
+- 发现并修复：根布局 `fitsSystemWindows` 覆盖了 16dp 内边距（已改为外层包裹）。

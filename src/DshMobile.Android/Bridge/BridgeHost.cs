@@ -109,7 +109,26 @@ public sealed class BridgeHost : IDisposable
         Append($"stress: ok={ok} failed={count - ok} [{string.Join(",", failures)}] in {sw.ElapsedMilliseconds} ms");
         Append($"stress: inFlight C#={Client.InFlightCount} native={_facade.InFlightCount} orphans={Client.OrphanResponses} malformed={Client.MalformedMessages}");
         Append($"stress: managed heap {gcBefore / 1024} KiB -> {GC.GetTotalMemory(false) / 1024} KiB");
+        Append($"stress: after GC {MeasureRetained()}");
     });
+
+    /// <summary>
+    /// Retained memory after forcing GC on both runtimes, plus JNI global refs. Lazy GC makes raw
+    /// dumpsys numbers rise between runs; only post-GC values that keep growing indicate a leak.
+    /// </summary>
+    private static string MeasureRetained()
+    {
+        GC.Collect();
+        GC.WaitForPendingFinalizers();
+        GC.Collect();
+        Java.Lang.JavaSystem.Gc();
+        Java.Lang.JavaSystem.RunFinalization();
+        Java.Lang.JavaSystem.Gc();
+        var rt = Java.Lang.Runtime.GetRuntime()!;
+        var javaUsed = rt.TotalMemory() - rt.FreeMemory();
+        var grefs = Java.Interop.JniRuntime.CurrentRuntime.GlobalReferenceCount;
+        return $"managed={GC.GetTotalMemory(false) / 1024} KiB java={javaUsed / 1024} KiB grefs={grefs}";
+    }
 
     private async Task RunExclusive(string name, Func<Task> body)
     {

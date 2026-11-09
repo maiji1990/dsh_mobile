@@ -28,8 +28,8 @@
 
 | 功能 | 状态 | 证据 / 备注 |
 |---|---|---|
-| .NET 11 Android 空壳（TASK-002） | POC | Debug + Release（full trim）构建 0 警告；APK minSdk 29 / targetSdk 37，CoreCLR；**未上真机** |
-| C# ↔ Java ↔ DSHBox Kotlin Bridge（TASK-003） | POC | Java JVM 单测 12/12、C# 契约单测 25/25；APK dex 含 Facade、DSHBox `Versions`、Kotlin stdlib；1000 次压测按钮已实现，**待真机执行** |
+| .NET 11 Android 空壳（TASK-002） | 通过（Android 17 真机） | Release（full trim，CoreCLR）在 Honor PTP-AN10 / Android 17 运行，冷启动约 220–290 ms；Android 10 未测。证据见 COMPATIBILITY.md 真机记录 |
+| C# ↔ Java ↔ DSHBox Kotlin Bridge（TASK-003） | 通过（Android 17 真机），旋转与 Android 10 未测 | 31 轮×1000 次全部成功、双端在途为 0；强制 GC 后 JNI GREF 恒为 37、Java 存活持平。证据见 COMPATIBILITY.md 真机记录 |
 | 前台服务 | 未开始 | TASK-004 |
 
 ## 可选模块（方案 4.3）

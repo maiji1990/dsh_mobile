@@ -16,5 +16,5 @@
 3. 点击 “1000 次压测”：完成后显示 `ok=1000 failed=0 inFlight(C#)=0 inFlight(Native)=0` 与耗时。
 4. 压测进行中旋转屏幕、切后台再回来：压测继续完成、计数一致、无崩溃。
 5. `adb shell am kill` 结束进程后重开：Facade 重新初始化，显示正常。
-6. 重复第 3 步 10 次，用 `adb shell dumpsys meminfo <package>` 记录 Java/Native heap，确认无持续增长。
+6. 重复第 3 步至少 10 次。以每轮日志 `stress: after GC managed=… java=… grefs=…`（强制双端 GC 后测量）判断泄漏：`grefs` 与 `java` 不应随轮次持续增长。`dumpsys meminfo` 未 GC 的数值只作参考。
 7. 在 Android 10 与 Android 16/17 至少各一台执行，结果写入 `docs/COMPATIBILITY.md` 真机矩阵。

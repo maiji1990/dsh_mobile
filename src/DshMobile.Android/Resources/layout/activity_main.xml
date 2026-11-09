@@ -1,9 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<!-- fitsSystemWindows replaces a view's own padding with the insets, so it lives on this wrapper
+     and the 16dp content padding on the inner layout. -->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:fitsSystemWindows="true">
+
+<LinearLayout
     android:id="@+id/root"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:fitsSystemWindows="true"
     android:orientation="vertical"
     android:padding="16dp">
 
@@ -83,3 +89,4 @@
             android:textSize="12sp" />
     </ScrollView>
 </LinearLayout>
+</FrameLayout>
