@@ -6,7 +6,9 @@
     (BuildConfig, the Kotlin RuntimeController and its coroutine classes, internal callbacks) stays Java-only.
   -->
   <remove-node path="/api/package[@name='dshmobile.nativebridge']/class[not(@name='DshNativeFacade')]" />
-  <remove-node path="/api/package[@name='dshmobile.nativebridge']/interface[not(@name='NativeCallback')]" />
+  <remove-node path="/api/package[@name='dshmobile.nativebridge']/interface[not(@name='NativeCallback' or @name='WebUiListener')]" />
   <!-- No parameter names in the AAR's class files; name the interface parameter (concrete methods keep theirs). -->
   <attr path="/api/package[@name='dshmobile.nativebridge']/interface[@name='NativeCallback']/method[@name='onEvent']/parameter[@name='p0']" name="managedName">json</attr>
+  <attr path="/api/package[@name='dshmobile.nativebridge']/interface[@name='WebUiListener']/method[@name='onWebUiState']/parameter[@name='p0']" name="managedName">state</attr>
+  <attr path="/api/package[@name='dshmobile.nativebridge']/interface[@name='WebUiListener']/method[@name='onWebUiState']/parameter[@name='p1']" name="managedName">detail</attr>
 </metadata>

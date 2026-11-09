@@ -1,0 +1,116 @@
+using Android.Content.PM;
+using Android.Views;
+using Android.Webkit;
+using DshMobile.App.Bridge;
+using DshMobile.NativeBridge;
+using Log = Android.Util.Log;
+
+namespace DshMobile.App;
+
+/// <summary>
+/// Full-screen host for the official DSH WebUI (TASK-006). The WebView is created here, but loading,
+/// the launch-token exchange, navigation policy and 401 recovery all live in the native WebUiController:
+/// this class never sees the token.
+/// </summary>
+[Activity(
+    Label = "@string/dsh_title",
+    Exported = false,
+    // Keep the WebView (and DSH's in-page state) across rotation / keyboard / dark-mode changes.
+    ConfigurationChanges = ConfigChanges.Orientation | ConfigChanges.ScreenSize | ConfigChanges.ScreenLayout
+        | ConfigChanges.SmallestScreenSize | ConfigChanges.Keyboard | ConfigChanges.KeyboardHidden | ConfigChanges.UiMode,
+    WindowSoftInputMode = SoftInput.AdjustResize)]
+public sealed class DshWebActivity : Activity
+{
+    private WebView? _webView;
+    private TextView? _status;
+    private StateListener? _listener;
+    private BackCallback? _back;
+
+    protected override void OnCreate(Bundle? savedInstanceState)
+    {
+        base.OnCreate(savedInstanceState);
+
+        var root = new LinearLayout(this) { Orientation = Orientation.Vertical };
+        root.SetFitsSystemWindows(true);
+        _status = new TextView(this);
+        _status.SetPadding(24, 12, 24, 12);
+        _status.AccessibilityLiveRegion = AccessibilityLiveRegion.Polite;
+        _webView = new WebView(this);
+        root.AddView(_status, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MatchParent, ViewGroup.LayoutParams.WrapContent));
+        root.AddView(_webView, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MatchParent, 0, 1f));
+        SetContentView(root);
+
+        _listener = new StateListener(this);
+        DshMobileApplication.Current.Bridge.AttachWebUi(_webView, _listener);
+
+        if (OperatingSystem.IsAndroidVersionAtLeast(33))
+        {
+            // Predictive back (default for targetSdk 36+): navigate WebView history first, then leave.
+            _back = new BackCallback(this);
+            OnBackInvokedDispatcher.RegisterOnBackInvokedCallback(0, _back);
+        }
+    }
+
+    protected override void OnDestroy()
+    {
+        if (OperatingSystem.IsAndroidVersionAtLeast(33) && _back is not null)
+        {
+            OnBackInvokedDispatcher.UnregisterOnBackInvokedCallback(_back);
+        }
+        DshMobileApplication.Current.Bridge.DetachWebUi();
+        if (_webView is not null)
+        {
+            ((ViewGroup?)_webView.Parent)?.RemoveView(_webView);
+            _webView.Destroy();
+            _webView = null;
+        }
+        base.OnDestroy();
+    }
+
+    private void GoBack()
+    {
+        if (_webView?.CanGoBack() == true)
+        {
+            _webView.GoBack();
+        }
+        else
+        {
+            Finish();
+        }
+    }
+
+    private void ShowState(string state, string detail)
+    {
+        // LOADED hides the bar so the WebUI gets the whole screen; anything else stays visible.
+        _status!.Visibility = state == "LOADED" ? ViewStates.Gone : ViewStates.Visible;
+        _status.Text = state switch
+        {
+            "WAITING_TOKEN" => GetString(Resource.String.web_waiting),
+            "LOADING" => GetString(Resource.String.web_loading),
+            "UNAUTHORIZED" => GetString(Resource.String.web_unauthorized),
+            "UNREACHABLE" => GetString(Resource.String.web_unreachable) + " " + detail,
+            _ => $"{state} {detail}",
+        };
+    }
+
+    private sealed class StateListener(DshWebActivity owner) : Java.Lang.Object, IWebUiListener
+    {
+        public void OnWebUiState(string? state, string? detail)
+        {
+            // detail is token-free by contract (paths, hosts, error codes only).
+            Log.Info(BridgeHost.LogTag, $"webui {state} {detail}");
+            owner.RunOnUiThread(() =>
+            {
+                if (!owner.IsDestroyed)
+                {
+                    owner.ShowState(state ?? "", detail ?? "");
+                }
+            });
+        }
+    }
+
+    private sealed class BackCallback(DshWebActivity owner) : Java.Lang.Object, Android.Window.IOnBackInvokedCallback
+    {
+        public void OnBackInvoked() => owner.GoBack();
+    }
+}

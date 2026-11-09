@@ -53,3 +53,7 @@ include(":common")
 project(":common").projectDir = dshboxDir.resolve("common")
 include(":sandbox-manager")
 project(":sandbox-manager").projectDir = dshboxDir.resolve("sandbox-manager")
+// Pure-Kotlin WebUI policies (loopback origin policy, launch-token revision tracking). No UI, no deps.
+include(":dsh-renderer:api")
+project(":dsh-renderer").projectDir = dshboxDir.resolve("dsh-renderer")
+project(":dsh-renderer:api").projectDir = dshboxDir.resolve("dsh-renderer/api")

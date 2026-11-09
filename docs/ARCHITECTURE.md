@@ -45,6 +45,22 @@ MainActivity ─▶ BridgeHost ─▶ BridgeClient ─JNI─▶ DshNativeFacade 
 - APK 携带 `assets/dsh/<ver>.tar.zst` 与 `assets/runtime/android-side.tar.zst`（与 DSHBox ≥ 1.4 相同）；base/node 由运行环境包导入。
 - `extractNativeLibs=true`：PRoot 以可执行文件方式从 nativeLibraryDir 启动。
 
+## M3 / TASK-006 WebUI
+
+```text
+DshWebActivity (C#) ── new WebView ──▶ DshNativeFacade.attachWebUi(webView, listener)   [主线程]
+                                                │
+                                                ▼
+                        WebUiController (Kotlin)：订阅 SandboxManager.dshLaunchToken
+                          · DshTokenRevisionTracker（token 变化即重载）
+                          · DshOriginPolicy（仅 127.0.0.1:3080）
+                          · loadUrl("/?token=…") → DSH 换签名 Cookie
+                          · 401 每修订恢复一次；外链 → 系统浏览器
+                                                │ onWebUiState(state, 路径)   ← 不含 token
+                                                ▼
+                                       DshWebActivity 状态条
+```
+
 ## 线程与生命周期
 
 - Facade 所有请求在单线程 Executor 上串行执行；回调永远不在调用线程。

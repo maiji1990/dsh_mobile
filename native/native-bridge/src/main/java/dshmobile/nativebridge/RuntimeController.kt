@@ -107,6 +107,15 @@ internal class RuntimeController(
         }
     }
 
+    private val webUi by lazy { WebUiController(manager, "http://${config.dshHost}:${config.dshPort}", scope) }
+
+    /** Main thread only. See [WebUiController]. */
+    fun attachWebUi(view: android.webkit.WebView, listener: WebUiListener?) = webUi.attach(view, listener)
+
+    fun detachWebUi() = webUi.detach()
+
+    fun reloadWebUi() = webUi.reload()
+
     fun handles(method: String): Boolean = method in METHODS
 
     fun execute(method: String, payload: JSONObject, deadlineMs: Long, done: RuntimeCompletion) {

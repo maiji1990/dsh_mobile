@@ -37,3 +37,11 @@
 2. 点「DSH 模式探测」，等待 `probe summary`。期望：web/sdk/sdk-minimal/acp = pass，headless = limited（无凭据），plugin 视 pnpm 供给情况。
 3. 每个 `FAIL` 检查行带退出码与 stderr 尾部，写入 COMPATIBILITY.md。
 4. 待补（需模型凭据）：headless 一次性任务、sdk `session/prompt`、acp `session/new`+`session/prompt`、子代理、工具调用与审批。
+
+## TASK-006 WebUI（需真机）
+
+1. 启动 DSH 后点「打开 DSH」：状态 `WAITING_TOKEN → LOADING → LOADED`，显示官方 WebUI 首页。
+2. `adb logcat --pid <app>` 中 `token=` 只允许 `***`（DSHBox 脱敏）与 `BinderProxy`，其它任何出现都算失败。
+3. 返回键：无历史时关闭页面并 `DETACHED`。
+4. 停止 → 启动 DSH（新 token）→ 重开：仍 `LOADED`。
+5. 待补：页面打开时重启 DSH（就地重载）、旋转、外链、软键盘、文件选择与下载（TASK-007）、401 恢复。

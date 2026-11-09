@@ -143,6 +143,44 @@ public final class DshNativeFacade {
         });
     }
 
+    /**
+     * Hosts the official DSH WebUI in {@code webView} (TASK-006). Main thread only. The DSH launch token
+     * is handled entirely on the native side and is never returned to the caller.
+     */
+    public void attachWebUi(android.webkit.WebView webView, WebUiListener listener) {
+        requireMainThread();
+        requireRuntime().attachWebUi(webView, listener);
+    }
+
+    /** Releases the WebView hooks; safe to call repeatedly. Main thread only. */
+    public void detachWebUi() {
+        requireMainThread();
+        RuntimeController rc = runtime;
+        if (rc != null) {
+            rc.detachWebUi();
+        }
+    }
+
+    /** Reloads the WebUI with the current launch token. Main thread only. */
+    public void reloadWebUi() {
+        requireMainThread();
+        requireRuntime().reloadWebUi();
+    }
+
+    private RuntimeController requireRuntime() {
+        RuntimeController rc = runtime;
+        if (rc == null) {
+            throw new IllegalStateException("initialize(context) has not been called with a real Context");
+        }
+        return rc;
+    }
+
+    private static void requireMainThread() {
+        if (android.os.Looper.myLooper() != android.os.Looper.getMainLooper()) {
+            throw new IllegalStateException("WebUI methods must be called on the main thread");
+        }
+    }
+
     public void subscribe(NativeCallback callback) {
         if (callback != null && !subscribers.contains(callback)) {
             subscribers.add(callback);

@@ -17,8 +17,13 @@ public final class DshNativeFacade {
     public void unsubscribe(NativeCallback callback);
     public int getInFlightCount();
     public void close();                                         // 幂等；之后所有 execute 返回 CLOSED
+    // TASK-006（主线程）：托管官方 DSH WebUI；launch token 只在原生侧处理，绝不返回调用方
+    public void attachWebUi(android.webkit.WebView webView, WebUiListener listener);
+    public void detachWebUi();
+    public void reloadWebUi();
 }
 public interface NativeCallback { void onEvent(String json); }
+public interface WebUiListener { void onWebUiState(String state, String detail); } // detail 不含 token / query
 ```
 
 ### 1.2 请求

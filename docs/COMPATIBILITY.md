@@ -108,3 +108,15 @@ APK SHA-256 `a084dc5fb2559bea84d04caef8050b63f8006f23f7dc8dd639f08c41b9a2a392`�
 发现并修复：TASK-004 初版未部署 DSHBox 的 Android 硬链接兼容垫片（`link-shim.mjs`、`libdshbox-link.so`，DSHBox 放在 app 资产里），DSH 虽能 READY，但依赖 `link()` 的会话持久化 / 写工具 / 附件 / 插件安装会 EPERM。现从子模块原样打包进 Bridge AAR 并在每次进程启动时部署到 `files/dshbox`（guest `/opt/dshbox`），已验证 DSH 命令行带 `--import /opt/dshbox/link-shim.mjs`。
 
 未覆盖：需模型凭据的会话/提示/子代理/工具调用；`--from-default-profile`、`--patch` 覆盖；ACP `session/*`；pnpm 供给后的插件安装/卸载/回滚。
+
+### 2026-11-09 · TASK-006 DSH WebUI · 同一设备
+
+| 步骤 | 结果 |
+|---|---|
+| 启动 DSH | READY 15.0 s（shim=True） |
+| 打开 DSH（WebView） | `WAITING_TOKEN → LOADING → LOADED`，约 0.5 s；官方 WebUI 首页（「探索未至之境 · 预览版」、工作区与模式选择）正常渲染 |
+| launch token 泄漏检查 | App 进程 logcat 271 行中 `token=` 共 7 处：DSHBox 自身日志已脱敏为 `?token=***`，其余为 Android `ActivityRecord token=BinderProxy`；**意外出现 0 处** |
+| 返回键（predictive back） | 无 WebView 历史时关闭页面，`DETACHED` |
+| 停止 → 启动 DSH（新 token）→ 重开 | READY 18.5 s；重开后 `LOADED` 0.3 s，鉴权正常 |
+
+未测：同一页面内 DSH 重启触发的就地重载、401 自动恢复（一次/每个 token 修订）、外链转系统浏览器、旋转保持、软键盘遮挡、文件选择与下载（当前明确提示不支持，TASK-007）。

@@ -72,6 +72,7 @@ extensions.configure<com.android.build.api.dsl.LibraryExtension> {
 dependencies {
     implementation(project(":common"))
     implementation(project(":sandbox-manager"))
+    implementation(project(":dsh-renderer:api"))
     implementation(libs.kotlinx.coroutines.android)
     testImplementation(libs.junit)
     // android.jar's org.json is a stub in JVM unit tests; use the real implementation.

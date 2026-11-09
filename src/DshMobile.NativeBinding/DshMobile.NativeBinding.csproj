@@ -18,6 +18,7 @@
     <!-- DSHBox modules (GPL-3.0, unmodified source at the pinned submodule SHA). Packaged, not bound. -->
     <AndroidLibrary Include="$(NativeArtifactsDir)dshbox-common-release.aar" Bind="false" />
     <AndroidLibrary Include="$(NativeArtifactsDir)dshbox-sandbox-manager-release.aar" Bind="false" />
+    <AndroidLibrary Include="$(NativeArtifactsDir)dshbox-dsh-renderer-api-release.aar" Bind="false" />
     <!-- Non-Kotlin/AndroidX runtime jars, audited list in artifacts/native/jars/MANIFEST.txt. -->
     <AndroidLibrary Include="$(NativeArtifactsDir)jars\*.jar" Bind="false" />
     <!-- PRoot / talloc / shmem / zstd-jni prebuilt by DSHBox (licenses: third_party/dshbox/licenses). -->
@@ -37,7 +38,7 @@
   </ItemGroup>
 
   <Target Name="DshVerifyNativeArtifacts" BeforeTargets="PrepareForBuild">
-    <Error Condition="!Exists('$(NativeArtifactsDir)dsh-native-bridge-release.aar') Or !Exists('$(NativeArtifactsDir)dshbox-sandbox-manager-release.aar') Or !Exists('$(NativeArtifactsDir)jars\MANIFEST.txt') Or !Exists('$(NativeArtifactsDir)jniLibs\arm64-v8a\libproot.so')"
+    <Error Condition="!Exists('$(NativeArtifactsDir)dsh-native-bridge-release.aar') Or !Exists('$(NativeArtifactsDir)dshbox-sandbox-manager-release.aar') Or !Exists('$(NativeArtifactsDir)dshbox-dsh-renderer-api-release.aar') Or !Exists('$(NativeArtifactsDir)jars\MANIFEST.txt') Or !Exists('$(NativeArtifactsDir)jniLibs\arm64-v8a\libproot.so')"
            Text="Native artifacts missing or stale in $(NativeArtifactsDir). Build them first: pwsh native/build-native.ps1 (or bash native/build-native.sh)." />
   </Target>
 </Project>

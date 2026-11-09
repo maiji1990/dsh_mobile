@@ -9,7 +9,7 @@ val upstreamRoot: File = rootDir.resolve("../third_party").canonicalFile
 subprojects {
     // Keep the pinned submodule working tree clean: build upstream modules into native/build/upstream/<name>.
     if (projectDir.canonicalFile.startsWith(upstreamRoot)) {
-        layout.buildDirectory.set(rootProject.layout.buildDirectory.dir("upstream/$name"))
+        layout.buildDirectory.set(rootProject.layout.buildDirectory.dir("upstream/" + path.trim(':').replace(':', '-')))
     }
 }
 
@@ -40,11 +40,12 @@ val exportDir = rootDir.resolve("../artifacts/native")
 val exportAars by tasks.registering {
     group = "dshmobile"
     description = "Build release AARs and export them to artifacts/native/."
-    dependsOn(":native-bridge:assembleRelease", ":common:assembleRelease", ":sandbox-manager:assembleRelease", ":native-bridge:exportRuntimeJars")
+    dependsOn(":native-bridge:assembleRelease", ":common:assembleRelease", ":sandbox-manager:assembleRelease", ":dsh-renderer:api:assembleRelease", ":native-bridge:exportRuntimeJars")
     val outputs = mapOf(
         "dsh-native-bridge-release.aar" to project(":native-bridge").layout.buildDirectory.file("outputs/aar/native-bridge-release.aar"),
         "dshbox-common-release.aar" to project(":common").layout.buildDirectory.file("outputs/aar/common-release.aar"),
         "dshbox-sandbox-manager-release.aar" to project(":sandbox-manager").layout.buildDirectory.file("outputs/aar/sandbox-manager-release.aar"),
+        "dshbox-dsh-renderer-api-release.aar" to project(":dsh-renderer:api").layout.buildDirectory.file("outputs/aar/api-release.aar"),
     )
     doLast {
         exportDir.mkdirs()

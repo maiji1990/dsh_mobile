@@ -92,6 +92,15 @@ public sealed class BridgeHost : IDisposable
         }
     });
 
+    // ------------------------------------------------------------------ TASK-006 WebUI
+
+    /// <summary>Main thread only. The launch token never reaches managed code (see native WebUiController).</summary>
+    public void AttachWebUi(Android.Webkit.WebView view, IWebUiListener listener) => _facade.AttachWebUi(view, listener);
+
+    public void DetachWebUi() => _facade.DetachWebUi();
+
+    public void ReloadWebUi() => _facade.ReloadWebUi();
+
     // ------------------------------------------------------------------ TASK-004 runtime
 
     private static readonly TimeSpan PrepareDeadline = TimeSpan.FromMinutes(10);

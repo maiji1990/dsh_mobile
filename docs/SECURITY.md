@@ -24,13 +24,16 @@
 | `dsh.probe` 只接受白名单 profile 名，运行 APK 内固定脚本；不发起模型调用 | `RuntimeController.PROBE_PROFILES`、`guest-assets/dshmobile/dsh-probe.mjs` |
 | 不打包 DSHBox 的手机操控插件（mobile-pilot 等），避免出现第二套自动化工具 | `native/native-bridge/build.gradle.kts` `stageDshboxShimAssets` |
 | DSH launch token 不进入控制面 JSON / 日志，仅暴露 `hasLaunchToken` | `RuntimeController.status` |
+| WebUI：token 只在原生 `WebUiController` 内拼进 `loadUrl`，回调只给状态与路径；C# 永不持有 token（真机日志核查 0 泄漏） | `WebUiController.kt` |
+| WebUI：仅允许回环 DSH 源（DSHBox `DshOriginPolicy`）；外部 http(s) 交给系统浏览器，其它 scheme 拦截；无 `addJavascriptInterface`；禁用 file/content 访问；混合内容禁止；第三方 Cookie 关闭 | `WebUiController.kt` |
+| WebUI：401 恢复每个 token 修订仅一次，避免循环 | `WebUiController.Client.onReceivedHttpError` |
 | 运行层下载按固定 SHA-256 校验；android-side 再与随包 sidecar 交叉校验 | `runtime-bundle/fetch-runtime.ps1` |
 | Maven 运行时依赖白名单，出现未分类依赖即构建失败（强制许可审计） | `native/native-bridge/build.gradle.kts` `exportRuntimeJars` |
 
 ## 待实现（按里程碑）
 
 - M2：Runtime 层**签名**清单校验（当前仅固定哈希）、回滚 UI；PRoot 不是安全隔离，guest 内代码按不可信处理。
-- M3：WebUI loopback-only、token 轮换、origin 校验。
+- M3：WebUI 已落实 loopback-only / token 轮换 / origin 校验（见上）；待做：DSHBox 完整导航鉴权状态机、下载与上传审批（TASK-007）。
 - M5：R0–R4 审批、审计日志、单写者设备租约。
 - M8：SBOM、密钥扫描、品牌资源扫描进入 Release CI。
 
