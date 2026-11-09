@@ -29,7 +29,7 @@
 | Android 10 / ARM64 | 待测 | — | — | |
 | Android 14 / ARM64 | 待测 | — | — | |
 | Android 16 / ARM64 | 待测 | — | — | |
-| Android 17 / ARM64 | **通过（见下）**，旋转未测 | **通过**（DSH 0.2.1-rc.5 READY） | web 就绪；其余未测 | Honor PTP-AN10，厂商 ROM `11.0.0.117`，4 KB 页，2026-11-09 |
+| Android 17 / ARM64 | **通过（见下）**，旋转未测 | **通过**（DSH 0.2.1-rc.5 READY） | web/sdk/sdk-minimal/acp 通过；headless 受限（凭据）；plugin 失败（pnpm） | Honor PTP-AN10，厂商 ROM `11.0.0.117`，4 KB 页，2026-11-09 |
 | x86_64 模拟器 | 待测 | 不保证 | 不保证 | |
 
 ## 真机记录
@@ -91,3 +91,20 @@ APK SHA-256 `a084dc5fb2559bea84d04caef8050b63f8006f23f7dc8dd639f08c41b9a2a392`�
 | 内存（ps RSS） | App 506 MB、node 282 MB（DSH 运行约 9 min） | App 349 MB、node 385 MB（DSH 运行约 1 min） | 采样时刻不同，不可直接比；DSHBox App PSS 161.7 MB（Java 堆 30.7 MB） |
 
 结论：DSHBox 源码在本机可复现构建并在该设备上跑通同一运行层与 DSH 版本，作为 DSH Mobile 的对照基线成立。待补：两者在同一时间点、同一空闲时长下的 PSS 对比；DSHBox 导入/启动的精确计时（需 debug 构建或界面计时）。
+
+### 2026-11-09 · TASK-005 DSH 模式探测 · 同一设备
+
+方法：App 内「DSH 模式探测」→ `dsh.probe`，在 guest 内运行固定脚本 `dsh-probe.mjs`，以与 DSHBox 启动 web 完全相同的方式（`node --expose-internals --import /opt/dshbox/link-shim.mjs bin.js --profile <p>`，`DSH_HOME=/root/projects/.dsh`，cwd `/root/projects`）启动各 profile，做**真实协议交换**；不调用任何模型 API。运行时 web DSH 正在运行（shim=True，READY 21.1 s）。
+
+| profile | 结果 | 检查（耗时） |
+|---|---|---|
+| web | PASS | dump-config 289 ms（44 627 B）；运行中 DSH `GET /` → 401 |
+| headless | LIMITED | dump-config 271 ms；`--help` 7.9 s；一次性任务需模型凭据 |
+| sdk | PASS | dump-config 476 ms；`initialize` 11.4 s → `{"serverInfo":{"name":"deepseek-harness-sdk-runtime","version":"0.0.1"}}`；`shutdown` → `{}`；exit 0（68 ms） |
+| sdk-minimal | PASS | dump-config 455 ms；`initialize` 5.1 s（同上 serverInfo）；`shutdown` → `{}`；exit 0（29 ms） |
+| acp | PASS | dump-config 519 ms；`initialize` 11.6 s → `protocolVersion 1`、`agentInfo deepseek-harness-acp`、`mcpCapabilities.http`、`sessionCapabilities{close,list,resume}`、`authMethods []`；stdin EOF → exit 0（101 ms） |
+| plugin | FAIL | `plugin --profile web --help` 249 ms 通过；`plugin --profile web list` → exit 127「pnpm was not found; install pnpm and make it available on PATH」 |
+
+发现并修复：TASK-004 初版未部署 DSHBox 的 Android 硬链接兼容垫片（`link-shim.mjs`、`libdshbox-link.so`，DSHBox 放在 app 资产里），DSH 虽能 READY，但依赖 `link()` 的会话持久化 / 写工具 / 附件 / 插件安装会 EPERM。现从子模块原样打包进 Bridge AAR 并在每次进程启动时部署到 `files/dshbox`（guest `/opt/dshbox`），已验证 DSH 命令行带 `--import /opt/dshbox/link-shim.mjs`。
+
+未覆盖：需模型凭据的会话/提示/子代理/工具调用；`--from-default-profile`、`--patch` 覆盖；ACP `session/*`；pnpm 供给后的插件安装/卸载/回滚。

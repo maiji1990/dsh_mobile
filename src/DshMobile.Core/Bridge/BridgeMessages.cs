@@ -26,6 +26,9 @@ public static class BridgeMethods
     public const string SandboxStop = "sandbox.stop";
     public const string DshStart = "dsh.start";
     public const string DshStop = "dsh.stop";
+
+    // TASK-005: real per-profile handshakes inside the guest (fixed probe script, allowlisted profile names).
+    public const string DshProbe = "dsh.probe";
 }
 
 /// <summary>Event names pushed by the native side.</summary>
@@ -87,6 +90,7 @@ public sealed record RuntimeStatus(
     [property: JsonPropertyName("runtimeInstalled")] bool RuntimeInstalled,
     [property: JsonPropertyName("nodeLayerInstalled")] bool NodeLayerInstalled,
     [property: JsonPropertyName("hasLaunchToken")] bool HasLaunchToken,
+    [property: JsonPropertyName("linkShim")] bool LinkShim,
     [property: JsonPropertyName("endpoint")] string Endpoint,
     [property: JsonPropertyName("freeBytes")] long FreeBytes,
     [property: JsonPropertyName("steps")] string[]? Steps = null,
@@ -106,6 +110,29 @@ public sealed record RuntimeHealth(
     [property: JsonPropertyName("webUiReady")] bool WebUiReady,
     [property: JsonPropertyName("lastError")] string? LastError);
 
+/// <summary>Profiles accepted by <see cref="BridgeMethods.DshProbe"/> (same allowlist as the native side).</summary>
+public static class DshProfiles
+{
+    public static IReadOnlyList<string> All { get; } = ["web", "headless", "sdk", "sdk-minimal", "acp", "plugin"];
+}
+
+public sealed record ProbeRequest(
+    [property: JsonPropertyName("profile")] string Profile);
+
+public sealed record ProbeCheck(
+    [property: JsonPropertyName("name")] string Name,
+    [property: JsonPropertyName("ok")] bool Ok,
+    [property: JsonPropertyName("ms")] long? Ms,
+    [property: JsonPropertyName("detail")] string? Detail);
+
+/// <summary>Probe outcome: <c>pass</c>, <c>limited</c> (needs a model credential to go further) or <c>fail</c>.</summary>
+public sealed record ProbeResult(
+    [property: JsonPropertyName("profile")] string Profile,
+    [property: JsonPropertyName("status")] string Status,
+    [property: JsonPropertyName("needsCredential")] bool NeedsCredential,
+    [property: JsonPropertyName("shim")] bool Shim,
+    [property: JsonPropertyName("checks")] ProbeCheck[] Checks);
+
 public sealed record DiagnosticResult(
     [property: JsonPropertyName("ok")] bool Ok,
     [property: JsonPropertyName("output")] string Output,
@@ -123,5 +150,7 @@ public sealed record DiagnosticResult(
 [JsonSerializable(typeof(ImportBundleRequest))]
 [JsonSerializable(typeof(RuntimeHealth))]
 [JsonSerializable(typeof(Dictionary<string, DiagnosticResult>))]
+[JsonSerializable(typeof(ProbeRequest))]
+[JsonSerializable(typeof(ProbeResult))]
 [JsonSerializable(typeof(JsonElement))]
 public sealed partial class BridgeJsonContext : JsonSerializerContext;

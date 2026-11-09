@@ -66,9 +66,15 @@ internal class RuntimeController(
             "dsh" to "node $GUEST_DSH_BIN --version",
         )
 
+        /** Guest path of our probe script (host: config.guestCacheDir/dshmobile, bound at /opt/dshbox-cache). */
+        private const val GUEST_PROBE = "/opt/dshbox-cache/dshmobile/dsh-probe.mjs"
+
+        /** Profiles `dsh.probe` accepts; the name is the only caller-supplied token and must match exactly. */
+        val PROBE_PROFILES = setOf("web", "headless", "sdk", "sdk-minimal", "acp", "plugin")
+
         val METHODS = setOf(
             "runtime.status", "runtime.prepare", "runtime.importBundle", "runtime.health",
-            "runtime.diagnostics", "sandbox.start", "sandbox.stop", "dsh.start", "dsh.stop",
+            "runtime.diagnostics", "sandbox.start", "sandbox.stop", "dsh.start", "dsh.stop", "dsh.probe",
         )
     }
 
@@ -133,8 +139,37 @@ internal class RuntimeController(
     private suspend fun ensureInitialized() {
         if (!initialized) {
             manager.initialize()
+            provisionGuestAssets()
             initialized = true
         }
+    }
+
+    /**
+     * Stages APK assets into host dirs that DSHBox binds into the guest. Overwritten once per process,
+     * like DSHBox's SandboxService does on every boot, so an updated APK always ships the current files:
+     *  - dshbox/link-shim.mjs + libdshbox-link.so -> config.dshShimDir (guest /opt/dshbox). DSHBox's
+     *    DefaultSandboxManager preloads the shim (`node --import`) only when this file exists; without it,
+     *    DSH's link()-based publishing (sessions, write tool, attachments, plugin installs) fails with
+     *    EPERM because Android's app data partition refuses hard links.
+     *  - dshmobile/dsh-probe.mjs -> config.guestCacheDir/dshmobile (guest /opt/dshbox-cache/dshmobile).
+     */
+    private fun provisionGuestAssets() {
+        fun copyAsset(asset: String, dest: File) {
+            dest.parentFile?.mkdirs()
+            val tmp = File(dest.parentFile, dest.name + ".tmp")
+            appContext.assets.open(asset).use { input -> tmp.outputStream().use { input.copyTo(it) } }
+            if (!tmp.renameTo(dest)) {
+                tmp.copyTo(dest, overwrite = true)
+                tmp.delete()
+            }
+        }
+        runCatching {
+            copyAsset("dshbox/link-shim.mjs", config.dshShimFile)
+            copyAsset("dshbox/libdshbox-link.so", File(config.dshShimDir, "libdshbox-link.so"))
+        }.onFailure { Log.w(TAG, "link shim provisioning failed; DSH will run without hard-link compat", it) }
+        runCatching {
+            copyAsset("dshmobile/dsh-probe.mjs", File(File(config.guestCacheDir, "dshmobile"), "dsh-probe.mjs"))
+        }.onFailure { Log.w(TAG, "probe script provisioning failed", it) }
     }
 
     private suspend fun dispatch(method: String, payload: JSONObject, done: RuntimeCompletion) {
@@ -204,6 +239,18 @@ internal class RuntimeController(
                 is AppResult.Failure -> done.fail(r)
             }
             "dsh.stop" -> { manager.stopDsh(); done.ok(status()) }
+            "dsh.probe" -> {
+                val profile = payload.optString("profile", "")
+                if (profile !in PROBE_PROFILES) throw BridgeException(BAD_REQUEST, "profile must be one of $PROBE_PROFILES")
+                val lines = ArrayList<String>()
+                val r = manager.runGuestCommand("node $GUEST_PROBE $profile", onLine = { synchronized(lines) { lines.add(it); if (lines.size > 400) lines.removeAt(0) } })
+                val resultLine = synchronized(lines) { lines.lastOrNull { it.startsWith("DSHPROBE ") } }
+                if (resultLine == null) {
+                    val why = (r as? AppResult.Failure)?.error?.message ?: "probe produced no result line"
+                    throw BridgeException(INTERNAL, "$why; tail: ${synchronized(lines) { lines.takeLast(8).joinToString(" | ") }}")
+                }
+                done.ok(JSONObject(resultLine.removePrefix("DSHPROBE ")))
+            }
             else -> throw BridgeException("METHOD_NOT_FOUND", "unknown method: $method")
         }
     }
@@ -219,6 +266,7 @@ internal class RuntimeController(
             .put("nodeLayerInstalled", manager.isNodeLayerInstalled())
             // Only whether a launch token exists; the token itself never crosses the control plane.
             .put("hasLaunchToken", manager.dshLaunchToken.value != null)
+            .put("linkShim", config.dshShimFile.isFile)
             .put("endpoint", "http://${config.dshHost}:${config.dshPort}")
             .put("freeBytes", free)
     }

@@ -14,6 +14,20 @@ fun dshboxDescribe(): String = try {
     "unknown"
 }
 
+/** Copies exactly DSHBox's link shim files (unmodified) into a generated asset root; returns that root. */
+fun stageDshboxShimAssets(): File {
+    val from = rootDir.resolve("../third_party/dshbox/plugin-manager/dshbox-plugins/assets/dshbox")
+    // Outside build/ so `clean` (which runs after configuration) cannot delete the staged copy.
+    val root = rootDir.resolve(".generated/dshbox-shim-assets")
+    val to = root.resolve("dshbox").apply { mkdirs() }
+    listOf("link-shim.mjs", "libdshbox-link.so").forEach { name ->
+        val src = from.resolve(name)
+        check(src.isFile) { "DSHBox link shim asset missing: $src" }
+        src.copyTo(to.resolve(name), overwrite = true)
+    }
+    return root
+}
+
 extensions.configure<com.android.build.api.dsl.LibraryExtension> {
     namespace = "dshmobile.nativebridge"
     compileSdk = 36
@@ -43,6 +57,16 @@ extensions.configure<com.android.build.api.dsl.LibraryExtension> {
     testOptions {
         unitTests.isReturnDefaultValues = true
     }
+
+    // Assets shipped inside the AAR (merged into the .NET APK):
+    //  - dshbox/link-shim.mjs + libdshbox-link.so: DSHBox's Android hard-link compat shim, taken unmodified
+    //    from the pinned submodule (DSHBox puts them in its app assets). Required for DSH session persistence,
+    //    write tool, attachments and plugin installs on Android, which refuses hard links.
+    //  - dshmobile/: our own guest-side scripts (profile probes).
+    //  Only these two files are taken — NOT DSHBox's assets/plugins/* (mobile-pilot, browser-use, …): phone
+    //  automation must go through the single ui_* contract (AGENTS.md rule 6), never a parallel stack.
+    sourceSets.getByName("main").assets.srcDir(stageDshboxShimAssets())
+    sourceSets.getByName("main").assets.srcDir("src/main/guest-assets")
 }
 
 dependencies {

@@ -21,6 +21,8 @@
 | 明文 HTTP 仅允许 127.0.0.1 / localhost（DSH 回环） | `Resources/xml/network_security_config.xml` |
 | 运行环境包导入路径规范化并限制在 App 自有存储内（防 `..` / 符号链接逃逸） | `RuntimeController.resolveImportFile` |
 | 诊断只运行固定只读命令；Bridge 不提供任意 guest shell | `RuntimeController.DIAGNOSTICS` |
+| `dsh.probe` 只接受白名单 profile 名，运行 APK 内固定脚本；不发起模型调用 | `RuntimeController.PROBE_PROFILES`、`guest-assets/dshmobile/dsh-probe.mjs` |
+| 不打包 DSHBox 的手机操控插件（mobile-pilot 等），避免出现第二套自动化工具 | `native/native-bridge/build.gradle.kts` `stageDshboxShimAssets` |
 | DSH launch token 不进入控制面 JSON / 日志，仅暴露 `hasLaunchToken` | `RuntimeController.status` |
 | 运行层下载按固定 SHA-256 校验；android-side 再与随包 sidecar 交叉校验 | `runtime-bundle/fetch-runtime.ps1` |
 | Maven 运行时依赖白名单，出现未分类依赖即构建失败（强制许可审计） | `native/native-bridge/build.gradle.kts` `exportRuntimeJars` |

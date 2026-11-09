@@ -13,6 +13,7 @@
     <string name="action_start">启动 DSH</string>
     <string name="action_stop">停止</string>
     <string name="action_diagnostics">诊断</string>
+    <string name="action_probe">DSH 模式探测（web/headless/sdk/sdk-minimal/acp/plugin）</string>
     <string name="fgs_channel">运行环境</string>
     <string name="fgs_text">Linux 沙箱与 DSH 正在运行</string>
 </resources>

@@ -6,3 +6,5 @@ gradlew text eol=lf
 *.jar binary
 *.aar binary
 *.png binary
+# Guest-side scripts run inside the Linux sandbox
+native/native-bridge/src/main/guest-assets/** text eol=lf

@@ -69,7 +69,7 @@ C# `BridgeClient` 在 `deadlineMs + 2s` 内未收到响应时，本地合成 `DE
 | `bridge.info` | `{}` | `bridgeVersion`, `protocol`, `upstream`, `kotlinVersion`, `sdkInt`, `abis[]`, `deviceModel` |
 | `bridge.ping` | 任意对象 | `{"echo": <原 payload>, "seq": <long>}` |
 | `dshbox.versions.compare` | `{"a":"0.1.1","b":"0.1.1-rc.2"}` | `{"result": -1|0|1}`；由 DSHBox `common` 的 Kotlin `Versions.compare` 计算（验证 C# → Java → DSHBox Kotlin → C#） |
-| `runtime.status` | `{}` | `RuntimeStatus`：`sandboxState`、`dshState`、`dshVersion`、`dshUnresponsive`、`runtimeInstalled`、`nodeLayerInstalled`、`hasLaunchToken`、`endpoint`、`freeBytes` |
+| `runtime.status` | `{}` | `RuntimeStatus`：`sandboxState`、`dshState`、`dshVersion`、`dshUnresponsive`、`runtimeInstalled`、`nodeLayerInstalled`、`hasLaunchToken`、`linkShim`、`endpoint`、`freeBytes` |
 | `runtime.prepare` | `{}` | `RuntimeStatus` + `steps[]`：安装 APK 内置层；base/node 在位时装配内置 DSH 层 |
 | `runtime.importBundle` | `{"path": "<App 自有存储内的 zip>"}` | `RuntimeStatus` + `dshProvision`；路径必须规范化后位于 filesDir / cacheDir / App 专属外部目录 |
 | `runtime.health` | `{}` | `dshProcessRunning`、`portOpen`、`webUiReady`、`lastError` |
@@ -77,6 +77,7 @@ C# `BridgeClient` 在 `deadlineMs + 2s` 内未收到响应时，本地合成 `DE
 | `sandbox.start` / `sandbox.stop` | `{}` | `RuntimeStatus` |
 | `dsh.start` | `{}` | `RuntimeStatus` + `dsh{version, baseUrl, ready}` |
 | `dsh.stop` | `{}` | `RuntimeStatus` |
+| `dsh.probe` | `{"profile": "web\|headless\|sdk\|sdk-minimal\|acp\|plugin"}`（白名单） | `ProbeResult{profile, status: pass\|limited\|fail, needsCredential, shim, checks[{name, ok, ms, detail}]}`；guest 内固定脚本，做真实协议握手，不调用模型 |
 
 `runtime.* / sandbox.* / dsh.*` 在 IO 协程上异步执行（不阻塞控制线程），彼此串行；deadline 内未完成返回 `DEADLINE_EXCEEDED`（底层操作可能仍在收尾）。DSH launch token **不经过**控制面 JSON，只暴露 `hasLaunchToken`。
 

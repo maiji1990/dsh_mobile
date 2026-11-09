@@ -30,3 +30,10 @@
 5. `adb shell ps -A | grep <app user>`：运行中有 `libproot.so` / `node`；HOME 后台 ≥ 90 s 仍在。
 6. 点「停止」后再 `ps`：仅剩 App 进程。启动后 `am force-stop`：App 用户下零进程。
 7. 待补：磁盘不足、层缺失（删除 `runtime-current/node`）、损坏的 zip、导入中断、强杀后再次启动。
+
+## TASK-005 DSH 模式探测（需真机）
+
+1. 运行环境已导入；点「启动 DSH」，状态行须 `shim=True`；`adb shell ps -A -o PID,NAME,ARGS | grep node` 须含 `--import /opt/dshbox/link-shim.mjs`。
+2. 点「DSH 模式探测」，等待 `probe summary`。期望：web/sdk/sdk-minimal/acp = pass，headless = limited（无凭据），plugin 视 pnpm 供给情况。
+3. 每个 `FAIL` 检查行带退出码与 stderr 尾部，写入 COMPATIBILITY.md。
+4. 待补（需模型凭据）：headless 一次性任务、sdk `session/prompt`、acp `session/new`+`session/prompt`、子代理、工具调用与审批。

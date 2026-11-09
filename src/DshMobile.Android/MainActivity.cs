@@ -34,7 +34,8 @@ public class MainActivity : Activity
         var start = FindViewById<Button>(Resource.Id.btn_start)!;
         var stop = FindViewById<Button>(Resource.Id.btn_stop)!;
         var diag = FindViewById<Button>(Resource.Id.btn_diag)!;
-        _actions = [info, kotlin, stress, prepare, import, start, stop, diag];
+        var probe = FindViewById<Button>(Resource.Id.btn_probe)!;
+        _actions = [info, kotlin, stress, prepare, import, start, stop, diag, probe];
 
         // Fire-and-forget is intentional: BridgeHost owns the task and reports through its log,
         // so an Activity recreated mid-run (rotation) still sees the result.
@@ -47,6 +48,7 @@ public class MainActivity : Activity
         start.Click += (_, _) => _ = _bridge.RunStartAsync();
         stop.Click += (_, _) => _ = _bridge.RunStopAsync();
         diag.Click += (_, _) => _ = _bridge.RunDiagnosticsAsync();
+        probe.Click += (_, _) => _ = _bridge.RunProbesAsync();
 
         // The foreground-service notification is only visible with this permission (Android 13+).
         // The service itself runs either way, so a denial is not an error.

@@ -182,6 +182,34 @@ public sealed class BridgeHost : IDisposable
         }
     });
 
+    private static readonly TimeSpan ProbeDeadline = TimeSpan.FromMinutes(10);
+
+    /// <summary>TASK-005: runs the guest probe for every shipped profile, in order, and logs each check.</summary>
+    public Task RunProbesAsync() => RunExclusive("dsh.probe", async () =>
+    {
+        var summary = new List<string>();
+        foreach (var profile in DshProfiles.All)
+        {
+            var sw = Stopwatch.StartNew();
+            var payload = BridgeCodec.ToPayload(new ProbeRequest(profile), BridgeJsonContext.Default.ProbeRequest);
+            var resp = await Client.ExecuteAsync(BridgeMethods.DshProbe, payload, ProbeDeadline).ConfigureAwait(false);
+            if (!resp.Ok)
+            {
+                Append($"probe {profile} FAILED {resp.Code}: {resp.Message}");
+                summary.Add($"{profile}=ERROR");
+                continue;
+            }
+            var r = BridgeCodec.ReadPayload(resp, BridgeJsonContext.Default.ProbeResult)!;
+            Append($"probe {profile}: {r.Status.ToUpperInvariant()} shim={r.Shim} ({sw.Elapsed.TotalSeconds:F1} s)");
+            foreach (var c in r.Checks)
+            {
+                Append($"  {(c.Ok ? "ok  " : "FAIL")} {c.Name}{(c.Ms is { } ms ? $" {ms} ms" : "")}: {c.Detail}");
+            }
+            summary.Add($"{profile}={r.Status}");
+        }
+        Append("probe summary: " + string.Join(" ", summary));
+    });
+
     private void LogStatus(string what, BridgeResponse resp)
     {
         if (!resp.Ok)
@@ -195,7 +223,7 @@ public sealed class BridgeHost : IDisposable
             Append($"{what}: ok");
             return;
         }
-        Append($"{what}: sandbox={st.SandboxState} dsh={st.DshState} version={st.DshVersion ?? "-"} runtime={st.RuntimeInstalled} node={st.NodeLayerInstalled} token={st.HasLaunchToken} free={st.FreeBytes / 1024 / 1024} MiB");
+        Append($"{what}: sandbox={st.SandboxState} dsh={st.DshState} version={st.DshVersion ?? "-"} runtime={st.RuntimeInstalled} node={st.NodeLayerInstalled} token={st.HasLaunchToken} shim={st.LinkShim} free={st.FreeBytes / 1024 / 1024} MiB");
         foreach (var step in st.Steps ?? [])
         {
             Append($"  - {step}");

@@ -139,6 +139,13 @@
             android:text="@string/action_diagnostics" />
     </LinearLayout>
 
+    <Button
+        android:id="@+id/btn_probe"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:minHeight="48dp"
+        android:text="@string/action_probe" />
+
     <ScrollView
         android:id="@+id/log_scroll"
         android:layout_width="match_parent"
