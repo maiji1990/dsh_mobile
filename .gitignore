@@ -1,0 +1,33 @@
+# .NET
+bin/
+obj/
+*.user
+*.suo
+.vs/
+*.binlog
+TestResults/
+
+# Gradle / Android native
+native/.gradle/
+native/build/
+native/**/build/
+native/local.properties
+.kotlin/
+*.iml
+.idea/
+.cxx/
+
+# Built native artifacts (rebuilt by native/build-native.*; never commit binaries)
+artifacts/native/*.aar
+artifacts/native/*.sha256
+artifacts/native/*.txt
+artifacts/*.log
+
+# Signing material must never be committed
+*.keystore
+*.jks
+*.p12
+
+# OS
+.DS_Store
+Thumbs.db

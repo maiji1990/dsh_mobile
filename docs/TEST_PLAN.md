@@ -1,0 +1,20 @@
+# 测试计划（TEST_PLAN）
+
+完整用例见方案第 15 节。此处记录已实现的测试与 M1 验收步骤。
+
+## 自动化（本机 / CI）
+
+| 层 | 项目 | 覆盖 |
+|---|---|---|
+| 契约 | `tests/DshMobile.Core.Tests` | 请求/响应 JSON 形状与字段名、错误码常量与 Java 端一致、非法响应解析 |
+| Native 单测 | `native/native-bridge/src/test`（JVM） | 协议解析、未知 method、重复 requestId、deadline、关闭后拒绝 |
+
+## M1 验收（需真机，手动 + 日志）
+
+1. `adb install` 后打开 App，首页显示 Bridge 版本与 `bridge.info`（含 `kotlinVersion`、`sdkInt`、`abis`）。
+2. 点击 “DSHBox Kotlin 调用”：显示 `Versions.compare("0.1.1","0.1.1-rc.2") = 1`。
+3. 点击 “1000 次压测”：完成后显示 `ok=1000 failed=0 inFlight(C#)=0 inFlight(Native)=0` 与耗时。
+4. 压测进行中旋转屏幕、切后台再回来：压测继续完成、计数一致、无崩溃。
+5. `adb shell am kill` 结束进程后重开：Facade 重新初始化，显示正常。
+6. 重复第 3 步 10 次，用 `adb shell dumpsys meminfo <package>` 记录 Java/Native heap，确认无持续增长。
+7. 在 Android 10 与 Android 16/17 至少各一台执行，结果写入 `docs/COMPATIBILITY.md` 真机矩阵。

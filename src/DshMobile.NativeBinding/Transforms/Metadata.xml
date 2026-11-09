@@ -1,0 +1,8 @@
+﻿<metadata>
+  <!-- Java package dshmobile.nativebridge -> C# namespace DshMobile.NativeBridge -->
+  <attr path="/api/package[@name='dshmobile.nativebridge']" name="managedName">DshMobile.NativeBridge</attr>
+  <!-- No parameter names in the AAR's class files; name the interface parameter (concrete methods keep theirs). -->
+  <attr path="/api/package[@name='dshmobile.nativebridge']/interface[@name='NativeCallback']/method[@name='onEvent']/parameter[@name='p0']" name="managedName">json</attr>
+  <!-- AGP-generated BuildConfig is an implementation detail; bridge.info exposes its values. -->
+  <remove-node path="/api/package[@name='dshmobile.nativebridge']/class[@name='BuildConfig']" />
+</metadata>

@@ -1,0 +1,36 @@
+using DshMobile.Core.Bridge;
+using DshMobile.NativeBridge;
+
+namespace DshMobile.App.Bridge;
+
+/// <summary>
+/// JNI adapter: one Java peer object serves as the callback for every request (a single GREF,
+/// not one per call). Responses are correlated by requestId inside <see cref="BridgeClient"/>.
+/// </summary>
+public sealed class NativeFacadeTransport : Java.Lang.Object, INativeCallback, IBridgeTransport
+{
+    private readonly DshNativeFacade _facade;
+    private IBridgeSink? _sink;
+
+    public NativeFacadeTransport(DshNativeFacade facade)
+    {
+        _facade = facade;
+    }
+
+    public void Attach(IBridgeSink sink)
+    {
+        _sink = sink;
+        _facade.Subscribe(this);
+    }
+
+    public void Send(string requestJson) => _facade.Execute(requestJson, this);
+
+    /// <summary>Called by Java on the bridge worker thread. Must not throw or block.</summary>
+    public void OnEvent(string? json)
+    {
+        if (json is not null)
+        {
+            _sink?.OnInbound(json);
+        }
+    }
+}

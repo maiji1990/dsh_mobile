@@ -1,0 +1,10 @@
+<resources>
+    <string name="app_name">DSH Mobile</string>
+    <string name="home_title">DSH Mobile · Native Bridge POC</string>
+    <string name="action_info">bridge.info</string>
+    <string name="action_kotlin">调用 DSHBox Kotlin</string>
+    <string name="action_stress">1000 次压测</string>
+    <string name="action_clear">清空日志</string>
+    <string name="status_idle">空闲</string>
+    <string name="status_running">运行中…</string>
+</resources>

@@ -1,0 +1,4 @@
+[submodule "third_party/dshbox"]
+	path = third_party/dshbox
+	url = https://github.com/WSK-build/DSHBox
+	shallow = true

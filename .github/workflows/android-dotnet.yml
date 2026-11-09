@@ -1,0 +1,45 @@
+name: android-dotnet
+
+# Order (plan section 16): native-aar -> .NET binding -> app. Emulator / device matrix comes later.
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+          fetch-depth: 0
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      - name: Install android workload (pinned by global.json workloadVersion)
+        run: dotnet workload install android
+
+      - name: Native AARs + JVM unit tests
+        shell: pwsh
+        run: |
+          "sdk.dir=$($env:ANDROID_HOME -replace '\\','/')" | Set-Content native/local.properties
+          ./native/build-native.ps1
+
+      - name: Contract tests
+        run: dotnet test tests/DshMobile.Core.Tests -c Release
+
+      - name: Build app
+        run: dotnet build src/DshMobile.Android -c Release
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: native-aars
+          path: artifacts/native/

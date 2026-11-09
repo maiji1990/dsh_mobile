@@ -1,0 +1,84 @@
+using System.Text.Json;
+using DshMobile.Core.Bridge;
+
+namespace DshMobile.Core.Tests;
+
+public class BridgeCodecTests
+{
+    [Fact]
+    public void EncodeRequest_UsesProtocolV1FieldNames()
+    {
+        var payload = BridgeCodec.ToPayload(new VersionsCompareRequest("1.0.0", "1.0.0-rc.1"), BridgeJsonContext.Default.VersionsCompareRequest);
+        var json = BridgeCodec.EncodeRequest(new BridgeRequest(1, "id-1", BridgeMethods.DshboxVersionsCompare, 1500, payload));
+
+        using var doc = JsonDocument.Parse(json);
+        var root = doc.RootElement;
+        Assert.Equal(1, root.GetProperty("protocol").GetInt32());
+        Assert.Equal("id-1", root.GetProperty("requestId").GetString());
+        Assert.Equal("dshbox.versions.compare", root.GetProperty("method").GetString());
+        Assert.Equal(1500, root.GetProperty("deadlineMs").GetInt32());
+        Assert.Equal("1.0.0-rc.1", root.GetProperty("payload").GetProperty("b").GetString());
+        Assert.Equal(5, root.EnumerateObject().Count());
+    }
+
+    [Fact]
+    public void Decode_SuccessResponse()
+    {
+        const string json = """{"protocol":1,"requestId":"r","ok":true,"code":"OK","message":null,"payload":{"result":1}}""";
+        Assert.True(BridgeCodec.TryDecodeInbound(json, out var resp, out var evt));
+        Assert.Null(evt);
+        Assert.NotNull(resp);
+        Assert.True(resp.Ok);
+        Assert.Equal(1, BridgeCodec.ReadPayload(resp, BridgeJsonContext.Default.VersionsCompareResult)!.Result);
+    }
+
+    [Fact]
+    public void Decode_ErrorResponseWithNullPayload()
+    {
+        const string json = """{"protocol":1,"requestId":null,"ok":false,"code":"BAD_REQUEST","message":"invalid JSON","payload":null}""";
+        Assert.True(BridgeCodec.TryDecodeInbound(json, out var resp, out _));
+        Assert.False(resp!.Ok);
+        Assert.Null(resp.RequestId);
+        Assert.Null(BridgeCodec.ReadPayload(resp, BridgeJsonContext.Default.BridgeInfo));
+    }
+
+    [Fact]
+    public void Decode_Event()
+    {
+        const string json = """{"protocol":1,"type":"event","event":"bridge.lifecycle","payload":{"state":"INITIALIZED"}}""";
+        Assert.True(BridgeCodec.TryDecodeInbound(json, out var resp, out var evt));
+        Assert.Null(resp);
+        Assert.Equal("bridge.lifecycle", evt!.Event);
+        Assert.Equal("INITIALIZED", evt.Payload!.Value.GetProperty("state").GetString());
+    }
+
+    [Theory]
+    [InlineData("not json")]
+    [InlineData("[]")]
+    [InlineData("""{"protocol":2,"requestId":"r","ok":true,"code":"OK"}""")]
+    [InlineData("""{"protocol":1.5,"requestId":"r","ok":true,"code":"OK"}""")]
+    [InlineData("""{"protocol":1,"requestId":"r","code":"OK"}""")]
+    [InlineData("""{"protocol":1,"requestId":"r","ok":"yes","code":"OK"}""")]
+    // ok/code mismatch is a contract violation, never trusted as success.
+    [InlineData("""{"protocol":1,"requestId":"r","ok":true,"code":"INTERNAL"}""")]
+    [InlineData("""{"protocol":1,"requestId":"r","ok":false,"code":"OK"}""")]
+    [InlineData("""{"protocol":1,"type":"event","event":""}""")]
+    public void Decode_RejectsMalformed(string json)
+    {
+        Assert.False(BridgeCodec.TryDecodeInbound(json, out _, out _));
+    }
+
+    [Fact]
+    public void Decode_BridgeInfoPayload()
+    {
+        const string json = """
+            {"protocol":1,"requestId":"r","ok":true,"code":"OK","message":null,
+             "payload":{"bridgeVersion":"0.1.0","protocol":1,"upstream":{"dshbox":"v1.5.1-0-g7c9d33c"},
+                        "kotlinVersion":"2.4.20","sdkInt":34,"abis":["arm64-v8a"],"deviceModel":"Pixel"}}
+            """;
+        Assert.True(BridgeCodec.TryDecodeInbound(json, out var resp, out _));
+        var info = BridgeCodec.ReadPayload(resp!, BridgeJsonContext.Default.BridgeInfo)!;
+        Assert.Equal("v1.5.1-0-g7c9d33c", info.Upstream["dshbox"]);
+        Assert.Equal(["arm64-v8a"], info.Abis);
+    }
+}

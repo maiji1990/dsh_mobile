@@ -1,0 +1,15 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/DshMobile.Core/DshMobile.Core.csproj" />
+    <Project Path="src/DshMobile.NativeBinding/DshMobile.NativeBinding.csproj" />
+    <Project Path="src/DshMobile.Android/DshMobile.Android.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/DshMobile.Core.Tests/DshMobile.Core.Tests.csproj" />
+  </Folder>
+  <Folder Name="/docs/">
+    <File Path="AGENTS.md" />
+    <File Path="global.json" />
+    <File Path="Directory.Build.props" />
+  </Folder>
+</Solution>
