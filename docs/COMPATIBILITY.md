@@ -72,3 +72,22 @@ APK 110 MB（含 DSH 层 93 MB + android-side 层）；运行环境包 `dshapp-r
 | `am force-stop` | 通过：App UID 下零进程，无孤儿 |
 
 备注：`libproot.so` 非 16 KB 页对齐（构建警告 XA0141），本机为 4 KB 页不受影响。
+
+### 2026-11-09 · TASK-001 DSHBox 原生基线 · 同一设备
+
+构建：DSHBox `v1.5.1`（`7c9d33c`，源码未改）`:app:assembleSystemWebViewRelease`，未配置 release keystore（回退 debug 签名）。
+APK SHA-256 `a084dc5fb2559bea84d04caef8050b63f8006f23f7dc8dd639f08c41b9a2a392`，130.6 MB（官方 Release `dshbox-v1.5.1-system-release.apk` 同为 130.6 MB）。
+构建前置：SDK `platforms;android-37.2`、`build-tools;36.0.0`（`tooling/install-android-sdk-components.ps1`）；`ndk-build` 不接受含空格的 NDK 路径，需在 clone 的 `local.properties` 设 `ndk.dir` 指向无空格路径（目录联接即可）。
+运行环境：与 DSH Mobile 相同的 `dshapp-runtime-debian-arm64-0.1.0.zip`，由用户在 DSHBox「设置 → 离线导入运行环境包」手动导入并手动启动（DSHBox release 构建剥离了自身日志，导入/启动耗时无法从日志取得）。
+
+| 指标 | DSHBox v1.5.1（基线） | DSH Mobile（本项目，M2） | 备注 |
+|---|---|---|---|
+| APK 大小 | 130.6 MB（含 Compose UI、Browser、Pilot 等） | 110.4 MB（含 DSH 层 93 MB） | 功能范围不同，仅作参考 |
+| 冷启动 | 250 ms | 219–315 ms | `am start -W` TotalTime |
+| 运行环境导入 | 成功；耗时未测（手动、无日志） | 12.0 s | |
+| DSH 启动到就绪 | 成功（「DSH 就绪」）；耗时未测 | 18.5–19.0 s | |
+| DSH 端口 | `GET /` → HTTP 401（launch token 鉴权生效） | 健康探测 webUi=true | 同一 DSH 0.2.1-rc.5 |
+| 进程树 | App → 2×`libproot.so` → `bash` + `node` | 相同 | |
+| 内存（ps RSS） | App 506 MB、node 282 MB（DSH 运行约 9 min） | App 349 MB、node 385 MB（DSH 运行约 1 min） | 采样时刻不同，不可直接比；DSHBox App PSS 161.7 MB（Java 堆 30.7 MB） |
+
+结论：DSHBox 源码在本机可复现构建并在该设备上跑通同一运行层与 DSH 版本，作为 DSH Mobile 的对照基线成立。待补：两者在同一时间点、同一空闲时长下的 PSS 对比；DSHBox 导入/启动的精确计时（需 debug 构建或界面计时）。

@@ -53,6 +53,8 @@ dotnet build src/DshMobile.Android -c Debug
   pwsh native/build-native.ps1 "-Dhttp.nonProxyHosts=*" "-Dhttps.nonProxyHosts=*"
   ```
 - **`Failed to install ... build-tools;36.0.0`**：本仓库固定 build-tools `37.0.0`；如本机只有其它版本，用 `-Pdshmobile.buildToolsVersion=<版本>` 覆盖。
+- **构建 DSHBox 基线（TASK-001）缺 SDK 组件**：在管理员 PowerShell 运行 `pwsh -File tooling/install-android-sdk-components.ps1`（安装 `platforms;android-37.2`、`build-tools;36.0.0`）。
+- **`NDK path cannot contain spaces`**（DSHBox `terminal-emulator` 的 ndk-build）：在 DSHBox clone 的 `local.properties` 里把 `ndk.dir` 指向一个无空格的目录联接。
 - **`local.properties` 路径**：Windows 请用正斜杠，例如 `sdk.dir=C:/Program Files (x86)/Android/android-sdk`。
 
 ## 许可
