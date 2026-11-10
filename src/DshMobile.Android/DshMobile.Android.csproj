@@ -33,6 +33,14 @@
 
   <ItemGroup>
     <ProjectReference Include="..\DshMobile.Core\DshMobile.Core.csproj" />
+    <!-- C#-first layers (ADR-0007). -->
+    <ProjectReference Include="..\DshMobile.Application\DshMobile.Application.csproj" />
+    <!-- Legacy DSHBox bridge (ADR-0002, superseded): removed in PR-10. -->
     <ProjectReference Include="..\DshMobile.NativeBinding\DshMobile.NativeBinding.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Concrete container for the composition root (the abstractions are in-box). Trim/AOT safe for ctor/factory registrations. -->
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.14" />
   </ItemGroup>
 </Project>

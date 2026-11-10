@@ -1,7 +1,12 @@
 using System.Diagnostics;
 using System.Text.Json;
+using DshMobile.Application;
+using DshMobile.Application.Runtime;
 using DshMobile.Core.Bridge;
+using DshMobile.Native;
 using DshMobile.NativeBridge;
+using DshMobile.Runtime;
+using Microsoft.Extensions.DependencyInjection;
 using Log = Android.Util.Log;
 
 namespace DshMobile.App.Bridge;
@@ -9,8 +14,10 @@ namespace DshMobile.App.Bridge;
 /// <summary>
 /// Application-scoped owner of the native facade and the C# client. Survives Activity
 /// recreation (rotation, background/foreground) so in-flight work is not lost.
+/// Runtime start/stop/import go through the C# <see cref="RuntimeCoordinator"/> (ADR-0007); the implementation
+/// underneath is still the legacy DSHBox bridge until the C# runtime slice passes real-device acceptance.
 /// </summary>
-public sealed class BridgeHost : IDisposable
+public sealed class BridgeHost : IDisposable, IDiagnosticsLog
 {
     public const string LogTag = "DshMobile";
     private const int MaxLogLines = 400;
@@ -33,9 +40,25 @@ public sealed class BridgeHost : IDisposable
         Client.EventReceived += OnBridgeEvent;
         _facade.Initialize(context);
         Append($"facade initialized, bridge {DshNativeFacade.BridgeVersion}");
+
+        Layout = new RuntimeLayout(_context.FilesDir!.AbsolutePath, _context.CacheDir?.AbsolutePath, _context.ApplicationInfo!.NativeLibraryDir!);
+        _services = new ServiceCollection()
+            .AddSingleton<IForegroundServiceController>(new AndroidForegroundService(_context))
+            .AddSingleton<IDiagnosticsLog>(this)
+            .AddDshMobileApplication(Layout, Client)
+            .BuildServiceProvider();
+        Runtime = _services.GetRequiredService<RuntimeCoordinator>();
+        var s = Runtime.State.Current;
+        Append($"runtime coordinator: impl={Runtime.Implementation} journal={s.State}/{s.Harness} gen={s.Generation}{(s.ErrorCode is null ? "" : " last error " + s.ErrorCode)}");
     }
 
+    private readonly ServiceProvider _services;
+
     public BridgeClient Client { get; }
+
+    public RuntimeLayout Layout { get; }
+
+    public RuntimeCoordinator Runtime { get; }
 
     public bool IsBusy => Volatile.Read(ref _busy) != 0;
 
@@ -77,6 +100,9 @@ public sealed class BridgeHost : IDisposable
         Append($"bridge {info.BridgeVersion} protocol={info.Protocol} kotlin={info.KotlinVersion}");
         Append($"upstream dshbox={info.Upstream.GetValueOrDefault("dshbox", "?")}");
         Append($"device sdk={info.SdkInt} abis=[{string.Join(",", info.Abis)}] model={info.DeviceModel}");
+        // C#-first layer status (ADR-0007): native library is not shipped before its own PR, so this must say so.
+        var native = DshNativeLibrary.Probe();
+        Append($"csharp runtime impl={Runtime.Implementation} native={(native.Ok ? "abi " + native.Value : native.Code)} journal={Layout.JournalFile}");
     });
 
     public Task RunKotlinCompareAsync() => RunExclusive("dshbox.versions.compare", async () =>
@@ -128,11 +154,8 @@ public sealed class BridgeHost : IDisposable
 
     // ------------------------------------------------------------------ TASK-004 runtime
 
+    // Import / sandbox / DSH deadlines now live in LegacyBridgeRuntimeManager (DshMobile.Runtime.Legacy).
     private static readonly TimeSpan PrepareDeadline = TimeSpan.FromMinutes(10);
-    private static readonly TimeSpan ImportDeadline = TimeSpan.FromMinutes(20);
-    private static readonly TimeSpan SandboxDeadline = TimeSpan.FromMinutes(2);
-    // DSHBox waits up to 120 s for DSH readiness; leave headroom for sandbox warm-up.
-    private static readonly TimeSpan DshStartDeadline = TimeSpan.FromMinutes(4);
     private static readonly TimeSpan DiagnosticsDeadline = TimeSpan.FromMinutes(3);
 
     /// <summary>Installs APK-bundled layers (android-side) and, when base/node exist, the bundled DSH layer.</summary>
@@ -158,12 +181,13 @@ public sealed class BridgeHost : IDisposable
         }
         Append($"import: {Path.GetFileName(zip)} ({new FileInfo(zip).Length / 1024 / 1024} MiB) ...");
         var sw = Stopwatch.StartNew();
-        var payload = BridgeCodec.ToPayload(new ImportBundleRequest(zip), BridgeJsonContext.Default.ImportBundleRequest);
         try
         {
-            var resp = await Client.ExecuteAsync(BridgeMethods.RuntimeImportBundle, payload, ImportDeadline).ConfigureAwait(false);
+            // Legacy installer decides; the C# inspector shadow-checks the same zip (PR-02, see shadow-reports.jsonl).
+            var r = await Runtime.InstallAsync(new RuntimePackage(zip), null, CancellationToken.None).ConfigureAwait(false);
             Append($"import: took {sw.Elapsed.TotalSeconds:F1} s");
-            LogStatus("import", resp);
+            Append(r.Ok ? "import: ok" : $"import FAILED {r.Code}{(r.UpstreamCode is null ? "" : "/" + r.UpstreamCode)}: {r.Message}");
+            LogStatus("status", await Client.ExecuteAsync(BridgeMethods.RuntimeStatus).ConfigureAwait(false));
         }
         finally
         {
@@ -177,31 +201,23 @@ public sealed class BridgeHost : IDisposable
     /// <summary>Logs a host-side step that is not a bridge call (e.g. copying a picked file).</summary>
     public void Note(string line) => Append(line);
 
-    /// <summary>Foreground service first (keeps PRoot children alive), then sandbox, then DSH.</summary>
+    /// <summary>
+    /// Foreground service, sandbox, then DSH, supervised by <see cref="RuntimeCoordinator"/>: a failed sandbox start
+    /// is cleaned up and releases the service; a failed stop keeps it (PR-00 defect 3).
+    /// </summary>
     public Task RunStartAsync() => RunExclusive("start", async () =>
     {
-        HarnessForegroundService.Start(_context);
-        var sw = Stopwatch.StartNew();
-        var sandbox = await Client.ExecuteAsync(BridgeMethods.SandboxStart, deadline: SandboxDeadline).ConfigureAwait(false);
-        LogStatus($"sandbox.start ({sw.ElapsedMilliseconds} ms)", sandbox);
-        if (!sandbox.Ok)
-        {
-            return;
-        }
-        sw.Restart();
-        var dsh = await Client.ExecuteAsync(BridgeMethods.DshStart, deadline: DshStartDeadline).ConfigureAwait(false);
-        LogStatus($"dsh.start ({sw.Elapsed.TotalSeconds:F1} s)", dsh);
-        if (dsh.Ok && dsh.Payload is { } p && p.TryGetProperty("dsh", out var d))
-        {
-            Append($"dsh: version={d.GetProperty("version")} ready={d.GetProperty("ready")} baseUrl={d.GetProperty("baseUrl")}");
-        }
+        var r = await Runtime.StartAsync(DshProfile.Web, CancellationToken.None).ConfigureAwait(false);
+        var s = r.Snapshot;
+        Append(r.Ok
+            ? $"start: ok sandbox={s.State} dsh={s.Harness} version={s.DshVersion ?? "-"} gen={s.Generation}"
+            : $"start FAILED {r.Code}{(r.UpstreamCode is null ? "" : "/" + r.UpstreamCode)}: {r.Message} (state={s.State} dsh={s.Harness})");
     });
 
     public Task RunStopAsync() => RunExclusive("stop", async () =>
     {
-        LogStatus("dsh.stop", await Client.ExecuteAsync(BridgeMethods.DshStop, deadline: SandboxDeadline).ConfigureAwait(false));
-        LogStatus("sandbox.stop", await Client.ExecuteAsync(BridgeMethods.SandboxStop, deadline: SandboxDeadline).ConfigureAwait(false));
-        HarnessForegroundService.Stop(_context);
+        var r = await Runtime.StopAsync(CancellationToken.None).ConfigureAwait(false);
+        Append(r.Ok ? $"stop: ok ({r.Snapshot.State})" : $"stop FAILED {r.Code}: {r.Message} (state={r.Snapshot.State})");
     });
 
     /// <summary>Fixed guest diagnostics (uname/debian/node/dsh --version) plus health.</summary>
@@ -382,6 +398,7 @@ public sealed class BridgeHost : IDisposable
 
     public void Dispose()
     {
+        _services.Dispose();
         Client.Dispose();
         _facade.Unsubscribe(_transport);
         _facade.Close();

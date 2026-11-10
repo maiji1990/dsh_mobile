@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    Minimal native boundary (ADR-0007): P/Invoke declarations for the future in-repo libdshmobile_native.so
+    (process groups / PTY / PRoot exec) plus the pure-managed policies that guard it (W^X executable rule).
+    net11.0 on purpose: the policies are unit-tested on the desktop; nothing here loads the .so until called.
+  -->
+  <PropertyGroup>
+    <TargetFramework>net11.0</TargetFramework>
+    <IsTrimmable>true</IsTrimmable>
+    <IsAotCompatible>true</IsAotCompatible>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <RootNamespace>DshMobile.Native</RootNamespace>
+  </PropertyGroup>
+</Project>

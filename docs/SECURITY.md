@@ -59,6 +59,11 @@
 | 远程主机：主机名 / 用户名白名单校验（拒绝选项与 shell 语法），远端只执行固定命令 | `RemoteHostProfile.fromRequest` |
 | 运行层下载按固定 SHA-256 校验；android-side 再与随包 sidecar 交叉校验 | `runtime-bundle/fetch-runtime.ps1` |
 | Maven 运行时依赖白名单，出现未分类依赖即构建失败（强制许可审计） | `native/native-bridge/build.gradle.kts` `exportRuntimeJars` |
+| guest 命令由 argv 构建、逐 token POSIX 单引号；插件 spec 中合法的 `>=` / `<` / `*` 不再被 shell 解释（PR-00，修复 `pkg@>=1.0.0` 重定向）；新旧实现共享向量，源码扫描禁止回退到字符串拼接 | `RuntimeController.pluginCommand/shellJoin`、`DshMobile.Runtime.Guest.{PluginCommand, GuestCommandLine}`、`tests/TestVectors/plugin-commands.json` |
+| 可执行文件只允许 `nativeLibraryDir` 内的裸 `lib*.so` 名（Android 10+ W^X）；写在 `filesDir` 的 ELF 永不直接 exec | `DshMobile.Native.NativeExecutablePolicy` |
+| 运行时状态变化先写 durable journal 再生效；进程中断后不冒充“仍在运行”，恢复为 `Failed(RUNTIME_INTERRUPTED)` | `DshMobile.Runtime.RuntimeStateMachine`、`FileRuntimeJournal` |
+| 启动失败统一清理、停止失败不释放前台服务（避免无监督的 PRoot 孤儿） | `DshMobile.Application.Runtime.RuntimeCoordinator` |
+| C# 运行时私有状态（journal、影子报告）放 `files/dshmobile-runtime/`，不绑定进 guest、不在用户工作区 | `RuntimeLayout.HostStateDir` |
 
 ## 待实现（按里程碑）
 

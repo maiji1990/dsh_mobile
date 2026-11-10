@@ -1,11 +1,17 @@
 <Solution>
   <Folder Name="/src/">
     <Project Path="src/DshMobile.Core/DshMobile.Core.csproj" />
+    <Project Path="src/DshMobile.Native/DshMobile.Native.csproj" />
+    <Project Path="src/DshMobile.Runtime/DshMobile.Runtime.csproj" />
+    <Project Path="src/DshMobile.Application/DshMobile.Application.csproj" />
+    <!-- Legacy DSHBox bridge binding: removed in PR-10 once every slice is C# (ADR-0007). -->
     <Project Path="src/DshMobile.NativeBinding/DshMobile.NativeBinding.csproj" />
     <Project Path="src/DshMobile.Android/DshMobile.Android.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/DshMobile.Core.Tests/DshMobile.Core.Tests.csproj" />
+    <Project Path="tests/DshMobile.Runtime.Tests/DshMobile.Runtime.Tests.csproj" />
+    <Project Path="tests/DshMobile.Application.Tests/DshMobile.Application.Tests.csproj" />
   </Folder>
   <Folder Name="/docs/">
     <File Path="AGENTS.md" />

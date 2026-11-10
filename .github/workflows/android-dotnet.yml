@@ -1,6 +1,8 @@
 name: android-dotnet
 
 # Order (plan section 16): native-aar -> .NET binding -> app. Emulator / device matrix comes later.
+# During the C#-first migration (ADR-0007) BOTH implementations are tested: the legacy Kotlin/DSHBox unit tests
+# (inside build-native) and the C# layers run the same golden vectors in tests/TestVectors.
 on:
   push:
     branches: [main]
@@ -24,21 +26,33 @@ jobs:
         with:
           global-json-file: global.json
 
+      # Pinned major line (the runner's preinstalled Node changes under us). 22.x is the line on which
+      # `node --test <dir>` broke on Windows; the explicit-file runner below must keep working on it.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.x'
+
       - name: Install android workload (pinned by global.json workloadVersion)
         run: dotnet workload install android
 
-      - name: Native AARs + JVM unit tests
+      - name: Native AARs + legacy JVM unit tests (incl. shared-vector parity)
         shell: pwsh
         run: |
           "sdk.dir=$($env:ANDROID_HOME -replace '\\','/')" | Set-Content native/local.properties
           ./native/build-native.ps1
 
-      - name: Contract tests
+      - name: Contract tests (Core)
         run: dotnet test tests/DshMobile.Core.Tests -c Release
 
-      # Guest ui_* MCP facade (TASK-010): dependency-free, runs on the runner's preinstalled Node.
+      - name: Runtime tests (C# port vs. shared vectors and legacy sources)
+        run: dotnet test tests/DshMobile.Runtime.Tests -c Release
+
+      - name: Application tests (coordinator, shadow check)
+        run: dotnet test tests/DshMobile.Application.Tests -c Release
+
+      # Guest ui_* MCP facade (TASK-010): dependency-free. Explicit *.test.mjs list; fails on 0 files / 0 passing tests.
       - name: Guest facade tests
-        run: node --test native/native-bridge/src/test/guest/
+        run: node tooling/run-node-tests.mjs native/native-bridge/src/test/guest
 
       - name: Build app
         run: dotnet build src/DshMobile.Android -c Release

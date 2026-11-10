@@ -1,0 +1,99 @@
+{
+  "description": "Golden vectors for runtime-bundle ZIP layout analysis (DSHBox v1.5.1 com.dshbox.app.sandbox.RuntimeBundleLayout, GPL-3.0). Run by the legacy Kotlin implementation (native-bridge LegacyRuntimeParityTest) and the C# port (DshMobile.Runtime RuntimeBundleLayoutTests). For result=ok, every listed map must match exactly; `targets` lists only the entries a case wants to pin.",
+  "layerOfArchiveName": [
+    { "name": "base.tar", "layer": "base" },
+    { "name": "base.tar.zst", "layer": "base" },
+    { "name": "base.tar.bz2", "layer": "base" },
+    { "name": "base.tar.xz", "layer": "base" },
+    { "name": "nested/dir/node.tar.gz", "layer": "node" },
+    { "name": "nested\\dir\\android-side.tar.zst", "layer": "android-side" },
+    { "name": "base.tar.zst.sha256", "layer": null },
+    { "name": "base.tar.sha256", "layer": null },
+    { "name": "base.tarball", "layer": null },
+    { "name": "base.tar2", "layer": null },
+    { "name": "base.tar.z-st", "layer": null },
+    { "name": "runtime-profile.json", "layer": null },
+    { "name": "base.tar.v", "layer": "base" },
+    { "name": "dsh.tar.zst", "layer": null }
+  ],
+  "analyze": [
+    {
+      "name": "official flat zip matches archives, not sidecars",
+      "entries": ["base.tar.zst", "base.tar.zst.sha256", "node.tar.zst", "node.tar.zst.sha256", "android-side.tar.zst", "android-side.tar.zst.sha256", "runtime-profile.json"],
+      "result": "ok",
+      "archives": { "base": "base.tar.zst", "node": "node.tar.zst", "android-side": "android-side.tar.zst" },
+      "sidecars": { "base": "base.tar.zst.sha256", "node": "node.tar.zst.sha256", "android-side": "android-side.tar.zst.sha256" },
+      "profilePath": "runtime-profile.json"
+    },
+    {
+      "name": "common top-level folder is stripped",
+      "entries": ["runtime/base.tar.zst", "runtime/base.tar.zst.sha256", "runtime/node.tar.zst", "runtime/android-side.tar.zst", "runtime/runtime-profile.json"],
+      "result": "ok",
+      "archives": { "base": "base.tar.zst", "node": "node.tar.zst", "android-side": "android-side.tar.zst" },
+      "sidecars": { "base": "base.tar.zst.sha256" },
+      "profilePath": "runtime-profile.json",
+      "targets": { "runtime/base.tar.zst": "base.tar.zst" }
+    },
+    {
+      "name": "mixed root and folder entries do not strip",
+      "entries": ["README.txt", "runtime/base.tar.zst", "runtime/node.tar.zst"],
+      "result": "ok",
+      "archives": { "base": "runtime/base.tar.zst", "node": "runtime/node.tar.zst" },
+      "sidecars": {},
+      "profilePath": null,
+      "targets": { "runtime/base.tar.zst": "runtime/base.tar.zst", "README.txt": "README.txt" }
+    },
+    {
+      "name": "traversal entry is rejected",
+      "entries": ["base.tar.zst", "../../evil.txt"],
+      "result": "unsafe",
+      "unsafeEntry": "../../evil.txt"
+    },
+    {
+      "name": "traversal hidden in a stripped folder is rejected",
+      "entries": ["runtime/base.tar.zst", "runtime/../../evil"],
+      "result": "unsafe",
+      "unsafeEntry": "runtime/../../evil"
+    },
+    {
+      "name": "sidecar-only archive produces no phantom layers",
+      "entries": ["base.tar.zst.sha256", "runtime-profile.json"],
+      "result": "ok",
+      "archives": {},
+      "sidecars": {},
+      "profilePath": "runtime-profile.json"
+    },
+    {
+      "name": "bare tar without extension is a valid layer archive",
+      "entries": ["base.tar", "base.tar.sha256", "node.tar", "android-side.tar", "runtime-profile.json"],
+      "result": "ok",
+      "archives": { "base": "base.tar", "node": "node.tar", "android-side": "android-side.tar" },
+      "sidecars": { "base": "base.tar.sha256" },
+      "profilePath": "runtime-profile.json"
+    },
+    {
+      "name": "windows separators and dot-slash normalize",
+      "entries": [".\\base.tar.zst", "base.tar.zst.sha256"],
+      "result": "ok",
+      "archives": { "base": "base.tar.zst" },
+      "sidecars": { "base": "base.tar.zst.sha256" },
+      "profilePath": null
+    },
+    {
+      "name": "empty zip is ok and empty",
+      "entries": [],
+      "result": "ok",
+      "archives": {},
+      "sidecars": {},
+      "profilePath": null
+    },
+    {
+      "name": "directory entries are kept as targets",
+      "entries": ["pkg/", "pkg/base.tar.zst", "pkg/node.tar.zst"],
+      "result": "ok",
+      "archives": { "base": "base.tar.zst", "node": "node.tar.zst" },
+      "sidecars": {},
+      "profilePath": null
+    }
+  ]
+}

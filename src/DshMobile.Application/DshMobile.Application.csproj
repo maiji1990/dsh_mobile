@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    Orchestration and policy (ADR-0007): decides which implementation of each migrated slice runs (legacy bridge,
+    legacy + C# shadow check, later C#), owns the runtime state machine, and keeps platform specifics behind small
+    interfaces implemented by DshMobile.Android. No Android dependency: unit-tested on the desktop.
+  -->
+  <PropertyGroup>
+    <TargetFramework>net11.0</TargetFramework>
+    <IsTrimmable>true</IsTrimmable>
+    <IsAotCompatible>true</IsAotCompatible>
+    <RootNamespace>DshMobile.Application</RootNamespace>
+  </PropertyGroup>
+
+  <!-- Microsoft.Extensions.DependencyInjection(.Abstractions) ships in-box with net11.0 (NU1510): no PackageReference. -->
+
+  <ItemGroup>
+    <ProjectReference Include="..\DshMobile.Core\DshMobile.Core.csproj" />
+    <ProjectReference Include="..\DshMobile.Runtime\DshMobile.Runtime.csproj" />
+  </ItemGroup>
+</Project>

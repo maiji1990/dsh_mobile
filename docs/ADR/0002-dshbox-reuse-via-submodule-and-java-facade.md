@@ -1,6 +1,7 @@
 # ADR-0002：以固定 SHA 子模块 + Java Facade AAR 复用 DSHBox
 
-- 状态：已接受（2026-11-09）
+- 状态：**已被 [ADR-0007](0007-source-ownership-csharp-first.md) 取代**（2026-11-10）。原状态：已接受（2026-11-09）。
+- 说明：本 ADR 描述的子模块 + Facade 结构在迁移期间继续作为**过渡实现与比对基线**存在，直到各切片按 ADR-0007 通过真机验收后逐一删除；不得再据此新增对 DSHBox AAR / Java Facade / Kotlin 业务层的长期依赖。
 - 来源：方案 2、2.1、6.1 节
 
 ## 决策

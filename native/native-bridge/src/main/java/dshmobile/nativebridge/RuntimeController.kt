@@ -94,10 +94,40 @@ internal class RuntimeController(
 
         /**
          * npm registry spec only: optional @scope, name, optional version/range/tag. No paths, URLs, git or
-         * file: specs, and no shell metacharacters — the spec is interpolated into a fixed guest command.
+         * file: specs, no whitespace. The range part legitimately contains `>`, `<` and `*`, which are shell
+         * metacharacters: the spec is therefore never interpolated raw, but passed as one quoted argv token
+         * ([pluginCommand] / [shellQuote], PR-00). Shared vectors: tests/TestVectors/plugin-commands.json.
          */
         val PACKAGE_SPEC = Regex("^(@[a-z0-9][a-z0-9._-]{0,213}/)?[a-z0-9][a-z0-9._-]{0,213}(@[A-Za-z0-9._^~<>=*-]{1,64})?$")
         val PACKAGE_NAME = Regex("^(@[a-z0-9][a-z0-9._-]{0,213}/)?[a-z0-9][a-z0-9._-]{0,213}$")
+
+        /** POSIX single-quoting of one argv token for the guest `sh -c` line; identical rule in C# `GuestCommandLine`. */
+        fun shellQuote(arg: String): String = "'" + arg.replace("'", "'\\''") + "'"
+
+        /** Joins argv into one shell line with every token quoted. */
+        fun shellJoin(argv: List<String>): String = argv.joinToString(" ") { shellQuote(it) }
+
+        /**
+         * Validated `dsh plugin` argv for [verb] (`list` / `add` / `remove`). Throws BAD_REQUEST for an unknown
+         * verb, profile or operand. The result is still argv: callers join it with [shellJoin], never raw.
+         */
+        fun pluginCommand(verb: String, profile: String, operand: String?): List<String> {
+            if (profile !in PLUGIN_PROFILES) throw BridgeException(BAD_REQUEST, "profile must be one of $PLUGIN_PROFILES")
+            return when (verb) {
+                "list" -> listOf("plugin", "--profile", profile, "list", "--json", "--depth", "0")
+                "add" -> {
+                    val spec = operand.orEmpty()
+                    if (!PACKAGE_SPEC.matches(spec)) throw BridgeException(BAD_REQUEST, "spec must be an npm registry package spec")
+                    listOf("plugin", "--profile", profile, "add", spec)
+                }
+                "remove" -> {
+                    val name = operand.orEmpty()
+                    if (!PACKAGE_NAME.matches(name)) throw BridgeException(BAD_REQUEST, "name must be an npm package name")
+                    listOf("plugin", "--profile", profile, "remove", name)
+                }
+                else -> throw BridgeException(BAD_REQUEST, "unknown plugin verb: $verb")
+            }
+        }
 
         /** The wrapper written by [GuestToolchain]; on PATH too, but called explicitly. */
         private const val GUEST_DSH = "/root/projects/.dsh/dshbox/bin/dsh"
@@ -438,22 +468,9 @@ internal class RuntimeController(
                     .put("output", all.filterNot { it.startsWith(marker) }.joinToString(NL))
                     .put("error", JSONObject.NULL))
             }
-            "plugin.list" -> {
-                val profile = requireProfile(payload)
-                done.ok(runPluginCommand("plugin --profile $profile list --json --depth 0"))
-            }
-            "plugin.add" -> {
-                val profile = requireProfile(payload)
-                val spec = payload.optString("spec", "")
-                if (!PACKAGE_SPEC.matches(spec)) throw BridgeException(BAD_REQUEST, "spec must be an npm registry package spec")
-                done.ok(runPluginCommand("plugin --profile $profile add $spec"))
-            }
-            "plugin.remove" -> {
-                val profile = requireProfile(payload)
-                val name = payload.optString("name", "")
-                if (!PACKAGE_NAME.matches(name)) throw BridgeException(BAD_REQUEST, "name must be an npm package name")
-                done.ok(runPluginCommand("plugin --profile $profile remove $name"))
-            }
+            "plugin.list" -> done.ok(runPluginCommand(pluginCommand("list", payload.optString("profile", "web"), null)))
+            "plugin.add" -> done.ok(runPluginCommand(pluginCommand("add", payload.optString("profile", "web"), payload.optString("spec", ""))))
+            "plugin.remove" -> done.ok(runPluginCommand(pluginCommand("remove", payload.optString("profile", "web"), payload.optString("name", ""))))
             else -> throw BridgeException("METHOD_NOT_FOUND", "unknown method: $method")
         }
     }
@@ -461,17 +478,12 @@ internal class RuntimeController(
     private fun requireHostId(payload: JSONObject): String =
         payload.optString("hostId").takeIf { it.isNotEmpty() } ?: throw BridgeException(BAD_REQUEST, "hostId is required")
 
-    private fun requireProfile(payload: JSONObject): String {
-        val profile = payload.optString("profile", "web")
-        if (profile !in PLUGIN_PROFILES) throw BridgeException(BAD_REQUEST, "profile must be one of $PLUGIN_PROFILES")
-        return profile
-    }
-
     /**
-     * Runs `dsh <args>` in the guest (args are built only from validated tokens). Reports the real exit status
+     * Runs `dsh <argv>` in the guest (argv from [pluginCommand], every token quoted). Reports the real exit status
      * and output; a non-zero exit is returned as `ok=false` in the payload, never turned into success.
      */
-    private suspend fun runPluginCommand(args: String): JSONObject = runGuestScript("cd /root/projects && $GUEST_DSH $args")
+    private suspend fun runPluginCommand(argv: List<String>): JSONObject =
+        runGuestScript("cd /root/projects && ${shellQuote(GUEST_DSH)} ${shellJoin(argv)}")
 
     /**
      * Runs a fixed guest command (never caller input) and returns `{ok, exitCode, output, error}` with the real exit
