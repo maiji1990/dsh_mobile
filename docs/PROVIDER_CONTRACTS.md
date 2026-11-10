@@ -23,12 +23,23 @@ public final class DshNativeFacade {
     public void reloadWebUi();
     // TASK-007（主线程）：回答 WebUiListener.onFileChooserRequested；null/空 = 取消，多余或迟到的回答被忽略
     public void completeWebFileChooser(android.net.Uri[] uris);
+    // TASK-008（主线程）：终端。PTY 数据不经 execute()；会话在进程级存活，页面只挂/卸 View
+    public android.view.View createTerminalView(android.content.Context activity, TerminalListener listener); // 无运行环境返回 null
+    public void releaseTerminalView();
+    public String newTerminalSession();                 // 返回会话 id；无运行环境返回 null
+    public void activateTerminalSession(String id);
+    public void closeTerminalSession(String id);
+    public String terminalSessionsJson();               // [{id,title,running,exited,exitCode,active}]
+    public boolean terminalSendKey(String name);        // ESC TAB UP DOWN LEFT RIGHT HOME END PGUP PGDN CTRL_C
+    public void setTerminalCtrl(boolean on);            // 一次性 Ctrl 锁存
+    public void terminalPaste();
 }
 public interface NativeCallback { void onEvent(String json); }
 public interface WebUiListener {
     void onWebUiState(String state, String detail);                       // detail 不含 token / query
     void onFileChooserRequested(String[] acceptTypes, boolean allowMultiple); // 宿主弹系统选择器并必须回答一次
 }
+public interface TerminalListener { void onTerminalSessionsChanged(String json); } // 不含终端内容
 ```
 
 ### 1.2 请求

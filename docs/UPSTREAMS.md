@@ -20,7 +20,7 @@
 | `plugin-manager/dshbox-plugins/assets/dshbox/{link-shim.mjs, libdshbox-link.so}` | **已引入**（TASK-005） | 构建时原样复制进 Bridge AAR 资产（仅这两个文件，**不含** DSHBox `assets/plugins/*`：mobile-pilot 等与 `ui_*` 单一契约冲突） | — |
 | `dsh-renderer/api` | **已引入**（TASK-006） | `native/settings.gradle.kts` 以 `:dsh-renderer:api` 引用；使用 `DshOriginPolicy`、`DshTokenRevisionTracker` | 否（`Bind="false"`） |
 | `sandbox-manager` | **已引入**（TASK-004） | `native/settings.gradle.kts` 以 `:sandbox-manager` 引用源码目录 | 否（`Bind="false"`） |
-| `terminal-*` | 计划 TASK-008 | — | 否（仅 View 适配） |
+| `terminal-emulator` / `terminal-view` / `terminal-session` | **已引入**（TASK-008） | `native/settings.gradle.kts` 同名项目；`terminal-emulator` 的 `termux.c` 由 ndk-build 从源码构建（NDK 27.0.12077973，与 DSHBox 根构建同一锁定） | 否（`Bind="false"`；C# 只拿到 `android.view.View`） |
 | `pilot/interlock-relay-core` | 计划 TASK-010（优先使用 Apache-2.0 独立仓库） | — | 否 |
 | `browser/*` | 计划 TASK-011 | — | 否 |
 | `app`、`pilot/dshbox-adapter`、`plugin-manager` UI | **不引入**（重建为 C#） | — | — |
@@ -37,6 +37,8 @@
 | 2026-11-09 | DSHBox | （未修改子模块）`SandboxService.provisionBundledDsh` 逻辑移植进 `RuntimeController.kt` | 该函数位于 DSHBox `app` 模块（我们不引入 app）；同语义、去 UI 副作用，GPL-3.0 注明来源 |
 | 2026-11-09 | DSHBox | （未修改子模块）`SandboxService.provisionDshLinkShim` 语义移植进 `RuntimeController.provisionGuestAssets` | 每次进程启动覆写垫片到 `files/dshbox`，与 DSHBox 一致 |
 | 2026-11-09 | DSHBox | （未修改子模块）`app/.../webview/DshUrl.kt` 的 `dshUrlWithToken` 移植进 `WebUiController.urlWithToken` | 位于 DSHBox app 模块；同编码规则，加单测 |
+| 2026-11-10 | DSHBox | （未修改子模块）`app/.../runtime/GuestUserProvisioner.kt` 移植为 `GuestUser.kt` | 用户名由 DSHBox 品牌名改为 `dshmobile`（AGENTS.md 规则 4）；其余逻辑一致，加单测 |
+| 2026-11-10 | DSHBox | （未修改子模块）`DshTerminalViewClient` / `DshTerminalSessionClient` 语义并入 `TerminalController.kt` | 位于 DSHBox app 模块（Compose 屏幕的回调），不引入 app |
 | 2026-11-09 | DSHBox | （未修改子模块）导入前创建 `runtime/runtime-current/` | 规避上游全新安装离线导入的 rename 失败 → `copyRecursively` 卡在悬空 `/var/run` 符号链接的问题；建议向上游报告 |
 
 ## 同步记录

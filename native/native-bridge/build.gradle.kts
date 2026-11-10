@@ -73,6 +73,8 @@ dependencies {
     implementation(project(":common"))
     implementation(project(":sandbox-manager"))
     implementation(project(":dsh-renderer:api"))
+    implementation(project(":terminal-view"))
+    implementation(project(":terminal-session"))
     implementation(libs.kotlinx.coroutines.android)
     testImplementation(libs.junit)
     // android.jar's org.json is a stub in JVM unit tests; use the real implementation.

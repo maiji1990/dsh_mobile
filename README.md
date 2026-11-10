@@ -55,6 +55,8 @@ dotnet build src/DshMobile.Android -c Debug
 - **`Failed to install ... build-tools;36.0.0`**：本仓库固定 build-tools `37.0.0`；如本机只有其它版本，用 `-Pdshmobile.buildToolsVersion=<版本>` 覆盖。
 - **构建 DSHBox 基线（TASK-001）缺 SDK 组件**：在管理员 PowerShell 运行 `pwsh -File tooling/install-android-sdk-components.ps1`（安装 `platforms;android-37.2`、`build-tools;36.0.0`）。
 - **`NDK path cannot contain spaces`**（DSHBox `terminal-emulator` 的 ndk-build）：在 DSHBox clone 的 `local.properties` 里把 `ndk.dir` 指向一个无空格的目录联接。
+- **`NDK path cannot contain spaces`（本仓库 terminal-emulator）**：`pwsh native/build-native.ps1` 会自动在 `native/.generated/` 建目录联接并写入 `ndk.dir`。
+- **`JAVA_HOME is set to an invalid directory`**：JDK 自动升级后用户级 `JAVA_HOME` 可能仍指向旧目录；把它改到当前 JDK（或仅在当前终端 `$env:JAVA_HOME=…`）。
 - **`local.properties` 路径**：Windows 请用正斜杠，例如 `sdk.dir=C:/Program Files (x86)/Android/android-sdk`。
 
 ## 许可

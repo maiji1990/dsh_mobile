@@ -179,6 +179,65 @@ public final class DshNativeFacade {
         }
     }
 
+    // ------------------------------------------------------------------ TASK-008 terminal (main thread)
+
+    /**
+     * Returns a terminal View bound to the active PRoot shell session (creating the first one), or null when
+     * no runtime is installed. PTY data flows natively between emulator and View, never through execute().
+     */
+    public android.view.View createTerminalView(android.content.Context activityContext, TerminalListener listener) {
+        requireMainThread();
+        return requireRuntime().terminal().createView(activityContext, listener);
+    }
+
+    /** Detaches the current View; sessions keep running. */
+    public void releaseTerminalView() {
+        requireMainThread();
+        RuntimeController rc = runtime;
+        if (rc != null) {
+            rc.terminal().releaseView();
+        }
+    }
+
+    /** New shell session (activated); returns its id, or null when the runtime is missing. */
+    public String newTerminalSession() {
+        requireMainThread();
+        return requireRuntime().terminal().newSession();
+    }
+
+    public void activateTerminalSession(String id) {
+        requireMainThread();
+        requireRuntime().terminal().activate(id);
+    }
+
+    public void closeTerminalSession(String id) {
+        requireMainThread();
+        requireRuntime().terminal().close(id);
+    }
+
+    /** JSON array of sessions (id, title, running, exited, exitCode, active); no terminal content. */
+    public String terminalSessionsJson() {
+        requireMainThread();
+        return requireRuntime().terminal().sessionsJson();
+    }
+
+    /** ESC, TAB, UP, DOWN, LEFT, RIGHT, HOME, END, PGUP, PGDN or CTRL_C; returns false for unknown names. */
+    public boolean terminalSendKey(String name) {
+        requireMainThread();
+        return requireRuntime().terminal().sendKey(name);
+    }
+
+    /** Latches Ctrl for the next typed letter. */
+    public void setTerminalCtrl(boolean on) {
+        requireMainThread();
+        requireRuntime().terminal().setCtrl(on);
+    }
+
+    public void terminalPaste() {
+        requireMainThread();
+        requireRuntime().terminal().paste();
+    }
+
     private RuntimeController requireRuntime() {
         RuntimeController rc = runtime;
         if (rc == null) {

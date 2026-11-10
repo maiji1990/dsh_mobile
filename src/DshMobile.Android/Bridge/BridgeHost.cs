@@ -104,6 +104,28 @@ public sealed class BridgeHost : IDisposable
     /// <summary>Answers a pending WebUI file chooser (null/empty = cancelled). Main thread only.</summary>
     public void CompleteWebFileChooser(Android.Net.Uri[]? uris) => _facade.CompleteWebFileChooser(uris);
 
+    // ------------------------------------------------------------------ TASK-008 terminal (main thread)
+
+    /// <summary>Native TerminalView bound to the active shell session, or null when no runtime is installed.</summary>
+    public Android.Views.View? CreateTerminalView(Android.Content.Context activity, ITerminalListener listener) =>
+        _facade.CreateTerminalView(activity, listener);
+
+    public void ReleaseTerminalView() => _facade.ReleaseTerminalView();
+
+    public string? NewTerminalSession() => _facade.NewTerminalSession();
+
+    public void ActivateTerminalSession(string id) => _facade.ActivateTerminalSession(id);
+
+    public void CloseTerminalSession(string id) => _facade.CloseTerminalSession(id);
+
+    public string? TerminalSessionsJson() => _facade.TerminalSessionsJson();
+
+    public bool TerminalSendKey(string key) => _facade.TerminalSendKey(key);
+
+    public void SetTerminalCtrl(bool on) => _facade.SetTerminalCtrl(on);
+
+    public void TerminalPaste() => _facade.TerminalPaste();
+
     // ------------------------------------------------------------------ TASK-004 runtime
 
     private static readonly TimeSpan PrepareDeadline = TimeSpan.FromMinutes(10);

@@ -31,6 +31,9 @@
 | 工作区文件：`.dsh/`（DSH_HOME，含 `.credentials.yaml`）只列出，不可预览 / 导出 / 写入（真机验证） | 同上 |
 | 工作区导入：不覆盖已有文件；先写临时文件再改名，失败不留半成品；文件名净化为单一路径分量 | 同上 |
 | 文件进出只经系统文件选择器（SAF）按次授权，无存储权限 | `src/DshMobile.Android/Files/` |
+| 终端：PTY 数据只在原生 emulator 与 View 之间流动，不进入 C# 与 JSON 控制面；会话列表回调只含 id/标题/状态 | `TerminalController.kt`、`TerminalListener` |
+| 终端：「停止」沙箱前先结束全部终端会话，避免 guest 进程脱离沙箱生命周期 | `RuntimeController`（`sandbox.stop`） |
+| 终端：Ctrl 键栏为一次性锁存，粘贴走 emulator.paste（遵守 bracketed paste、剥离控制字节） | `TerminalController.kt` |
 | 运行层下载按固定 SHA-256 校验；android-side 再与随包 sidecar 交叉校验 | `runtime-bundle/fetch-runtime.ps1` |
 | Maven 运行时依赖白名单，出现未分类依赖即构建失败（强制许可审计） | `native/native-bridge/build.gradle.kts` `exportRuntimeJars` |
 

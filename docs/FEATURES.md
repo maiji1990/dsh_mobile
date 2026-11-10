@@ -19,7 +19,7 @@
 | Session / Resume / Fork | 未开始 | 需模型凭据；WebUI 已可承载，待配置凭据后验证 |
 | 工具调用与审批 | 未开始 | |
 | Subagent / Agent Team | 未开始 | |
-| Bash / PTY / 子进程 | 未开始 | TASK-008 |
+| Bash / PTY / 子进程 | 通过（Android 17 真机） | 原生 TerminalView + PRoot bash：命令执行、^C、多会话新建/切换/关闭、关闭页面后会话保留、「停止」连带结束终端进程均已验证；中文/宽字符、大量输出、横屏未测 |
 | 文件、工作目录、附件 | 部分通过（Android 17 真机） | 文件页浏览 / 受保护 `.dsh` 拒绝 / SAF 导入 / SAF 导出已真机通过；WebUI 附件上传未验证（DSH 未发起文件选择，疑需先选工作区）；下载未做 |
 | MCP / Skills / 自定义工具 | 未开始 | TASK-010 |
 | 更新与诊断 | 部分 | 离线导入 + 固定诊断（arch/debian/node/dsh 版本）+ 健康探测；在线更新与回滚 UI 未做 |

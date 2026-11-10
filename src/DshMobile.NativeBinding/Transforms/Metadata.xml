@@ -6,11 +6,12 @@
     (BuildConfig, the Kotlin RuntimeController and its coroutine classes, internal callbacks) stays Java-only.
   -->
   <remove-node path="/api/package[@name='dshmobile.nativebridge']/class[not(@name='DshNativeFacade')]" />
-  <remove-node path="/api/package[@name='dshmobile.nativebridge']/interface[not(@name='NativeCallback' or @name='WebUiListener')]" />
+  <remove-node path="/api/package[@name='dshmobile.nativebridge']/interface[not(@name='NativeCallback' or @name='WebUiListener' or @name='TerminalListener')]" />
   <!-- No parameter names in the AAR's class files; name the interface parameter (concrete methods keep theirs). -->
   <attr path="/api/package[@name='dshmobile.nativebridge']/interface[@name='NativeCallback']/method[@name='onEvent']/parameter[@name='p0']" name="managedName">json</attr>
   <attr path="/api/package[@name='dshmobile.nativebridge']/interface[@name='WebUiListener']/method[@name='onWebUiState']/parameter[@name='p0']" name="managedName">state</attr>
   <attr path="/api/package[@name='dshmobile.nativebridge']/interface[@name='WebUiListener']/method[@name='onWebUiState']/parameter[@name='p1']" name="managedName">detail</attr>
   <attr path="/api/package[@name='dshmobile.nativebridge']/interface[@name='WebUiListener']/method[@name='onFileChooserRequested']/parameter[@name='p0']" name="managedName">acceptTypes</attr>
   <attr path="/api/package[@name='dshmobile.nativebridge']/interface[@name='WebUiListener']/method[@name='onFileChooserRequested']/parameter[@name='p1']" name="managedName">allowMultiple</attr>
+  <attr path="/api/package[@name='dshmobile.nativebridge']/interface[@name='TerminalListener']/method[@name='onTerminalSessionsChanged']/parameter[@name='p0']" name="managedName">json</attr>
 </metadata>

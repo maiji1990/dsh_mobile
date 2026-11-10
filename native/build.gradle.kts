@@ -6,6 +6,18 @@ plugins {
 
 val upstreamRoot: File = rootDir.resolve("../third_party").canonicalFile
 
+// Same NDK pin DSHBox's own root build applies to :terminal-emulator (ndk-build of termux.c).
+val pinnedNdkVersion = "27.0.12077973"
+subprojects {
+    plugins.withId("com.android.library") {
+        if (path == ":terminal-emulator") {
+            extensions.configure<com.android.build.api.dsl.LibraryExtension> {
+                ndkVersion = pinnedNdkVersion
+            }
+        }
+    }
+}
+
 subprojects {
     // Keep the pinned submodule working tree clean: build upstream modules into native/build/upstream/<name>.
     if (projectDir.canonicalFile.startsWith(upstreamRoot)) {
@@ -40,12 +52,15 @@ val exportDir = rootDir.resolve("../artifacts/native")
 val exportAars by tasks.registering {
     group = "dshmobile"
     description = "Build release AARs and export them to artifacts/native/."
-    dependsOn(":native-bridge:assembleRelease", ":common:assembleRelease", ":sandbox-manager:assembleRelease", ":dsh-renderer:api:assembleRelease", ":native-bridge:exportRuntimeJars")
+    dependsOn(":native-bridge:assembleRelease", ":common:assembleRelease", ":sandbox-manager:assembleRelease", ":dsh-renderer:api:assembleRelease", ":terminal-emulator:assembleRelease", ":terminal-view:assembleRelease", ":terminal-session:assembleRelease", ":native-bridge:exportRuntimeJars")
     val outputs = mapOf(
         "dsh-native-bridge-release.aar" to project(":native-bridge").layout.buildDirectory.file("outputs/aar/native-bridge-release.aar"),
         "dshbox-common-release.aar" to project(":common").layout.buildDirectory.file("outputs/aar/common-release.aar"),
         "dshbox-sandbox-manager-release.aar" to project(":sandbox-manager").layout.buildDirectory.file("outputs/aar/sandbox-manager-release.aar"),
         "dshbox-dsh-renderer-api-release.aar" to project(":dsh-renderer:api").layout.buildDirectory.file("outputs/aar/api-release.aar"),
+        "dshbox-terminal-emulator-release.aar" to project(":terminal-emulator").layout.buildDirectory.file("outputs/aar/terminal-emulator-release.aar"),
+        "dshbox-terminal-view-release.aar" to project(":terminal-view").layout.buildDirectory.file("outputs/aar/terminal-view-release.aar"),
+        "dshbox-terminal-session-release.aar" to project(":terminal-session").layout.buildDirectory.file("outputs/aar/terminal-session-release.aar"),
     )
     doLast {
         exportDir.mkdirs()

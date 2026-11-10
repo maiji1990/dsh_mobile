@@ -54,3 +54,16 @@
 4. WebUI 附件：先在 DSH 中选定工作区，再点输入框「+」→ 选择器选文件 → 附件出现在输入框（不发送）；日志 `webui file chooser: N file(s)`。
 5. 首页「导入运行环境包」→ 选择器选 zip → 日志 copy / import 耗时与 `runtime=True node=True`。
 6. 单元测试覆盖：路径规范化、符号链接（含悬空）拒绝、受保护目录、不覆盖、原子写入、文件名净化（`WorkspaceFileSystemTests`）。
+
+## TASK-008 终端（需真机）
+
+注意：若设备使用中文等组合式输入法，`adb shell input text/keyevent` 注入会被输入法拦截，命令需人工输入。
+
+1. 首页「终端」：出现会话标签「终端 1」与提示符。
+2. 输入 `whoami; id; uname -m; node --version`：分别为 root / uid=0 / aarch64 / 与 runtime-assets.lock 对应的 Node 版本。
+3. `sleep 30` 后点键栏 ^C：应立即返回提示符并回显 `^C`。
+4. 返回首页再进入终端：同一会话与输出仍在。
+5. 「+」两次 → 两个标签；点标签切换；「×」关闭活动会话；`adb shell ps -A` 中对应 `libproot.so/bash` 消失。
+6. 关闭最后一个会话：显示「没有打开的会话」提示；「+」后恢复终端。
+7. 首页「停止」：App 用户下沙箱进程为 0。
+8. 待补：中文/emoji/宽字符、大量输出滚动、横屏与分屏、软键盘遮挡、粘贴大段文本。

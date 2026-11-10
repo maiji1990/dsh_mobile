@@ -39,6 +39,7 @@ public class MainActivity : Activity
         var probe = FindViewById<Button>(Resource.Id.btn_probe)!;
         var openDsh = FindViewById<Button>(Resource.Id.btn_open_dsh)!;
         var files = FindViewById<Button>(Resource.Id.btn_files)!;
+        var terminal = FindViewById<Button>(Resource.Id.btn_terminal)!;
         _actions = [info, kotlin, stress, prepare, import, start, stop, diag, probe];
 
         // Fire-and-forget is intentional: BridgeHost owns the task and reports through its log,
@@ -56,6 +57,7 @@ public class MainActivity : Activity
         probe.Click += (_, _) => _ = _bridge.RunProbesAsync();
         openDsh.Click += (_, _) => StartActivity(new Android.Content.Intent(this, typeof(DshWebActivity)));
         files.Click += (_, _) => StartActivity(new Android.Content.Intent(this, typeof(FilesActivity)));
+        terminal.Click += (_, _) => StartActivity(new Android.Content.Intent(this, typeof(DshMobile.App.Terminal.TerminalActivity)));
 
         // The foreground-service notification is only visible with this permission (Android 13+).
         // The service itself runs either way, so a denial is not an error.

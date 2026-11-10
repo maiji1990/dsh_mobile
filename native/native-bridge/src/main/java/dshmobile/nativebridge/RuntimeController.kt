@@ -118,6 +118,12 @@ internal class RuntimeController(
 
     fun completeWebFileChooser(uris: Array<android.net.Uri>?) = webUi.completeFileChooser(uris)
 
+    /** Created on first use from the main thread (DshTerminalManager binds to the constructing Looper). */
+    @Volatile private var terminalOrNull: TerminalController? = null
+
+    fun terminal(): TerminalController =
+        terminalOrNull ?: TerminalController(appContext, config, scope).also { terminalOrNull = it }
+
     fun handles(method: String): Boolean = method in METHODS
 
     fun execute(method: String, payload: JSONObject, deadlineMs: Long, done: RuntimeCompletion) {
@@ -239,7 +245,12 @@ internal class RuntimeController(
                 done.ok(out)
             }
             "sandbox.start" -> { manager.startSandbox(); done.ok(status()) }
-            "sandbox.stop" -> { manager.stopSandbox(); done.ok(status()) }
+            "sandbox.stop" -> {
+                // Terminal shells live inside the sandbox rootfs: stop them first (as DSHBox does).
+                terminalOrNull?.stopAll()
+                manager.stopSandbox()
+                done.ok(status())
+            }
             "dsh.start" -> when (val r = manager.startDsh()) {
                 is AppResult.Success -> done.ok(
                     status().put("dsh", JSONObject()
