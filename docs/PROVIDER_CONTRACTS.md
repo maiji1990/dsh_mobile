@@ -98,6 +98,9 @@ C# `BridgeClient` 在 `deadlineMs + 2s` 内未收到响应时，本地合成 `DE
 | `sandbox.start` / `sandbox.stop` | `{}` | `RuntimeStatus` |
 | `dsh.start` | `{}` | `RuntimeStatus` + `dsh{version, baseUrl, ready}` |
 | `dsh.stop` | `{}` | `RuntimeStatus` |
+| `plugin.list` | `{"profile":"web"}` | `PluginCommandResult{ok, exitCode, output, error}`；output 为 `pnpm list --json --depth 0` |
+| `plugin.add` | `{"profile","spec"}`（npm registry spec，白名单校验） | `PluginCommandResult`；需网络；DSH 重启后生效 |
+| `plugin.remove` | `{"profile","name"}`（包名，白名单校验） | `PluginCommandResult` |
 | `dsh.probe` | `{"profile": "web\|headless\|sdk\|sdk-minimal\|acp\|plugin"}`（白名单） | `ProbeResult{profile, status: pass\|limited\|fail, needsCredential, shim, checks[{name, ok, ms, detail}]}`；guest 内固定脚本，做真实协议握手，不调用模型 |
 
 `runtime.* / sandbox.* / dsh.*` 在 IO 协程上异步执行（不阻塞控制线程），彼此串行；deadline 内未完成返回 `DEADLINE_EXCEEDED`（底层操作可能仍在收尾）。DSH launch token **不经过**控制面 JSON，只暴露 `hasLaunchToken`。

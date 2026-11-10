@@ -75,7 +75,21 @@ internal class RuntimeController(
         val METHODS = setOf(
             "runtime.status", "runtime.prepare", "runtime.importBundle", "runtime.health",
             "runtime.diagnostics", "sandbox.start", "sandbox.stop", "dsh.start", "dsh.stop", "dsh.probe",
+            "plugin.list", "plugin.add", "plugin.remove",
         )
+
+        /** Profiles whose plugins may be managed (the shipped templates; desktop is reserved by DSH). */
+        val PLUGIN_PROFILES = setOf("web", "headless", "sdk", "sdk-minimal", "acp")
+
+        /**
+         * npm registry spec only: optional @scope, name, optional version/range/tag. No paths, URLs, git or
+         * file: specs, and no shell metacharacters — the spec is interpolated into a fixed guest command.
+         */
+        val PACKAGE_SPEC = Regex("^(@[a-z0-9][a-z0-9._-]{0,213}/)?[a-z0-9][a-z0-9._-]{0,213}(@[A-Za-z0-9._^~<>=*-]{1,64})?$")
+        val PACKAGE_NAME = Regex("^(@[a-z0-9][a-z0-9._-]{0,213}/)?[a-z0-9][a-z0-9._-]{0,213}$")
+
+        /** The wrapper written by [GuestToolchain]; on PATH too, but called explicitly. */
+        private const val GUEST_DSH = "/root/projects/.dsh/dshbox/bin/dsh"
     }
 
     private val appContext: Context = context.applicationContext ?: context
@@ -187,6 +201,9 @@ internal class RuntimeController(
         runCatching {
             copyAsset("dshmobile/dsh-probe.mjs", File(File(config.guestCacheDir, "dshmobile"), "dsh-probe.mjs"))
         }.onFailure { Log.w(TAG, "probe script provisioning failed", it) }
+        // `dsh plugin` needs pnpm: offline corepack cache + dsh/pnpm wrappers (TASK-009).
+        GuestToolchain.provisionCorepack(appContext, config)
+        GuestToolchain.writeShims(config)
     }
 
     private suspend fun dispatch(method: String, payload: JSONObject, done: RuntimeCompletion) {
@@ -273,8 +290,53 @@ internal class RuntimeController(
                 }
                 done.ok(JSONObject(resultLine.removePrefix("DSHPROBE ")))
             }
+            "plugin.list" -> {
+                val profile = requireProfile(payload)
+                done.ok(runPluginCommand("plugin --profile $profile list --json --depth 0"))
+            }
+            "plugin.add" -> {
+                val profile = requireProfile(payload)
+                val spec = payload.optString("spec", "")
+                if (!PACKAGE_SPEC.matches(spec)) throw BridgeException(BAD_REQUEST, "spec must be an npm registry package spec")
+                done.ok(runPluginCommand("plugin --profile $profile add $spec"))
+            }
+            "plugin.remove" -> {
+                val profile = requireProfile(payload)
+                val name = payload.optString("name", "")
+                if (!PACKAGE_NAME.matches(name)) throw BridgeException(BAD_REQUEST, "name must be an npm package name")
+                done.ok(runPluginCommand("plugin --profile $profile remove $name"))
+            }
             else -> throw BridgeException("METHOD_NOT_FOUND", "unknown method: $method")
         }
+    }
+
+    private fun requireProfile(payload: JSONObject): String {
+        val profile = payload.optString("profile", "web")
+        if (profile !in PLUGIN_PROFILES) throw BridgeException(BAD_REQUEST, "profile must be one of $PLUGIN_PROFILES")
+        return profile
+    }
+
+    /**
+     * Runs `dsh <args>` in the guest (args are built only from validated tokens). Reports the real exit status
+     * and output; a non-zero exit is returned as `ok=false` in the payload, never turned into success.
+     */
+    private suspend fun runPluginCommand(args: String): JSONObject {
+        val lines = ArrayList<String>()
+        val marker = "DSHMOBILE_EXIT="
+        // Guest commands get a plain PATH; only DSHBox's DSH role adds the wrapper dirs. Give `dsh plugin` the same
+        // PATH DSH itself runs with, so its plugin manager finds `pnpm` (sandbox-manager buildProotEnv, role "dsh").
+        val path = "export PATH=/opt/dshbox:/root/projects/.dsh/dshbox/bin:${'$'}PATH"
+        val r = manager.runGuestCommand("$path; cd /root/projects && $GUEST_DSH $args; echo $marker${'$'}?", onLine = {
+            synchronized(lines) { lines.add(it); if (lines.size > 2000) lines.removeAt(0) }
+        })
+        val all = synchronized(lines) { lines.toList() }
+        val exit = all.lastOrNull { it.startsWith(marker) }?.removePrefix(marker)?.trim()?.toIntOrNull()
+        val output = all.filterNot { it.startsWith(marker) }
+        return JSONObject()
+            .put("ok", exit == 0)
+            .put("exitCode", exit ?: JSONObject.NULL)
+            .put("output", output.joinToString("\n"))
+            .put("error", (r as? AppResult.Failure)?.error?.message ?: JSONObject.NULL)
     }
 
     private fun status(): JSONObject {

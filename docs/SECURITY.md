@@ -34,6 +34,9 @@
 | 终端：PTY 数据只在原生 emulator 与 View 之间流动，不进入 C# 与 JSON 控制面；会话列表回调只含 id/标题/状态 | `TerminalController.kt`、`TerminalListener` |
 | 终端：「停止」沙箱前先结束全部终端会话，避免 guest 进程脱离沙箱生命周期 | `RuntimeController`（`sandbox.stop`） |
 | 终端：Ctrl 键栏为一次性锁存，粘贴走 emulator.paste（遵守 bracketed paste、剥离控制字节） | `TerminalController.kt` |
+| 插件：spec / name 只接受 npm registry 包名（可选 @scope 与版本），拒绝路径、URL、git、file:、选项注入与 shell 元字符；profile 白名单（单测覆盖） | `RuntimeController.PACKAGE_SPEC` / `PACKAGE_NAME`、`PluginSpecTest` |
+| 插件：安装前用户确认，明确告知为第三方代码、在沙箱内以 DSH 权限运行、PRoot 非安全隔离；结果显示真实退出码与输出，不伪造成功 | `PluginsActivity` |
+| 插件：pnpm 版本钉在随包 11.1.2（离线、可复现），导入方式 copy；不注入 registry | `GuestToolchain.kt` |
 | 运行层下载按固定 SHA-256 校验；android-side 再与随包 sidecar 交叉校验 | `runtime-bundle/fetch-runtime.ps1` |
 | Maven 运行时依赖白名单，出现未分类依赖即构建失败（强制许可审计） | `native/native-bridge/build.gradle.kts` `exportRuntimeJars` |
 

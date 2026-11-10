@@ -37,6 +37,7 @@
 | 2026-11-09 | DSHBox | （未修改子模块）`SandboxService.provisionBundledDsh` 逻辑移植进 `RuntimeController.kt` | 该函数位于 DSHBox `app` 模块（我们不引入 app）；同语义、去 UI 副作用，GPL-3.0 注明来源 |
 | 2026-11-09 | DSHBox | （未修改子模块）`SandboxService.provisionDshLinkShim` 语义移植进 `RuntimeController.provisionGuestAssets` | 每次进程启动覆写垫片到 `files/dshbox`，与 DSHBox 一致 |
 | 2026-11-09 | DSHBox | （未修改子模块）`app/.../webview/DshUrl.kt` 的 `dshUrlWithToken` 移植进 `WebUiController.urlWithToken` | 位于 DSHBox app 模块；同编码规则，加单测 |
+| 2026-11-10 | DSHBox | （未修改子模块）`SandboxService.provisionCorepackCache`、`DSH_CLI_SHIM`、`PNPM_CLI_SHIM` 移植为 `GuestToolchain.kt`；随包 `toolchain-cache/corepack-pnpm-11.1.2.tar.zst` 原样打包 | 让 `dsh plugin` 有离线 pnpm；未移植 apt/dpkg 包装（需 fakeroot 配置）与 opencode 包装 |
 | 2026-11-10 | DSHBox | （未修改子模块）`app/.../runtime/GuestUserProvisioner.kt` 移植为 `GuestUser.kt` | 用户名由 DSHBox 品牌名改为 `dshmobile`（AGENTS.md 规则 4）；其余逻辑一致，加单测 |
 | 2026-11-10 | DSHBox | （未修改子模块）`DshTerminalViewClient` / `DshTerminalSessionClient` 语义并入 `TerminalController.kt` | 位于 DSHBox app 模块（Compose 屏幕的回调），不引入 app |
 | 2026-11-09 | DSHBox | （未修改子模块）导入前创建 `runtime/runtime-current/` | 规避上游全新安装离线导入的 rename 失败 → `copyRecursively` 卡在悬空 `/var/run` 符号链接的问题；建议向上游报告 |

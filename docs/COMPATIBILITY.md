@@ -150,3 +150,16 @@ APK SHA-256 `a084dc5fb2559bea84d04caef8050b63f8006f23f7dc8dd639f08c41b9a2a392`�
 | guest passwd | 已写入 `dshmobile` 条目（`GuestUser`）；当前 PRoot 以 root 运行，提示符不依赖它 |
 
 自动化限制：本机拼音输入法会拦截 `adb shell input` 注入的按键（转换为中文、吞掉空格与回车），因此命令输入由用户手动完成；App 内按钮使用前台确认的受控点按。
+
+### 2026-11-10 · TASK-009 插件管理 · 同一设备
+
+| 步骤 | 结果 |
+|---|---|
+| 部署离线 pnpm | 通过：APK 内 `corepack-pnpm-11.1.2.tar.zst`（DSHBox 随包件，sha256 `d9f9677d…`）校验后解包到 `guest-cache/corepack`；`dsh`、`pnpm` 包装脚本写入 `.dsh/dshbox/bin` |
+| `dsh plugin --profile web list` | 首次失败：exit 127「pnpm was not found」——DSHBox sandbox-manager 只给 DSH 进程角色的 PATH 加包装目录，guest 命令角色没有；给插件命令与探测补同样的 PATH 前缀后通过（exit 0，`dsh-profile-web` 无依赖） |
+| 安装 `is-number`（用户手动输入并确认警告） | 通过：exit 0（经网络从 npm registry 获取） |
+| 卸载 `is-number` | 通过：exit 0；列表恢复为空 |
+
+发现：DSH 0.2.1-rc.5 的 `dsh plugin add` **接受了非插件 npm 包**（`is-number` 无 `dsh.bundle` 声明）——CLI 路径不校验包是否为 DSH 插件，因此 App 侧安装前的第三方代码警告是必要的。
+
+未测：真实 DSH 插件安装后在 DSH 重启时加载、失败回滚、安全模式、镜像源选择、并发与断网。

@@ -14,16 +14,28 @@ fun dshboxDescribe(): String = try {
     "unknown"
 }
 
-/** Copies exactly DSHBox's link shim files (unmodified) into a generated asset root; returns that root. */
+/**
+ * Copies an explicit allowlist of DSHBox asset files (unmodified) into a generated asset root; returns that root.
+ *  - dshbox/{link-shim.mjs, libdshbox-link.so}: Android hard-link compat shim (TASK-005).
+ *  - toolchain-cache/corepack-pnpm-11.1.2.tar.zst(+.sha256): offline pnpm for `dsh plugin` (TASK-009); DSHBox pins
+ *    11.1.2 because pnpm 12 blows up memory under the profile's `autoInstallPeers: false`.
+ */
 fun stageDshboxShimAssets(): File {
-    val from = rootDir.resolve("../third_party/dshbox/plugin-manager/dshbox-plugins/assets/dshbox")
+    val dshbox = rootDir.resolve("../third_party/dshbox")
     // Outside build/ so `clean` (which runs after configuration) cannot delete the staged copy.
     val root = rootDir.resolve(".generated/dshbox-shim-assets")
-    val to = root.resolve("dshbox").apply { mkdirs() }
-    listOf("link-shim.mjs", "libdshbox-link.so").forEach { name ->
-        val src = from.resolve(name)
-        check(src.isFile) { "DSHBox link shim asset missing: $src" }
-        src.copyTo(to.resolve(name), overwrite = true)
+    val files = listOf(
+        "plugin-manager/dshbox-plugins/assets/dshbox/link-shim.mjs" to "dshbox/link-shim.mjs",
+        "plugin-manager/dshbox-plugins/assets/dshbox/libdshbox-link.so" to "dshbox/libdshbox-link.so",
+        "app/src/main/assets/toolchain-cache/corepack-pnpm-11.1.2.tar.zst" to "toolchain-cache/corepack-pnpm-11.1.2.tar.zst",
+        "app/src/main/assets/toolchain-cache/corepack-pnpm-11.1.2.tar.zst.sha256" to "toolchain-cache/corepack-pnpm-11.1.2.tar.zst.sha256",
+    )
+    for ((from, to) in files) {
+        val src = dshbox.resolve(from)
+        check(src.isFile) { "DSHBox asset missing: $src" }
+        val dst = root.resolve(to)
+        dst.parentFile.mkdirs()
+        if (!dst.isFile || dst.length() != src.length()) src.copyTo(dst, overwrite = true)
     }
     return root
 }

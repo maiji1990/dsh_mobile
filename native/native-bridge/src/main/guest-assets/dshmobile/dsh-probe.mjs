@@ -37,7 +37,8 @@ function nodeArgs(args) {
 function launch(args) {
   return spawn(process.execPath, nodeArgs(args), {
     cwd: CWD,
-    env: { ...process.env, DSH_HOME, NO_COLOR: "1" },
+    // Same PATH head DSHBox gives the DSH role: link-shim dir + CLI wrappers (pnpm for `dsh plugin`).
+    env: { ...process.env, DSH_HOME, NO_COLOR: "1", PATH: `/opt/dshbox:/root/projects/.dsh/dshbox/bin:${process.env.PATH ?? ""}` },
     stdio: ["pipe", "pipe", "pipe"],
   });
 }

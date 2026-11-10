@@ -13,7 +13,7 @@
 | `sdk` profile | 通过（Android 17 真机） | JSON-RPC `initialize` → `deepseek-harness-sdk-runtime`，`shutdown` → `{}`，exit 0；会话/提示需模型凭据，未验证 |
 | `sdk-minimal` profile | 通过（Android 17 真机） | 同 sdk 握手（initialize 5.1 s） |
 | `acp` profile | 通过（Android 17 真机） | ACP v1 `initialize` → `deepseek-harness-acp`、能力声明；stdin EOF 正常退出 0；会话/提示需模型凭据，未验证 |
-| `plugin` 命令 | **不可用（pnpm 缺失）** | `dsh plugin --help` 通过；`plugin list` exit 127「pnpm was not found」。DSHBox 由其 app 层提供 pnpm（corepack + bin 包装 + 缓存），未移植；TASK-009 处理 |
+| `plugin` 命令 | 通过（Android 17 真机） | 离线 pnpm 11.1.2（corepack 缓存）+ dsh/pnpm 包装；`plugin list` / `add` / `remove` exit 0（用 `is-number` 验证安装与卸载）；安全模式、源选择未做 |
 | Cordis profile / bundle / patch | 部分 | 五个 shipped profile 的 `--dump-config` 均成功合成；patch / bundle 切换未测 |
 | Model Providers / 凭据 | 未开始 | |
 | Session / Resume / Fork | 未开始 | 需模型凭据；WebUI 已可承载，待配置凭据后验证 |

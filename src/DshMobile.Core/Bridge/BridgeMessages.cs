@@ -29,6 +29,11 @@ public static class BridgeMethods
 
     // TASK-005: real per-profile handshakes inside the guest (fixed probe script, allowlisted profile names).
     public const string DshProbe = "dsh.probe";
+
+    // TASK-009: `dsh plugin` (pnpm via bundled corepack). Spec/name are validated natively (npm registry specs only).
+    public const string PluginList = "plugin.list";
+    public const string PluginAdd = "plugin.add";
+    public const string PluginRemove = "plugin.remove";
 }
 
 /// <summary>Event names pushed by the native side.</summary>
@@ -133,6 +138,18 @@ public sealed record ProbeResult(
     [property: JsonPropertyName("shim")] bool Shim,
     [property: JsonPropertyName("checks")] ProbeCheck[] Checks);
 
+public sealed record PluginRequest(
+    [property: JsonPropertyName("profile")] string Profile,
+    [property: JsonPropertyName("spec")] string? Spec = null,
+    [property: JsonPropertyName("name")] string? Name = null);
+
+/// <summary>Result of a `dsh plugin` command: real exit status and output (non-zero exit = Ok false).</summary>
+public sealed record PluginCommandResult(
+    [property: JsonPropertyName("ok")] bool Ok,
+    [property: JsonPropertyName("exitCode")] int? ExitCode,
+    [property: JsonPropertyName("output")] string Output,
+    [property: JsonPropertyName("error")] string? Error);
+
 public sealed record DiagnosticResult(
     [property: JsonPropertyName("ok")] bool Ok,
     [property: JsonPropertyName("output")] string Output,
@@ -152,5 +169,7 @@ public sealed record DiagnosticResult(
 [JsonSerializable(typeof(Dictionary<string, DiagnosticResult>))]
 [JsonSerializable(typeof(ProbeRequest))]
 [JsonSerializable(typeof(ProbeResult))]
+[JsonSerializable(typeof(PluginRequest))]
+[JsonSerializable(typeof(PluginCommandResult))]
 [JsonSerializable(typeof(JsonElement))]
 public sealed partial class BridgeJsonContext : JsonSerializerContext;
