@@ -120,3 +120,17 @@ APK SHA-256 `a084dc5fb2559bea84d04caef8050b63f8006f23f7dc8dd639f08c41b9a2a392`�
 | 停止 → 启动 DSH（新 token）→ 重开 | READY 18.5 s；重开后 `LOADED` 0.3 s，鉴权正常 |
 
 未测：同一页面内 DSH 重启触发的就地重载、401 自动恢复（一次/每个 token 修订）、外链转系统浏览器、旋转保持、软键盘遮挡、文件选择与下载（当前明确提示不支持，TASK-007）。
+
+### 2026-11-10 · TASK-007 文件 / SAF · 同一设备
+
+| 步骤 | 结果 |
+|---|---|
+| 文件页：列出 `/root/projects` | 通过：仅 `.dsh`（🔒） |
+| 进入 `.dsh` | 通过：`profiles`、`storages`、`.anonymous-user-id`、`.credentials.yaml` 均标记受保护 |
+| 点 `.credentials.yaml` | 通过：提示「受保护（DSH_HOME，可能含凭据）：不能在此预览或导出」，无预览 / 导出入口 |
+| SAF 导入（用户手动选择文件） | 通过：`apple-touch-icon.png`（14.5 KB）出现在工作区根目录 |
+| SAF 导出到 Download（用户手动） | 通过：`/sdcard/Download/apple-touch-icon.png` 14 882 B，与工作区文件大小一致 |
+| DSH WebUI 附件上传 | **未验证**：WebUI 打开约 18 s 期间 App 未收到文件选择请求（无 `webui file chooser` 日志）。DSH 首页提示「选择一个工作区开始」，附件入口很可能在选定工作区前不可用；原生侧选择器转交逻辑尚未在真机走到 |
+| 运行环境包经 SAF 导入 | 未在真机执行（会替换现有运行环境） |
+
+备注：涉及系统文件选择器的步骤均由用户手动完成（选择器会显示用户个人文件，自动化不介入）；App 内操作使用「前台确认」的受控点按。

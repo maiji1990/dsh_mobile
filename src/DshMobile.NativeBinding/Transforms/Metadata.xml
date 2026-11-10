@@ -11,4 +11,6 @@
   <attr path="/api/package[@name='dshmobile.nativebridge']/interface[@name='NativeCallback']/method[@name='onEvent']/parameter[@name='p0']" name="managedName">json</attr>
   <attr path="/api/package[@name='dshmobile.nativebridge']/interface[@name='WebUiListener']/method[@name='onWebUiState']/parameter[@name='p0']" name="managedName">state</attr>
   <attr path="/api/package[@name='dshmobile.nativebridge']/interface[@name='WebUiListener']/method[@name='onWebUiState']/parameter[@name='p1']" name="managedName">detail</attr>
+  <attr path="/api/package[@name='dshmobile.nativebridge']/interface[@name='WebUiListener']/method[@name='onFileChooserRequested']/parameter[@name='p0']" name="managedName">acceptTypes</attr>
+  <attr path="/api/package[@name='dshmobile.nativebridge']/interface[@name='WebUiListener']/method[@name='onFileChooserRequested']/parameter[@name='p1']" name="managedName">allowMultiple</attr>
 </metadata>

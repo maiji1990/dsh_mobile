@@ -116,6 +116,8 @@ internal class RuntimeController(
 
     fun reloadWebUi() = webUi.reload()
 
+    fun completeWebFileChooser(uris: Array<android.net.Uri>?) = webUi.completeFileChooser(uris)
+
     fun handles(method: String): Boolean = method in METHODS
 
     fun execute(method: String, payload: JSONObject, deadlineMs: Long, done: RuntimeCompletion) {

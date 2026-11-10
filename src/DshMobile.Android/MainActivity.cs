@@ -1,4 +1,6 @@
+using Android.Content;
 using Android.Views;
+using DshMobile.App.Files;
 using DshMobile.App.Bridge;
 
 namespace DshMobile.App;
@@ -36,6 +38,7 @@ public class MainActivity : Activity
         var diag = FindViewById<Button>(Resource.Id.btn_diag)!;
         var probe = FindViewById<Button>(Resource.Id.btn_probe)!;
         var openDsh = FindViewById<Button>(Resource.Id.btn_open_dsh)!;
+        var files = FindViewById<Button>(Resource.Id.btn_files)!;
         _actions = [info, kotlin, stress, prepare, import, start, stop, diag, probe];
 
         // Fire-and-forget is intentional: BridgeHost owns the task and reports through its log,
@@ -45,12 +48,14 @@ public class MainActivity : Activity
         stress.Click += (_, _) => _ = _bridge.RunStressAsync(1000);
         clear.Click += (_, _) => _bridge.ClearLog();
         prepare.Click += (_, _) => _ = _bridge.RunPrepareAsync();
-        import.Click += (_, _) => _ = _bridge.RunImportAsync();
+        // Runtime bundle comes from the system picker (no storage permission, no adb needed).
+        import.Click += (_, _) => StartActivityForResult(DocumentPicker.OpenIntent(["application/zip", ".zip"], multiple: false), RequestRuntimeBundle);
         start.Click += (_, _) => _ = _bridge.RunStartAsync();
         stop.Click += (_, _) => _ = _bridge.RunStopAsync();
         diag.Click += (_, _) => _ = _bridge.RunDiagnosticsAsync();
         probe.Click += (_, _) => _ = _bridge.RunProbesAsync();
         openDsh.Click += (_, _) => StartActivity(new Android.Content.Intent(this, typeof(DshWebActivity)));
+        files.Click += (_, _) => StartActivity(new Android.Content.Intent(this, typeof(FilesActivity)));
 
         // The foreground-service notification is only visible with this permission (Android 13+).
         // The service itself runs either way, so a denial is not an error.
@@ -60,6 +65,43 @@ public class MainActivity : Activity
             RequestPermissions([Android.Manifest.Permission.PostNotifications], 1);
         }
     }
+
+    private const int RequestRuntimeBundle = 61;
+
+    protected override async void OnActivityResult(int requestCode, Result resultCode, Intent? data)
+    {
+        base.OnActivityResult(requestCode, resultCode, data);
+        if (requestCode != RequestRuntimeBundle || resultCode != Result.Ok || data?.Data is not { } uri)
+        {
+            return;
+        }
+        // Copy into app cache (an allowed import root), import, then delete the copy.
+        var name = WorkspaceSafeName(DocumentPicker.DisplayName(ContentResolver!, uri));
+        var dest = System.IO.Path.Combine(CacheDir!.AbsolutePath, "runtime-import", name);
+        try
+        {
+            Directory.CreateDirectory(System.IO.Path.GetDirectoryName(dest)!);
+            var resolver = ContentResolver!;
+            var sw = System.Diagnostics.Stopwatch.StartNew();
+            _bridge.Note($"import: copying {name} from picker ...");
+            await Task.Run(async () =>
+            {
+                await using var input = resolver.OpenInputStream(uri) ?? throw new IOException("cannot open picked file");
+                await using var output = File.Create(dest);
+                await input.CopyToAsync(output);
+            });
+            _bridge.Note($"import: copied {new FileInfo(dest).Length / 1024 / 1024} MiB in {sw.Elapsed.TotalSeconds:F1} s");
+            await _bridge.RunImportAsync(dest, deleteAfter: true);
+        }
+        catch (Exception e) when (e is IOException or Java.Lang.Exception or UnauthorizedAccessException)
+        {
+            _bridge.Note($"import: copy failed {e.GetType().Name}: {e.Message}");
+            File.Delete(dest);
+        }
+    }
+
+    private static string WorkspaceSafeName(string name) =>
+        DshMobile.Core.Files.WorkspaceFileSystem.SanitizeFileName(name);
 
     protected override void OnStart()
     {

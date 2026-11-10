@@ -20,6 +20,19 @@
     <string name="web_loading">正在加载 DSH…</string>
     <string name="web_unauthorized">DSH 拒绝访问（401），请在首页重启 DSH 后重试</string>
     <string name="web_unreachable">无法连接本机 DSH：</string>
+    <string name="action_files">文件</string>
+    <string name="files_title">文件 · /root/projects</string>
+    <string name="files_up">上一级</string>
+    <string name="files_import">导入</string>
+    <string name="files_refresh">刷新</string>
+    <string name="files_preview">预览</string>
+    <string name="files_export">导出到…</string>
+    <string name="files_no_workspace">工作区尚不存在：请先在首页导入运行环境</string>
+    <string name="files_protected">受保护（DSH_HOME，可能含凭据）：不能在此预览或导出</string>
+    <string name="files_symlink_blocked">符号链接不会在宿主侧跟随</string>
+    <string name="files_binary">（二进制文件，不预览）</string>
+    <string name="files_imported">已导入文件</string>
+    <string name="files_exported">已导出</string>
     <string name="fgs_channel">运行环境</string>
     <string name="fgs_text">Linux 沙箱与 DSH 正在运行</string>
 </resources>

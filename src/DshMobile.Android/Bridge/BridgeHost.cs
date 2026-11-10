@@ -101,6 +101,9 @@ public sealed class BridgeHost : IDisposable
 
     public void ReloadWebUi() => _facade.ReloadWebUi();
 
+    /// <summary>Answers a pending WebUI file chooser (null/empty = cancelled). Main thread only.</summary>
+    public void CompleteWebFileChooser(Android.Net.Uri[]? uris) => _facade.CompleteWebFileChooser(uris);
+
     // ------------------------------------------------------------------ TASK-004 runtime
 
     private static readonly TimeSpan PrepareDeadline = TimeSpan.FromMinutes(10);
@@ -118,13 +121,14 @@ public sealed class BridgeHost : IDisposable
     });
 
     /// <summary>
-    /// Imports a DSHBox runtime bundle zip (base/node/android-side) from the app-specific external
-    /// directory, where `adb push` (dev) or a future SAF copy puts it.
+    /// Imports a DSHBox runtime bundle zip (base/node/android-side). <paramref name="zipPath"/> comes from the
+    /// system picker copy (MainActivity); without it, falls back to the app-specific external directory
+    /// where a developer can `adb push` the bundle.
     /// </summary>
-    public Task RunImportAsync() => RunExclusive("runtime.importBundle", async () =>
+    public Task RunImportAsync(string? zipPath = null, bool deleteAfter = false) => RunExclusive("runtime.importBundle", async () =>
     {
         var dir = _context.GetExternalFilesDir(null)?.AbsolutePath;
-        var zip = dir is null ? null : Directory.EnumerateFiles(dir, "dshapp-runtime-*.zip").OrderDescending().FirstOrDefault();
+        var zip = zipPath ?? (dir is null ? null : Directory.EnumerateFiles(dir, "dshapp-runtime-*.zip").OrderDescending().FirstOrDefault());
         if (zip is null)
         {
             Append($"import: no dshapp-runtime-*.zip in {dir ?? "(external files dir unavailable)"}");
@@ -133,10 +137,23 @@ public sealed class BridgeHost : IDisposable
         Append($"import: {Path.GetFileName(zip)} ({new FileInfo(zip).Length / 1024 / 1024} MiB) ...");
         var sw = Stopwatch.StartNew();
         var payload = BridgeCodec.ToPayload(new ImportBundleRequest(zip), BridgeJsonContext.Default.ImportBundleRequest);
-        var resp = await Client.ExecuteAsync(BridgeMethods.RuntimeImportBundle, payload, ImportDeadline).ConfigureAwait(false);
-        Append($"import: took {sw.Elapsed.TotalSeconds:F1} s");
-        LogStatus("import", resp);
+        try
+        {
+            var resp = await Client.ExecuteAsync(BridgeMethods.RuntimeImportBundle, payload, ImportDeadline).ConfigureAwait(false);
+            Append($"import: took {sw.Elapsed.TotalSeconds:F1} s");
+            LogStatus("import", resp);
+        }
+        finally
+        {
+            if (deleteAfter)
+            {
+                File.Delete(zip);
+            }
+        }
     });
+
+    /// <summary>Logs a host-side step that is not a bridge call (e.g. copying a picked file).</summary>
+    public void Note(string line) => Append(line);
 
     /// <summary>Foreground service first (keeps PRoot children alive), then sandbox, then DSH.</summary>
     public Task RunStartAsync() => RunExclusive("start", async () =>

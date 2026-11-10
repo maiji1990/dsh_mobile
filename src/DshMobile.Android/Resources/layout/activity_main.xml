@@ -139,12 +139,27 @@
             android:text="@string/action_diagnostics" />
     </LinearLayout>
 
-    <Button
-        android:id="@+id/btn_open_dsh"
+    <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:minHeight="48dp"
-        android:text="@string/action_open_dsh" />
+        android:orientation="horizontal">
+
+        <Button
+            android:id="@+id/btn_open_dsh"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:minHeight="48dp"
+            android:text="@string/action_open_dsh" />
+
+        <Button
+            android:id="@+id/btn_files"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:minHeight="48dp"
+            android:text="@string/action_files" />
+    </LinearLayout>
 
     <Button
         android:id="@+id/btn_probe"

@@ -21,9 +21,14 @@ public final class DshNativeFacade {
     public void attachWebUi(android.webkit.WebView webView, WebUiListener listener);
     public void detachWebUi();
     public void reloadWebUi();
+    // TASK-007（主线程）：回答 WebUiListener.onFileChooserRequested；null/空 = 取消，多余或迟到的回答被忽略
+    public void completeWebFileChooser(android.net.Uri[] uris);
 }
 public interface NativeCallback { void onEvent(String json); }
-public interface WebUiListener { void onWebUiState(String state, String detail); } // detail 不含 token / query
+public interface WebUiListener {
+    void onWebUiState(String state, String detail);                       // detail 不含 token / query
+    void onFileChooserRequested(String[] acceptTypes, boolean allowMultiple); // 宿主弹系统选择器并必须回答一次
+}
 ```
 
 ### 1.2 请求

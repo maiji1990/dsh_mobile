@@ -1,4 +1,6 @@
+using Android.Content;
 using Android.Content.PM;
+using DshMobile.App.Files;
 using Android.Views;
 using Android.Webkit;
 using DshMobile.App.Bridge;
@@ -67,6 +69,32 @@ public sealed class DshWebActivity : Activity
         base.OnDestroy();
     }
 
+    private const int RequestFileChooser = 51;
+
+    private void OpenFileChooser(string[] acceptTypes, bool multiple)
+    {
+        try
+        {
+            // The user's own pick is the consent for this upload; the page never sees anything else.
+            StartActivityForResult(DocumentPicker.OpenIntent(acceptTypes, multiple), RequestFileChooser);
+        }
+        catch (ActivityNotFoundException)
+        {
+            DshMobileApplication.Current.Bridge.CompleteWebFileChooser(null);
+        }
+    }
+
+    protected override void OnActivityResult(int requestCode, Result resultCode, Intent? data)
+    {
+        base.OnActivityResult(requestCode, resultCode, data);
+        if (requestCode == RequestFileChooser)
+        {
+            var uris = resultCode == Result.Ok ? DocumentPicker.ResultUris(data) : [];
+            Log.Info(BridgeHost.LogTag, $"webui file chooser: {uris.Length} file(s)");
+            DshMobileApplication.Current.Bridge.CompleteWebFileChooser(uris.Length == 0 ? null : uris);
+        }
+    }
+
     private void GoBack()
     {
         if (_webView?.CanGoBack() == true)
@@ -107,6 +135,19 @@ public sealed class DshWebActivity : Activity
                 }
             });
         }
+
+        public void OnFileChooserRequested(string[]? acceptTypes, bool allowMultiple) =>
+            owner.RunOnUiThread(() =>
+            {
+                if (owner.IsDestroyed)
+                {
+                    DshMobileApplication.Current.Bridge.CompleteWebFileChooser(null);
+                }
+                else
+                {
+                    owner.OpenFileChooser(acceptTypes ?? [], allowMultiple);
+                }
+            });
     }
 
     private sealed class BackCallback(DshWebActivity owner) : Java.Lang.Object, Android.Window.IOnBackInvokedCallback

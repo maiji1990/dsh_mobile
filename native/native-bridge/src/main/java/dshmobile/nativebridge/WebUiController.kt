@@ -47,6 +47,7 @@ internal class WebUiController(
     private var listener: WebUiListener? = null
     private var tokenJob: Job? = null
     private var recoveredRevision: Long? = null
+    private var pendingChooser: ValueCallback<Array<Uri>>? = null
 
     @SuppressLint("SetJavaScriptEnabled")
     fun attach(view: WebView, l: WebUiListener?) {
@@ -83,6 +84,7 @@ internal class WebUiController(
     }
 
     fun detach() {
+        cancelPendingChooser()
         tokenJob?.cancel()
         tokenJob = null
         webView?.let {
@@ -96,6 +98,20 @@ internal class WebUiController(
         listener = null
         tracker.clearForRelease()
         recoveredRevision = null
+    }
+
+    /** Answer to [WebUiListener.onFileChooserRequested]; extra or late answers are ignored. */
+    fun completeFileChooser(uris: Array<Uri>?) {
+        val callback = pendingChooser ?: return
+        pendingChooser = null
+        val picked = uris?.filterNotNull()?.toTypedArray()?.takeIf { it.isNotEmpty() }
+        callback.onReceiveValue(picked)
+        if (picked == null) emit("FILE_CHOOSER_CANCELLED", "")
+    }
+
+    private fun cancelPendingChooser() {
+        pendingChooser?.onReceiveValue(null)
+        pendingChooser = null
     }
 
     fun reload() {
@@ -161,8 +177,17 @@ internal class WebUiController(
             filePathCallback: ValueCallback<Array<Uri>>,
             fileChooserParams: FileChooserParams,
         ): Boolean {
-            filePathCallback.onReceiveValue(null) // explicit cancel; SAF picker arrives with TASK-007
-            emit("FILE_CHOOSER_UNSUPPORTED", "attachments arrive with TASK-007")
+            val l = listener
+            if (l == null) {
+                filePathCallback.onReceiveValue(null)
+                return true
+            }
+            // One picker at a time: a new request supersedes (and cancels) an unanswered one.
+            cancelPendingChooser()
+            pendingChooser = filePathCallback
+            val multiple = fileChooserParams.mode == FileChooserParams.MODE_OPEN_MULTIPLE
+            runCatching { l.onFileChooserRequested(fileChooserParams.acceptTypes ?: emptyArray(), multiple) }
+                .onFailure { cancelPendingChooser() }
             return true
         }
     }

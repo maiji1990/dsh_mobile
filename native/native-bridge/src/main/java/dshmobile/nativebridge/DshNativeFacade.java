@@ -167,6 +167,18 @@ public final class DshNativeFacade {
         requireRuntime().reloadWebUi();
     }
 
+    /**
+     * Completes a pending {@link WebUiListener#onFileChooserRequested} with the URIs the user picked
+     * (null or empty = cancelled). Main thread only; extra calls are ignored.
+     */
+    public void completeWebFileChooser(android.net.Uri[] uris) {
+        requireMainThread();
+        RuntimeController rc = runtime;
+        if (rc != null) {
+            rc.completeWebFileChooser(uris);
+        }
+    }
+
     private RuntimeController requireRuntime() {
         RuntimeController rc = runtime;
         if (rc == null) {
