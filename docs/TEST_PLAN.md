@@ -8,6 +8,7 @@
 |---|---|---|
 | 契约 | `tests/DshMobile.Core.Tests` | 请求/响应 JSON 形状与字段名、错误码常量与 Java 端一致、非法响应解析 |
 | Native 单测 | `native/native-bridge/src/test`（JVM） | 协议解析、未知 method、重复 requestId、deadline、关闭后拒绝；`UiToolsRegistrationTest`（patch 层正文、原子写、只删自己写的） |
+| Guest 浏览器自检 | 同上（`browser-check.test.mjs`） | 假插件客户端：status+observe 只用只读方法且不带控制代次、无会话 / 已关闭仍带代次 / 会话中途消失 → exit 2、通道不可用 → 3、自动化关闭不当成功、客户端缺失 → 6 |
 | Guest 门面 | `node --test native/native-bridge/src/test/guest/`（CI 同跑） | 假 Relay CLI 回放真机回包：元素映射、compact/截断、`STALE_ELEMENT`（旧快照零底层调用、控件已变、节点消失）、审批等待重试、拒绝不重试、错误保守映射、MCP stdio 握手（`server/discover` 回落 / `initialize` / `tools/list` / `tools/call`）、guest 自检退出码 |
 
 ## M1 验收（需真机，手动 + 日志）
@@ -91,3 +92,14 @@
    DSH 命令行含 `--patch …/dsh-official-plugin-overlay.yml`；「手机操控」末行为「已在当前 DSH 中加载」。
 6. 「关闭中继」：末行「已注销，当前 DSH 仍保留到重启（调用会失败）」；重启 DSH 后不再有 `ui-facade` 进程。
 7. 待补：模型实际调用 `mcp__ui__*`（需凭据）、通知被关时 `E_GATE_NO_FOREGROUND`、安全窗口（`SECURE_CONTENT`）、Android 10。
+
+## TASK-011 浏览器（需真机；浏览器内输入网址、AI 开关与控制审批、安装确认由人手动）
+
+1. 首页「启动」后进入「浏览器」：「浏览器通道：运行中」、guest CLI 就绪、「browser_* 工具：未安装」。
+2. 未打开浏览器时「只读自检」：`status: OK state=CLOSED`，exit=2。
+3. 「打开浏览器」：焦点为 `com.dshbox.browser.runtime.BrowserActivity`，`ps` 出现 `org.example.dshmobile:browser`，无崩溃；返回按钮为「返回 DSH Mobile」。
+4. 在浏览器内加载页面并打开「AI 控制」，返回后「只读自检」：`status` OK（session ≥1、`automationEnabled: true`），`observe` OK 且含 url / title / 正文 / 元素数，exit=0。
+5. 「安装 browser_* 工具」→ 确认：`Browser adapter assembled`，exit=0；状态「已安装，需重启 DSH」。
+6. 首页「停止」→「启动」：状态「已在当前 DSH 中加载」，无插件失败日志行；「只读自检」末行 `--dump-config` 计数 ≥1。
+7. 「移除 browser_* 工具」：exit=0，状态「已移除，当前 DSH 仍保留到重启」。
+8. 待补：模型实际调用 24 个 `browser_*`（需凭据）、`browser_control` 请求 → 浏览器内批准、点击 / 输入 / 滚动、上传 / 下载审批、截图、网络捕获、iframe / SPA / 重定向、断网、Cookie 与 DSH WebUI 隔离实测、`:browser` 进程内存占用、Android 10。

@@ -37,6 +37,13 @@ fun stageDshboxShimAssets(): File {
         dst.parentFile.mkdirs()
         if (!dst.isFile || dst.length() != src.length()) src.copyTo(dst, overwrite = true)
     }
+    // browser-use Cordis adapter (TASK-011, ADR-0005): the 24 browser_* tools + its own install/uninstall
+    // scripts, copied whole and unmodified. This is the ONLY DSHBox plugin taken (not mobile-pilot / mobile-adapt).
+    val pluginSrc = dshbox.resolve("plugin-manager/dshbox-plugins/assets/plugins/browser-use")
+    check(pluginSrc.resolve("install.sh").isFile) { "DSHBox browser-use plugin missing: $pluginSrc" }
+    val pluginDst = root.resolve("plugins/browser-use")
+    pluginDst.deleteRecursively()
+    pluginSrc.copyRecursively(pluginDst, overwrite = true)
     return root
 }
 
@@ -75,8 +82,9 @@ extensions.configure<com.android.build.api.dsl.LibraryExtension> {
     //    from the pinned submodule (DSHBox puts them in its app assets). Required for DSH session persistence,
     //    write tool, attachments and plugin installs on Android, which refuses hard links.
     //  - dshmobile/: our own guest-side scripts (profile probes).
-    //  Only these two files are taken — NOT DSHBox's assets/plugins/* (mobile-pilot, browser-use, …): phone
-    //  automation must go through the single ui_* contract (AGENTS.md rule 6), never a parallel stack.
+    //  - plugins/browser-use/: DSHBox's browser_* Cordis adapter (TASK-011, ADR-0005), installed only on demand.
+    //  NOT taken: DSHBox's other plugins (mobile-pilot, mobile-adapt): phone automation must go through the single
+    //  ui_* contract (AGENTS.md rule 6), never a parallel stack. browser_* is a separate namespace (plan 9.2).
     sourceSets.getByName("main").assets.srcDir(stageDshboxShimAssets())
     sourceSets.getByName("main").assets.srcDir("src/main/guest-assets")
 }
@@ -88,6 +96,10 @@ dependencies {
     implementation(project(":terminal-view"))
     implementation(project(":terminal-session"))
     implementation(project(":pilot:interlock-relay-core"))
+    // Browser automation (TASK-011, ADR-0005): broker (main process) + runtime (`:browser` process components).
+    implementation(project(":browser:browser-api"))
+    implementation(project(":browser:browser-bridge"))
+    implementation(project(":browser:browser-runtime"))
     implementation(libs.kotlinx.coroutines.android)
     testImplementation(libs.junit)
     // android.jar's org.json is a stub in JVM unit tests; use the real implementation.

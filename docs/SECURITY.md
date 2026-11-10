@@ -45,6 +45,13 @@
 | `ui_*` 门面只读、无写工具；旧快照的 ref 本地即返回 `STALE_ELEMENT`，不发底层请求；同一 ref 回读时校验类名 / 标签 / 位置，不符即 `STALE_ELEMENT` | `guest-assets/dshmobile/ui-facade.mjs` |
 | `ui_*` 错误保守映射：未知 Relay 码一律 `OBSERVATION_INCOMPLETE` 并附原码，从不把失败报成成功；拒绝后不重试 | 同上（`ui-facade.test.mjs` 覆盖） |
 | 注册 `ui_*` 只写宿主专属 `--patch` 层且带标记，不碰用户 profile；不覆盖、不删除他人内容 | `UiToolsRegistration`（`UiToolsRegistrationTest`） |
+| 浏览器运行在独立 `:browser` 进程，WebView 数据目录后缀 `browser`：Cookie / 存储与 DSH WebUI（主进程）分离 | `DshMobileApplication`、ADR-0005 |
+| 浏览器命令服务与内部广播受 `signature` 级 `BROWSER_INTERNAL` 权限保护；guest 通道为私有 LocalSocket + 每次生命周期一次性 token（DSHBox broker 原样） | `src/DshMobile.Android/AndroidManifest.xml`、`BrowserCliBroker` |
+| 沙箱停止即停止 broker 并广播撤销 AI 控制（同 DSHBox） | `BrowserTools.onSandboxState` |
+| `browser_*` 工具默认不安装；安装前确认框说明第三方代码与权限；只运行 DSHBox 原版安装 / 卸载脚本，路径固定、无调用方输入 | `BrowserToolsActivity`、`BrowserTools.adapterCommand`（`BrowserToolsTest`） |
+| AI 控制浏览器只能由用户在浏览器内批准；宿主不提供任何授予控制的入口；只读自检不请求、不使用控制权 | `browser-runtime`（上游）、`browser-check.mjs` |
+| 仅打包 DSHBox 的 `browser-use` 插件；`mobile-pilot` / `mobile-adapt` 不打包 | `native/native-bridge/build.gradle.kts` `stageDshboxShimAssets` |
+| 读 DSH 日志只回传点名 `@local/browser-use` 的行（≤5 行，每行 ≤300 字符），不回传其余日志 | `BrowserTools.adapterLogLines` |
 | 运行层下载按固定 SHA-256 校验；android-side 再与随包 sidecar 交叉校验 | `runtime-bundle/fetch-runtime.ps1` |
 | Maven 运行时依赖白名单，出现未分类依赖即构建失败（强制许可审计） | `native/native-bridge/build.gradle.kts` `exportRuntimeJars` |
 

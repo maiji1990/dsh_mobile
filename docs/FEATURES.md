@@ -41,4 +41,6 @@
 |---|---|---|
 | `optional.mobile-automation`（TASK-010） | 只读部分通过（Android 17 真机） | Interlock Relay core（白名单 `ui.snapshot` / `ui.node`）+ 通知栏审批 + guest `ui_*` 门面：`ui_list_devices` online、`ui_snapshot` 40/69 节点、`ui_get_element` 实时回读（含 `nativeId` / `enabled`），exit 0；拒绝 / 未作答 / 无障碍关闭均映射为稳定错误码。写操作（点击 / 输入 / 滚动 / 按键）未开放，见 ADR-0004 第 8 条；Android 10 未测 |
 
-其余 `未开始`：`optional.browser`、`optional.remote-host`、`optional.developer`、`optional.workflow`、`optional.gecko-renderer`。`entertainment.*` **不提供**。
+| `optional.browser`（TASK-011） | 部分通过（Android 17 真机） | DSHBox 浏览器栈原样复用（ADR-0005）：浏览器在独立 `:browser` 进程打开；只读自检经 browser-use 插件自带客户端 → guest CLI → broker → 命令服务，`status` OK、`observe` 读取百度首页（标题、正文、22 个元素）；安装 24 个 `browser_*` 工具 exit 0，DSH 重启后 `--dump-config` 含 `@local/browser-use`、无插件失败日志。未验证：模型实际调用 `browser_*`（需凭据）、控制请求审批流程、点击 / 输入 / 上传 / 下载 / 网络捕获、iframe、断网、Android 10 |
+
+其余 `未开始`：`optional.remote-host`、`optional.developer`、`optional.workflow`、`optional.gecko-renderer`。`entertainment.*` **不提供**。

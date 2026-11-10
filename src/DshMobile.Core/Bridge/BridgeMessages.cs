@@ -41,6 +41,16 @@ public static class BridgeMethods
     public const string RelayStatus = "relay.status";
     /// <summary>Fixed read-only end-to-end check (relay doctor + one ui.snapshot); returns <see cref="PluginCommandResult"/>.</summary>
     public const string RelaySelftest = "relay.selftest";
+
+    // TASK-011 (ADR-0005): DSHBox browser stack; browser_* tools only after browser.tools.enable.
+    public const string BrowserStatus = "browser.status";
+    /// <summary>Opens the browser UI (library BrowserActivity in the :browser process); returns <see cref="BrowserStatusInfo"/>.</summary>
+    public const string BrowserOpen = "browser.open";
+    /// <summary>Installs the browser-use adapter into the web profile; returns <see cref="PluginCommandResult"/>.</summary>
+    public const string BrowserToolsEnable = "browser.tools.enable";
+    public const string BrowserToolsDisable = "browser.tools.disable";
+    /// <summary>Fixed read-only check through the adapter's own client (status + observe); returns <see cref="PluginCommandResult"/>.</summary>
+    public const string BrowserSelftest = "browser.selftest";
 }
 
 /// <summary>Event names pushed by the native side.</summary>
@@ -180,6 +190,24 @@ public sealed record UiToolsStatus(
     [property: JsonPropertyName("conflict")] bool Conflict,
     [property: JsonPropertyName("serverName")] string ServerName);
 
+/// <summary>
+/// Payload of browser.status / browser.open. <c>AdapterInstalled</c> is the browser-use package in the web profile;
+/// <c>ToolsLoadedByDsh</c> is what the running DSH read at its start (null when DSH is not running or was not
+/// started by this app); <c>DshRestartNeeded</c> means the two differ.
+/// </summary>
+public sealed record BrowserStatusInfo(
+    [property: JsonPropertyName("brokerAvailable")] bool BrokerAvailable,
+    [property: JsonPropertyName("brokerRunning")] bool BrokerRunning,
+    [property: JsonPropertyName("cliReady")] bool CliReady,
+    [property: JsonPropertyName("channelPublished")] bool ChannelPublished,
+    [property: JsonPropertyName("adapterInstalled")] bool AdapterInstalled,
+    [property: JsonPropertyName("lastError")] string? LastError,
+    [property: JsonPropertyName("guestCli")] string GuestCli,
+    [property: JsonPropertyName("sandboxState")] string SandboxState,
+    [property: JsonPropertyName("toolsLoadedByDsh")] bool? ToolsLoadedByDsh,
+    [property: JsonPropertyName("dshRestartNeeded")] bool DshRestartNeeded,
+    [property: JsonPropertyName("adapterLogLines")] string[]? AdapterLogLines = null);
+
 public sealed record DiagnosticResult(
     [property: JsonPropertyName("ok")] bool Ok,
     [property: JsonPropertyName("output")] string Output,
@@ -203,5 +231,6 @@ public sealed record DiagnosticResult(
 [JsonSerializable(typeof(PluginCommandResult))]
 [JsonSerializable(typeof(RelayStatus))]
 [JsonSerializable(typeof(UiToolsStatus))]
+[JsonSerializable(typeof(BrowserStatusInfo))]
 [JsonSerializable(typeof(JsonElement))]
 public sealed partial class BridgeJsonContext : JsonSerializerContext;

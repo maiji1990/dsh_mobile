@@ -26,6 +26,11 @@
     <!-- Mobile automation (ADR-0004): Interlock Relay core (Apache-2.0) + its Shizuku client AARs (MIT). -->
     <AndroidLibrary Include="$(NativeArtifactsDir)dshbox-interlock-relay-core-release.aar" Bind="false" />
     <AndroidLibrary Include="$(NativeArtifactsDir)aars\*.aar" Bind="false" />
+    <!-- Browser automation (ADR-0005): DSHBox browser stack; runtime components run in the `:browser` process. -->
+    <AndroidLibrary Include="$(NativeArtifactsDir)dshbox-browser-api-release.aar" Bind="false" />
+    <AndroidLibrary Include="$(NativeArtifactsDir)dshbox-browser-devtools-release.aar" Bind="false" />
+    <AndroidLibrary Include="$(NativeArtifactsDir)dshbox-browser-runtime-release.aar" Bind="false" />
+    <AndroidLibrary Include="$(NativeArtifactsDir)dshbox-browser-bridge-release.aar" Bind="false" />
     <!-- Non-Kotlin/AndroidX runtime jars, audited list in artifacts/native/jars/MANIFEST.txt. -->
     <AndroidLibrary Include="$(NativeArtifactsDir)jars\*.jar" Bind="false" />
     <!-- PRoot / talloc / shmem / zstd-jni prebuilt by DSHBox (licenses: third_party/dshbox/licenses). -->
@@ -42,6 +47,8 @@
     <PackageReference Include="Xamarin.Kotlin.StdLib" Version="2.4.0.1" />
     <PackageReference Include="Xamarin.KotlinX.Coroutines.Android" Version="1.11.0.1" />
     <PackageReference Include="Xamarin.AndroidX.Core.Core.Ktx" Version="1.19.1" />
+    <!-- androidx.webkit 1.12.1 for :browser:browser-runtime (same version DSHBox's catalog pins). -->
+    <PackageReference Include="Xamarin.AndroidX.WebKit" Version="1.12.1.2" />
   </ItemGroup>
 
   <Target Name="DshVerifyNativeArtifacts" BeforeTargets="PrepareForBuild">

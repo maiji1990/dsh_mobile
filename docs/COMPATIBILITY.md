@@ -181,3 +181,22 @@ APK SHA-256 `a084dc5fb2559bea84d04caef8050b63f8006f23f7dc8dd639f08c41b9a2a392`�
 - 「启动」DSH 0.2.1-rc.5（20.5 s READY）：命令行含 `--patch /root/projects/.dsh/dshbox/dsh-official-plugin/…`，
   `ps` 可见 `node /opt/dshbox-cache/dshmobile/ui-facade.mjs`（PID 11343）为 DSH 拉起的 MCP 服务。模型调用未验证（无凭据）。
 - 安全发现：快照包含通知栏中本 App 的审批按钮（「允许一次」「本次会话允许」）。只读阶段无影响；开放点击前必须处理（ADR-0004 第 8 条）。
+
+## TASK-011 浏览器自动化（DSHBox 浏览器栈，ADR-0005）真机记录 — 2026-11-10
+
+设备同上（Honor PTP-AN10，Android 17）。
+
+- 合并清单：新增唯一权限为 App 自有 `org.example.dshmobile.permission.BROWSER_INTERNAL`（`signature`）；
+  `BrowserActivity` / `BrowserCommandService` / 上传与下载 Provider 均在 `:browser` 进程；`${applicationId}` 占位符正确展开。
+  首版缺少 `:browser` 进程的 .NET 运行时提供者，加 `BrowserProcessAnchor` 后生成 `MonoRuntimeProvider_1`。
+- 14:30 沙箱启动即 `BrowserTools: CLI listener ready generation=1`；「只读自检」→ `status: OK state=CLOSED`
+  （`automationEnabled:false, owner:none`），exit 2（无会话，符合预期）。
+- 「打开浏览器」→ `BrowserActivity` 获焦，`org.example.dshmobile:browser` 进程启动，无崩溃；返回按钮为「返回 DSH Mobile」（品牌覆盖生效）。
+- 14:40 用户在浏览器加载百度并开启「AI 控制」：`status: OK state=IDLE session=1`（`automationEnabled:true, owner:ai`），
+  `observe: OK`（`https://www.baidu.com/`，标题「百度一下」，正文 50 字，22 个元素），exit 0；浏览器在后台时也可读取。
+- 14:42「安装 browser_* 工具」→ DSHBox `install.sh`：`Browser adapter assembled`，exit 0。停止→启动 DSH（14.6 s READY）后
+  `--dump-config` web 中 `@local/browser-use` 出现 3 次，DSH 日志无该插件失败行，界面「已在当前 DSH 中加载」。
+  模型实际调用 `browser_*` 未验证（无凭据）。
+- 发现：浏览器空闲约 5 分钟自动关闭（`lastCloseReason: idle_timeout`），关闭后 `status` 仍带上一个 `sessionGeneration`；
+  自检据此误判为 exit 4，已改为按 `state` 判断（单测覆盖；修正版尚未上真机）。
+- 安装新包时 MagicOS 弹出系统安装确认，`adb install` 会一直等待，需人工确认。

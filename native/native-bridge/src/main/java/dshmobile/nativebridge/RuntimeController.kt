@@ -73,6 +73,9 @@ internal class RuntimeController(
         /** Guest self-check that drives the ui_* facade over MCP stdio (TASK-010). */
         private const val GUEST_UI_CHECK = "/opt/dshbox-cache/dshmobile/ui-facade-check.mjs"
 
+        /** Guest self-check that drives the browser-use adapter's own client (TASK-011). */
+        private const val GUEST_BROWSER_CHECK = "/opt/dshbox-cache/dshmobile/browser-check.mjs"
+
         /** Profiles `dsh.probe` accepts; the name is the only caller-supplied token and must match exactly. */
         val PROBE_PROFILES = setOf("web", "headless", "sdk", "sdk-minimal", "acp", "plugin")
 
@@ -81,6 +84,7 @@ internal class RuntimeController(
             "runtime.diagnostics", "sandbox.start", "sandbox.stop", "dsh.start", "dsh.stop", "dsh.probe",
             "plugin.list", "plugin.add", "plugin.remove",
             "relay.start", "relay.stop", "relay.status", "relay.selftest",
+            "browser.status", "browser.open", "browser.tools.enable", "browser.tools.disable", "browser.selftest",
         )
 
         /** Profiles whose plugins may be managed (the shipped templates; desktop is reserved by DSH). */
@@ -113,10 +117,18 @@ internal class RuntimeController(
     @Volatile private var initialized = false
     /** Whether the ui_* patch layer existed when DSH was last started by us; null when DSH was not started here. */
     @Volatile private var uiToolsAtDshStart: Boolean? = null
+    /** Same for the browser-use adapter (browser_* tools), read by DSH from the profile at its start. */
+    @Volatile private var browserToolsAtDshStart: Boolean? = null
+    /** Browser automation host wiring (TASK-011): broker follows the sandbox state. */
+    private val browser = BrowserTools(appContext, config)
     private val watcher: Job
 
     init {
         watcher = scope.launch {
+            launch {
+                browser.prepareAssets()
+                manager.sandboxState.collect { browser.onSandboxState(it) }
+            }
             combine(manager.sandboxState, manager.dshState, manager.dshVersion) { s, d, v -> Triple(s, d, v) }
                 .distinctUntilChanged()
                 .collect { (s, d, v) ->
@@ -169,6 +181,7 @@ internal class RuntimeController(
 
     fun close() {
         watcher.cancel()
+        browser.close()
         scope.cancel()
     }
 
@@ -212,6 +225,7 @@ internal class RuntimeController(
             // ui_* MCP facade (TASK-010); DSH only loads it while UiToolsRegistration's patch layer exists.
             copyAsset("dshmobile/ui-facade.mjs", File(File(config.guestCacheDir, "dshmobile"), "ui-facade.mjs"))
             copyAsset("dshmobile/ui-facade-check.mjs", File(File(config.guestCacheDir, "dshmobile"), "ui-facade-check.mjs"))
+            copyAsset("dshmobile/browser-check.mjs", File(File(config.guestCacheDir, "dshmobile"), "browser-check.mjs"))
         }.onFailure { Log.w(TAG, "ui facade provisioning failed", it) }
         // `dsh plugin` needs pnpm: offline corepack cache + dsh/pnpm wrappers (TASK-009).
         GuestToolchain.provisionCorepack(appContext, config)
@@ -237,6 +251,17 @@ internal class RuntimeController(
                 .put("conflict", UiToolsRegistration.hasConflict(config.userDataDir))
                 .put("serverName", "ui"),
         )
+    }
+
+    /** Browser broker / adapter state plus whether the running DSH loaded the browser_* tools (cf. [relayStatus]). */
+    private fun browserStatus(): JSONObject {
+        val installed = browser.isAdapterInstalled()
+        val dshUp = manager.dshState.value.let { it == DshState.RUNNING || it == DshState.READY || it == DshState.STARTING }
+        val loaded = browserToolsAtDshStart.takeIf { dshUp }
+        return browser.status()
+            .put("sandboxState", manager.sandboxState.value.name)
+            .put("toolsLoadedByDsh", loaded ?: JSONObject.NULL)
+            .put("dshRestartNeeded", loaded != null && loaded != installed)
     }
 
     private suspend fun dispatch(method: String, payload: JSONObject, done: RuntimeCompletion) {
@@ -303,12 +328,14 @@ internal class RuntimeController(
                 UiToolsRegistration.unregister(config.userDataDir)
                 manager.stopSandbox()
                 uiToolsAtDshStart = null
+                browserToolsAtDshStart = null
                 done.ok(status())
             }
             "dsh.start" -> when (val r = manager.startDsh()) {
                 is AppResult.Success -> {
                     // Patch layers are read at DSH start: remember whether this DSH got the ui_* tools.
                     uiToolsAtDshStart = UiToolsRegistration.isRegistered(config.userDataDir)
+                    browserToolsAtDshStart = browser.isAdapterInstalled()
                     done.ok(
                     status().put("dsh", JSONObject()
                         .put("version", r.value.dshVersion ?: JSONObject.NULL)
@@ -318,7 +345,7 @@ internal class RuntimeController(
                 }
                 is AppResult.Failure -> done.fail(r)
             }
-            "dsh.stop" -> { manager.stopDsh(); uiToolsAtDshStart = null; done.ok(status()) }
+            "dsh.stop" -> { manager.stopDsh(); uiToolsAtDshStart = null; browserToolsAtDshStart = null; done.ok(status()) }
             "dsh.probe" -> {
                 val profile = payload.optString("profile", "")
                 if (profile !in PROBE_PROFILES) throw BridgeException(BAD_REQUEST, "profile must be one of $PROBE_PROFILES")
@@ -342,6 +369,36 @@ internal class RuntimeController(
                 done.ok(relayStatus())
             }
             "relay.status" -> done.ok(relayStatus())
+            "browser.status" -> done.ok(browserStatus())
+            "browser.open" -> {
+                // Explicit Intent to the library's BrowserActivity (`:browser` process); returns to our launcher activity.
+                browser.open(appContext.packageManager.getLaunchIntentForPackage(appContext.packageName)?.component)
+                done.ok(browserStatus())
+            }
+            "browser.tools.enable", "browser.tools.disable" -> {
+                // DSHBox's own browser-use installer / uninstaller, against the web profile (ADR-0005). The stage dir is
+                // refreshed from the APK first so the scripts always match this build. No caller input reaches the shell.
+                val install = method == "browser.tools.enable"
+                runCatching { browser.stageAdapter() }.onFailure {
+                    throw BridgeException(INTERNAL, "browser-use stage failed: ${it.message}")
+                }
+                done.ok(runGuestScript(BrowserTools.adapterCommand(install)).put("adapterInstalled", browser.isAdapterInstalled()))
+            }
+            "browser.selftest" -> {
+                // Fixed read-only check through the adapter's own client (status + observe); never takes AI control.
+                runCatching { browser.stageAdapter() }.onFailure {
+                    throw BridgeException(INTERNAL, "browser-use stage failed: ${it.message}")
+                }
+                // Then: does DSH's composed web config include the adapter (it only registers tools when loaded)?
+                // `(exit $rc)` keeps the browser check's exit code as the command's result.
+                val d = "${'$'}"
+                done.ok(runGuestScript(
+                    "node $GUEST_BROWSER_CHECK ${BrowserTools.STAGE_GUEST_DIR}; rc=${d}?; echo; " +
+                        "printf 'dump-config web, lines naming @local/browser-use: '; " +
+                        "(cd /root/projects && $GUEST_DSH --profile web --dump-config 2>/dev/null | grep -c '@local/browser-use'); " +
+                        "(exit ${d}rc)",
+                ))
+            }
             "relay.selftest" -> {
                 // Fixed, read-only commands through the real guest CLI and mailbox: Relay's own readiness check, then
                 // the ui_* facade driven as an MCP stdio server exactly as DSH's dsh-mcp-client would
@@ -393,13 +450,18 @@ internal class RuntimeController(
      * Runs `dsh <args>` in the guest (args are built only from validated tokens). Reports the real exit status
      * and output; a non-zero exit is returned as `ok=false` in the payload, never turned into success.
      */
-    private suspend fun runPluginCommand(args: String): JSONObject {
+    private suspend fun runPluginCommand(args: String): JSONObject = runGuestScript("cd /root/projects && $GUEST_DSH $args")
+
+    /**
+     * Runs a fixed guest command (never caller input) and returns `{ok, exitCode, output, error}` with the real exit
+     * code. Guest commands get a plain PATH; only DSHBox's DSH role adds the wrapper dirs, so give them the same PATH
+     * DSH itself runs with (`dsh plugin` needs `pnpm`; sandbox-manager buildProotEnv, role "dsh").
+     */
+    private suspend fun runGuestScript(command: String): JSONObject {
         val lines = ArrayList<String>()
         val marker = "DSHMOBILE_EXIT="
-        // Guest commands get a plain PATH; only DSHBox's DSH role adds the wrapper dirs. Give `dsh plugin` the same
-        // PATH DSH itself runs with, so its plugin manager finds `pnpm` (sandbox-manager buildProotEnv, role "dsh").
         val path = "export PATH=/opt/dshbox:/root/projects/.dsh/dshbox/bin:${'$'}PATH"
-        val r = manager.runGuestCommand("$path; cd /root/projects && $GUEST_DSH $args; echo $marker${'$'}?", onLine = {
+        val r = manager.runGuestCommand("$path; $command; echo $marker${'$'}?", onLine = {
             synchronized(lines) { lines.add(it); if (lines.size > 2000) lines.removeAt(0) }
         })
         val all = synchronized(lines) { lines.toList() }

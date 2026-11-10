@@ -52,7 +52,7 @@ val exportDir = rootDir.resolve("../artifacts/native")
 val exportAars by tasks.registering {
     group = "dshmobile"
     description = "Build release AARs and export them to artifacts/native/."
-    dependsOn(":native-bridge:assembleRelease", ":common:assembleRelease", ":sandbox-manager:assembleRelease", ":dsh-renderer:api:assembleRelease", ":terminal-emulator:assembleRelease", ":terminal-view:assembleRelease", ":terminal-session:assembleRelease", ":pilot:interlock-relay-core:assembleRelease", ":native-bridge:exportRuntimeJars")
+    dependsOn(":native-bridge:assembleRelease", ":common:assembleRelease", ":sandbox-manager:assembleRelease", ":dsh-renderer:api:assembleRelease", ":terminal-emulator:assembleRelease", ":terminal-view:assembleRelease", ":terminal-session:assembleRelease", ":pilot:interlock-relay-core:assembleRelease", ":browser:browser-api:assembleRelease", ":browser:browser-devtools:assembleRelease", ":browser:browser-runtime:assembleRelease", ":browser:browser-bridge:assembleRelease", ":native-bridge:exportRuntimeJars")
     val outputs = mapOf(
         "dsh-native-bridge-release.aar" to project(":native-bridge").layout.buildDirectory.file("outputs/aar/native-bridge-release.aar"),
         "dshbox-common-release.aar" to project(":common").layout.buildDirectory.file("outputs/aar/common-release.aar"),
@@ -62,6 +62,10 @@ val exportAars by tasks.registering {
         "dshbox-terminal-view-release.aar" to project(":terminal-view").layout.buildDirectory.file("outputs/aar/terminal-view-release.aar"),
         "dshbox-terminal-session-release.aar" to project(":terminal-session").layout.buildDirectory.file("outputs/aar/terminal-session-release.aar"),
         "dshbox-interlock-relay-core-release.aar" to project(":pilot:interlock-relay-core").layout.buildDirectory.file("outputs/aar/interlock-relay-core-release.aar"),
+        "dshbox-browser-api-release.aar" to project(":browser:browser-api").layout.buildDirectory.file("outputs/aar/browser-api-release.aar"),
+        "dshbox-browser-devtools-release.aar" to project(":browser:browser-devtools").layout.buildDirectory.file("outputs/aar/browser-devtools-release.aar"),
+        "dshbox-browser-runtime-release.aar" to project(":browser:browser-runtime").layout.buildDirectory.file("outputs/aar/browser-runtime-release.aar"),
+        "dshbox-browser-bridge-release.aar" to project(":browser:browser-bridge").layout.buildDirectory.file("outputs/aar/browser-bridge-release.aar"),
     )
     doLast {
         exportDir.mkdirs()

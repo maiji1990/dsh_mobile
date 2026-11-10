@@ -24,6 +24,17 @@ public sealed class DshMobileApplication : Application
     {
         base.OnCreate();
         Current = this;
+        // DSHBox's browser runtime (ADR-0005) runs in its own `:browser` process. There we only give WebView a
+        // separate data directory (cookies/storage isolated from the DSH WebUI in the main process) and stop:
+        // no bridge, no runtime, no services. Must run before anything in that process touches WebView.
+        if (IsBrowserProcess())
+        {
+            Android.Webkit.WebView.SetDataDirectorySuffix("browser");
+            return;
+        }
         _bridge = new BridgeHost(this);
     }
+
+    private bool IsBrowserProcess() =>
+        OperatingSystem.IsAndroidVersionAtLeast(28) && Application.ProcessName == PackageName + ":browser";
 }

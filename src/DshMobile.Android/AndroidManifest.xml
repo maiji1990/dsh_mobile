@@ -9,6 +9,13 @@
   <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
   <!--
+    Browser automation (TASK-011, ADR-0005): DSHBox's browser runtime guards its command service and broadcasts
+    with this app-private permission. Signature level: only this APK (same signature) can hold it.
+  -->
+  <permission android:name="${applicationId}.permission.BROWSER_INTERNAL" android:protectionLevel="signature" />
+  <uses-permission android:name="${applicationId}.permission.BROWSER_INTERNAL" />
+
+  <!--
     Interlock Relay core (TASK-010, ADR-0004) declares permissions for all 39 of its capabilities. DSH Mobile
     allowlists only read-only UI capabilities (ui.snapshot / ui.node), so everything else is removed here.
     The merged result is checked with `aapt2 dump badging` (docs/COMPATIBILITY.md).

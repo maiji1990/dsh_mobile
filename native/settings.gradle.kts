@@ -68,3 +68,10 @@ project(":terminal-session").projectDir = dshboxDir.resolve("terminal-session")
 include(":pilot:interlock-relay-core")
 project(":pilot").projectDir = dshboxDir.resolve("pilot")
 project(":pilot:interlock-relay-core").projectDir = dshboxDir.resolve("pilot/interlock-relay-core")
+// Browser automation (TASK-011, ADR-0005): DSHBox's browser stack, unmodified. Same project paths as DSHBox
+// (`:browser:*`) because its build scripts reference each other by these names.
+include(":browser:browser-api", ":browser:browser-devtools", ":browser:browser-runtime", ":browser:browser-bridge")
+project(":browser").projectDir = dshboxDir.resolve("browser")
+listOf("browser-api", "browser-devtools", "browser-runtime", "browser-bridge").forEach {
+    project(":browser:$it").projectDir = dshboxDir.resolve("browser/$it")
+}

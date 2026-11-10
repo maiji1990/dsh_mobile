@@ -53,6 +53,24 @@ public class BridgeCodecTests
     }
 
     [Fact]
+    public void Decode_BrowserStatus()
+    {
+        // Shape produced by RuntimeController.browserStatus() (TASK-011).
+        const string json = """
+            {"protocol":1,"requestId":"r","ok":true,"code":"OK","message":null,"payload":{
+              "brokerAvailable":true,"brokerRunning":true,"cliReady":true,"channelPublished":true,
+              "adapterInstalled":false,"lastError":null,"guestCli":"/opt/browser/bin/browser",
+              "sandboxState":"RUNNING","toolsLoadedByDsh":false,"dshRestartNeeded":false}}
+            """;
+        Assert.True(BridgeCodec.TryDecodeInbound(json, out var resp, out _));
+        var s = BridgeCodec.ReadPayload(resp!, BridgeJsonContext.Default.BrowserStatusInfo)!;
+        Assert.True(s.BrokerRunning);
+        Assert.False(s.AdapterInstalled);
+        Assert.Equal(false, s.ToolsLoadedByDsh);
+        Assert.Equal("/opt/browser/bin/browser", s.GuestCli);
+    }
+
+    [Fact]
     public void Decode_RelayStatusWithoutUiTools_IsNull()
     {
         const string json = """{"protocol":1,"requestId":"r","ok":true,"code":"OK","message":null,"payload":{"phase":"STOPPED","channelRunning":false,"degradedReason":null,"accessibilityEnabled":false,"allowed":[],"guestCli":"/opt/pilot/bin/relay"}}""";

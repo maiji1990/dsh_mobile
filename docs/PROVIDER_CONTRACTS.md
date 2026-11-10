@@ -105,6 +105,10 @@ C# `BridgeClient` 在 `deadlineMs + 2s` 内未收到响应时，本地合成 `DE
 | `relay.stop` | `{}` | `RelayStatus`；停止 Relay 并注销 `ui_*`（运行中的 DSH 保留到重启） |
 | `relay.status` | `{}` | `RelayStatus`；`uiTools{registered, loadedByDsh, dshRestartNeeded, conflict, serverName}` |
 | `relay.selftest` | `{}` | `PluginCommandResult`；guest 固定命令：`relay doctor` + `ui-facade-check.mjs`（经 MCP stdio 跑 `ui_list_devices` / `ui_snapshot` / `ui_get_element`）；exit 0 通过，5 待审批，4 拒绝或不可用，3 过期 |
+| `browser.status` | `{}` | `BrowserStatusInfo{brokerAvailable, brokerRunning, cliReady, channelPublished, adapterInstalled, lastError, guestCli, sandboxState, toolsLoadedByDsh, dshRestartNeeded, adapterLogLines[]}`（TASK-011） |
+| `browser.open` | `{}` | `BrowserStatusInfo`；显式 Intent 打开库内 `BrowserActivity`（`:browser` 进程），返回键回到启动页 |
+| `browser.tools.enable` / `browser.tools.disable` | `{}` | `PluginCommandResult` + `adapterInstalled`；运行 DSHBox `browser-use` 原版 `install.sh` / `uninstall.sh`（web profile）；DSH 重启后生效 |
+| `browser.selftest` | `{}` | `PluginCommandResult`；guest `browser-check.mjs` 用插件自带客户端执行 `status` + `observe`（只读、不取控制权），再统计 `--dump-config` 中 `@local/browser-use`；exit 0 通过，2 无会话 / 自动化关闭，3 通道不可用，4 其它失败 |
 | `dsh.probe` | `{"profile": "web\|headless\|sdk\|sdk-minimal\|acp\|plugin"}`（白名单） | `ProbeResult{profile, status: pass\|limited\|fail, needsCredential, shim, checks[{name, ok, ms, detail}]}`；guest 内固定脚本，做真实协议握手，不调用模型 |
 
 `runtime.* / sandbox.* / dsh.*` 在 IO 协程上异步执行（不阻塞控制线程），彼此串行；deadline 内未完成返回 `DEADLINE_EXCEEDED`（底层操作可能仍在收尾）。DSH launch token **不经过**控制面 JSON，只暴露 `hasLaunchToken`。
@@ -165,3 +169,12 @@ DSH 中 `serverName: ui`，模型侧工具名 `mcp__ui__<tool>`。设计与取�
 
 开启中继时写入宿主 `--patch` 层（`dsh-mcp-client`，stdio，`command: !!js process.execPath`，
 `args: ['/opt/dshbox-cache/dshmobile/ui-facade.mjs']`，`toolCallTimeoutMs: 120000`）；DSH 启动时加载。见 ADR-0004 第 7 条。
+
+## 3. `browser_*` 浏览器自动化契约（TASK-011）
+
+不另造契约：DSH 中的 24 个 `browser_*` 工具（`browser_status / open / observe / wait / navigate / locate / click / type /
+scroll / screenshot / close / debug / network / selection / page / file / upload / task / collect / event / control /
+ax / rendering / serve`）由 DSHBox `@local/browser-use` 插件定义，经 guest CLI `/opt/browser/bin/browser` →
+`BrowserCliBroker`（主进程，私有 LocalSocket + 一次性 token，通道文件 `/opt/browser/run/channel.json`）→
+`BrowserCommandService`（`:browser` 进程）执行；请求 / 响应形状、错误码与控制代次规则以上游 `browser-cli.cjs` 与
+插件 `client.js` 为准（DSHBox `v1.5.1`）。与 `ui_*` 分属不同命名空间，元素引用不互通。设计与取舍见 ADR-0005。

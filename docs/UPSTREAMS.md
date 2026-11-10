@@ -17,12 +17,13 @@
 | `common` | **已引入**（TASK-003） | `native/settings.gradle.kts` 以 `:common`（与 DSHBox 同名，其脚本按此引用）引用源码目录，构建输出重定向到 `native/build/upstream/` | 否（`Bind="false"`） |
 | `app/src/main/jniLibs`（PRoot、talloc、android-shmem、zstd-jni 预编译 `.so`） | **已引入**（TASK-004） | `:native-bridge:exportRuntimeJars` 复制到 `artifacts/native/jniLibs/` | — |
 | Release 运行层（DSH `0.2.1-rc.5.tar.zst`、`dshapp-runtime-debian-arm64-0.1.0.zip`） | **已引入**（TASK-004） | `runtime-bundle/runtime-assets.lock`（GitHub 发布摘要 SHA-256）+ `fetch-runtime.ps1` | — |
-| `plugin-manager/dshbox-plugins/assets/dshbox/{link-shim.mjs, libdshbox-link.so}` | **已引入**（TASK-005） | 构建时原样复制进 Bridge AAR 资产（仅这两个文件，**不含** DSHBox `assets/plugins/*`：mobile-pilot 等与 `ui_*` 单一契约冲突） | — |
+| `plugin-manager/dshbox-plugins/assets/dshbox/{link-shim.mjs, libdshbox-link.so}` | **已引入**（TASK-005） | 构建时原样复制进 Bridge AAR 资产（仅这两个文件；`assets/plugins/*` 中只另取 `browser-use`（TASK-011，`browser_*` 独立命名空间），mobile-pilot / mobile-adapt 与 `ui_*` 单一契约冲突，不取） | — |
 | `dsh-renderer/api` | **已引入**（TASK-006） | `native/settings.gradle.kts` 以 `:dsh-renderer:api` 引用；使用 `DshOriginPolicy`、`DshTokenRevisionTracker` | 否（`Bind="false"`） |
 | `sandbox-manager` | **已引入**（TASK-004） | `native/settings.gradle.kts` 以 `:sandbox-manager` 引用源码目录 | 否（`Bind="false"`） |
 | `terminal-emulator` / `terminal-view` / `terminal-session` | **已引入**（TASK-008） | `native/settings.gradle.kts` 同名项目；`terminal-emulator` 的 `termux.c` 由 ndk-build 从源码构建（NDK 27.0.12077973，与 DSHBox 根构建同一锁定） | 否（`Bind="false"`；C# 只拿到 `android.view.View`） |
 | `pilot/interlock-relay-core` | **已引入**（TASK-010，ADR-0004；未修改） | `native/settings.gradle.kts` 以 `:pilot:interlock-relay-core` 引用源码目录；宿主 SPI 在 `MobileAutomation.kt` / `RelayApproval.kt`；能力白名单只读 2 项 | 否（`Bind="false"`） |
-| `browser/*` | 计划 TASK-011 | — | 否 |
+| `browser/browser-api` / `browser-devtools` / `browser-runtime` / `browser-bridge` | **已引入**（TASK-011，ADR-0005；未修改） | `native/settings.gradle.kts` 以 `:browser:*`（与 DSHBox 同名）引用源码目录；`androidx.webkit` 由 NuGet `Xamarin.AndroidX.WebKit` 1.12.1.2 提供；唯一品牌字符串 `browser_collapse` 由 App 资源覆盖 | 否（`Bind="false"`） |
+| `plugin-manager/dshbox-plugins/assets/plugins/browser-use`（Cordis 插件，GPL-3.0，24 个 `browser_*` 工具 + install/uninstall 脚本） | **已引入**（TASK-011，整目录原样复制进 Bridge AAR 资产，用户开启时才安装到 web profile） | `stageDshboxShimAssets` | — |
 | `app`、`pilot/dshbox-adapter`、`plugin-manager` UI | **不引入**（重建为 C#） | — | — |
 
 ## 构建工具链来源

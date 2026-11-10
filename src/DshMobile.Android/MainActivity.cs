@@ -62,6 +62,8 @@ public class MainActivity : Activity
         terminal.Click += (_, _) => StartActivity(new Android.Content.Intent(this, typeof(DshMobile.App.Terminal.TerminalActivity)));
         plugins.Click += (_, _) => StartActivity(new Android.Content.Intent(this, typeof(DshMobile.App.Plugins.PluginsActivity)));
         automation.Click += (_, _) => StartActivity(new Android.Content.Intent(this, typeof(DshMobile.App.Automation.AutomationActivity)));
+        FindViewById<Button>(Resource.Id.btn_browser)!.Click +=
+            (_, _) => StartActivity(new Android.Content.Intent(this, typeof(DshMobile.App.Browser.BrowserToolsActivity)));
 
         // The foreground-service notification is only visible with this permission (Android 13+).
         // The service itself runs either way, so a denial is not an error.
