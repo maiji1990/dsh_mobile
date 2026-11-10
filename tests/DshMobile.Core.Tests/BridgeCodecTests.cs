@@ -33,6 +33,34 @@ public class BridgeCodecTests
     }
 
     [Fact]
+    public void Decode_RelayStatusWithUiTools()
+    {
+        // Shape produced by RuntimeController.relayStatus() (TASK-010).
+        const string json = """
+            {"protocol":1,"requestId":"r","ok":true,"code":"OK","message":null,"payload":{
+              "phase":"STARTING","channelRunning":false,"degradedReason":null,"accessibilityEnabled":true,
+              "allowed":["ui.node","ui.snapshot"],"guestCli":"/opt/pilot/bin/relay",
+              "uiTools":{"registered":true,"loadedByDsh":null,"dshRestartNeeded":false,"conflict":false,"serverName":"ui"}}}
+            """;
+        Assert.True(BridgeCodec.TryDecodeInbound(json, out var resp, out _));
+        var s = BridgeCodec.ReadPayload(resp!, BridgeJsonContext.Default.RelayStatus)!;
+        Assert.Equal(["ui.node", "ui.snapshot"], s.Allowed);
+        Assert.NotNull(s.UiTools);
+        Assert.True(s.UiTools.Registered);
+        Assert.Null(s.UiTools.LoadedByDsh);
+        Assert.False(s.UiTools.DshRestartNeeded);
+        Assert.Equal("ui", s.UiTools.ServerName);
+    }
+
+    [Fact]
+    public void Decode_RelayStatusWithoutUiTools_IsNull()
+    {
+        const string json = """{"protocol":1,"requestId":"r","ok":true,"code":"OK","message":null,"payload":{"phase":"STOPPED","channelRunning":false,"degradedReason":null,"accessibilityEnabled":false,"allowed":[],"guestCli":"/opt/pilot/bin/relay"}}""";
+        Assert.True(BridgeCodec.TryDecodeInbound(json, out var resp, out _));
+        Assert.Null(BridgeCodec.ReadPayload(resp!, BridgeJsonContext.Default.RelayStatus)!.UiTools);
+    }
+
+    [Fact]
     public void Decode_ErrorResponseWithNullPayload()
     {
         const string json = """{"protocol":1,"requestId":null,"ok":false,"code":"BAD_REQUEST","message":"invalid JSON","payload":null}""";

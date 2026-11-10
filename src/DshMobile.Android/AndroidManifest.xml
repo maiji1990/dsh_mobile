@@ -1,11 +1,36 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
   <!-- Loopback health checks + DSH's own model/API traffic (TASK-004). -->
   <uses-permission android:name="android.permission.INTERNET" />
   <!-- Keeps the Debian/PRoot sandbox and DSH alive while the UI is in the background (plan 6.3). -->
   <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
   <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
   <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+  <!--
+    Interlock Relay core (TASK-010, ADR-0004) declares permissions for all 39 of its capabilities. DSH Mobile
+    allowlists only read-only UI capabilities (ui.snapshot / ui.node), so everything else is removed here.
+    The merged result is checked with `aapt2 dump badging` (docs/COMPATIBILITY.md).
+  -->
+  <uses-permission android:name="android.permission.READ_CALENDAR" tools:node="remove" />
+  <uses-permission android:name="android.permission.WRITE_CALENDAR" tools:node="remove" />
+  <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" tools:node="remove" />
+  <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" tools:node="remove" />
+  <uses-permission android:name="android.permission.READ_CONTACTS" tools:node="remove" />
+  <uses-permission android:name="android.permission.WRITE_CONTACTS" tools:node="remove" />
+  <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" tools:node="remove" />
+  <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" tools:node="remove" />
+  <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" tools:node="remove" />
+  <uses-permission android:name="android.permission.READ_MEDIA_VISUAL_USER_SELECTED" tools:node="remove" />
+  <uses-permission android:name="android.permission.RECORD_AUDIO" tools:node="remove" />
+  <uses-permission android:name="com.android.alarm.permission.SET_ALARM" tools:node="remove" />
+  <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" tools:node="remove" />
+  <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" tools:node="remove" />
+  <!-- From the Shizuku client AAR; the Shizuku backend is not allowlisted. -->
+  <uses-permission android:name="moe.shizuku.manager.permission.API_V23" tools:node="remove" />
+  <!-- Package visibility for app launching / Shizuku is not needed by the read-only allowlist. -->
+  <queries tools:node="remove" />
 
   <!--
     extractNativeLibs: PRoot (libproot.so / libproot-loader.so) is exec'd as a program from
@@ -29,5 +54,10 @@
           android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
           android:value="Runs a user-started local Linux sandbox (PRoot) hosting the DeepSeek Harness developer agent and its loopback web UI." />
     </service>
+
+    <!-- Relay components outside the allowlist (notification reading, screen capture, Shizuku binder). -->
+    <service android:name="interlock.relay.core.exec.direct.RelayNotificationListener" tools:node="remove" />
+    <service android:name="interlock.relay.core.exec.direct.RelayProjectionService" tools:node="remove" />
+    <provider android:name="rikka.shizuku.ShizukuProvider" tools:node="remove" />
   </application>
 </manifest>

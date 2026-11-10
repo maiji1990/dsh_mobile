@@ -7,6 +7,7 @@ import android.util.Log
 import com.dshbox.app.common.AppResult
 import com.dshbox.app.sandbox.BundledRuntimeInstaller
 import com.dshbox.app.sandbox.DefaultSandboxManager
+import com.dshbox.app.sandbox.DshState
 import com.dshbox.app.sandbox.SandboxConfig
 import com.dshbox.app.sandbox.SandboxManager
 import kotlinx.coroutines.CoroutineScope
@@ -69,6 +70,9 @@ internal class RuntimeController(
         /** Guest path of our probe script (host: config.guestCacheDir/dshmobile, bound at /opt/dshbox-cache). */
         private const val GUEST_PROBE = "/opt/dshbox-cache/dshmobile/dsh-probe.mjs"
 
+        /** Guest self-check that drives the ui_* facade over MCP stdio (TASK-010). */
+        private const val GUEST_UI_CHECK = "/opt/dshbox-cache/dshmobile/ui-facade-check.mjs"
+
         /** Profiles `dsh.probe` accepts; the name is the only caller-supplied token and must match exactly. */
         val PROBE_PROFILES = setOf("web", "headless", "sdk", "sdk-minimal", "acp", "plugin")
 
@@ -76,6 +80,7 @@ internal class RuntimeController(
             "runtime.status", "runtime.prepare", "runtime.importBundle", "runtime.health",
             "runtime.diagnostics", "sandbox.start", "sandbox.stop", "dsh.start", "dsh.stop", "dsh.probe",
             "plugin.list", "plugin.add", "plugin.remove",
+            "relay.start", "relay.stop", "relay.status", "relay.selftest",
         )
 
         /** Profiles whose plugins may be managed (the shipped templates; desktop is reserved by DSH). */
@@ -106,6 +111,8 @@ internal class RuntimeController(
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val opLock = Mutex()
     @Volatile private var initialized = false
+    /** Whether the ui_* patch layer existed when DSH was last started by us; null when DSH was not started here. */
+    @Volatile private var uiToolsAtDshStart: Boolean? = null
     private val watcher: Job
 
     init {
@@ -201,9 +208,35 @@ internal class RuntimeController(
         runCatching {
             copyAsset("dshmobile/dsh-probe.mjs", File(File(config.guestCacheDir, "dshmobile"), "dsh-probe.mjs"))
         }.onFailure { Log.w(TAG, "probe script provisioning failed", it) }
+        runCatching {
+            // ui_* MCP facade (TASK-010); DSH only loads it while UiToolsRegistration's patch layer exists.
+            copyAsset("dshmobile/ui-facade.mjs", File(File(config.guestCacheDir, "dshmobile"), "ui-facade.mjs"))
+            copyAsset("dshmobile/ui-facade-check.mjs", File(File(config.guestCacheDir, "dshmobile"), "ui-facade-check.mjs"))
+        }.onFailure { Log.w(TAG, "ui facade provisioning failed", it) }
         // `dsh plugin` needs pnpm: offline corepack cache + dsh/pnpm wrappers (TASK-009).
         GuestToolchain.provisionCorepack(appContext, config)
         GuestToolchain.writeShims(config)
+    }
+
+    /**
+     * Relay status plus the ui_* tool registration: `registered` is the patch layer on disk, `loadedByDsh` what
+     * the running DSH read at its start (null when DSH is not running or was not started here), and
+     * `dshRestartNeeded` whether the two differ, so the UI can say "restart DSH" instead of implying the tools
+     * are live.
+     */
+    private fun relayStatus(): JSONObject {
+        val registered = UiToolsRegistration.isRegistered(config.userDataDir)
+        val dshUp = manager.dshState.value.let { it == DshState.RUNNING || it == DshState.READY || it == DshState.STARTING }
+        val loaded = uiToolsAtDshStart.takeIf { dshUp }
+        return MobileAutomation.status(appContext).put(
+            "uiTools",
+            JSONObject()
+                .put("registered", registered)
+                .put("loadedByDsh", loaded ?: JSONObject.NULL)
+                .put("dshRestartNeeded", loaded != null && loaded != registered)
+                .put("conflict", UiToolsRegistration.hasConflict(config.userDataDir))
+                .put("serverName", "ui"),
+        )
     }
 
     private suspend fun dispatch(method: String, payload: JSONObject, done: RuntimeCompletion) {
@@ -265,19 +298,27 @@ internal class RuntimeController(
             "sandbox.stop" -> {
                 // Terminal shells live inside the sandbox rootfs: stop them first (as DSHBox does).
                 terminalOrNull?.stopAll()
+                // The relay mailbox is only meaningful while the sandbox runs (optional module, ADR-0004).
+                MobileAutomation.stop()
+                UiToolsRegistration.unregister(config.userDataDir)
                 manager.stopSandbox()
+                uiToolsAtDshStart = null
                 done.ok(status())
             }
             "dsh.start" -> when (val r = manager.startDsh()) {
-                is AppResult.Success -> done.ok(
+                is AppResult.Success -> {
+                    // Patch layers are read at DSH start: remember whether this DSH got the ui_* tools.
+                    uiToolsAtDshStart = UiToolsRegistration.isRegistered(config.userDataDir)
+                    done.ok(
                     status().put("dsh", JSONObject()
                         .put("version", r.value.dshVersion ?: JSONObject.NULL)
                         .put("baseUrl", r.value.baseUrl)
                         .put("ready", r.value.ready)),
-                )
+                    )
+                }
                 is AppResult.Failure -> done.fail(r)
             }
-            "dsh.stop" -> { manager.stopDsh(); done.ok(status()) }
+            "dsh.stop" -> { manager.stopDsh(); uiToolsAtDshStart = null; done.ok(status()) }
             "dsh.probe" -> {
                 val profile = payload.optString("profile", "")
                 if (profile !in PROBE_PROFILES) throw BridgeException(BAD_REQUEST, "profile must be one of $PROBE_PROFILES")
@@ -289,6 +330,38 @@ internal class RuntimeController(
                     throw BridgeException(INTERNAL, "$why; tail: ${synchronized(lines) { lines.takeLast(8).joinToString(" | ") }}")
                 }
                 done.ok(JSONObject(resultLine.removePrefix("DSHPROBE ")))
+            }
+            "relay.start" -> {
+                MobileAutomation.start(appContext)
+                UiToolsRegistration.register(config.userDataDir)
+                done.ok(relayStatus())
+            }
+            "relay.stop" -> {
+                MobileAutomation.stop()
+                UiToolsRegistration.unregister(config.userDataDir)
+                done.ok(relayStatus())
+            }
+            "relay.status" -> done.ok(relayStatus())
+            "relay.selftest" -> {
+                // Fixed, read-only commands through the real guest CLI and mailbox: Relay's own readiness check, then
+                // the ui_* facade driven as an MCP stdio server exactly as DSH's dsh-mcp-client would
+                // (ui_list_devices, ui_snapshot, ui_get_element). No caller-supplied input reaches the shell.
+                // The facade itself retries while Relay is waiting for the approval (Relay only waits ~8 s inline);
+                // 50 s per call keeps two approvals inside the UI's 2 min deadline.
+                val lines = ArrayList<String>()
+                val marker = "DSHMOBILE_EXIT="
+                val d = "${'$'}"
+                manager.runGuestCommand(
+                    "/opt/pilot/bin/relay doctor; echo; node $GUEST_UI_CHECK --approval-wait-ms 50000; echo $marker${d}?",
+                    onLine = { synchronized(lines) { lines.add(it); if (lines.size > 400) lines.removeAt(0) } },
+                )
+                val all = synchronized(lines) { lines.toList() }
+                val exit = all.lastOrNull { it.startsWith(marker) }?.removePrefix(marker)?.trim()?.toIntOrNull()
+                done.ok(JSONObject()
+                    .put("ok", exit == 0)
+                    .put("exitCode", exit ?: JSONObject.NULL)
+                    .put("output", all.filterNot { it.startsWith(marker) }.joinToString(NL))
+                    .put("error", JSONObject.NULL))
             }
             "plugin.list" -> {
                 val profile = requireProfile(payload)
@@ -338,6 +411,8 @@ internal class RuntimeController(
             .put("output", output.joinToString("\n"))
             .put("error", (r as? AppResult.Failure)?.error?.message ?: JSONObject.NULL)
     }
+
+    private val NL = "\n"
 
     private fun status(): JSONObject {
         val free = runCatching { StatFs(appContext.filesDir.absolutePath).availableBytes }.getOrDefault(-1L)

@@ -178,6 +178,13 @@
     </LinearLayout>
 
     <Button
+        android:id="@+id/btn_automation"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:minHeight="48dp"
+        android:text="@string/action_automation" />
+
+    <Button
         android:id="@+id/btn_probe"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"

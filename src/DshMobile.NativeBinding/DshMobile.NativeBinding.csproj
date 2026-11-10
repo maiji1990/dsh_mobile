@@ -23,6 +23,9 @@
     <AndroidLibrary Include="$(NativeArtifactsDir)dshbox-terminal-emulator-release.aar" Bind="false" />
     <AndroidLibrary Include="$(NativeArtifactsDir)dshbox-terminal-view-release.aar" Bind="false" />
     <AndroidLibrary Include="$(NativeArtifactsDir)dshbox-terminal-session-release.aar" Bind="false" />
+    <!-- Mobile automation (ADR-0004): Interlock Relay core (Apache-2.0) + its Shizuku client AARs (MIT). -->
+    <AndroidLibrary Include="$(NativeArtifactsDir)dshbox-interlock-relay-core-release.aar" Bind="false" />
+    <AndroidLibrary Include="$(NativeArtifactsDir)aars\*.aar" Bind="false" />
     <!-- Non-Kotlin/AndroidX runtime jars, audited list in artifacts/native/jars/MANIFEST.txt. -->
     <AndroidLibrary Include="$(NativeArtifactsDir)jars\*.jar" Bind="false" />
     <!-- PRoot / talloc / shmem / zstd-jni prebuilt by DSHBox (licenses: third_party/dshbox/licenses). -->

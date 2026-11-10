@@ -21,7 +21,7 @@
 | Subagent / Agent Team | 未开始 | |
 | Bash / PTY / 子进程 | 通过（Android 17 真机） | 原生 TerminalView + PRoot bash：命令执行、^C、多会话新建/切换/关闭、关闭页面后会话保留、「停止」连带结束终端进程均已验证；中文/宽字符、大量输出、横屏未测 |
 | 文件、工作目录、附件 | 部分通过（Android 17 真机） | 文件页浏览 / 受保护 `.dsh` 拒绝 / SAF 导入 / SAF 导出已真机通过；WebUI 附件上传未验证（DSH 未发起文件选择，疑需先选工作区）；下载未做 |
-| MCP / Skills / 自定义工具 | 未开始 | TASK-010 |
+| MCP / Skills / 自定义工具 | 部分通过（Android 17 真机） | DSH 0.2.1-rc.5 经 `--patch` 加载 `dsh-mcp-client` 条目并拉起 guest MCP 服务 `ui-facade.mjs`（真机 `ps` 可见为 DSH 子进程）；由模型实际调用 `mcp__ui__*` 需模型凭据，未验证；Skills / 其它自定义工具未做 |
 | 更新与诊断 | 部分 | 离线导入 + 固定诊断（arch/debian/node/dsh 版本）+ 健康探测；在线更新与回滚 UI 未做 |
 
 ## 宿主基础设施
@@ -37,4 +37,8 @@
 
 ## 可选模块（方案 4.3）
 
-全部 `未开始`：`optional.browser`、`optional.mobile-automation`、`optional.remote-host`、`optional.developer`、`optional.workflow`、`optional.gecko-renderer`。`entertainment.*` **不提供**。
+| 模块 | 状态 | 证据 / 备注 |
+|---|---|---|
+| `optional.mobile-automation`（TASK-010） | 只读部分通过（Android 17 真机） | Interlock Relay core（白名单 `ui.snapshot` / `ui.node`）+ 通知栏审批 + guest `ui_*` 门面：`ui_list_devices` online、`ui_snapshot` 40/69 节点、`ui_get_element` 实时回读（含 `nativeId` / `enabled`），exit 0；拒绝 / 未作答 / 无障碍关闭均映射为稳定错误码。写操作（点击 / 输入 / 滚动 / 按键）未开放，见 ADR-0004 第 8 条；Android 10 未测 |
+
+其余 `未开始`：`optional.browser`、`optional.remote-host`、`optional.developer`、`optional.workflow`、`optional.gecko-renderer`。`entertainment.*` **不提供**。

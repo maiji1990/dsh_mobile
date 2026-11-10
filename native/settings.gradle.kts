@@ -64,3 +64,7 @@ include(":terminal-view")
 project(":terminal-view").projectDir = dshboxDir.resolve("terminal-view")
 include(":terminal-session")
 project(":terminal-session").projectDir = dshboxDir.resolve("terminal-session")
+// Mobile automation execution layer (TASK-010, ADR-0004): Interlock Relay core (Apache-2.0), unmodified.
+include(":pilot:interlock-relay-core")
+project(":pilot").projectDir = dshboxDir.resolve("pilot")
+project(":pilot:interlock-relay-core").projectDir = dshboxDir.resolve("pilot/interlock-relay-core")

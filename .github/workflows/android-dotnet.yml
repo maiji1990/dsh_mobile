@@ -36,6 +36,10 @@ jobs:
       - name: Contract tests
         run: dotnet test tests/DshMobile.Core.Tests -c Release
 
+      # Guest ui_* MCP facade (TASK-010): dependency-free, runs on the runner's preinstalled Node.
+      - name: Guest facade tests
+        run: node --test native/native-bridge/src/test/guest/
+
       - name: Build app
         run: dotnet build src/DshMobile.Android -c Release
 

@@ -8,7 +8,7 @@
 |---|---|---|---|---|---|
 | [WSK-build/DSHBox](https://github.com/WSK-build/DSHBox) | git submodule `third_party/dshbox`（shallow） | `v1.5.1` | `7c9d33c1f29dd2c42dde6c7e2fcdf38814f491c4` | GPL-3.0（品牌资产保留，见其 `TRADEMARK.md`）；子模块各自许可见其 `licenses/` | 运行时、终端、Relay 等原生组件来源 |
 | [deepseek-ai/deepseek-harness](https://github.com/deepseek-ai/deepseek-harness) | 运行时层（npm 包，TASK-004/005 引入） | 待定（最新 tag 观察到 `dsh-v0.2.2-rc.1`，尚无稳定 tag） | — | 见上游 | 原样运行的 DSH / Cordis |
-| [maiji1990/ui_mcp](https://github.com/maiji1990/ui_mcp) | 契约参考（TASK-010 引入） | 待定（`main` 当前 `e098f91c7d34f27372ced17bea033861b63b681e`，仅记录未引入） | — | 见上游 | `ui_*` 统一契约 |
+| [maiji1990/ui_mcp](https://github.com/maiji1990/ui_mcp) | 契约参考（TASK-010；不引入代码，guest 门面按其契约另行实现） | `main` @ `e098f91c7d34f27372ced17bea033861b63b681e`（工具名、错误码、ref 语义、`docs/p2-phone-facade-design.md`） | `e098f91c7d34f27372ced17bea033861b63b681e` | 见上游 | `ui_*` 统一契约 |
 
 ## DSHBox 模块使用情况
 
@@ -21,7 +21,7 @@
 | `dsh-renderer/api` | **已引入**（TASK-006） | `native/settings.gradle.kts` 以 `:dsh-renderer:api` 引用；使用 `DshOriginPolicy`、`DshTokenRevisionTracker` | 否（`Bind="false"`） |
 | `sandbox-manager` | **已引入**（TASK-004） | `native/settings.gradle.kts` 以 `:sandbox-manager` 引用源码目录 | 否（`Bind="false"`） |
 | `terminal-emulator` / `terminal-view` / `terminal-session` | **已引入**（TASK-008） | `native/settings.gradle.kts` 同名项目；`terminal-emulator` 的 `termux.c` 由 ndk-build 从源码构建（NDK 27.0.12077973，与 DSHBox 根构建同一锁定） | 否（`Bind="false"`；C# 只拿到 `android.view.View`） |
-| `pilot/interlock-relay-core` | 计划 TASK-010（优先使用 Apache-2.0 独立仓库） | — | 否 |
+| `pilot/interlock-relay-core` | **已引入**（TASK-010，ADR-0004；未修改） | `native/settings.gradle.kts` 以 `:pilot:interlock-relay-core` 引用源码目录；宿主 SPI 在 `MobileAutomation.kt` / `RelayApproval.kt`；能力白名单只读 2 项 | 否（`Bind="false"`） |
 | `browser/*` | 计划 TASK-011 | — | 否 |
 | `app`、`pilot/dshbox-adapter`、`plugin-manager` UI | **不引入**（重建为 C#） | — | — |
 

@@ -7,7 +7,8 @@
 | 层 | 项目 | 覆盖 |
 |---|---|---|
 | 契约 | `tests/DshMobile.Core.Tests` | 请求/响应 JSON 形状与字段名、错误码常量与 Java 端一致、非法响应解析 |
-| Native 单测 | `native/native-bridge/src/test`（JVM） | 协议解析、未知 method、重复 requestId、deadline、关闭后拒绝 |
+| Native 单测 | `native/native-bridge/src/test`（JVM） | 协议解析、未知 method、重复 requestId、deadline、关闭后拒绝；`UiToolsRegistrationTest`（patch 层正文、原子写、只删自己写的） |
+| Guest 门面 | `node --test native/native-bridge/src/test/guest/`（CI 同跑） | 假 Relay CLI 回放真机回包：元素映射、compact/截断、`STALE_ELEMENT`（旧快照零底层调用、控件已变、节点消失）、审批等待重试、拒绝不重试、错误保守映射、MCP stdio 握手（`server/discover` 回落 / `initialize` / `tools/list` / `tools/call`）、guest 自检退出码 |
 
 ## M1 验收（需真机，手动 + 日志）
 
@@ -76,3 +77,17 @@
 4. 非法输入（`a; id`、`../x`、`https://…`）必须被拒绝为 `BAD_REQUEST`（亦由 `PluginSpecTest` 覆盖）。
 5. 「DSH 模式探测」中 plugin 项应为 pass。
 6. 待补：真实 DSH 插件加载、断网失败提示、安全模式恢复、镜像源。
+
+## TASK-010 手机操控（只读，需真机；无障碍开启与审批由人手动）
+
+1. 首页「手机操控」→「开启中继」：`Relay: STARTING/RUNNING`；末行「DSH 工具（mcp__ui__*）：已注册，下次启动 DSH 时加载」。
+2. 无障碍未开时「只读自检」：`ui_snapshot` 报 `PROVIDER_UNAVAILABLE`（Relay `E_GATE_SYSTEM_MISSING`）。
+3. 点「打开无障碍设置」，人工开启服务后返回：`无障碍服务：已开启`，`信箱运行中`。
+4. 「只读自检」→ 下拉通知栏：
+   - 「允许一次」：快照与回读各弹一次，exit=0，输出含 `ui_list_devices: ["android-local:online"]`、`ui_snapshot`、`ui_get_element … ok`；
+   - 「本次会话允许」：`ui.snapshot` 与 `ui.node` 各一次，之后同会话不再询问；
+   - 「拒绝」：`POLICY_DENIED`，自检不重试；不作答：约 50 s 后 `APPROVAL_REQUIRED`（exit=5）。
+5. 首页「启动」后：`adb shell ps -A -o PID,USER,ARGS | grep ui-facade` 须见 `node /opt/dshbox-cache/dshmobile/ui-facade.mjs`，
+   DSH 命令行含 `--patch …/dsh-official-plugin-overlay.yml`；「手机操控」末行为「已在当前 DSH 中加载」。
+6. 「关闭中继」：末行「已注销，当前 DSH 仍保留到重启（调用会失败）」；重启 DSH 后不再有 `ui-facade` 进程。
+7. 待补：模型实际调用 `mcp__ui__*`（需凭据）、通知被关时 `E_GATE_NO_FOREGROUND`、安全窗口（`SECURE_CONTENT`）、Android 10。

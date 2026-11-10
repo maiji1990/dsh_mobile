@@ -25,6 +25,7 @@ artifacts/native/*.sha256
 artifacts/native/*.txt
 artifacts/native/jars/
 artifacts/native/jniLibs/
+artifacts/native/aars/
 artifacts/*.log
 
 # Signing material must never be committed

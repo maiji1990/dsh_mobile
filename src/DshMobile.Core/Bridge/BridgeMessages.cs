@@ -34,6 +34,13 @@ public static class BridgeMethods
     public const string PluginList = "plugin.list";
     public const string PluginAdd = "plugin.add";
     public const string PluginRemove = "plugin.remove";
+
+    // TASK-010 (ADR-0004): Interlock Relay execution layer for ui_*; optional, off until relay.start.
+    public const string RelayStart = "relay.start";
+    public const string RelayStop = "relay.stop";
+    public const string RelayStatus = "relay.status";
+    /// <summary>Fixed read-only end-to-end check (relay doctor + one ui.snapshot); returns <see cref="PluginCommandResult"/>.</summary>
+    public const string RelaySelftest = "relay.selftest";
 }
 
 /// <summary>Event names pushed by the native side.</summary>
@@ -150,6 +157,29 @@ public sealed record PluginCommandResult(
     [property: JsonPropertyName("output")] string Output,
     [property: JsonPropertyName("error")] string? Error);
 
+/// <summary>Payload of relay.* responses.</summary>
+public sealed record RelayStatus(
+    [property: JsonPropertyName("phase")] string Phase,
+    [property: JsonPropertyName("channelRunning")] bool ChannelRunning,
+    [property: JsonPropertyName("degradedReason")] string? DegradedReason,
+    [property: JsonPropertyName("accessibilityEnabled")] bool AccessibilityEnabled,
+    [property: JsonPropertyName("allowed")] string[] Allowed,
+    [property: JsonPropertyName("guestCli")] string GuestCli,
+    [property: JsonPropertyName("uiTools")] UiToolsStatus? UiTools = null);
+
+/// <summary>
+/// Registration of the guest ui_* MCP facade with DSH. <c>Registered</c> is the patch layer on disk;
+/// <c>LoadedByDsh</c> is what the running DSH read at its start (null when DSH is not running or was not started
+/// by this app); <c>DshRestartNeeded</c> means the two differ; <c>Conflict</c> means the layer file holds content
+/// this app did not write (left untouched).
+/// </summary>
+public sealed record UiToolsStatus(
+    [property: JsonPropertyName("registered")] bool Registered,
+    [property: JsonPropertyName("loadedByDsh")] bool? LoadedByDsh,
+    [property: JsonPropertyName("dshRestartNeeded")] bool DshRestartNeeded,
+    [property: JsonPropertyName("conflict")] bool Conflict,
+    [property: JsonPropertyName("serverName")] string ServerName);
+
 public sealed record DiagnosticResult(
     [property: JsonPropertyName("ok")] bool Ok,
     [property: JsonPropertyName("output")] string Output,
@@ -171,5 +201,7 @@ public sealed record DiagnosticResult(
 [JsonSerializable(typeof(ProbeResult))]
 [JsonSerializable(typeof(PluginRequest))]
 [JsonSerializable(typeof(PluginCommandResult))]
+[JsonSerializable(typeof(RelayStatus))]
+[JsonSerializable(typeof(UiToolsStatus))]
 [JsonSerializable(typeof(JsonElement))]
 public sealed partial class BridgeJsonContext : JsonSerializerContext;

@@ -87,6 +87,7 @@ dependencies {
     implementation(project(":dsh-renderer:api"))
     implementation(project(":terminal-view"))
     implementation(project(":terminal-session"))
+    implementation(project(":pilot:interlock-relay-core"))
     implementation(libs.kotlinx.coroutines.android)
     testImplementation(libs.junit)
     // android.jar's org.json is a stub in JVM unit tests; use the real implementation.
@@ -99,6 +100,10 @@ dependencies {
 // An unknown group fails the build: new transitive deps must be license-audited and classified.
 // ---------------------------------------------------------------------------------------------
 val providedByNuGet = listOf("org.jetbrains.kotlin", "org.jetbrains.kotlinx", "org.jetbrains", "androidx.", "com.google.guava")
+/** Groups whose artifacts are AARs (manifest/resources matter), exported whole instead of as classes jars. */
+val exportedAarGroups = setOf(
+    "dev.rikka.shizuku", // Shizuku client (MIT), required by Interlock Relay core; its Shizuku backend is not allowlisted
+)
 val exportedGroups = setOf(
     "org.apache.commons", "commons-io", "commons-codec", // commons-compress + its runtime deps
     "org.bouncycastle", // bcpg/bcprov/bcutil: Debian Release.gpg verification
@@ -119,11 +124,22 @@ val exportRuntimeJars by tasks.registering {
         }
         val manifest = StringBuilder("# coordinate  sha256  (exported jars; Kotlin/AndroidX come from NuGet)\n")
         val unknown = mutableListOf<String>()
+        val aarsDir = outDir.resolve("aars").apply { deleteRecursively(); mkdirs() }
+        runtimeClasspath.get().incoming.artifactView {
+            attributes { attribute(Attribute.of("artifactType", String::class.java), "aar") }
+            componentFilter { it is org.gradle.api.artifacts.component.ModuleComponentIdentifier && it.group in exportedAarGroups }
+        }.artifacts.artifacts.forEach { a ->
+            val id = a.id.componentIdentifier as org.gradle.api.artifacts.component.ModuleComponentIdentifier
+            val dst = aarsDir.resolve("${id.module}-${id.version}.aar")
+            a.file.copyTo(dst, overwrite = true)
+            manifest.append("${id.group}:${id.module}:${id.version} (aar)  ${sha256(dst)}\n")
+        }
         view.artifacts.artifacts.forEach { a ->
             val id = a.id.componentIdentifier as org.gradle.api.artifacts.component.ModuleComponentIdentifier
             val coord = "${id.group}:${id.module}:${id.version}"
             when {
                 providedByNuGet.any { id.group == it || (it.endsWith(".") && id.group.startsWith(it)) } -> Unit
+                id.group in exportedAarGroups -> Unit // exported whole above
                 id.group in exportedGroups -> {
                     val dst = jarsDir.resolve("${id.module}-${id.version}.jar")
                     a.file.copyTo(dst, overwrite = true)

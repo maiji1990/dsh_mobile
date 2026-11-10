@@ -163,3 +163,21 @@ APK SHA-256 `a084dc5fb2559bea84d04caef8050b63f8006f23f7dc8dd639f08c41b9a2a392`�
 发现：DSH 0.2.1-rc.5 的 `dsh plugin add` **接受了非插件 npm 包**（`is-number` 无 `dsh.bundle` 声明）——CLI 路径不校验包是否为 DSH 插件，因此 App 侧安装前的第三方代码警告是必要的。
 
 未测：真实 DSH 插件安装后在 DSH 重启时加载、失败回滚、安全模式、镜像源选择、并发与断网。
+
+## TASK-010 手机操控（只读，Interlock Relay）真机记录 — 2026-11-10
+
+设备：Honor PTP-AN10，Android 17 (API 37)，MagicOS。
+
+- 无障碍未开启：`relay call ui.snapshot` → `E_GATE_SYSTEM_MISSING`（exit 4）。
+- 用户手动开启「Relay 控制服务」后：doctor `usable 2/2`。
+- 首版审批面 `uiInForeground()` 按进程前台判定 → 队列裁决走 PAGE（DSH Mobile 无页内卡），审批无人可见，`E_AWAITING_CONSENT`（surface `foreground`）。修复：`uiInForeground()` 恒为 false（SPI 语义是“页内卡可用”），审批一律走通知栏。
+- 修复后 10:13：通知栏「允许一次」→ `ui.snapshot` `state: SUCCEEDED`、`effectState: verified`，67 个节点，`truncated: false`（exit 0）。
+- 已知上游边缘：Relay 单次调用内联只等 8 s；在第 8 s 附近点下的「允许」被交给已返回的那一趟，重试会重新提问（第二次点允许后成功）。失败方向是“再问一次”，不会替用户放行；未改上游。
+- 隐私提示：`ui.snapshot` 读取当前焦点窗口的全部可见文本（本次快照即为展开的通知栏，含通知内容）。
+- 14:00 `ui_*` 门面全链路（同机）：重装后系统关闭了无障碍服务，用户手动重开 → `Relay: RUNNING · 信箱运行中`。
+  「只读自检」经 MCP stdio 驱动门面：`initialize`（2025-06-18）→ 4 个工具 → `ui_list_devices` online →
+  `ui_snapshot` s1（`com.android.systemui`，40/69 节点，truncated）→ `ui_get_element e6` 实时回读
+  （`nativeId: android:id/app_name_text`，`enabled: true`），exit 0。「允许一次」两次、「本次会话允许」两次（按能力各一次）均通过。
+- 「启动」DSH 0.2.1-rc.5（20.5 s READY）：命令行含 `--patch /root/projects/.dsh/dshbox/dsh-official-plugin/…`，
+  `ps` 可见 `node /opt/dshbox-cache/dshmobile/ui-facade.mjs`（PID 11343）为 DSH 拉起的 MCP 服务。模型调用未验证（无凭据）。
+- 安全发现：快照包含通知栏中本 App 的审批按钮（「允许一次」「本次会话允许」）。只读阶段无影响；开放点击前必须处理（ADR-0004 第 8 条）。
