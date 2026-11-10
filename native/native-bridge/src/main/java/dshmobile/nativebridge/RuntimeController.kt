@@ -85,6 +85,8 @@ internal class RuntimeController(
             "plugin.list", "plugin.add", "plugin.remove",
             "relay.start", "relay.stop", "relay.status", "relay.selftest",
             "browser.status", "browser.open", "browser.tools.enable", "browser.tools.disable", "browser.selftest",
+            "remote.identity", "remote.hosts.list", "remote.hosts.save", "remote.hosts.remove", "remote.trust",
+            "remote.connect", "remote.start", "remote.stop", "remote.disconnect", "remote.status",
         )
 
         /** Profiles whose plugins may be managed (the shipped templates; desktop is reserved by DSH). */
@@ -121,6 +123,8 @@ internal class RuntimeController(
     @Volatile private var browserToolsAtDshStart: Boolean? = null
     /** Browser automation host wiring (TASK-011): broker follows the sandbox state. */
     private val browser = BrowserTools(appContext, config)
+    /** Remote DSH host over SSH (TASK-012, ADR-0006): fully separate from the local runtime's state and token. */
+    private val remote = RemoteHosts(appContext)
     private val watcher: Job
 
     init {
@@ -182,6 +186,7 @@ internal class RuntimeController(
     fun close() {
         watcher.cancel()
         browser.close()
+        runCatching { remote.disconnect(null) }
         scope.cancel()
     }
 
@@ -369,6 +374,19 @@ internal class RuntimeController(
                 done.ok(relayStatus())
             }
             "relay.status" -> done.ok(relayStatus())
+            "remote.identity" -> done.ok(remote.identity())
+            "remote.hosts.list" -> done.ok(JSONObject().put("hosts", remote.hostsJson()))
+            "remote.hosts.save" -> done.ok(remote.save(payload).toJson())
+            "remote.hosts.remove" -> { remote.remove(requireHostId(payload)); done.ok(JSONObject().put("hosts", remote.hostsJson())) }
+            "remote.trust" -> {
+                remote.trust(requireHostId(payload), payload.optString("fingerprint"))
+                done.ok(JSONObject().put("hosts", remote.hostsJson()))
+            }
+            "remote.connect" -> done.ok(remote.connect(requireHostId(payload)))
+            "remote.start" -> done.ok(remote.startDsh())
+            "remote.stop" -> done.ok(remote.stopDsh())
+            "remote.disconnect" -> { remote.disconnect("disconnected by user"); done.ok(remote.status()) }
+            "remote.status" -> done.ok(remote.status())
             "browser.status" -> done.ok(browserStatus())
             "browser.open" -> {
                 // Explicit Intent to the library's BrowserActivity (`:browser` process); returns to our launcher activity.
@@ -439,6 +457,9 @@ internal class RuntimeController(
             else -> throw BridgeException("METHOD_NOT_FOUND", "unknown method: $method")
         }
     }
+
+    private fun requireHostId(payload: JSONObject): String =
+        payload.optString("hostId").takeIf { it.isNotEmpty() } ?: throw BridgeException(BAD_REQUEST, "hostId is required")
 
     private fun requireProfile(payload: JSONObject): String {
         val profile = payload.optString("profile", "web")

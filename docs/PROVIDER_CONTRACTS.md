@@ -109,6 +109,11 @@ C# `BridgeClient` 在 `deadlineMs + 2s` 内未收到响应时，本地合成 `DE
 | `browser.open` | `{}` | `BrowserStatusInfo`；显式 Intent 打开库内 `BrowserActivity`（`:browser` 进程），返回键回到启动页 |
 | `browser.tools.enable` / `browser.tools.disable` | `{}` | `PluginCommandResult` + `adapterInstalled`；运行 DSHBox `browser-use` 原版 `install.sh` / `uninstall.sh`（web profile）；DSH 重启后生效 |
 | `browser.selftest` | `{}` | `PluginCommandResult`；guest `browser-check.mjs` 用插件自带客户端执行 `status` + `observe`（只读、不取控制权），再统计 `--dump-config` 中 `@local/browser-use`；exit 0 通过，2 无会话 / 自动化关闭，3 通道不可用，4 其它失败 |
+| `remote.identity` | `{}` | `{publicKey, fingerprint, algorithm, hardwareBacked}`；首次调用在 Keystore 生成密钥（TASK-012） |
+| `remote.hosts.list` / `remote.hosts.remove` | `{}` / `{"hostId"}` | `{hosts:[{id,label,host,port,user,dshPort,pinnedFingerprint}]}` |
+| `remote.hosts.save` | `{"id"\|null,"label","host","port","user","dshPort"}` | 主机；改地址或端口会清除已固定指纹 |
+| `remote.trust` | `{"hostId","fingerprint"}` | 主机列表；只接受该主机刚出示的指纹 |
+| `remote.connect` / `remote.start` / `remote.stop` / `remote.disconnect` / `remote.status` | `{"hostId"}` / `{}` | `RemoteStatusInfo{state, code, message, hostId, label, probe, localPort, dshPort, hasLaunchToken, fingerprint?, keyType?, httpUnauthenticated?, remoteDshStillRunning?}`；SSH 结果在 `code`（`HOST_KEY_UNKNOWN`、`HOST_KEY_CHANGED`、`AUTH_FAILED`、`UNREACHABLE`、`TIMEOUT`、`DSH_MISSING`、`DSH_START_FAILED`、`FORWARD_FAILED`、`NOT_CONNECTED`） |
 | `dsh.probe` | `{"profile": "web\|headless\|sdk\|sdk-minimal\|acp\|plugin"}`（白名单） | `ProbeResult{profile, status: pass\|limited\|fail, needsCredential, shim, checks[{name, ok, ms, detail}]}`；guest 内固定脚本，做真实协议握手，不调用模型 |
 
 `runtime.* / sandbox.* / dsh.*` 在 IO 协程上异步执行（不阻塞控制线程），彼此串行；deadline 内未完成返回 `DEADLINE_EXCEEDED`（底层操作可能仍在收尾）。DSH launch token **不经过**控制面 JSON，只暴露 `hasLaunchToken`。

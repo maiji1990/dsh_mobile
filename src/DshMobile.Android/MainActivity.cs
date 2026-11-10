@@ -64,6 +64,8 @@ public class MainActivity : Activity
         automation.Click += (_, _) => StartActivity(new Android.Content.Intent(this, typeof(DshMobile.App.Automation.AutomationActivity)));
         FindViewById<Button>(Resource.Id.btn_browser)!.Click +=
             (_, _) => StartActivity(new Android.Content.Intent(this, typeof(DshMobile.App.Browser.BrowserToolsActivity)));
+        FindViewById<Button>(Resource.Id.btn_remote)!.Click +=
+            (_, _) => StartActivity(new Android.Content.Intent(this, typeof(DshMobile.App.Remote.RemoteActivity)));
 
         // The foreground-service notification is only visible with this permission (Android 13+).
         // The service itself runs either way, so a denial is not an error.

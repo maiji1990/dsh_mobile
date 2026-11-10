@@ -26,6 +26,13 @@
 | `plugin-manager/dshbox-plugins/assets/plugins/browser-use`（Cordis 插件，GPL-3.0，24 个 `browser_*` 工具 + install/uninstall 脚本） | **已引入**（TASK-011，整目录原样复制进 Bridge AAR 资产，用户开启时才安装到 web profile） | `stageDshboxShimAssets` | — |
 | `app`、`pilot/dshbox-adapter`、`plugin-manager` UI | **不引入**（重建为 C#） | — | — |
 
+## 其它运行时依赖（非 DSHBox）
+
+| 依赖 | 版本 | 许可证 | 用途 | 引入 |
+|---|---|---|---|---|
+| `com.github.mwiede:jsch` | 2.28.8（2026-10-10 发布） | Revised BSD / ISC | 远程主机 SSH 客户端（ADR-0006） | TASK-012；导出白名单 jar |
+| `Xamarin.AndroidX.WebKit`（NuGet） | 1.12.1.2 | MIT（绑定）/ Apache-2.0（androidx.webkit 1.12.1） | DSHBox browser-runtime 依赖 | TASK-011 |
+
 ## 构建工具链来源
 
 - Gradle Wrapper 脚本与 `gradle-wrapper.jar` 复制自 DSHBox `v1.5.1`（Gradle 项目原件，Apache-2.0）；分发版本 `gradle-9.5.0-bin`。本仓库副本额外加了 `distributionSha256Sum=553c78f5…6b746`（与 services.gradle.org 官方 `.sha256` 一致，2026-11-09 核对）。

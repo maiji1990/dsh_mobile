@@ -52,6 +52,11 @@
 | AI 控制浏览器只能由用户在浏览器内批准；宿主不提供任何授予控制的入口；只读自检不请求、不使用控制权 | `browser-runtime`（上游）、`browser-check.mjs` |
 | 仅打包 DSHBox 的 `browser-use` 插件；`mobile-pilot` / `mobile-adapt` 不打包 | `native/native-bridge/build.gradle.kts` `stageDshboxShimAssets` |
 | 读 DSH 日志只回传点名 `@local/browser-use` 的行（≤5 行，每行 ≤300 字符），不回传其余日志 | `BrowserTools.adapterLogLines` |
+| 远程主机：SSH 私钥为 Android Keystore 中不可导出的 EC P-256 密钥，经自定义 JSch `Identity` 签名，私钥从不进入进程内存或文件；不支持密码登录 | `SshKeys.kt` |
+| 远程主机：主机指纹只能由用户确认固定，且只能固定本次连接刚出示的那一个；未确认不建立会话，指纹变化一律拒绝（`HOST_KEY_CHANGED`） | `RemoteHosts.trust`、`PinnedHostKeys`（`RemoteHostsTest`） |
+| 远程主机：只建立本地转发（手机 → 远端回环），不建立远程转发；远端 DSH 无法访问手机的 `ui_*` / `browser_*` | `RemoteHosts.startDsh` |
+| 远程主机：远端 launch token 只在原生内存，控制面只暴露 `hasLaunchToken`；断线 / 停止即作废；错误信息中的 token 被替换为 `***` | `RemoteHosts.tokenFrom` / `redact`（真机日志核查 0 泄漏） |
+| 远程主机：主机名 / 用户名白名单校验（拒绝选项与 shell 语法），远端只执行固定命令 | `RemoteHostProfile.fromRequest` |
 | 运行层下载按固定 SHA-256 校验；android-side 再与随包 sidecar 交叉校验 | `runtime-bundle/fetch-runtime.ps1` |
 | Maven 运行时依赖白名单，出现未分类依赖即构建失败（强制许可审计） | `native/native-bridge/build.gradle.kts` `exportRuntimeJars` |
 

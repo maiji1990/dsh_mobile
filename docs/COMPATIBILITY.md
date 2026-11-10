@@ -200,3 +200,17 @@ APK SHA-256 `a084dc5fb2559bea84d04caef8050b63f8006f23f7dc8dd639f08c41b9a2a392`�
 - 发现：浏览器空闲约 5 分钟自动关闭（`lastCloseReason: idle_timeout`），关闭后 `status` 仍带上一个 `sessionGeneration`；
   自检据此误判为 exit 4，已改为按 `state` 判断（单测覆盖；修正版尚未上真机）。
 - 安装新包时 MagicOS 弹出系统安装确认，`adb install` 会一直等待，需人工确认。
+
+## TASK-012 远程主机（SSH，ADR-0006）真机记录 — 2026-11-10
+
+手机 Honor PTP-AN10 / Android 17；测试主机为本机 Windows PC（Windows OpenSSH Server，Node v26.13.0，DSH 0.2.1-rc.5），
+经 `adb reverse tcp:2222 tcp:22` 连接。
+
+- Keystore 生成 `ecdsa-sha2-nistp256` 密钥，报告硬件保护；指纹 `SHA256:QS7Vgv…31Lo` 与 PC `ssh-keygen -lf` 一致。
+- 首版「保存主机」报 `unknown host id`（`org.json` 把 `"id": null` 读成 `"null"`），已修复并补单测。
+- 16:12 首连 `HOST_KEY_UNKNOWN` → 用户核对确认 → `CONNECTED`；探测 node `v26.13.0`、dsh `0.2.1-rc.5`。
+- 16:14 启动远端 DSH：`READY`，转发 `127.0.0.1:45747 → 3091`，经转发 `GET /` 401；PC 上 `dsh` 只监听 `127.0.0.1:3091`；
+  App 进程日志中 `token=` 仅为 Android `BinderProxy` 记录，无 launch token。
+- 停止：PC 3091 无监听（Windows OpenSSH 在通道关闭时结束 `dsh`）。首版停止核查报「未知」，已改为会话在时请求失败即「已不响应」（修正版未上真机）。
+- 断线（`adb kill-server` 60 s）：`DISCONNECTED · UNREACHABLE`，token 作废；以固定指纹重连无需确认，再次启动得新转发端口 34137、HTTP 401、新 token。
+- 隔离：远端 READY 时启动本机 DSH（20.5 s READY），两者并存；断开远端后 PC 端口释放，本机 DSH 不受影响。

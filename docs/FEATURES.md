@@ -43,4 +43,6 @@
 
 | `optional.browser`（TASK-011） | 部分通过（Android 17 真机） | DSHBox 浏览器栈原样复用（ADR-0005）：浏览器在独立 `:browser` 进程打开；只读自检经 browser-use 插件自带客户端 → guest CLI → broker → 命令服务，`status` OK、`observe` 读取百度首页（标题、正文、22 个元素）；安装 24 个 `browser_*` 工具 exit 0，DSH 重启后 `--dump-config` 含 `@local/browser-use`、无插件失败日志。未验证：模型实际调用 `browser_*`（需凭据）、控制请求审批流程、点击 / 输入 / 上传 / 下载 / 网络捕获、iframe、断网、Android 10 |
 
-其余 `未开始`：`optional.remote-host`、`optional.developer`、`optional.workflow`、`optional.gecko-renderer`。`entertainment.*` **不提供**。
+| `optional.remote-host`（TASK-012） | 部分通过（Android 17 真机 → 本机 Windows PC） | ADR-0006：Keystore 硬件保护 ECDSA 密钥登录 Windows OpenSSH；首连 `HOST_KEY_UNKNOWN` → 核对固定 → 连接；探测远端 node v26.13.0 / dsh 0.2.1-rc.5；启动远端 `dsh web`（仅回环）、本地转发经 `GET /` 得 401、token 只在原生侧；停止 / 断开后远端端口释放；断线检出 `UNREACHABLE` 并作废 token，固定指纹免确认重连；与本机 DSH 同时运行互不影响。未做：远端 WebUI（需独立进程隔离 Cookie）、真实网络（经 `adb reverse`）、`HOST_KEY_CHANGED` 真机演练、Android 10 |
+
+其余 `未开始`：`optional.developer`、`optional.workflow`、`optional.gecko-renderer`。`entertainment.*` **不提供**。

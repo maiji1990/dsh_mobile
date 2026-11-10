@@ -71,6 +71,42 @@ public class BridgeCodecTests
     }
 
     [Fact]
+    public void Decode_RemoteStatus_HostKeyUnknown_CarriesFingerprintButNoToken()
+    {
+        // Shape produced by RemoteHosts.connect() on an unconfirmed host key (TASK-012).
+        const string json = """
+            {"protocol":1,"requestId":"r","ok":true,"code":"OK","message":null,"payload":{
+              "state":"DISCONNECTED","code":"HOST_KEY_UNKNOWN","message":"confirm the host key fingerprint before connecting",
+              "hostId":"h1","label":"pc","probe":null,"localPort":null,"dshPort":3091,"hasLaunchToken":false,
+              "fingerprint":"SHA256:/O0DopfcupCOPu5e6/7zGNQITxFKE51poNy7jxKvT5Y","keyType":"ecdsa-sha2-nistp256"}}
+            """;
+        Assert.True(BridgeCodec.TryDecodeInbound(json, out var resp, out _));
+        var s = BridgeCodec.ReadPayload(resp!, BridgeJsonContext.Default.RemoteStatusInfo)!;
+        Assert.Equal(RemoteCodes.HostKeyUnknown, s.Code);
+        Assert.Equal("SHA256:/O0DopfcupCOPu5e6/7zGNQITxFKE51poNy7jxKvT5Y", s.Fingerprint);
+        Assert.False(s.HasLaunchToken);
+        Assert.Null(s.Probe);
+        Assert.DoesNotContain("token", json.Replace("hasLaunchToken", ""), StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Decode_RemoteStatus_Ready()
+    {
+        const string json = """
+            {"protocol":1,"requestId":"r","ok":true,"code":"OK","message":null,"payload":{
+              "state":"READY","code":"OK","message":null,"hostId":"h1","label":"pc",
+              "probe":{"node":true,"nodeVersion":"v26.13.0","dsh":true,"dshVersion":"0.2.1-rc.5"},
+              "localPort":40123,"dshPort":3091,"hasLaunchToken":true,"httpUnauthenticated":401}}
+            """;
+        Assert.True(BridgeCodec.TryDecodeInbound(json, out var resp, out _));
+        var s = BridgeCodec.ReadPayload(resp!, BridgeJsonContext.Default.RemoteStatusInfo)!;
+        Assert.Equal("READY", s.State);
+        Assert.True(s.Probe!.Dsh);
+        Assert.Equal(401, s.HttpUnauthenticated);
+        Assert.Equal(40123, s.LocalPort);
+    }
+
+    [Fact]
     public void Decode_RelayStatusWithoutUiTools_IsNull()
     {
         const string json = """{"protocol":1,"requestId":"r","ok":true,"code":"OK","message":null,"payload":{"phase":"STOPPED","channelRunning":false,"degradedReason":null,"accessibilityEnabled":false,"allowed":[],"guestCli":"/opt/pilot/bin/relay"}}""";

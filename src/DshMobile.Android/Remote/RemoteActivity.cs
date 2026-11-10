@@ -1,0 +1,290 @@
+using System.Text.Json;
+using System.Text.Json.Serialization.Metadata;
+using Android.Content;
+using Android.Text;
+using Android.Views;
+using DshMobile.App.Bridge;
+using DshMobile.Core.Bridge;
+
+namespace DshMobile.App.Remote;
+
+/// <summary>
+/// Remote DSH host over SSH (TASK-012, ADR-0006). Shows the phone's SSH public key (private key stays in Android
+/// Keystore), edits one host profile, connects with explicit host-key confirmation, starts/stops the remote
+/// <c>dsh web</c> and reports what the remote really offers. Remote never gets this phone's ui_* / browser_*.
+/// </summary>
+[Activity(Label = "@string/remote_title", Exported = false)]
+public sealed class RemoteActivity : Activity
+{
+    private BridgeHost _bridge = null!;
+    private TextView _identity = null!;
+    private TextView _status = null!;
+    private EditText _label = null!, _host = null!, _port = null!, _user = null!, _dshPort = null!;
+    private Button[] _buttons = [];
+    private RemoteHost? _selected;
+
+    protected override void OnCreate(Bundle? savedInstanceState)
+    {
+        base.OnCreate(savedInstanceState);
+        _bridge = DshMobileApplication.Current.Bridge;
+
+        var root = new LinearLayout(this) { Orientation = Orientation.Vertical };
+        root.SetPadding(24, 16, 24, 16);
+        root.AddView(new TextView(this) { Text = GetString(Resource.String.remote_explain) });
+
+        _identity = new TextView(this) { TextSize = 12 };
+        _identity.SetTextIsSelectable(true);
+        _identity.SetPadding(0, 12, 0, 12);
+        root.AddView(_identity);
+        var copy = Make(Resource.String.remote_copy_key, CopyKey);
+
+        _label = Field(root, Resource.String.remote_label, InputTypes.ClassText);
+        _host = Field(root, Resource.String.remote_host, InputTypes.ClassText | InputTypes.TextVariationUri);
+        _port = Field(root, Resource.String.remote_port, InputTypes.ClassNumber);
+        _user = Field(root, Resource.String.remote_user, InputTypes.ClassText);
+        _dshPort = Field(root, Resource.String.remote_dsh_port, InputTypes.ClassNumber);
+        _port.Text = "22";
+        _dshPort.Text = "3091";
+
+        var save = Make(Resource.String.remote_save, () => _ = SaveAsync());
+        var connect = Make(Resource.String.remote_connect, () => _ = ConnectAsync());
+        var start = Make(Resource.String.remote_start, () => _ = Status(BridgeMethods.RemoteStart, null, TimeSpan.FromMinutes(3)));
+        var stop = Make(Resource.String.remote_stop, () => _ = Status(BridgeMethods.RemoteStop, null, TimeSpan.FromMinutes(1)));
+        var disconnect = Make(Resource.String.remote_disconnect, () => _ = Status(BridgeMethods.RemoteDisconnect, null, TimeSpan.FromSeconds(30)));
+        var remove = Make(Resource.String.remote_remove, ConfirmRemove);
+        root.AddView(Row(copy, save));
+        root.AddView(Row(connect, disconnect));
+        root.AddView(Row(start, stop));
+        root.AddView(Row(remove, new View(this)));
+        _buttons = [copy, save, connect, start, stop, disconnect, remove];
+
+        _status = new TextView(this) { AccessibilityLiveRegion = AccessibilityLiveRegion.Polite };
+        _status.SetTextIsSelectable(true);
+        _status.SetPadding(0, 16, 0, 16);
+        root.AddView(_status);
+
+        var scroll = new ScrollView(this);
+        scroll.SetFitsSystemWindows(true);
+        scroll.AddView(root);
+        SetContentView(scroll);
+    }
+
+    protected override void OnResume()
+    {
+        base.OnResume();
+        _ = LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        var id = await Call(BridgeMethods.RemoteIdentity, null, BridgeJsonContext.Default.RemoteIdentityInfo, TimeSpan.FromSeconds(30));
+        if (id is not null)
+        {
+            var hw = id.HardwareBacked switch { true => GetString(Resource.String.remote_key_hw), false => GetString(Resource.String.remote_key_sw), null => "?" };
+            _identity.Text = $"{GetString(Resource.String.remote_key_heading)}（{hw}）\n{id.PublicKey}\n{id.Fingerprint}";
+        }
+        var list = await Call(BridgeMethods.RemoteHostsList, null, BridgeJsonContext.Default.RemoteHostList, TimeSpan.FromSeconds(10));
+        if (list is { Hosts.Length: > 0 })
+        {
+            Select(list.Hosts[^1]);
+        }
+        await Status(BridgeMethods.RemoteStatus, null, TimeSpan.FromSeconds(10));
+    }
+
+    private void Select(RemoteHost h)
+    {
+        _selected = h;
+        _label.Text = h.Label;
+        _host.Text = h.Host;
+        _port.Text = h.Port.ToString();
+        _user.Text = h.User;
+        _dshPort.Text = h.DshPort.ToString();
+    }
+
+    private async Task SaveAsync()
+    {
+        if (!int.TryParse(_port.Text, out var port) || !int.TryParse(_dshPort.Text, out var dshPort))
+        {
+            _status.Text = GetString(Resource.String.remote_bad_port);
+            return;
+        }
+        var req = new RemoteHostRequest(_selected?.Id, _label.Text ?? "", (_host.Text ?? "").Trim(), port, (_user.Text ?? "").Trim(), dshPort);
+        var saved = await Call(BridgeMethods.RemoteHostsSave, BridgeCodec.ToPayload(req, BridgeJsonContext.Default.RemoteHostRequest),
+            BridgeJsonContext.Default.RemoteHost, TimeSpan.FromSeconds(10));
+        if (saved is not null)
+        {
+            Select(saved);
+            _status.Text = GetString(saved.PinnedFingerprint is null ? Resource.String.remote_saved_unpinned : Resource.String.remote_saved_pinned);
+        }
+    }
+
+    private async Task ConnectAsync()
+    {
+        if (_selected is null)
+        {
+            _status.Text = GetString(Resource.String.remote_save_first);
+            return;
+        }
+        var s = await Status(BridgeMethods.RemoteConnect, HostId(_selected.Id), TimeSpan.FromMinutes(3));
+        if (s is { Code: RemoteCodes.HostKeyUnknown, Fingerprint: { } fp })
+        {
+            ConfirmFingerprint(_selected, fp, s.KeyType);
+        }
+    }
+
+    /// <summary>The user compares the fingerprint with the server's own (ssh-keygen -lf) before trusting it.</summary>
+    private void ConfirmFingerprint(RemoteHost host, string fingerprint, string? keyType)
+    {
+        new AlertDialog.Builder(this)
+            .SetTitle(Resource.String.remote_trust_title)!
+            .SetMessage(Fmt(Resource.String.remote_trust_message, $"{host.User}@{host.Host}:{host.Port}", keyType ?? "?", fingerprint))!
+            .SetPositiveButton(Resource.String.remote_trust_yes, async (_, _) =>
+            {
+                var trusted = await Call(BridgeMethods.RemoteTrust,
+                    BridgeCodec.ToPayload(new RemoteTrustRequest(host.Id, fingerprint), BridgeJsonContext.Default.RemoteTrustRequest),
+                    BridgeJsonContext.Default.RemoteHostList, TimeSpan.FromSeconds(10));
+                if (trusted?.Hosts.FirstOrDefault(h => h.Id == host.Id) is { } h)
+                {
+                    Select(h);
+                    await ConnectAsync();
+                }
+            })!
+            .SetNegativeButton(Android.Resource.String.Cancel, (_, _) => { })!
+            .Show();
+    }
+
+    private void ConfirmRemove()
+    {
+        if (_selected is not { } h)
+        {
+            return;
+        }
+        new AlertDialog.Builder(this)
+            .SetMessage(Fmt(Resource.String.remote_remove_confirm, h.Label))!
+            .SetPositiveButton(Resource.String.remote_remove, async (_, _) =>
+            {
+                await Call(BridgeMethods.RemoteHostsRemove, HostId(h.Id), BridgeJsonContext.Default.RemoteHostList, TimeSpan.FromSeconds(30));
+                _selected = null;
+                _status.Text = GetString(Resource.String.remote_removed);
+            })!
+            .SetNegativeButton(Android.Resource.String.Cancel, (_, _) => { })!
+            .Show();
+    }
+
+    private void CopyKey()
+    {
+        var text = _identity.Text?.Split('\n').FirstOrDefault(l => l.StartsWith("ecdsa-sha2-nistp256 ", StringComparison.Ordinal));
+        if (text is null)
+        {
+            return;
+        }
+        var cm = (Android.Content.ClipboardManager)GetSystemService(ClipboardService)!;
+        cm.PrimaryClip = ClipData.NewPlainText("ssh public key", text);
+        Toast.MakeText(this, Resource.String.remote_key_copied, ToastLength.Short)!.Show();
+    }
+
+    private static JsonElement HostId(string id) =>
+        BridgeCodec.ToPayload(new RemoteHostIdRequest(id), BridgeJsonContext.Default.RemoteHostIdRequest);
+
+    private async Task<RemoteStatusInfo?> Status(string method, JsonElement? payload, TimeSpan deadline)
+    {
+        var s = await Call(method, payload, BridgeJsonContext.Default.RemoteStatusInfo, deadline);
+        if (s is not null)
+        {
+            Show(s);
+            _bridge.Note($"{method}: state={s.State} code={s.Code}");
+        }
+        return s;
+    }
+
+    private void Show(RemoteStatusInfo s)
+    {
+        var lines = new List<string> { $"{GetString(Resource.String.remote_state)}：{s.State} · {s.Code}{(s.Label is { } l ? " · " + l : "")}" };
+        if (s.Message is { } m)
+        {
+            lines.Add(m);
+        }
+        if (s.Probe is { } p)
+        {
+            lines.Add($"node：{(p.Node ? p.NodeVersion : GetString(Resource.String.remote_missing))}");
+            lines.Add($"dsh：{(p.Dsh ? p.DshVersion : GetString(Resource.String.remote_missing))}");
+        }
+        if (s.LocalPort is { } lp)
+        {
+            lines.Add($"{GetString(Resource.String.remote_forward)}：127.0.0.1:{lp} → remote 127.0.0.1:{s.DshPort}");
+        }
+        if (s.HttpUnauthenticated is { } http)
+        {
+            lines.Add(Fmt(Resource.String.remote_http, http.ToString()));
+        }
+        lines.Add(GetString(s.HasLaunchToken ? Resource.String.remote_token_yes : Resource.String.remote_token_no));
+        if (s.RemoteDshStillRunning is { } still)
+        {
+            lines.Add(GetString(still ? Resource.String.remote_still_running : Resource.String.remote_stopped));
+        }
+        if (s.Code == RemoteCodes.HostKeyChanged)
+        {
+            lines.Add(GetString(Resource.String.remote_key_changed));
+        }
+        if (s.Code == RemoteCodes.AuthFailed)
+        {
+            lines.Add(GetString(Resource.String.remote_auth_hint));
+        }
+        _status.Text = string.Join('\n', lines);
+    }
+
+    private async Task<T?> Call<T>(string method, JsonElement? payload, JsonTypeInfo<T> type, TimeSpan deadline) where T : class
+    {
+        Enable(false);
+        try
+        {
+            var resp = await _bridge.Client.ExecuteAsync(method, payload, deadline);
+            if (!resp.Ok)
+            {
+                _status.Text = $"{method} FAILED {resp.Code}: {resp.Message}";
+                return null;
+            }
+            return BridgeCodec.ReadPayload(resp, type);
+        }
+        finally
+        {
+            Enable(true);
+        }
+    }
+
+    private string Fmt(int resId, params string[] args) =>
+        GetString(resId, args.Select(a => (Java.Lang.Object)new Java.Lang.String(a)).ToArray()) ?? "";
+
+    private EditText Field(LinearLayout root, int hint, InputTypes type)
+    {
+        var e = new EditText(this) { Hint = GetString(hint), InputType = type };
+        e.SetSingleLine(true);
+        root.AddView(e);
+        return e;
+    }
+
+    private LinearLayout Row(View a, View b)
+    {
+        var row = new LinearLayout(this) { Orientation = Orientation.Horizontal };
+        row.AddView(a, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WrapContent, 1f));
+        row.AddView(b, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WrapContent, 1f));
+        return row;
+    }
+
+    private Button Make(int text, Action onClick)
+    {
+        var b = new Button(this);
+        b.SetText(text);
+        b.SetMinHeight((int)(48 * Resources!.DisplayMetrics!.Density));
+        b.Click += (_, _) => onClick();
+        return b;
+    }
+
+    private void Enable(bool on)
+    {
+        foreach (var b in _buttons)
+        {
+            b.Enabled = on;
+        }
+    }
+}

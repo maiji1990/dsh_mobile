@@ -103,3 +103,16 @@
 6. 首页「停止」→「启动」：状态「已在当前 DSH 中加载」，无插件失败日志行；「只读自检」末行 `--dump-config` 计数 ≥1。
 7. 「移除 browser_* 工具」：exit=0，状态「已移除，当前 DSH 仍保留到重启」。
 8. 待补：模型实际调用 24 个 `browser_*`（需凭据）、`browser_control` 请求 → 浏览器内批准、点击 / 输入 / 滚动、上传 / 下载审批、截图、网络捕获、iframe / SPA / 重定向、断网、Cookie 与 DSH WebUI 隔离实测、`:browser` 进程内存占用、Android 10。
+
+## TASK-012 远程主机（需真机 + 一台 SSH 主机；主机侧管理员操作、表单输入、指纹核对由人手动）
+
+前置（本机 Windows PC 作测试主机）：管理员运行 `tooling/setup-windows-ssh-host.ps1 -PublicKeyFile <手机公钥>`；普通用户
+`npm install -g @deepseek-ai/dsh@0.2.1-rc.5`；`adb reverse tcp:2222 tcp:22`。
+
+1. 「远程主机」：显示 `ecdsa-sha2-nistp256` 公钥与指纹（硬件保护）；PC 上 `ssh-keygen -lf` 指纹一致。
+2. 填 `127.0.0.1` / `2222` / 用户 / `3091` →「保存主机」→「连接」：弹出主机指纹，与 PC `ssh-keyscan` / `ssh-keygen -lf` 一致后确认 → `CONNECTED`，显示远端 node / dsh 版本。
+3. 「启动远端 DSH」：`READY`，转发 `127.0.0.1:<随机> → 3091`，`HTTP 401`，token「已在本机原生侧持有」；PC 上 3091 仅监听 127.0.0.1；logcat 中无 launch token。
+4. 「停止远端 DSH」：回到 `CONNECTED`，token 无，「远端 DSH 已不再响应」；PC 上 3091 无监听。
+5. 断线：`adb reverse --remove-all` + `adb kill-server` 约 60 s 后恢复，重新进入页面：`DISCONNECTED · UNREACHABLE`，token 无；「连接」不再弹指纹直接 `CONNECTED`；再启动得到新转发端口与新 token。
+6. 隔离：远端 `READY` 时首页「启动」本机 DSH，两者同时 READY、互不影响；「断开」后远端端口释放、本机 DSH 不变。
+7. 待补：`HOST_KEY_CHANGED`（换主机密钥或改指向）、`AUTH_FAILED`（移除公钥）、真实局域网 / 公网主机、远端 WebUI（独立进程）、Linux 主机、Android 10。

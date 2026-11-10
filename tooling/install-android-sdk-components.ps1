@@ -29,6 +29,17 @@ if ($underProgramFiles -and -not $isAdmin) {
     throw "SDK is under Program Files ($SdkRoot). Re-run this script from an administrator PowerShell."
 }
 
+# sdkmanager refuses to start when JAVA_HOME points at a removed JDK (e.g. after a JDK update). Pick an installed
+# JDK for THIS process only; the user/system JAVA_HOME setting is left untouched.
+if (-not $env:JAVA_HOME -or -not (Test-Path (Join-Path $env:JAVA_HOME 'bin\java.exe'))) {
+    $jdk = Get-ChildItem 'C:\Program Files\Eclipse Adoptium', 'C:\Program Files\Java', 'C:\Program Files\Microsoft' -Directory -ErrorAction SilentlyContinue |
+        Where-Object { $_.Name -match '^jdk-?(1[7-9]|2\d)' -and (Test-Path (Join-Path $_.FullName 'bin\java.exe')) } |
+        Sort-Object Name -Descending | Select-Object -First 1
+    if (-not $jdk) { throw "JAVA_HOME ($env:JAVA_HOME) is invalid and no JDK 17+ was found; install one or fix JAVA_HOME." }
+    Write-Host "JAVA_HOME ($env:JAVA_HOME) is invalid; using $($jdk.FullName) for this run only."
+    $env:JAVA_HOME = $jdk.FullName
+}
+
 $sdkmanager = Join-Path $SdkRoot 'cmdline-tools\latest\bin\sdkmanager.bat'
 if (-not (Test-Path $sdkmanager)) { throw "sdkmanager not found: $sdkmanager" }
 

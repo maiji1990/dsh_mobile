@@ -101,6 +101,8 @@ dependencies {
     implementation(project(":browser:browser-bridge"))
     implementation(project(":browser:browser-runtime"))
     implementation(libs.kotlinx.coroutines.android)
+    // Remote host over SSH (TASK-012, ADR-0006): maintained JSch fork, Revised BSD / ISC, no required deps.
+    implementation("com.github.mwiede:jsch:2.28.8")
     testImplementation(libs.junit)
     // android.jar's org.json is a stub in JVM unit tests; use the real implementation.
     testImplementation("org.json:json:20250517")
@@ -120,6 +122,7 @@ val exportedGroups = setOf(
     "org.apache.commons", "commons-io", "commons-codec", // commons-compress + its runtime deps
     "org.bouncycastle", // bcpg/bcprov/bcutil: Debian Release.gpg verification
     "org.tukaani", // xz
+    "com.github.mwiede", // jsch (Revised BSD / ISC): SSH client for the remote host (ADR-0006)
 )
 
 val exportRuntimeJars by tasks.registering {
