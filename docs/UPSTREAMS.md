@@ -49,6 +49,21 @@
 | 2026-11-10 | DSHBox | （未修改子模块）`app/.../runtime/GuestUserProvisioner.kt` 移植为 `GuestUser.kt` | 用户名由 DSHBox 品牌名改为 `dshmobile`（AGENTS.md 规则 4）；其余逻辑一致，加单测 |
 | 2026-11-10 | DSHBox | （未修改子模块）`DshTerminalViewClient` / `DshTerminalSessionClient` 语义并入 `TerminalController.kt` | 位于 DSHBox app 模块（Compose 屏幕的回调），不引入 app |
 | 2026-11-09 | DSHBox | （未修改子模块）导入前创建 `runtime/runtime-current/` | 规避上游全新安装离线导入的 rename 失败 → `copyRecursively` 卡在悬空 `/var/run` 符号链接的问题；建议向上游报告 |
+| 2026-11-10 | — | （本仓库）`RuntimeController.kt` 插件命令改为 argv + `shellJoin` 逐 token 单引号 | PR-00 安全修复：`PACKAGE_SPEC` 允许的 `>=` 曾被 shell 当重定向 |
+
+## C# 移植登记（ADR-0007）
+
+从 DSHBox（GPL-3.0-or-later）**翻译**为 C# 的代码。文件头注明上游路径与 commit；行为以 `tests/TestVectors` 共享向量 + 上游源码契约扫描（`LegacySourceContractTests`）锁定，上游升级时两者先失败。
+
+| 日期 | 上游文件（DSHBox `v1.5.1` `7c9d33c`） | C# 位置 | 移植范围 | 验证 |
+|---|---|---|---|---|
+| 2026-11-10 | `common/.../Versions.kt` | `src/DshMobile.Runtime/Versions.cs` | 全部（含 Kotlin `toIntOrNull` 语义） | `versions.json` 新旧双跑 |
+| 2026-11-10 | `common/.../Constants.kt`（仅 guest 路径 / 端点 / 标记等运行时事实） | `src/DshMobile.Runtime/RuntimeConstants.cs` | 子集；DSHBox 偏好键、品牌相关项不移植 | 源码扫描逐项比对 |
+| 2026-11-10 | `sandbox-manager/.../SandboxConfig.kt`（目录布局） | `src/DshMobile.Runtime/RuntimeLayout.cs` | 目录布局；provider 回调不移植 | 源码扫描逐项比对 |
+| 2026-11-10 | `sandbox-manager/.../SandboxState.kt` | `src/DshMobile.Runtime/Legacy/LegacyStateMapper.cs` | 枚举映射（非移植） | 源码扫描：每个上游值必须有映射 |
+| 2026-11-10 | `sandbox-manager/.../RuntimeBundleLayout.kt` | `src/DshMobile.Runtime/Bundle/RuntimeBundleLayout.cs` | 全部 | `runtime-bundle-layout.json` 新旧双跑 |
+| 2026-11-10 | `sandbox-manager/.../RuntimeProfile.kt` | `src/DshMobile.Runtime/Bundle/RuntimeProfile.cs` | 全部（`System.Text.Json` 源生成） | 单测 + 真实锁定包 |
+| 2026-11-10 | `sandbox-manager/.../DefaultSandboxManager.kt` `importRuntimeBundle` / `extractStagedLayers` 的**校验段**；`BundleManager.verifySha256` | `src/DshMobile.Runtime/Bundle/RuntimeBundleInspector.cs` | 只读校验（顺序与 `BUNDLE_*` 错误码一致）；解包 / 换层未移植 | 单测 12 例 + 真机影子比对（待采集） |
 
 ## 同步记录
 

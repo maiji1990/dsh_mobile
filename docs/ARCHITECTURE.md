@@ -2,6 +2,27 @@
 
 权威设计见 [plan/DSH_Mobile_NET11_完整架构与实施方案.md](plan/DSH_Mobile_NET11_完整架构与实施方案.md)。本文记录**当前代码实际落地**的部分，随里程碑更新。
 
+> **2026-11-10 起长期路线为 [ADR-0007](ADR/0007-source-ownership-csharp-first.md)（C#-first）**：下文 M1–M3 描述的 DSHBox 子模块 + `DshNativeFacade` 结构是过渡实现，按 [MIGRATION.md](MIGRATION.md) 逐切片替换。
+
+## C#-first 分层（PR-01 起）
+
+```text
+DshMobile.Android (net11.0-android)   BridgeHost、Activities、AndroidForegroundService : IForegroundServiceController
+        │ Microsoft.Extensions.DependencyInjection（AddDshMobileApplication）
+DshMobile.Application (net11.0)       RuntimeCoordinator（监督启动/停止/导入）、MigrationOptions/SliceMode、BundleShadowCheck
+        │
+DshMobile.Runtime (net11.0)           IRuntimeManager / IGuestProcess、RuntimeState(8 态) + RuntimeStateMachine + FileRuntimeJournal
+        │                             Versions、RuntimeConstants、RuntimeLayout、Bundle/*（从 DSHBox 移植）、Guest/*（argv + 引号）
+        │                             Legacy/LegacyBridgeRuntimeManager ──▶ BridgeClient ──▶ 旧桥（过渡）
+DshMobile.Native (net11.0)            NativeExecutablePolicy（W^X）、DshNativeLibrary（libdshmobile_native P/Invoke，尚未打包）
+DshMobile.Core (net11.0)              协议 DTO / 错误码
+```
+
+| 项目 | 测试 |
+|---|---|
+| `DshMobile.Runtime` / `DshMobile.Native` | `tests/DshMobile.Runtime.Tests`：共享向量（与旧 Kotlin 同跑）、上游源码契约扫描、状态机 / journal、层包校验（含真实锁定包） |
+| `DshMobile.Application` | `tests/DshMobile.Application.Tests`：协调器失败路径、影子比对判定 |
+
 ## 三类边界
 
 1. **C# 控制面**（`src/`）：Activity、状态、设置、权限 UI、日志。

@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    C#-owned runtime (ADR-0007): layer layout and verification, PRoot lifecycle, DSH profiles, runtime state machine.
+    Replaces DSHBox sandbox-manager slice by slice; the legacy bridge implementation stays available under
+    DshMobile.Runtime.Legacy for shadow comparison until each slice passes on a real device.
+  -->
+  <PropertyGroup>
+    <TargetFramework>net11.0</TargetFramework>
+    <IsTrimmable>true</IsTrimmable>
+    <IsAotCompatible>true</IsAotCompatible>
+    <RootNamespace>DshMobile.Runtime</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="DshMobile.Runtime.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\DshMobile.Core\DshMobile.Core.csproj" />
+    <ProjectReference Include="..\DshMobile.Native\DshMobile.Native.csproj" />
+  </ItemGroup>
+</Project>

@@ -6,8 +6,8 @@ namespace DshMobile.App;
 /// <summary>
 /// Owns process-lifetime services. Must stay cheap: no root, no network, no runtime start here (plan 6.3).
 /// </summary>
-[Application]
-public sealed class DshMobileApplication : Application
+[global::Android.App.Application]
+public sealed class DshMobileApplication : global::Android.App.Application
 {
     private BridgeHost? _bridge;
 
@@ -36,5 +36,5 @@ public sealed class DshMobileApplication : Application
     }
 
     private bool IsBrowserProcess() =>
-        OperatingSystem.IsAndroidVersionAtLeast(28) && Application.ProcessName == PackageName + ":browser";
+        OperatingSystem.IsAndroidVersionAtLeast(28) && global::Android.App.Application.ProcessName == PackageName + ":browser";
 }

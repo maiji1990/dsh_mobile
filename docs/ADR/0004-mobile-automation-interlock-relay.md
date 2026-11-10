@@ -1,6 +1,7 @@
 # ADR-0004：手机自动化复用 Interlock Relay core，经 `ui_*` 门面暴露
 
 - 状态：已接受（2026-11-10，用户选择「复用 Interlock Relay」）
+- 修订（2026-11-10）：其中“复用 DSHBox / Kotlin 实现”的部分按 [ADR-0007](0007-source-ownership-csharp-first.md) 降级为过渡实现，将逐切片替换为 C#；本 ADR 的安全与契约约束（审批、单一 `ui_*` / `browser_*` 契约、主机指纹固定、不可导出私钥）继续有效，替换实现必须同样满足。
 - 来源：方案第 9 节；`maiji1990/ui_mcp` 的 `docs/p2-phone-facade-design.md`
 - 关联任务：TASK-010
 
