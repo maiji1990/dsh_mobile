@@ -2,6 +2,7 @@ using System.Text.Json;
 using Android.Views;
 using DshMobile.App.Bridge;
 using DshMobile.Core.Bridge;
+using DshMobile.Runtime.Guest;
 
 namespace DshMobile.App.Plugins;
 
@@ -61,7 +62,13 @@ public sealed class PluginsActivity : Activity
     {
         SetBusy(true, GetString(Resource.String.plugins_loading));
         var r = await RunAsync(BridgeMethods.PluginList, new PluginRequest(Profile), ListDeadline);
-        _plugins = r is { Ok: true } ? ParseList(r.Output) : [];
+        _plugins = r is { Ok: true } ? GuestPlugins.ParseList(r.Output).ToList() : [];
+        if (r is not null)
+        {
+            // PR-05 shadow (read-only): the same list through the C# PRoot launcher, compared in the background.
+            var runtime = DshMobileApplication.Current.Bridge.Runtime;
+            _ = Task.Run(() => runtime.ShadowPluginListAsync(Profile, r.Ok, r.Output, CancellationToken.None));
+        }
         _list.Adapter = new ArrayAdapter<string>(this, Android.Resource.Layout.SimpleListItem1,
             _plugins.Count == 0 ? [GetString(Resource.String.plugins_none)] : _plugins.Select(p => $"{p.Name}  {p.Version}").ToList());
         _list.Enabled = _plugins.Count > 0;
@@ -143,38 +150,4 @@ public sealed class PluginsActivity : Activity
 
     /// <summary>Android %1$s formatting with a non-null Java string argument.</summary>
     private string Fmt(int resId, string arg) => GetString(resId, new Java.Lang.String(arg)) ?? arg;
-
-    /// <summary>`pnpm list --json --depth 0`: array of projects with a "dependencies" map of name → {version}.</summary>
-    internal static List<(string Name, string Version)> ParseList(string output)
-    {
-        var start = output.IndexOf('[');
-        if (start < 0)
-        {
-            return [];
-        }
-        try
-        {
-            using var doc = JsonDocument.Parse(output[start..]);
-            var result = new List<(string, string)>();
-            foreach (var project in doc.RootElement.EnumerateArray())
-            {
-                foreach (var section in new[] { "dependencies", "devDependencies", "optionalDependencies" })
-                {
-                    if (project.TryGetProperty(section, out var deps) && deps.ValueKind == JsonValueKind.Object)
-                    {
-                        foreach (var d in deps.EnumerateObject())
-                        {
-                            var version = d.Value.TryGetProperty("version", out var v) ? v.GetString() ?? "" : "";
-                            result.Add((d.Name, version));
-                        }
-                    }
-                }
-            }
-            return result.OrderBy(p => p.Item1, StringComparer.Ordinal).ToList();
-        }
-        catch (JsonException)
-        {
-            return [];
-        }
-    }
 }

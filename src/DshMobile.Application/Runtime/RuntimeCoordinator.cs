@@ -332,6 +332,32 @@ public sealed class RuntimeCoordinator : IDisposable
     }
 
     /// <summary>
+    /// PR-05 shadow: re-runs <c>dsh plugin list</c> through the C# PRoot launcher and compares the parsed plugin lists
+    /// with the legacy result the caller just showed. Null when not shadowed. Read-only (list only).
+    /// </summary>
+    public async Task<ShadowReport?> ShadowPluginListAsync(string profile, bool legacyOk, string legacyOutput, CancellationToken ct)
+    {
+        if (_options.PluginList != SliceMode.LegacyWithShadow || _layout is null)
+        {
+            return null;
+        }
+        await _op.WaitAsync(ct).ConfigureAwait(false);
+        try
+        {
+            var sw = Stopwatch.StartNew();
+            var r = await GuestPlugins.RunAsync(new ProotGuestProcess(_layout), "list", profile, null, ct).ConfigureAwait(false);
+            var report = PluginListShadowCheck.Compare(legacyOk, legacyOutput, r, sw.ElapsedMilliseconds, _time.GetUtcNow());
+            _shadow.Report(report);
+            _log.Note($"shadow {report.Slice}: {report.Verdict} ({report.Detail}; csharp {report.CSharpMs} ms)");
+            return report;
+        }
+        finally
+        {
+            _op.Release();
+        }
+    }
+
+    /// <summary>
     /// Read-only supervisor shadow: C# looks at <c>/proc</c> and probes the WebUI itself, and compares with the legacy
     /// status / health the caller just obtained. Never starts, stops or signals anything.
     /// </summary>

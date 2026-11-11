@@ -275,3 +275,11 @@ APK SHA-256 `a084dc5fb2559bea84d04caef8050b63f8006f23f7dc8dd639f08c41b9a2a392`�
 - logcat 全量检查：DSH launch token 0 处泄漏（唯一相关行为 `token=***`；其余 `token=` 均为 Android binder 句柄）。
 - 停止：无残留进程、无崩溃；运行中强杀：无孤儿，journal 恢复为 `RUNTIME_INTERRUPTED`；之后默认旧实现启停照常。
 - 结合同日 C# LayerInstaller 导入，迁移方案第 12 节「导入 → 启动 PRoot → READY → WebUI → 停止无孤儿」全链路均已有 C# 实现的真机证据（仍为开发者可选路径）。
+
+## ADR-0007 迁移 · 插件列表（PR-05 只读影子）真机记录 — 2026-11-11
+
+同一设备；Release（`-t:Rebuild`）APK 126,092,125 B。原始日志：[migration/parity/2026-11-11-PTP-AN10-A17-plugins-list.md](../migration/parity/2026-11-11-PTP-AN10-A17-plugins-list.md)。
+
+- 影子 `plugins.list` **Agree**：旧桥 `plugin.list` 与 C# PRoot 启动器跑的 `dsh plugin list --json --depth 0` 均 exit 0、均解析为 JSON 列表、内容一致（0 个插件；C# 1.0 s）。
+- 首次运行发现旧判定会把两边都不可解析误判为两个空列表一致，已改为要求两边都是 JSON 列表后复测。
+- 无崩溃、logcat 无 launch token；本机无第三方插件，非空列表只有单测证据。
