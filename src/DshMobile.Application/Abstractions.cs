@@ -49,6 +49,12 @@ public sealed class MigrationOptions
     /// </summary>
     public SliceMode GuestExec { get; set; } = SliceMode.LegacyWithShadow;
 
+    /// <summary>
+    /// Plugin management (PR-05): after the legacy <c>plugin.list</c>, the same list runs through the C# PRoot launcher
+    /// and the parsed plugin lists are compared. Add / remove stay legacy until list parity holds on a device.
+    /// </summary>
+    public SliceMode PluginList { get; set; } = SliceMode.LegacyWithShadow;
+
     /// <summary>Host-path probe for the extractor; null = the real filesystem (the right choice on a device).</summary>
     public Func<string, bool>? HostPathExists { get; set; }
 }
