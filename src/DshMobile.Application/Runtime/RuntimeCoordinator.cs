@@ -1,10 +1,12 @@
 using System.Diagnostics;
 using DshMobile.Application.Shadow;
+using DshMobile.Core.Bridge;
 using DshMobile.Runtime;
 using DshMobile.Runtime.Bundle;
 using DshMobile.Runtime.Guest;
 using DshMobile.Runtime.Hosting;
 using DshMobile.Runtime.Layers;
+using DshMobile.Runtime.Plugins;
 
 namespace DshMobile.Application.Runtime;
 
@@ -355,6 +357,52 @@ public sealed class RuntimeCoordinator : IDisposable
         {
             _op.Release();
         }
+    }
+
+    /// <summary>
+    /// PR-05 C# path (developer opt-in, per call): <c>dsh plugin add/remove</c> through the C# PRoot launcher with the
+    /// ported install guard — an install that exits 0 but added a package that cannot load is rolled back (only the
+    /// packages this install added); a remove is checked against the profile's dependencies afterwards.
+    /// The bad-argument rules are the shared <c>PluginCommand</c> ones (BAD_REQUEST, nothing runs).
+    /// </summary>
+    public async Task<PluginChangeResult> ChangePluginWithCSharpAsync(string verb, string profile, string operand, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(operand);
+        if (_layout is null)
+        {
+            return new PluginChangeResult(false, RuntimeErrorCodes.NotInstalled, "C# plugin changes need the runtime layout", []);
+        }
+        if (verb is not ("add" or "remove"))
+        {
+            return new PluginChangeResult(false, BridgeErrorCodes.BadRequest, "unknown plugin verb: " + verb, []);
+        }
+        if (!PluginCommand.TryBuild(verb, profile, operand, out _, out var error))
+        {
+            return new PluginChangeResult(false, BridgeErrorCodes.BadRequest, error, []);
+        }
+        await _op.WaitAsync(ct).ConfigureAwait(false);
+        try
+        {
+            var sw = Stopwatch.StartNew();
+            var guard = new PluginInstallGuard(new GuestPluginOps(new ProotGuestProcess(_layout), profile), new PluginProfileReader(_layout, profile));
+            var r = verb == "add"
+                ? await guard.InstallAsync(operand, SpecPackageName(operand), ct).ConfigureAwait(false)
+                : await guard.RemoveAsync(operand, ct).ConfigureAwait(false);
+            _log.Note($"csharp plugin.{verb} {operand}: " + (r.Ok ? "ok" : $"{r.Code}{(r.RolledBack ? " (rolled back)" : "")}") + $" in {sw.Elapsed.TotalSeconds:F1} s"
+                + (r.Lines.FirstOrDefault(l => l.StartsWith("guard:", StringComparison.Ordinal)) is { } g ? "; " + g : ""));
+            return r;
+        }
+        finally
+        {
+            _op.Release();
+        }
+    }
+
+    /// <summary>The package name of a validated <c>name[@range]</c> spec (verification-only fallback for the guard).</summary>
+    public static string SpecPackageName(string spec)
+    {
+        var at = spec.LastIndexOf('@');
+        return at > 0 ? spec[..at] : spec;
     }
 
     /// <summary>

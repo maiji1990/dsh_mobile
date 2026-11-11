@@ -283,3 +283,11 @@ APK SHA-256 `a084dc5fb2559bea84d04caef8050b63f8006f23f7dc8dd639f08c41b9a2a392`�
 - 影子 `plugins.list` **Agree**：旧桥 `plugin.list` 与 C# PRoot 启动器跑的 `dsh plugin list --json --depth 0` 均 exit 0、均解析为 JSON 列表、内容一致（0 个插件；C# 1.0 s）。
 - 首次运行发现旧判定会把两边都不可解析误判为两个空列表一致，已改为要求两边都是 JSON 列表后复测。
 - 无崩溃、logcat 无 launch token；本机无第三方插件，非空列表只有单测证据。
+
+## ADR-0007 迁移 · C# 插件安装守卫 / 卸载核对（PR-05）真机记录 — 2026-11-11
+
+同一设备；Release（`-t:Rebuild`）APK。原始日志：[migration/parity/2026-11-11-PTP-AN10-A17-plugin-install-guard.md](../migration/parity/2026-11-11-PTP-AN10-A17-plugin-install-guard.md)。
+
+- C# 卸载 `is-number`：1.0 s，核对依赖已移除（`still-present=False`）。
+- C# 安装 `is-number`：DSH 0.2.1-rc.5 只警告「declares no dsh.bundle」并退出 0；守卫差集 `[is-number]` → 无 `dsh` 字段 → `INSTALL_VERIFY_FAILED`，`dsh plugin remove` 回收，列表回到装前（旧桥与 C# 影子一致）。
+- 停止后无残留进程、无崩溃、无 token 泄漏；第三方输入法会吞 `adb input text` 字符，自动化输入改用按键事件。
