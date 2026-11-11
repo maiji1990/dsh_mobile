@@ -1,0 +1,21 @@
+{
+  "description": "DSH health-loop decisions (DSHBox v1.5.1 sandbox-manager DshHealthPolicy.decideDshHealth, internal: the legacy side is called through reflection by native-bridge LegacyDshHealthPolicyParityTest; C# DshHealthPolicyParityTests). state/next = [wasReady, restartAttempts, unresponsiveSinceMs|null, startedAtMs, healthyStreak]; probe = [nowMs, webUiReady, processAlive, deviceInteractive, probeGapMs].",
+  "params": { "readyTimeoutMs": 120000, "unresponsiveGraceMs": 20000, "maxRestartAttempts": 3 },
+  "cases": [
+    { "name": "fresh instance becomes ready on the first successful probe", "state": [false, 0, null, 0, 0], "probe": [1000, true, true, true, 0], "decision": "Ready", "next": [true, 0, null, 0, 1] },
+    { "name": "sustained success closes the window and resets the budget", "state": [true, 2, 1000, 0, 2], "probe": [5000, true, true, true, 2000], "decision": "Ready", "next": [true, 0, null, 0, 3] },
+    { "name": "a lone success keeps the window and the budget", "state": [true, 2, 1000, 0, 0], "probe": [5000, true, true, true, 2000], "decision": "Ready", "next": [true, 2, 1000, 0, 1] },
+    { "name": "first failure after ready opens the window", "state": [true, 0, null, 0, 2], "probe": [100000, false, true, true, 2000], "decision": "Observe", "next": [true, 0, 100000, 0, 0] },
+    { "name": "window elapsed: bounded restart, back to not-ready", "state": [true, 0, 100000, 0, 0], "probe": [121000, false, true, true, 2000], "decision": "Restart", "next": [false, 1, null, 121000, 0] },
+    { "name": "dead handle restarts immediately", "state": [true, 0, null, 0, 2], "probe": [5000, false, false, true, 2000], "decision": "Restart", "next": [false, 1, null, 5000, 0] },
+    { "name": "initial start keeps observing within the readiness timeout", "state": [false, 0, null, 0, 0], "probe": [60000, false, true, true, 2000], "decision": "Observe", "next": [false, 0, null, 0, 0] },
+    { "name": "initial start fails once the readiness timeout elapses", "state": [false, 0, null, 0, 0], "probe": [120001, false, true, true, 2000], "decision": "InitialTimeout", "next": [false, 0, null, 0, 0] },
+    { "name": "exhausted budget is reported to the caller", "state": [true, 2, 100000, 0, 0], "probe": [121000, false, true, true, 2000], "decision": "Exhausted", "next": [true, 3, 100000, 0, 0] },
+    { "name": "sampling interruption re-arms instead of firing on a stale delta", "state": [true, 0, 100000, 0, 0], "probe": [600000, false, true, true, 20000], "decision": "Observe", "next": [true, 0, 600000, 600000, 0] },
+    { "name": "sleeping device neither opens nor advances the window", "state": [true, 0, 100000, 0, 0], "probe": [600000, false, true, false, 2000], "decision": "Observe", "next": [true, 0, null, 600000, 0] },
+    { "name": "dead handle is restarted even while sleeping", "state": [true, 0, null, 0, 0], "probe": [600000, false, false, false, 2000], "decision": "Restart", "next": [false, 1, null, 600000, 0] },
+    { "name": "success while sleeping re-arms the start time and may close", "state": [true, 1, 500, 0, 2], "probe": [600000, true, true, false, 2000], "decision": "Ready", "next": [true, 0, null, 600000, 3] },
+    { "name": "success after an interrupted gap re-arms the start time", "state": [false, 0, null, 0, 0], "probe": [30000, true, true, true, 20000], "decision": "Ready", "next": [true, 0, null, 30000, 1] },
+    { "name": "last restart attempt that still fits the budget", "state": [true, 1, 100000, 0, 0], "probe": [130000, false, true, true, 2000], "decision": "Restart", "next": [false, 2, null, 130000, 0] }
+  ]
+}

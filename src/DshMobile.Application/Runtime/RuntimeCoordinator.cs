@@ -316,6 +316,25 @@ public sealed class RuntimeCoordinator : IDisposable
         }
     }
 
+    /// <summary>
+    /// Read-only supervisor shadow: C# looks at <c>/proc</c> and probes the WebUI itself, and compares with the legacy
+    /// status / health the caller just obtained. Never starts, stops or signals anything.
+    /// </summary>
+    public async Task<ShadowReport?> ShadowSupervisorAsync(string legacySandboxState, string legacyDshState, bool legacyHealthOk, CancellationToken ct)
+    {
+        if (_options.GuestExec != SliceMode.LegacyWithShadow)
+        {
+            return null;
+        }
+        var sw = Stopwatch.StartNew();
+        var processes = OperatingSystem.IsWindows() ? null : DshMobile.Runtime.Supervision.RuntimeProcessSnapshot.Observe(Environment.ProcessId);
+        var health = await DshMobile.Runtime.Supervision.HttpHealthProbe.CheckAsync(ct: ct).ConfigureAwait(false);
+        var report = SupervisorObserveShadowCheck.Compare(legacySandboxState, legacyDshState, legacyHealthOk, processes, health, sw.ElapsedMilliseconds, _time.GetUtcNow());
+        _shadow.Report(report);
+        _log.Note($"shadow {report.Slice}: {report.Verdict} ({report.Detail}; csharp {report.CSharpMs} ms)");
+        return report;
+    }
+
     /// <summary>Aligns the journal with what the runtime actually reports before deciding a transition.</summary>
     private async Task SyncAsync(CancellationToken ct)
     {

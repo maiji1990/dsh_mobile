@@ -225,7 +225,8 @@ public sealed class BridgeHost : IDisposable, IDiagnosticsLog
     /// <summary>Fixed guest diagnostics (uname/debian/node/dsh --version) plus health.</summary>
     public Task RunDiagnosticsAsync() => RunExclusive("diagnostics", async () =>
     {
-        LogStatus("status", await Client.ExecuteAsync(BridgeMethods.RuntimeStatus).ConfigureAwait(false));
+        var statusResp = await Client.ExecuteAsync(BridgeMethods.RuntimeStatus).ConfigureAwait(false);
+        LogStatus("status", statusResp);
         var health = await Client.ExecuteAsync(BridgeMethods.RuntimeHealth).ConfigureAwait(false);
         if (health.Ok)
         {
@@ -235,6 +236,11 @@ public sealed class BridgeHost : IDisposable, IDiagnosticsLog
         else
         {
             Append($"health FAILED {health.Code}: {health.Message}");
+        }
+        // PR-03 read-only shadow, right after the legacy readings: C# /proc view + own HTTP probe.
+        if (statusResp.Ok && BridgeCodec.ReadPayload(statusResp, BridgeJsonContext.Default.RuntimeStatus) is { } st)
+        {
+            await Runtime.ShadowSupervisorAsync(st.SandboxState, st.DshState, health.Ok, CancellationToken.None).ConfigureAwait(false);
         }
         var diag = await Client.ExecuteAsync(BridgeMethods.RuntimeDiagnostics, deadline: DiagnosticsDeadline).ConfigureAwait(false);
         if (!diag.Ok)
