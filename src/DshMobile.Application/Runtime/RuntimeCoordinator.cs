@@ -332,6 +332,21 @@ public sealed class RuntimeCoordinator : IDisposable
         var report = SupervisorObserveShadowCheck.Compare(legacySandboxState, legacyDshState, legacyHealthOk, processes, health, sw.ElapsedMilliseconds, _time.GetUtcNow());
         _shadow.Report(report);
         _log.Note($"shadow {report.Slice}: {report.Verdict} ({report.Detail}; csharp {report.CSharpMs} ms)");
+
+        // Launcher argv: what C# would start vs the exact argv of the running legacy processes.
+        if (processes is not null && _layout is not null && (processes.SandboxRootPid is not null || processes.DshRootPid is not null))
+        {
+            sw.Restart();
+            var table = DshMobile.Runtime.Supervision.ProcessTable.Read();
+            var builder = new ProotCommandBuilder(_layout);
+            var argv = LauncherArgvShadowCheck.Compare(
+                processes.SandboxRootPid is { } s ? table?.Argv(s) : null,
+                processes.DshRootPid is { } d ? table?.Argv(d) : null,
+                builder.SandboxCommand(), builder.DshCommand(), builder.DshCommand(inPlaceRestart: true),
+                sw.ElapsedMilliseconds, _time.GetUtcNow());
+            _shadow.Report(argv);
+            _log.Note($"shadow {argv.Slice}: {argv.Verdict} ({argv.Detail}; csharp {argv.CSharpMs} ms)");
+        }
         return report;
     }
 

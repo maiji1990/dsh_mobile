@@ -259,3 +259,10 @@ APK SHA-256 `a084dc5fb2559bea84d04caef8050b63f8006f23f7dc8dd639f08c41b9a2a392`�
 - 影子 `runtime.supervisor-observe` 停止态 / 运行态 / 停止后均 **Agree**：C# 自读 `/proc` 找到的沙箱 / DSH 根 PID 与 `ps` 一致，自测 WebUI 得 HTTP 401（视为就绪）与旧实现健康一致；两轮（HttpClient 版、socket 版）结果相同。
 - **构建坑**：增量 Release 构建在程序集集合变化后产出启动即崩的 APK（`Invalid compressed assembly descriptor index 50`），需 `dotnet build -c Release -t:Rebuild`；CI 干净构建不受影响。
 - 运行中长命 PRoot 的完整 argv 已存为 `tests/TestVectors/device-proot-cmdlines.json`。
+
+## ADR-0007 迁移 · 沙箱 / DSH 启动 argv（PR-03 只读）真机记录 — 2026-11-11
+
+同一设备；Release（`-t:Rebuild`）APK 125,518,685 B。原始日志：[migration/parity/2026-11-11-PTP-AN10-A17-launcher-argv.md](../migration/parity/2026-11-11-PTP-AN10-A17-launcher-argv.md)。
+
+- 影子 `runtime.launcher-argv` **Agree**：C# 构建的沙箱 keepalive（14 个参数）与 DSH web（22 个参数，首次启动形态）argv 与旧实现进程的 `/proc/<pid>/cmdline` 逐 token 一致。
+- 同轮 `supervisor-observe`、`guest-exec` 均 Agree；停止后无残留进程、无崩溃。

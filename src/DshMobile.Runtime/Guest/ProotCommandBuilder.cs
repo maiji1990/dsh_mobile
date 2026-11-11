@@ -89,6 +89,108 @@ public sealed class ProotCommandBuilder(RuntimeLayout layout)
         return argv;
     }
 
+    /// <summary>
+    /// <c>buildProotSandboxCommand</c> as <c>startSandbox()</c> calls it: the keepalive PRoot that keeps the sandbox up.
+    /// Its cmdline carries <see cref="RuntimeConstants.SandboxKeepaliveMarker"/>, which is how the tree is found later.
+    /// </summary>
+    public IReadOnlyList<string> SandboxCommand()
+    {
+        var argv = LayeredPrefix(shim: null, pilot: null, browser: null, guestCache: null);
+        argv.Add("--cwd=/root");
+        argv.Add("--kill-on-exit");
+        argv.Add(GuestBash);
+        argv.Add("-c");
+        argv.Add($"echo {RuntimeConstants.SandboxKeepaliveMarker}; trap \"\" HUP INT TERM; while true; do sleep 3600; done");
+        return argv;
+    }
+
+    /// <summary>
+    /// <c>buildProotDshCommand</c> as <c>startDsh()</c> (first start) or the health loop's in-place restart calls it.
+    /// The two legacy call sites differ: the restart omits the guest-cache bind (and extra binds), so a DSH that was
+    /// restarted automatically runs without <c>/opt/dshbox-cache</c> (recorded in docs/MIGRATION.md section 7).
+    /// </summary>
+    public IReadOnlyList<string> DshCommand(bool inPlaceRestart = false)
+    {
+        var shim = File.Exists(layout.ShimFile) ? layout.ShimDir : null;
+        Directory.CreateDirectory(layout.PilotEntryDir); // pilotHostDir(): mkdirs, as legacy
+        var argv = LayeredPrefix(
+            shim,
+            layout.PilotEntryDir,
+            Directory.Exists(layout.BrowserEntryDir) ? layout.BrowserEntryDir : null,
+            inPlaceRestart ? null : layout.GuestCacheDir);
+        argv.Add("--cwd=/root/projects");
+        argv.Add("--kill-on-exit");
+        argv.Add("/usr/local/bin/node");
+        argv.Add("--expose-internals");
+        if (shim is not null)
+        {
+            argv.Add("--import");
+            argv.Add(RuntimeConstants.LinkShimGuestPath);
+        }
+        argv.Add(RuntimeConstants.GuestDshBin);
+        argv.Add("--profile");
+        argv.Add(RuntimeConstants.DshWebProfile);
+        foreach (var patch in DshOverlayGuestPaths())
+        {
+            argv.Add("--patch");
+            argv.Add(patch);
+        }
+        return argv;
+    }
+
+    /// <summary>Legacy overlay layers (official-plugin, market, absolute safe mode): only non-empty files are passed.</summary>
+    public IReadOnlyList<string> DshOverlayGuestPaths()
+    {
+        (string Relative, string Guest)[] overlays =
+        [
+            (".dsh/dshbox/dsh-official-plugin/dsh-official-plugin-overlay.yml", "/root/projects/.dsh/dshbox/dsh-official-plugin/dsh-official-plugin-overlay.yml"),
+            (".dsh/dshbox/plugin-market/market-and-safe-mode-overlay.yml", "/root/projects/.dsh/dshbox/plugin-market/market-and-safe-mode-overlay.yml"),
+            (".dsh/dshbox/safe-mode/absolute-safe-mode.yml", "/root/projects/.dsh/dshbox/safe-mode/absolute-safe-mode.yml"),
+        ];
+        return overlays.Where(o =>
+        {
+            var f = new FileInfo(Path.Combine(layout.UserDataDir, o.Relative));
+            return f.Exists && f.Length > 0;
+        }).Select(o => o.Guest).ToList();
+    }
+
+    /// <summary><c>layeredProotPrefix</c> (no share-area or extra binds: this app configures none).</summary>
+    private List<string> LayeredPrefix(string? shim, string? pilot, string? browser, string? guestCache)
+    {
+        var argv = new List<string>
+        {
+            ProotBinary,
+            "--rootfs=" + BaseRootfs,
+            "--bind=/system", "--bind=/apex", "--bind=/proc", "--bind=/dev",
+        };
+        if (Directory.Exists(NodeLayerDir))
+        {
+            argv.Add($"--bind={NodeLayerDir}:/usr/local");
+        }
+        if (Directory.Exists(DshLayerDir))
+        {
+            argv.Add($"--bind={DshLayerDir}:/opt/dshapp/runtime");
+        }
+        if (shim is not null)
+        {
+            argv.Add($"--bind={shim}:{RuntimeConstants.LinkShimGuestDir}");
+        }
+        if (pilot is not null)
+        {
+            argv.Add($"--bind={pilot}:/opt/pilot");
+        }
+        if (browser is not null)
+        {
+            argv.Add($"--bind={browser}:/opt/browser");
+        }
+        if (guestCache is not null)
+        {
+            argv.Add($"--bind={guestCache}:{RuntimeConstants.GuestCacheDir}");
+        }
+        argv.Add($"--bind={layout.UserDataDir}:{RuntimeConstants.SandboxWorkspace}");
+        return argv;
+    }
+
     /// <summary><c>buildProotEnv(runtimeCurrentDir(), role)</c> for role <c>guest</c> or <c>dsh</c>.</summary>
     public IReadOnlyDictionary<string, string> Environment(string role)
     {

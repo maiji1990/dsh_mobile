@@ -72,6 +72,20 @@ public sealed class ProcessTable
         }
     }
 
+    /// <summary>Exact argv from <c>/proc/&lt;pid&gt;/cmdline</c> (NUL-separated); null when unreadable.</summary>
+    public IReadOnlyList<string>? Argv(int pid)
+    {
+        try
+        {
+            var raw = File.ReadAllText(Path.Combine(_procRoot, pid.ToString(System.Globalization.CultureInfo.InvariantCulture), "cmdline"));
+            return raw.TrimEnd('\0').Split('\0');
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            return null;
+        }
+    }
+
     public IReadOnlyList<int> ChildrenOf(int parent) => _parent.Where(kv => kv.Value == parent).Select(kv => kv.Key).Order().ToList();
 
     /// <summary>BFS under <paramref name="rootPid"/>; the first process whose cmdline contains the needle.</summary>
