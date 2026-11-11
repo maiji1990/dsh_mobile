@@ -33,7 +33,8 @@ public sealed class RuntimeCoordinator : IDisposable
         IDiagnosticsLog log,
         IShadowReportSink shadow,
         MigrationOptions options,
-        TimeProvider? time = null)
+        TimeProvider? time = null,
+        RuntimeLayout? layout = null)
     {
         _runtime = runtime;
         State = state;
@@ -42,7 +43,11 @@ public sealed class RuntimeCoordinator : IDisposable
         _shadow = shadow;
         _options = options;
         _time = time ?? TimeProvider.System;
+        _layout = layout;
     }
+
+    /// <summary>Where the legacy installer puts the layers; required for the layer-extraction shadow.</summary>
+    private readonly RuntimeLayout? _layout;
 
     public RuntimeStateMachine State { get; }
 
@@ -199,6 +204,15 @@ public sealed class RuntimeCoordinator : IDisposable
                 var report = BundleShadowCheck.Compare(legacy, inspection, ms, _time.GetUtcNow());
                 _shadow.Report(report);
                 _log.Note($"shadow {report.Slice}: {report.Verdict} ({report.Detail}; csharp {ms} ms)");
+
+                // LayerInstaller shadow: still under the operation lock, so nothing has touched the fresh layers yet.
+                if (legacy.Ok && inspection.Ok && _layout is not null && _options.LayerExtract == SliceMode.LegacyWithShadow)
+                {
+                    _log.Note("shadow runtime.layer-extract: comparing C# dry-run extraction with the installed layers ...");
+                    var layers = await LayerExtractShadowCheck.RunAsync(package.Path, inspection, _layout, _options.HostPathExists, _time, ct).ConfigureAwait(false);
+                    _shadow.Report(layers);
+                    _log.Note($"shadow {layers.Slice}: {layers.Verdict} ({layers.Detail}; {layers.CSharpMs} ms)");
+                }
             }
 
             var after = await _runtime.GetStateAsync(ct).ConfigureAwait(false);

@@ -64,6 +64,7 @@
 | 运行时状态变化先写 durable journal 再生效；进程中断后不冒充“仍在运行”，恢复为 `Failed(RUNTIME_INTERRUPTED)` | `DshMobile.Runtime.RuntimeStateMachine`、`FileRuntimeJournal` |
 | 启动失败统一清理、停止失败不释放前台服务（避免无监督的 PRoot 孤儿） | `DshMobile.Application.Runtime.RuntimeCoordinator` |
 | C# 运行时私有状态（journal、影子报告）放 `files/dshmobile-runtime/`，不绑定进 guest、不在用户工作区 | `RuntimeLayout.HostStateDir` |
+| C# 层解包与旧实现同等约束：拒绝 `user-data` / `.dsh` 路径、规范路径越界、链接目标越界；所有路径决定在内存模型上完成，目标写入层只接受已证明在根内的相对路径；磁盘目标要求空目录；影子比对只干跑不写盘 | `DshMobile.Runtime.Layers.LayerExtractor`、`tests/TestVectors/layer-extract.json` |
 
 ## 待实现（按里程碑）
 

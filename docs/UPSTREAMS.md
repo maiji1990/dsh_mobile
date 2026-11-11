@@ -64,6 +64,14 @@
 | 2026-11-10 | `sandbox-manager/.../RuntimeBundleLayout.kt` | `src/DshMobile.Runtime/Bundle/RuntimeBundleLayout.cs` | 全部 | `runtime-bundle-layout.json` 新旧双跑 |
 | 2026-11-10 | `sandbox-manager/.../RuntimeProfile.kt` | `src/DshMobile.Runtime/Bundle/RuntimeProfile.cs` | 全部（`System.Text.Json` 源生成） | 单测 + 真实锁定包 |
 | 2026-11-10 | `sandbox-manager/.../DefaultSandboxManager.kt` `importRuntimeBundle` / `extractStagedLayers` 的**校验段**；`BundleManager.verifySha256` | `src/DshMobile.Runtime/Bundle/RuntimeBundleInspector.cs` | 只读校验（顺序与 `BUNDLE_*` 错误码一致）；解包 / 换层未移植 | 单测 12 例 + 真机影子比对（待采集） |
+| 2026-11-11 | `sandbox-manager/.../BundleManager.kt` `extractTarGz` / `applyEntryMode` / `isWithinRoot` / `is*File` 魔数识别 | `src/DshMobile.Runtime/Layers/LayerExtractor.cs` | 解包语义全部（受保护路径、规范路径越界、链接校验、硬链接延后、属主权限位、commons-compress 类型分派）；bzip2 / xz 容器未移植 | `layer-extract.json` 新旧双跑（夹具由 `tooling/gen-layer-fixtures.py` 生成）+ 真实锁定包干跑 + 真机影子（待采集） |
+
+## C# 运行时依赖（NuGet）
+
+| 包 | 版本 | 许可证 | 用途 | 引入 |
+|---|---|---|---|---|
+| `ZstdSharp.Port` | 0.8.8（2026-04-29 发布） | MIT | 运行时层 `.tar.zst` 解压（.NET 11 无内置 Zstandard）；纯托管 | PR-02 解包段 |
+| `Microsoft.Extensions.DependencyInjection` | 10.0.14 | MIT | Android 组合根 | PR-01 |
 
 ## 同步记录
 

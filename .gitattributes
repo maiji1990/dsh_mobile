@@ -8,3 +8,5 @@ gradlew text eol=lf
 *.png binary
 # Guest-side scripts run inside the Linux sandbox
 native/native-bridge/src/main/guest-assets/** text eol=lf
+# Layer-archive parity fixtures (tooling/gen-layer-fixtures.py): byte-exact, never EOL-converted
+tests/TestVectors/layers/** binary
