@@ -3,6 +3,7 @@ using DshMobile.Application.Shadow;
 using DshMobile.Runtime;
 using DshMobile.Runtime.Bundle;
 using DshMobile.Runtime.Journal;
+using DshMobile.Runtime.Layers;
 
 namespace DshMobile.Application.Tests;
 
@@ -30,6 +31,14 @@ public sealed class RuntimeCoordinatorTests : IDisposable
         {
             Calls.Add("install");
             return Task.FromResult(OnInstall?.Invoke() ?? new RuntimeInstallResult(true, "OK", null));
+        }
+
+        public Func<RuntimeInstallResult>? OnPrepare;
+
+        public Task<RuntimeInstallResult> PrepareAsync(CancellationToken ct)
+        {
+            Calls.Add("prepare");
+            return Task.FromResult(OnPrepare?.Invoke() ?? new RuntimeInstallResult(true, "OK", "DSH kept at 0.2.1-rc.5"));
         }
 
         public Task<RuntimeStartResult> StartSandboxAsync(CancellationToken ct)
@@ -268,6 +277,57 @@ public sealed class RuntimeCoordinatorTests : IDisposable
         Assert.False(r.Ok);
         Assert.Equal(RuntimeState.Failed, Coordinator().State.Current.State);
         Assert.Equal("BUNDLE_SHA256_MISMATCH", Coordinator().State.Current.ErrorCode);
+    }
+
+    private static string FixtureBundle(string name)
+    {
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+        while (dir is not null && !File.Exists(Path.Combine(dir.FullName, "global.json")))
+        {
+            dir = dir.Parent;
+        }
+        return Path.Combine(dir!.FullName, "tests", "TestVectors", "bundles", name);
+    }
+
+    private RuntimeCoordinator CSharpCoordinator(DshMobile.Runtime.RuntimeLayout layout) =>
+        _coordinator ??= new RuntimeCoordinator(_runtime, new RuntimeStateMachine(_journal, "fake"), _fg, _log, _log,
+            new MigrationOptions { HostPathExists = LayerExtractor.AndroidLikeHost }, null, layout);
+
+    [Fact]
+    public async Task Install_CSharpMode_InstallsVerifiesAndPreparesWithoutLegacyImport()
+    {
+        var layout = new DshMobile.Runtime.RuntimeLayout(Path.Combine(_dir, "files"), null, "/lib");
+        var r = await CSharpCoordinator(layout).InstallAsync(new RuntimePackage(FixtureBundle("good.zip")), null, CancellationToken.None, SliceMode.CSharp);
+        Assert.True(r.Ok, r.Message);
+        Assert.DoesNotContain("install", _runtime.Calls); // the legacy importer never ran
+        Assert.Contains("prepare", _runtime.Calls);
+        Assert.True(File.Exists(Path.Combine(layout.LayerDir("base"), "etc", "os-release")));
+        var verify = Assert.Single(_log.Reports);
+        Assert.Equal("runtime.layer-install", verify.Slice);
+        Assert.Equal(ShadowVerdict.Agree, verify.Verdict);
+        Assert.Equal(RuntimeState.Ready, _coordinator!.State.Current.State);
+    }
+
+    [Fact]
+    public async Task Install_CSharpMode_CorruptBundle_IsFailedAndLegacyNeverCalled()
+    {
+        var layout = new DshMobile.Runtime.RuntimeLayout(Path.Combine(_dir, "files"), null, "/lib");
+        var r = await CSharpCoordinator(layout).InstallAsync(new RuntimePackage(FixtureBundle("corrupt-node.zip")), null, CancellationToken.None, SliceMode.CSharp);
+        Assert.False(r.Ok);
+        Assert.Equal(BundleErrorCodes.Sha256Mismatch, r.UpstreamCode);
+        Assert.Empty(_runtime.Calls);
+        Assert.Equal(RuntimeState.Failed, _coordinator!.State.Current.State);
+    }
+
+    [Fact]
+    public async Task Install_CSharpMode_PrepareFailure_IsNotReportedAsSuccess()
+    {
+        _runtime.OnPrepare = () => new RuntimeInstallResult(false, "RUNTIME_ERROR", "DSH provision failed");
+        var layout = new DshMobile.Runtime.RuntimeLayout(Path.Combine(_dir, "files"), null, "/lib");
+        var r = await CSharpCoordinator(layout).InstallAsync(new RuntimePackage(FixtureBundle("good.zip")), null, CancellationToken.None, SliceMode.CSharp);
+        Assert.False(r.Ok);
+        Assert.Equal("RUNTIME_IMPORT_UNVERIFIED", r.Code);
+        Assert.Equal(RuntimeState.Failed, _coordinator!.State.Current.State);
     }
 
     [Fact]

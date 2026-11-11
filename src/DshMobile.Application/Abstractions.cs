@@ -24,6 +24,12 @@ public enum SliceMode
     Legacy,
     /// <summary>Legacy decides; the C# port runs on the same input read-only and divergences are reported.</summary>
     LegacyWithShadow,
+
+    /// <summary>
+    /// The C# implementation decides and the legacy one does not run. Opt-in per operation until the slice has passed
+    /// real-device acceptance; never a default before that (ADR-0007).
+    /// </summary>
+    CSharp,
 }
 
 public sealed class MigrationOptions

@@ -233,3 +233,13 @@ APK SHA-256 `a084dc5fb2559bea84d04caef8050b63f8006f23f7dc8dd639f08c41b9a2a392`�
 - 运行中 `am force-stop`：PRoot/node 进程 0（无孤儿）；重启 App 后 journal 恢复为 `Failed/Stopped gen=2 last error RUNTIME_INTERRUPTED`；
   再启动 gen=3 `Ready`，停止后进程 0。
 - 未在真机验证：沙箱启动失败 / 停止失败的清理分支（无法安全注入故障，仅单测覆盖）；Android 10；16 KB 页设备。
+
+## ADR-0007 迁移 · C# LayerInstaller 真机验收 — 2026-11-11
+
+同一设备；Release（full trim）APK 124,216,157 B。原始日志：[migration/parity/2026-11-11-PTP-AN10-A17-layer-install.md](../migration/parity/2026-11-11-PTP-AN10-A17-layer-install.md)。
+
+- 长按「导入」选择 C# 导入器（旧导入器不运行）：校验 + 解包 + 换层 5.7 s；装后树校验 `runtime.layer-install` **Agree**（base 10,325 / node 5,782 / android-side 12 项）；
+  旧桥 `runtime.prepare` 后状态 `runtime=True`（旧实现的 profile / 哨兵完整性检查接受 C# 安装结果），导入总计 10.9 s。
+- 在 C# 安装的运行环境上启动：DSH web 17.0 s `Ready`，健康 `process/port/webUi` 全部 True；guest 内 Debian 13.6、Node v24.19.0、DSH 0.2.1-rc.5；停止后进程 0。
+- 冷启动 261 ms；journal 跨进程恢复为 `Ready gen=3`。
+- 未验证：全新设备首次安装、低磁盘、导入中途强杀、Android 10。

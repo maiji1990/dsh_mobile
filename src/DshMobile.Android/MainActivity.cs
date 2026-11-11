@@ -52,7 +52,18 @@ public class MainActivity : Activity
         clear.Click += (_, _) => _bridge.ClearLog();
         prepare.Click += (_, _) => _ = _bridge.RunPrepareAsync();
         // Runtime bundle comes from the system picker (no storage permission, no adb needed).
-        import.Click += (_, _) => StartActivityForResult(DocumentPicker.OpenIntent(["application/zip", ".zip"], multiple: false), RequestRuntimeBundle);
+        import.Click += (_, _) => PickRuntimeBundle(csharpImporter: false);
+        // Developer opt-in for device acceptance of the C# LayerInstaller (ADR-0007): one import only, explicit choice.
+        import.LongClick += (_, e) =>
+        {
+            e.Handled = true;
+            new AlertDialog.Builder(this)
+                .SetTitle("导入实现")!
+                .SetMessage("用 C# LayerInstaller 做这一次导入（实验，用于真机验收）？默认导入仍使用旧实现并做影子比对。")!
+                .SetPositiveButton("C# 导入器", (_, _) => PickRuntimeBundle(csharpImporter: true))!
+                .SetNegativeButton("取消", (_, _) => { })!
+                .Show();
+        };
         start.Click += (_, _) => _ = _bridge.RunStartAsync();
         stop.Click += (_, _) => _ = _bridge.RunStopAsync();
         diag.Click += (_, _) => _ = _bridge.RunDiagnosticsAsync();
@@ -78,9 +89,20 @@ public class MainActivity : Activity
 
     private const int RequestRuntimeBundle = 61;
 
+    /// <summary>Importer chosen for the pending picker result (reset after each use).</summary>
+    private bool _csharpImporter;
+
+    private void PickRuntimeBundle(bool csharpImporter)
+    {
+        _csharpImporter = csharpImporter;
+        StartActivityForResult(DocumentPicker.OpenIntent(["application/zip", ".zip"], multiple: false), RequestRuntimeBundle);
+    }
+
     protected override async void OnActivityResult(int requestCode, Result resultCode, Intent? data)
     {
         base.OnActivityResult(requestCode, resultCode, data);
+        var csharpImporter = _csharpImporter;
+        _csharpImporter = false;
         if (requestCode != RequestRuntimeBundle || resultCode != Result.Ok || data?.Data is not { } uri)
         {
             return;
@@ -101,7 +123,7 @@ public class MainActivity : Activity
                 await input.CopyToAsync(output);
             });
             _bridge.Note($"import: copied {new FileInfo(dest).Length / 1024 / 1024} MiB in {sw.Elapsed.TotalSeconds:F1} s");
-            await _bridge.RunImportAsync(dest, deleteAfter: true);
+            await _bridge.RunImportAsync(dest, deleteAfter: true, csharpImporter);
         }
         catch (Exception e) when (e is IOException or Java.Lang.Exception or UnauthorizedAccessException)
         {
