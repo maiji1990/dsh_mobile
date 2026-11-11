@@ -1,0 +1,552 @@
+{
+  "description": "WebView trust / token policy. originPolicy: DSHBox v1.5.1 dsh-renderer/api DshOriginPolicy (java.net.URI semantics); tokenTracker: DshTokenRevisionTracker; urlWithToken: WebUiController.urlWithToken (ported from DSHBox DshUrl.kt). Run by the legacy code (native-bridge LegacyWebViewPolicyParityTest) and the C# port (WebViewPolicyParityTests). Includes adversarial inputs where .NET System.Uri would normalize differently from java.net.URI (e.g. 127.1, expanded IPv6).",
+  "originPolicy": [
+    {
+      "base": "http://127.0.0.1:3080",
+      "valid": true,
+      "candidates": [
+        {
+          "url": "http://127.0.0.1:3080/dsh/workspace?token=x",
+          "trusted": true
+        },
+        {
+          "url": "http://127.0.0.1:3080/page#section",
+          "trusted": true
+        },
+        {
+          "url": "http://127.0.0.1:3080",
+          "trusted": true
+        },
+        {
+          "url": "HTTP://127.0.0.1:3080/",
+          "trusted": true
+        },
+        {
+          "url": "http://127.0.0.1:03080/",
+          "trusted": true
+        },
+        {
+          "url": "http://127.0.0.1:3081/",
+          "trusted": false
+        },
+        {
+          "url": "https://127.0.0.1:3080/",
+          "trusted": false
+        },
+        {
+          "url": "http://localhost:3080/",
+          "trusted": false
+        },
+        {
+          "url": "http://user@127.0.0.1:3080/",
+          "trusted": false
+        },
+        {
+          "url": "http://127.0.0.1.example.com:3080/",
+          "trusted": false
+        },
+        {
+          "url": "http://127.0.0.1@evil.example:3080/",
+          "trusted": false
+        },
+        {
+          "url": "http://192.168.1.1:3080/",
+          "trusted": false
+        },
+        {
+          "url": "mailto:127.0.0.1:3080",
+          "trusted": false
+        },
+        {
+          "url": "/dsh/page",
+          "trusted": false
+        },
+        {
+          "url": "page?x=1",
+          "trusted": false
+        },
+        {
+          "url": "http://:3080/",
+          "trusted": false
+        },
+        {
+          "url": "http://[invalid:3080/",
+          "trusted": false
+        },
+        {
+          "url": "http://127.0.0.1:65536/",
+          "trusted": false
+        },
+        {
+          "url": "http://127.0.0.1:-1/",
+          "trusted": false
+        },
+        {
+          "url": "http://127.0.0.1:/",
+          "trusted": false
+        },
+        {
+          "url": "http://%31%32%37%2e%30%2e%30%2e%31:3080/",
+          "trusted": false
+        },
+        {
+          "url": "//127.0.0.1:3080/",
+          "trusted": false
+        },
+        {
+          "url": "http://127.0.0.1:80/",
+          "trusted": false
+        },
+        {
+          "url": "http://127.1:3080/",
+          "trusted": false
+        },
+        {
+          "url": "http://2130706433:3080/",
+          "trusted": false
+        },
+        {
+          "url": "http://0x7f.0.0.1:3080/",
+          "trusted": false
+        },
+        {
+          "url": "http://127.0.0.1.:3080/",
+          "trusted": false
+        },
+        {
+          "url": "http://127.0.0.1:3080\\@evil.example/",
+          "trusted": false
+        },
+        {
+          "url": "http://127.0.0.1:3080:80/",
+          "trusted": false
+        },
+        {
+          "url": "http://127.0.0.1:+3080/",
+          "trusted": false
+        },
+        {
+          "url": "http://127.0.0.1:3080/ space",
+          "trusted": false
+        },
+        {
+          "url": "http://127.0.0.1:3080/%zz",
+          "trusted": false
+        },
+        {
+          "url": "http://127.0.0.1:3080/%E8%B7%AF",
+          "trusted": true
+        },
+        {
+          "url": "http://127.0.0.1:3080/路径",
+          "trusted": true
+        },
+        {
+          "url": "http://127.0.0.1:3080/a?b=c&d=%20",
+          "trusted": true
+        },
+        {
+          "url": "javascript:alert(1)",
+          "trusted": false
+        },
+        {
+          "url": "data:text/html,hi",
+          "trusted": false
+        },
+        {
+          "url": "file:///sdcard/x.html",
+          "trusted": false
+        },
+        {
+          "url": "intent://127.0.0.1:3080/#Intent;end",
+          "trusted": false
+        },
+        {
+          "url": "",
+          "trusted": false
+        },
+        {
+          "url": "http://127.0.0.1:3080/a[b]",
+          "trusted": false
+        },
+        {
+          "url": "http://127.0.0.1:3080/#a#b",
+          "trusted": false
+        },
+        {
+          "url": "http://127.0.0.1:3080/a|b",
+          "trusted": false
+        },
+        {
+          "url": "http://127.0.0.1:3080/a^b",
+          "trusted": false
+        },
+        {
+          "url": "http://127.0.0.1:3080/a{b}",
+          "trusted": false
+        },
+        {
+          "url": "http://127.0.0.1:3080/a%",
+          "trusted": false
+        },
+        {
+          "url": "http://127.0.0.1:3080/a%2",
+          "trusted": false
+        },
+        {
+          "url": "http://127.0.0.1:3080/　",
+          "trusted": false
+        },
+        {
+          "url": "http://127.0.0.1:3080/?q=a'b",
+          "trusted": true
+        },
+        {
+          "url": "http://127.0.0.1:3080/a;b=c",
+          "trusted": true
+        },
+        {
+          "url": "http://127.0.0.1:3080/~u/!x*()",
+          "trusted": true
+        },
+        {
+          "url": "http://127.0.0.1:3080/a\"b",
+          "trusted": false
+        },
+        {
+          "url": "http://127.0.0.1:3080/a<b>",
+          "trusted": false
+        },
+        {
+          "url": "http://127.0.0.1:3080/a`b",
+          "trusted": false
+        },
+        {
+          "url": "http://127.0.0.1:3080/ ",
+          "trusted": false
+        },
+        {
+          "url": "http://127.0.0.1:3080/é",
+          "trusted": true
+        },
+        {
+          "url": "http://127.0.0.1:3080?x",
+          "trusted": true
+        },
+        {
+          "url": "http://127.0.0.1:3080#f",
+          "trusted": true
+        },
+        {
+          "url": "http://127.0.0.1:99999999999/",
+          "trusted": false
+        },
+        {
+          "url": "http:127.0.0.1:3080",
+          "trusted": false
+        },
+        {
+          "url": "http:///127.0.0.1:3080",
+          "trusted": false
+        },
+        {
+          "url": "1http://127.0.0.1:3080/",
+          "trusted": false
+        },
+        {
+          "url": "ht+tp://127.0.0.1:3080/",
+          "trusted": false
+        }
+      ]
+    },
+    {
+      "base": "http://[::1]:3080",
+      "valid": true,
+      "candidates": [
+        {
+          "url": "http://[::1]:3080/path",
+          "trusted": true
+        },
+        {
+          "url": "http://[::1]:3080",
+          "trusted": true
+        },
+        {
+          "url": "http://127.0.0.1:3080/",
+          "trusted": false
+        },
+        {
+          "url": "http://localhost:3080/",
+          "trusted": false
+        },
+        {
+          "url": "http://[0:0:0:0:0:0:0:1]:3080/",
+          "trusted": false
+        },
+        {
+          "url": "http://[::1%25eth0]:3080/",
+          "trusted": false
+        },
+        {
+          "url": "http://::1:3080/",
+          "trusted": false
+        }
+      ]
+    },
+    {
+      "base": "http://localhost:3080",
+      "valid": true,
+      "candidates": [
+        {
+          "url": "HTTP://LOCALHOST:3080/",
+          "trusted": true
+        },
+        {
+          "url": "http://localhost:3080/",
+          "trusted": true
+        },
+        {
+          "url": "http://localhost.:3080/",
+          "trusted": false
+        },
+        {
+          "url": "http://LocalHost:3080/x",
+          "trusted": true
+        }
+      ]
+    },
+    {
+      "base": "http://127.0.0.1",
+      "valid": true,
+      "candidates": [
+        {
+          "url": "http://127.0.0.1:80/",
+          "trusted": true
+        },
+        {
+          "url": "http://127.0.0.1/",
+          "trusted": true
+        },
+        {
+          "url": "http://127.0.0.1:/",
+          "trusted": true
+        },
+        {
+          "url": "http://127.0.0.1:3080/",
+          "trusted": false
+        }
+      ]
+    },
+    {
+      "base": "https://localhost",
+      "valid": true,
+      "candidates": [
+        {
+          "url": "https://localhost:443/",
+          "trusted": true
+        },
+        {
+          "url": "https://localhost/",
+          "trusted": true
+        },
+        {
+          "url": "http://localhost/",
+          "trusted": false
+        }
+      ]
+    },
+    {
+      "base": "HTTP://LOCALHOST:3080",
+      "valid": true,
+      "candidates": [
+        {
+          "url": "http://localhost:3080/",
+          "trusted": true
+        }
+      ]
+    },
+    {
+      "base": "ftp://127.0.0.1:3080",
+      "valid": false
+    },
+    {
+      "base": "http://8.8.8.8:3080",
+      "valid": false
+    },
+    {
+      "base": "http://u@127.0.0.1:3080",
+      "valid": false
+    },
+    {
+      "base": "mailto:127.0.0.1",
+      "valid": false
+    },
+    {
+      "base": "not a uri ",
+      "valid": false
+    },
+    {
+      "base": "http://:3080",
+      "valid": false
+    },
+    {
+      "base": "http://127.0.0.1:65536",
+      "valid": false
+    },
+    {
+      "base": "http://127.1:3080",
+      "valid": false
+    },
+    {
+      "base": "/relative",
+      "valid": false
+    }
+  ],
+  "tokenTracker": [
+    {
+      "name": "unavailability does not create a new revision; a genuinely new token does",
+      "steps": [
+        {
+          "update": "token-a",
+          "changed": true,
+          "hasToken": true,
+          "revision": 1
+        },
+        {
+          "update": "token-a",
+          "changed": false,
+          "hasToken": true,
+          "revision": 1
+        },
+        {
+          "update": null,
+          "changed": true,
+          "hasToken": false,
+          "revision": null
+        },
+        {
+          "update": "token-a",
+          "changed": true,
+          "hasToken": true,
+          "revision": 1
+        },
+        {
+          "update": null,
+          "changed": true,
+          "hasToken": false,
+          "revision": null
+        },
+        {
+          "update": "token-b",
+          "changed": true,
+          "hasToken": true,
+          "revision": 2
+        },
+        {
+          "update": "token-c",
+          "changed": true,
+          "hasToken": true,
+          "revision": 3
+        },
+        {
+          "update": "",
+          "changed": true,
+          "hasToken": false,
+          "revision": null
+        },
+        {
+          "update": "",
+          "changed": false,
+          "hasToken": false,
+          "revision": null
+        },
+        {
+          "update": "token-c",
+          "changed": true,
+          "hasToken": true,
+          "revision": 3
+        },
+        {
+          "clear": true,
+          "hasToken": false,
+          "revision": null
+        },
+        {
+          "update": "token-c",
+          "changed": true,
+          "hasToken": true,
+          "revision": 1
+        }
+      ]
+    },
+    {
+      "name": "empty first value is unavailable",
+      "steps": [
+        {
+          "update": "",
+          "changed": false,
+          "hasToken": false,
+          "revision": null
+        },
+        {
+          "update": "x",
+          "changed": true,
+          "hasToken": true,
+          "revision": 1
+        }
+      ]
+    }
+  ],
+  "urlWithToken": [
+    {
+      "base": "http://127.0.0.1:3080/",
+      "token": null,
+      "url": "http://127.0.0.1:3080/"
+    },
+    {
+      "base": "http://127.0.0.1:3080/",
+      "token": "",
+      "url": "http://127.0.0.1:3080/"
+    },
+    {
+      "base": "http://127.0.0.1:3080/",
+      "token": "a+b/c=",
+      "url": "http://127.0.0.1:3080/?token=a%2Bb%2Fc%3D"
+    },
+    {
+      "base": "http://127.0.0.1:3080/",
+      "token": "Ab-_.~9",
+      "url": "http://127.0.0.1:3080/?token=Ab-_.~9"
+    },
+    {
+      "base": "http://127.0.0.1:3080/",
+      "token": "x&admin=1",
+      "url": "http://127.0.0.1:3080/?token=x%26admin%3D1"
+    },
+    {
+      "base": "http://127.0.0.1:3080/?a=1&token=old&b=2",
+      "token": "new",
+      "url": "http://127.0.0.1:3080/?a=1&b=2&token=new"
+    },
+    {
+      "base": "http://127.0.0.1:3080/?token=old",
+      "token": "n w",
+      "url": "http://127.0.0.1:3080/?token=n%20w"
+    },
+    {
+      "base": "http://127.0.0.1:3080/?",
+      "token": "t",
+      "url": "http://127.0.0.1:3080/?token=t"
+    },
+    {
+      "base": "http://127.0.0.1:3080/",
+      "token": "é中",
+      "url": "http://127.0.0.1:3080/?token=é中"
+    },
+    {
+      "base": "http://127.0.0.1:3080/",
+      "token": "a%b#c",
+      "url": "http://127.0.0.1:3080/?token=a%25b%23c"
+    }
+  ]
+}
