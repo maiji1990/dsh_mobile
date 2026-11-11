@@ -65,6 +65,17 @@ public class MainActivity : Activity
                 .Show();
         };
         start.Click += (_, _) => _ = _bridge.RunStartAsync();
+        // Developer opt-in (ADR-0007 milestone): the C# DshHost starts and owns sandbox + DSH, no DSHBox code on that path.
+        start.LongClick += (_, e) =>
+        {
+            e.Handled = true;
+            new AlertDialog.Builder(this)
+                .SetTitle("启动实现")!
+                .SetMessage("用 C# DshHost 启动沙箱和 DSH（实验，用于真机验收）？期间终端、手机操控、浏览器等仍依赖旧运行时的功能不可用。默认启动仍使用旧实现。")!
+                .SetPositiveButton("C# 宿主", (_, _) => _ = _bridge.RunStartAsync(csharpHost: true))!
+                .SetNegativeButton("取消", (_, _) => { })!
+                .Show();
+        };
         stop.Click += (_, _) => _ = _bridge.RunStopAsync();
         diag.Click += (_, _) => _ = _bridge.RunDiagnosticsAsync();
         probe.Click += (_, _) => _ = _bridge.RunProbesAsync();

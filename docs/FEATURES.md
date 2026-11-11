@@ -35,6 +35,7 @@
 | Android 硬链接兼容垫片（link-shim） | 通过（Android 17 真机） | DSH 以 `node --expose-internals --import /opt/dshbox/link-shim.mjs … --profile web` 运行（与 DSHBox 一致）；TASK-004 初版缺失此垫片，已补 |
 | Runtime 层管理（TASK-004） | 通过（Android 17 真机），部分验收未测 | 磁盘不足 / 层缺失 / 更新失败未测；见 milestones/M2.md |
 | C# 运行时协调器 + 影子比对（ADR-0007，PR-00/01/02） | 通过（Android 17 真机） | Release full-trim：启停 / 重复启动 / 停止无孤儿 / 强杀后 journal 恢复为 `RUNTIME_INTERRUPTED`；导入时 `runtime.bundle-verify` 与 `runtime.layer-extract` 影子均 `Agree`（16,119 项逐项一致）。实现仍为旧桥；失败清理分支仅单测。见 COMPATIBILITY.md「ADR-0007 迁移」 |
+| C# 宿主（开发者可选：长按「启动 DSH」） | 通过（Android 17 真机） | 不经 DSHBox 代码：C# 启动沙箱 + DSH、取 launch token、C# WebView 加载官方 WebUI；10.1 s READY；停止 / 强杀无孤儿；token 不入日志。运行期间终端 / 手机操控 / 浏览器不可用。见 COMPATIBILITY.md「ADR-0007 里程碑」 |
 
 ## 可选模块（方案 4.3）
 

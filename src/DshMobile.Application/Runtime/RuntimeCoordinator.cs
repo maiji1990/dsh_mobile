@@ -3,6 +3,7 @@ using DshMobile.Application.Shadow;
 using DshMobile.Runtime;
 using DshMobile.Runtime.Bundle;
 using DshMobile.Runtime.Guest;
+using DshMobile.Runtime.Hosting;
 using DshMobile.Runtime.Layers;
 
 namespace DshMobile.Application.Runtime;
@@ -62,12 +63,22 @@ public sealed class RuntimeCoordinator : IDisposable
         State.Observe(snapshot.State, snapshot.Harness, snapshot.DshVersion, _runtime.Implementation);
     }
 
-    public async Task<RuntimeStartResult> StartAsync(DshProfile profile, CancellationToken ct)
+    /// <param name="mode"><see cref="SliceMode.CSharp"/>: developer opt-in - the C# <see cref="DshHost"/> starts and owns
+    /// the sandbox and DSH processes (no DSHBox code); otherwise the legacy runtime starts them.</param>
+    public async Task<RuntimeStartResult> StartAsync(DshProfile profile, CancellationToken ct, SliceMode? mode = null)
     {
         await _op.WaitAsync(ct).ConfigureAwait(false);
         try
         {
             await SyncAsync(ct).ConfigureAwait(false);
+            if (mode == SliceMode.CSharp)
+            {
+                return await StartWithCSharpHostAsync(profile, ct).ConfigureAwait(false);
+            }
+            if (_host is { IsActive: true })
+            {
+                return Refused("the C# host is running; stop it before starting the legacy runtime");
+            }
             var current = State.Current;
             if (current.State == RuntimeState.Running)
             {
@@ -130,6 +141,10 @@ public sealed class RuntimeCoordinator : IDisposable
         await _op.WaitAsync(ct).ConfigureAwait(false);
         try
         {
+            if (_host is { State: not DshHostState.Stopped } host)
+            {
+                return await StopCSharpHostAsync(host, ct).ConfigureAwait(false);
+            }
             await SyncAsync(ct).ConfigureAwait(false);
             if (State.Current.State is RuntimeState.Ready or RuntimeState.NotInstalled)
             {
@@ -326,6 +341,11 @@ public sealed class RuntimeCoordinator : IDisposable
         {
             return null;
         }
+        if (_host is { IsActive: true })
+        {
+            _log.Note("shadow runtime.supervisor-observe: skipped (the C# host owns the processes; legacy reports them as stopped)");
+            return null;
+        }
         var sw = Stopwatch.StartNew();
         var processes = OperatingSystem.IsWindows() ? null : DshMobile.Runtime.Supervision.RuntimeProcessSnapshot.Observe(Environment.ProcessId);
         var health = await DshMobile.Runtime.Supervision.HttpHealthProbe.CheckAsync(ct: ct).ConfigureAwait(false);
@@ -350,9 +370,70 @@ public sealed class RuntimeCoordinator : IDisposable
         return report;
     }
 
+    private DshHost? _host;
+
+    /// <summary>The C# host (created on first C# start); exposes the launch token to the C# WebView only.</summary>
+    public DshHost? Host => _host;
+
+    /// <summary>Caller holds <see cref="_op"/>.</summary>
+    private async Task<RuntimeStartResult> StartWithCSharpHostAsync(DshProfile profile, CancellationToken ct)
+    {
+        if (_layout is null)
+        {
+            return Refused("C# host needs the runtime layout");
+        }
+        if (profile.Name != RuntimeConstants.DshWebProfile)
+        {
+            return Refused($"C# host starts only the '{RuntimeConstants.DshWebProfile}' profile");
+        }
+        if (State.Current.State is RuntimeState.Running or RuntimeState.Starting)
+        {
+            return Refused($"cannot start the C# host while the runtime is {State.Current.State}");
+        }
+        if (!State.TryTransition(RuntimeState.Starting, "start requested (csharp host)", HarnessState.Stopped))
+        {
+            return Refused($"cannot start while {State.Current.State}");
+        }
+        _host ??= new DshHost(_layout, _log.Note, _time);
+        _foreground.Acquire();
+        var sw = Stopwatch.StartNew();
+        _log.Note("start: C# DshHost (legacy runtime not used)");
+        var r = await _host.StartAsync(ct).ConfigureAwait(false);
+        _log.Note(r.Ok ? $"csharp host: ready in {sw.Elapsed.TotalSeconds:F1} s" : $"csharp host: FAILED {r.Code}: {r.Message}");
+        if (!r.Ok)
+        {
+            // The host already killed whatever it started; nothing is left for the service to keep alive.
+            _foreground.Release();
+            State.TryTransition(RuntimeState.Failed, "csharp host start failed", HarnessState.Stopped, r.Code, r.Message);
+            return new RuntimeStartResult(false, r.Code, r.Message, State.Current);
+        }
+        State.TryTransition(RuntimeState.Running, "csharp host ready", HarnessState.Ready);
+        return new RuntimeStartResult(true, RuntimeErrorCodes.Ok, null, State.Current);
+    }
+
+    /// <summary>Caller holds <see cref="_op"/>.</summary>
+    private async Task<RuntimeStartResult> StopCSharpHostAsync(DshHost host, CancellationToken ct)
+    {
+        State.TryTransition(RuntimeState.Stopping, "stop requested (csharp host)");
+        var r = await host.StopAsync(ct).ConfigureAwait(false);
+        _log.Note(r.Ok ? "csharp host: stopped, no marker process left" : $"csharp host: stop FAILED {r.Code}: {r.Message}");
+        if (!r.Ok)
+        {
+            State.TryTransition(RuntimeState.Failed, "csharp host stop incomplete", HarnessState.Stopped, r.Code, r.Message);
+            return new RuntimeStartResult(false, r.Code, r.Message, State.Current);
+        }
+        _foreground.Release();
+        State.TryTransition(RuntimeState.Ready, "stopped (csharp host)", HarnessState.Stopped);
+        return new RuntimeStartResult(true, RuntimeErrorCodes.Ok, null, State.Current);
+    }
+
     /// <summary>Aligns the journal with what the runtime actually reports before deciding a transition.</summary>
     private async Task SyncAsync(CancellationToken ct)
     {
+        if (_host is { IsActive: true })
+        {
+            return; // the legacy runtime does not know about C#-hosted processes; the journal follows the host
+        }
         var actual = await _runtime.GetStateAsync(ct).ConfigureAwait(false);
         // A failed status read is itself reported as Failed; keep the journal's own error in that case.
         if (actual.ErrorCode is null || actual.State != RuntimeState.Failed)

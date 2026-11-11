@@ -4,6 +4,7 @@ using DshMobile.App.Files;
 using Android.Views;
 using Android.Webkit;
 using DshMobile.App.Bridge;
+using DshMobile.App.WebUi;
 using DshMobile.NativeBridge;
 using Log = Android.Util.Log;
 
@@ -27,6 +28,8 @@ public sealed class DshWebActivity : Activity
     private TextView? _status;
     private StateListener? _listener;
     private BackCallback? _back;
+    /// <summary>Set when DSH is hosted by the C# DshHost (ADR-0007): the C# WebView path replaces the legacy one.</summary>
+    private CSharpWebUiController? _csharp;
 
     protected override void OnCreate(Bundle? savedInstanceState)
     {
@@ -42,8 +45,38 @@ public sealed class DshWebActivity : Activity
         root.AddView(_webView, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MatchParent, 0, 1f));
         SetContentView(root);
 
-        _listener = new StateListener(this);
-        DshMobileApplication.Current.Bridge.AttachWebUi(_webView, _listener);
+        var host = DshMobileApplication.Current.Bridge.Runtime.Host;
+        if (host is { IsActive: true })
+        {
+            Log.Info(BridgeHost.LogTag, "webui: C# WebView on the C#-hosted DSH");
+            _csharp = new CSharpWebUiController(host,
+                (state, detail) => RunOnUiThread(() =>
+                {
+                    // detail is token-free by construction (paths, hosts, error codes only).
+                    Log.Info(BridgeHost.LogTag, $"webui(csharp) {state} {detail}");
+                    if (!IsDestroyed)
+                    {
+                        ShowState(state, detail);
+                    }
+                }),
+                (types, multiple) => RunOnUiThread(() =>
+                {
+                    if (IsDestroyed)
+                    {
+                        _csharp?.CompleteFileChooser(null);
+                    }
+                    else
+                    {
+                        OpenFileChooser(types, multiple);
+                    }
+                }));
+            _csharp.Attach(_webView);
+        }
+        else
+        {
+            _listener = new StateListener(this);
+            DshMobileApplication.Current.Bridge.AttachWebUi(_webView, _listener);
+        }
 
         if (OperatingSystem.IsAndroidVersionAtLeast(33))
         {
@@ -59,7 +92,15 @@ public sealed class DshWebActivity : Activity
         {
             OnBackInvokedDispatcher.UnregisterOnBackInvokedCallback(_back);
         }
-        DshMobileApplication.Current.Bridge.DetachWebUi();
+        if (_csharp is not null)
+        {
+            _csharp.Detach();
+            _csharp = null;
+        }
+        else
+        {
+            DshMobileApplication.Current.Bridge.DetachWebUi();
+        }
         if (_webView is not null)
         {
             ((ViewGroup?)_webView.Parent)?.RemoveView(_webView);
@@ -80,7 +121,7 @@ public sealed class DshWebActivity : Activity
         }
         catch (ActivityNotFoundException)
         {
-            DshMobileApplication.Current.Bridge.CompleteWebFileChooser(null);
+            CompleteChooser(null);
         }
     }
 
@@ -91,7 +132,19 @@ public sealed class DshWebActivity : Activity
         {
             var uris = resultCode == Result.Ok ? DocumentPicker.ResultUris(data) : [];
             Log.Info(BridgeHost.LogTag, $"webui file chooser: {uris.Length} file(s)");
-            DshMobileApplication.Current.Bridge.CompleteWebFileChooser(uris.Length == 0 ? null : uris);
+            CompleteChooser(uris.Length == 0 ? null : uris);
+        }
+    }
+
+    private void CompleteChooser(Android.Net.Uri[]? uris)
+    {
+        if (_csharp is not null)
+        {
+            _csharp.CompleteFileChooser(uris);
+        }
+        else
+        {
+            DshMobileApplication.Current.Bridge.CompleteWebFileChooser(uris);
         }
     }
 

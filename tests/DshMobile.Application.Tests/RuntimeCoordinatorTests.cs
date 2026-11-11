@@ -331,6 +331,30 @@ public sealed class RuntimeCoordinatorTests : IDisposable
     }
 
     [Fact]
+    public async Task Start_CSharpHost_FailingPreconditions_IsFailedAndReleasesService()
+    {
+        var layout = new DshMobile.Runtime.RuntimeLayout(Path.Combine(_dir, "files"), null, Path.Combine(_dir, "nolibs"));
+        var r = await CSharpCoordinator(layout).StartAsync(DshProfile.Web, CancellationToken.None, SliceMode.CSharp);
+        Assert.False(r.Ok);
+        Assert.Equal("EXECUTABLE_NOT_ALLOWED", r.Code);
+        Assert.Empty(_runtime.Calls); // the legacy runtime is never asked to start anything
+        Assert.False(_fg.Held);
+        Assert.Equal(RuntimeState.Failed, r.Snapshot.State);
+        Assert.Contains(_journal.ReadTail(20), e => e.Reason == "start requested (csharp host)");
+    }
+
+    [Fact]
+    public async Task Start_CSharpHost_WhileLegacyRunning_IsRefused()
+    {
+        _runtime.State = RuntimeState.Running;
+        var layout = new DshMobile.Runtime.RuntimeLayout(Path.Combine(_dir, "files"), null, Path.Combine(_dir, "nolibs"));
+        var r = await CSharpCoordinator(layout).StartAsync(DshProfile.Web, CancellationToken.None, SliceMode.CSharp);
+        Assert.False(r.Ok);
+        Assert.Equal(RuntimeErrorCodes.InvalidTransition, r.Code);
+        Assert.Empty(_runtime.Calls);
+    }
+
+    [Fact]
     public async Task Install_WhileRunning_IsRefusedWithoutCallingLegacy()
     {
         _runtime.State = RuntimeState.Running;
