@@ -1,0 +1,85 @@
+{
+  "description": "PRoot host-process environment per role (DSHBox v1.5.1 DefaultSandboxManager.buildProotEnv). Each case builds files/runtime/runtime-current with the given runtime-profile.json and the REAL env.d fragments of dshapp-runtime-debian-arm64-0.1.0, and a nativeLibraryDir holding `nativeLibs`. Paths are normalized: @FILES@ = files dir, @NATIVE@ = nativeLibraryDir, '/' separators. Run by the legacy implementation via reflection (native-bridge LegacyProotEnvParityTest) and by the C# ProotCommandBuilder (ProotCommandParityTests).",
+  "envFragments": {
+    "base/.dshbox/env.d/base.sh": "# L0 base (Debian guest env)\nexport HOME=\"@HOME@\"\nexport TERM=\"@TERM@\"\nexport LANG=\"C.UTF-8\"\nexport PATH=\"/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin\"\nexport DSH_PERMISSION_MODE=\"@DSH_PERMISSION_MODE@\"\n",
+    "node/.dshbox/env.d/node.sh": "# L1 node (Node runtime is bound at /usr/local in the guest)\nexport NODE_BIN=\"@NODE_BIN@\"\n",
+    "android-side/.dshbox/env.d/android-side.sh": "# L3 android-side (host-side proot env)\nexport LD_LIBRARY_PATH=\"@PROOT_LIB@\"\nexport PROOT_LOADER=\"@PROOT_LOADER@\"\nexport PROOT_TMP_DIR=\"@PROOT_TMP_DIR@\"\n"
+  },
+  "profile": "{\"bundle\":{\"version\":\"0.1.0\",\"arch\":\"arm64\",\"compression\":\"zstd\"},\"layers\":[{\"name\":\"base\",\"sha256\":\"x\",\"env_file\":\".dshbox/env.d/base.sh\"},{\"name\":\"node\",\"sha256\":\"x\",\"env_file\":\".dshbox/env.d/node.sh\"},{\"name\":\"android-side\",\"sha256\":\"x\",\"env_file\":\".dshbox/env.d/android-side.sh\"}],\"assembly\":[\"base\",\"node\",\"android-side\"]}",
+  "cases": [
+    {
+      "name": "guest role, bundled proot libs in nativeLibraryDir (the shipped APK)",
+      "role": "guest",
+      "nativeLibs": ["libproot.so", "libproot-loader.so", "libandroid-shmem.so", "libtalloc.so"],
+      "withProfile": true,
+      "env": {
+        "LD_LIBRARY_PATH": "@NATIVE@",
+        "PROOT_TMP_DIR": "@FILES@/runtime/runtime-current/tmp/guest",
+        "PROOT_LOADER": "@NATIVE@/libproot-loader.so",
+        "HOME": "/root",
+        "TERM": "xterm-256color",
+        "LANG": "C.UTF-8",
+        "PATH": "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+        "DSH_PERMISSION_MODE": "danger-full-access",
+        "NODE_BIN": "/usr/local/bin/node",
+        "TMPDIR": "/tmp",
+        "TMP": "/tmp",
+        "TEMP": "/tmp"
+      }
+    },
+    {
+      "name": "dsh role adds DSH_HOME, PORT, shim PATH and SHELL",
+      "role": "dsh",
+      "nativeLibs": ["libproot.so", "libproot-loader.so", "libandroid-shmem.so", "libtalloc.so"],
+      "withProfile": true,
+      "env": {
+        "LD_LIBRARY_PATH": "@NATIVE@",
+        "PROOT_TMP_DIR": "@FILES@/runtime/runtime-current/tmp/dsh",
+        "PROOT_LOADER": "@NATIVE@/libproot-loader.so",
+        "HOME": "/root",
+        "TERM": "xterm-256color",
+        "LANG": "C.UTF-8",
+        "PATH": "/opt/dshbox:/root/projects/.dsh/dshbox/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+        "DSH_PERMISSION_MODE": "danger-full-access",
+        "NODE_BIN": "/usr/local/bin/node",
+        "TMPDIR": "/tmp",
+        "TMP": "/tmp",
+        "TEMP": "/tmp",
+        "DSH_HOME": "/root/projects/.dsh",
+        "PORT": "3080",
+        "SHELL": "/bin/bash"
+      }
+    },
+    {
+      "name": "no bundled shmem/loader: falls back to the android-side layer",
+      "role": "guest",
+      "nativeLibs": ["libproot.so"],
+      "withProfile": true,
+      "env": {
+        "LD_LIBRARY_PATH": "@FILES@/runtime/runtime-current/android-side/lib",
+        "PROOT_TMP_DIR": "@FILES@/runtime/runtime-current/tmp/guest",
+        "PROOT_LOADER": "@FILES@/runtime/runtime-current/android-side/libexec/proot/loader",
+        "HOME": "/root",
+        "TERM": "xterm-256color",
+        "LANG": "C.UTF-8",
+        "PATH": "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+        "DSH_PERMISSION_MODE": "danger-full-access",
+        "NODE_BIN": "/usr/local/bin/node",
+        "TMPDIR": "/tmp",
+        "TMP": "/tmp",
+        "TEMP": "/tmp"
+      }
+    },
+    {
+      "name": "no runtime-profile.json: only the three proot variables (returns before TMPDIR)",
+      "role": "dsh",
+      "nativeLibs": ["libproot.so", "libproot-loader.so", "libandroid-shmem.so"],
+      "withProfile": false,
+      "env": {
+        "LD_LIBRARY_PATH": "@NATIVE@",
+        "PROOT_TMP_DIR": "@FILES@/runtime/runtime-current/tmp/dsh",
+        "PROOT_LOADER": "@NATIVE@/libproot-loader.so"
+      }
+    }
+  ]
+}

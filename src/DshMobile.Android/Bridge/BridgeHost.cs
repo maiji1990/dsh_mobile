@@ -242,10 +242,14 @@ public sealed class BridgeHost : IDisposable, IDiagnosticsLog
             Append($"diagnostics FAILED {diag.Code}: {diag.Message}");
             return;
         }
+        var legacy = new List<(string Key, bool Ok, string Output)>();
         foreach (var (key, r) in BridgeCodec.ReadPayload(diag, BridgeJsonContext.Default.DictionaryStringDiagnosticResult)!)
         {
             Append($"diag {key}: {(r.Ok ? r.Output.Trim() : "FAILED " + r.Error)}");
+            legacy.Add((key, r.Ok, r.Output));
         }
+        // PR-03 shadow: the same fixed commands through the C# PRoot launcher (no DSHBox code); legacy result stands.
+        await Runtime.ShadowGuestDiagnosticsAsync(legacy, CancellationToken.None).ConfigureAwait(false);
     });
 
     private static readonly TimeSpan ProbeDeadline = TimeSpan.FromMinutes(10);
