@@ -30,4 +30,13 @@ public sealed class MigrationOptions
 {
     /// <summary>Runtime bundle import (PR-02 slice: RuntimeManifest / LayerInstaller verification).</summary>
     public SliceMode BundleImport { get; set; } = SliceMode.LegacyWithShadow;
+
+    /// <summary>
+    /// LayerInstaller extraction (PR-02 second half): after a legacy import, the C# extractor dry-runs each layer
+    /// and is compared with the installed tree. Needs <see cref="BundleImport"/> shadowing (it reuses the inspection).
+    /// </summary>
+    public SliceMode LayerExtract { get; set; } = SliceMode.LegacyWithShadow;
+
+    /// <summary>Host-path probe for the extractor; null = the real filesystem (the right choice on a device).</summary>
+    public Func<string, bool>? HostPathExists { get; set; }
 }

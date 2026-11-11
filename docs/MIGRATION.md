@@ -4,15 +4,16 @@
 状态取值：`未开始` / `接口已定义` / `影子比对中`（旧实现决策、C# 只读比对）/ `C# 默认（待删旧）` / `已完成（旧依赖已删）`。
 “已验证”只写有证据的：`向量`（`tests/TestVectors` 新旧双跑）/ `单测` / `真机`（附日志位置）。
 
-最后更新：2026-11-10（PR-00 + PR-01 + PR-02 首段，基线 `main@8817e8e`）。
+最后更新：2026-11-11（PR-00 + PR-01 + PR-02 校验段 + 解包段，基线 `main@8817e8e`）。
 
 ## 1. 切片总表
 
 | 切片 | 旧实现（Kotlin / DSHBox） | 旧代码行数¹ | C# 目标 | 状态 | 已验证 | 阻断 / 风险 |
 |---|---|---|---|---|---|---|
 | Versions / Constants / 路径布局 | DSHBox `common` (`Versions.kt`, `Constants.kt`)、`SandboxConfig.kt` | 838（common 全部） | `DshMobile.Runtime.Versions`、`RuntimeConstants`、`RuntimeLayout` | **影子比对中**（C# 已用于导入影子检查；旧桥仍做决策） | 向量（versions.json 29 例，新旧双绿）；源码契约测试（常量 / 目录 / 枚举逐项扫描上游） | — |
-| RuntimeManifest / 层包校验 | `RuntimeBundleLayout.kt`、`RuntimeProfile.kt`、`DefaultSandboxManager.importRuntimeBundle/extractStagedLayers` 的校验段 | ≈350 | `DshMobile.Runtime.Bundle.{RuntimeBundleLayout, RuntimeProfile, RuntimeBundleInspector}` | **影子比对中**（`SliceMode.LegacyWithShadow`） | 向量（runtime-bundle-layout.json 24 例，新旧双绿）；单测 12 例（错误码与上游一致）；真实 200 MB 锁定包三层 SHA-256 全部核对通过（桌面） | **真机影子报告未采集**（无设备连接）；尚未做解包 / 原子换层 |
-| LayerInstaller（解包 + 原子换层 + 回滚） | `DefaultSandboxManager.swapRuntimeBody`、`BundleManager.extractTarGz`、`BundledRuntimeInstaller` | ≈900 | `DshMobile.Runtime.Bundle.LayerInstaller`（未建） | 未开始 | — | zstd 解压需选定 C# 依赖（候选 ZstdSharp.Port，MIT）并验证 tar 硬链接 / 符号链接 / 权限位与上游一致；悬空 `/var/run` 链接问题（UPSTREAMS 已登记） |
+| RuntimeManifest / 层包校验 | `RuntimeBundleLayout.kt`、`RuntimeProfile.kt`、`DefaultSandboxManager.importRuntimeBundle/extractStagedLayers` 的校验段 | ≈350 | `DshMobile.Runtime.Bundle.{RuntimeBundleLayout, RuntimeProfile, RuntimeBundleInspector}` | **影子比对中**（`SliceMode.LegacyWithShadow`） | 向量（runtime-bundle-layout.json 24 例，新旧双绿）；单测 12 例（错误码与上游一致）；真实 200 MB 锁定包三层 SHA-256 全部核对通过（桌面） | **真机影子报告未采集**（无设备连接）；解包段见下一行 |
+| LayerInstaller · 解包 | `BundleManager.extractTarGz` / `applyEntryMode` / `isWithinRoot`、魔数识别 | ≈330 | `DshMobile.Runtime.Layers.{LayerExtractor, DryRunExtractionTarget, DiskExtractionTarget, LayerTreeScanner, LayerManifest}` | **影子比对中**（导入成功后，C# 直接从同一 zip 干跑解包，与旧实现装好的 `runtime-current/<layer>` 逐项比对：路径 / 类型 / 大小 / SHA-256 / 链接 / 属主权限位；不写盘） | 向量（layer-extract.json 19 例：旧 Kotlin 在桌面 JVM 跑 15 例全绿，4 例依赖真实符号链接或 Linux 目录权限只由 C# 跑；C# 19/19；磁盘解包 = 干跑清单）；真实锁定包干跑：base 10,324 项 / 447 MiB、node 5,781 项 / 185 MiB、android-side 11 项，0 告警，桌面 5.5 s | **真机影子报告未采集**；bzip2 / xz 容器 C# 未支持（返回 `BUNDLE_FORMAT_UNSUPPORTED`，官方包均为 zstd；旧实现支持）；结果依赖宿主路径是否存在（字面绝对链接，见 §7），设备上用真实文件系统探测 |
+| LayerInstaller · 换层 / 回滚 | `DefaultSandboxManager.swapRuntimeBody`、`BundleManager.promote/rollback`、`BundledRuntimeInstaller` | ≈570 | `DshMobile.Runtime.Layers.LayerInstaller`（未建） | 未开始 | — | 悬空 `/var/run` 链接问题（UPSTREAMS 已登记）；不得误删 `user-data` |
 | 进程启动 / PRoot / 前台服务 | `SandboxProcessRunner.kt`、`DefaultSandboxManager.startSandbox/startDsh/stop*`、`SandboxSupervisor.kt` | ≈2300 | `DshMobile.Runtime.{ProotRunner, DshProcessSupervisor}` + `DshMobile.Native` | **接口已定义**（`IRuntimeManager`、`IGuestProcess`、8 态状态机 + journal）；监督逻辑已在 C# `RuntimeCoordinator`（实现仍是旧桥） | 单测（状态机 13、协调器 14）；W^X 可执行策略单测 | 需 `libdshmobile_native.so`（进程组、fork/exec、waitpid）；DSHBox 预编译 `libproot.so` **非 16 KB 页对齐**（Release 构建 XA0141 警告）→ 须从源码以 NDK 重编（`native/proot/`） |
 | DSH profile 启动 / 健康 / 事件 | `DshHealthPolicy.kt`、`HttpHealthChecker.kt`、`DshLayer.kt`、`OfficialPluginOverlay.kt` | ≈600 | `DshMobile.Runtime.{DshHost, ProfileRegistry, HealthProbe}` | 未开始 | — | — |
 | WebView / Token / 401 | `WebUiController.kt` + `dsh-renderer/api` | 220 + 1229 | `DshMobile.Android.DshWebViewController` | 未开始 | — | token 不得进入 C# 日志；下载当前 `DOWNLOAD_UNSUPPORTED`（缺陷 4） |
@@ -46,7 +47,7 @@ MainActivity ─▶ BridgeHost ─▶ RuntimeCoordinator (C#, 状态机 + journa
 |---|---|---|
 | PR-00 | CI `node --test` 目录解析（Windows Node 22）、插件参数 shell 引号、契约向量 | 代码完成，本地全绿；CI 待推送后确认；**真机 baseline 回归未做**（无设备） |
 | PR-01 | ADR-0007、AGENTS.md、`DshMobile.Native/Runtime/Application` 接口 + DI + 单测 | 代码完成，Debug / Release APK 构建通过；真机未验证 |
-| PR-02 | Runtime：Versions/Constants → RuntimeManifest/层校验（影子） | **首段完成**（校验 + 影子比对）；LayerInstaller（解包 / 换层 / 回滚）未开始 |
+| PR-02 | Runtime：Versions/Constants → RuntimeManifest/层校验 → 层解包（均为影子） | 校验段、解包段完成（影子）；换层 / 回滚未开始；真机影子报告未采集 |
 | PR-03 … PR-11 | 见迁移方案第 6 节 | 未开始 |
 
 ## 4. 已修复的现有缺陷（迁移方案第 7 节）
@@ -70,8 +71,18 @@ MainActivity ─▶ BridgeHost ─▶ RuntimeCoordinator (C#, 状态机 + journa
   `verdict` 必须为 `Agree`；`Diverge` 为迁移阻断，`Inconclusive` 需说明（如 `SANDBOX_RUNNING`）。拉取的报告存 `migration/parity/`。
 - 运行时状态 journal：`files/dshmobile-runtime/runtime-journal.jsonl`。
 
-## 6. 下一步（PR-02 后半 → PR-03）
+## 6. 下一步（PR-02 收尾 → PR-03）
 
 1. **真机**：Android 17 上做一次导入（采集 `shadow-reports.jsonl`，须 `Agree`）、启动 / 停止 / 沙箱失败注入，确认协调器行为与 journal；补 baseline 指标（冷启动、内存、APK 尺寸：本分支 Release 123,638,621 B，含重建的桥 AAR；新增 C# 程序集裁剪后每 ABI 约 150 KB）。
-2. `LayerInstaller`：选定 zstd/tar 实现，按上游 staging → 校验 → 解包 → 写 `.dshbox/layer-<name>.sha256` 哨兵 → 原子换层；对同一 zip 比对 C# 与上游产出的目录树哈希（`DirHash` 口径）作为向量；仍以影子方式运行。
+2. `LayerInstaller` 换层 / 回滚：staging → 校验（已有）→ 解包（已有）→ 写 `.dshbox/layer-<name>.sha256` 哨兵 → 原子换层 → 失败回滚；对旧实现的 `swapRuntimeBody` 行为写向量；仍以影子方式运行，真机两段影子报告均为 `Agree` 后才把导入切到 C#。
 3. `native/proot` + `native/dshmobile-native`：从源码以 NDK 27 构建 16 KB 对齐的 `libproot.so`，以及 `dshm_abi_version` / spawn / waitpid / killpg 最小 ABI。
+
+## 7. 迁移中发现的旧实现事实（移植时必须保持，或单独决定修正）
+
+| 事实 | 来源 | 处理 |
+|---|---|---|
+| commons-compress `isFile()` 对除目录外的**所有**类型为真：设备节点 / FIFO 被解成**空的普通文件**，源码里“skip device nodes”分支实际不可达 | `javap` 反汇编 commons-compress 1.27.1 `TarArchiveEntry.isFile` | C# 保持一致（向量 `devices.tar`） |
+| 符号链接按**字面**创建：绝对链接在宿主上指向 Android 的路径。规范路径检查因此依赖宿主：`x -> /etc` 在 Android 上可解析，写入 `x/…` 被判越界；`x.pem -> /usr/share/…` 在 Android 上悬空，不被跟随 | `extractTarGz` + JDK `canonicalize_md.c` | C# 以宿主探测复现（设备上为真实文件系统）；Debian `/etc/ssl/certs` 依赖后者（真实 base 层验证） |
+| 规范路径 = 能解析的最长前缀的 realpath + 未解析尾部按字面折叠；悬空链接不被跟随 | JDK `canonicalize_md.c` | C# `VirtualTree.Canonicalize` 复现 |
+| 只设属主权限位；x = 任意执行位；目录权限立即生效（`0555` 目录会挡住其后的子项，仅 Linux） | `applyEntryMode` | C# 一致（向量 `err-readonly-dir.tar`，仅 C#） |
+| 硬链接变成独立副本；目标在后的延后处理；始终解析不到只记日志不报错 | `extractTarGz` | C# 一致，并把告警带回结果 |

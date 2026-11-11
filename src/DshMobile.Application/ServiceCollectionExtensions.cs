@@ -35,7 +35,8 @@ public static class ServiceCollectionExtensions
             sp.GetRequiredService<IDiagnosticsLog>(),
             sp.GetRequiredService<IShadowReportSink>(),
             sp.GetRequiredService<MigrationOptions>(),
-            sp.GetRequiredService<TimeProvider>()));
+            sp.GetRequiredService<TimeProvider>(),
+            sp.GetRequiredService<RuntimeLayout>()));
         return services;
     }
 }

@@ -16,6 +16,11 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- zstd decoder for runtime layers (.NET 11 has no in-box Zstandard). Pure managed, MIT; see docs/UPSTREAMS.md. -->
+    <PackageReference Include="ZstdSharp.Port" Version="0.8.8" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\DshMobile.Core\DshMobile.Core.csproj" />
     <ProjectReference Include="..\DshMobile.Native\DshMobile.Native.csproj" />
   </ItemGroup>
