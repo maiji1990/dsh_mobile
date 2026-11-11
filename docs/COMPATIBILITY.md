@@ -243,3 +243,26 @@ APK SHA-256 `a084dc5fb2559bea84d04caef8050b63f8006f23f7dc8dd639f08c41b9a2a392`�
 - 在 C# 安装的运行环境上启动：DSH web 17.0 s `Ready`，健康 `process/port/webUi` 全部 True；guest 内 Debian 13.6、Node v24.19.0、DSH 0.2.1-rc.5；停止后进程 0。
 - 冷启动 261 ms；journal 跨进程恢复为 `Ready gen=3`。
 - 未验证：全新设备首次安装、低磁盘、导入中途强杀、Android 10。
+
+## ADR-0007 迁移 · C# PRoot guest exec（PR-03 首段）真机记录 — 2026-11-11
+
+同一设备；Release（full trim）APK 125,195,101 B。原始日志：[migration/parity/2026-11-11-PTP-AN10-A17-guest-exec.md](../migration/parity/2026-11-11-PTP-AN10-A17-guest-exec.md)。
+
+- C# 以 .NET `Process` 直接从 nativeLibraryDir 启动 `libproot.so`（W^X 允许的唯一位置）运行 4 条固定诊断命令：两次影子 `runtime.guest-exec` 均 **Agree**（aarch64 / 13.6 / v24.19.0 / 0.2.1-rc.5），0.45–0.49 s。
+- 未完成：旧实现 guest 命令 argv 的 `/proc/<pid>/cmdline` 逐字节对照（抓取脚本两次得到 0 行，原因未查明）；
+  DSH 运行中的长命进程 cmdline 对照（测试中发现手机前台被切到其它应用，停止了屏幕操作，有一次点击落在该应用上）。
+
+## ADR-0007 迁移 · 进程监管观察 + 健康探测（PR-03 只读）真机记录 — 2026-11-11
+
+同一设备；Release（`-t:Rebuild`）APK 125,502,301 B。原始日志：[migration/parity/2026-11-11-PTP-AN10-A17-supervisor-observe.md](../migration/parity/2026-11-11-PTP-AN10-A17-supervisor-observe.md)。
+
+- 影子 `runtime.supervisor-observe` 停止态 / 运行态 / 停止后均 **Agree**：C# 自读 `/proc` 找到的沙箱 / DSH 根 PID 与 `ps` 一致，自测 WebUI 得 HTTP 401（视为就绪）与旧实现健康一致；两轮（HttpClient 版、socket 版）结果相同。
+- **构建坑**：增量 Release 构建在程序集集合变化后产出启动即崩的 APK（`Invalid compressed assembly descriptor index 50`），需 `dotnet build -c Release -t:Rebuild`；CI 干净构建不受影响。
+- 运行中长命 PRoot 的完整 argv 已存为 `tests/TestVectors/device-proot-cmdlines.json`。
+
+## ADR-0007 迁移 · 沙箱 / DSH 启动 argv（PR-03 只读）真机记录 — 2026-11-11
+
+同一设备；Release（`-t:Rebuild`）APK 125,518,685 B。原始日志：[migration/parity/2026-11-11-PTP-AN10-A17-launcher-argv.md](../migration/parity/2026-11-11-PTP-AN10-A17-launcher-argv.md)。
+
+- 影子 `runtime.launcher-argv` **Agree**：C# 构建的沙箱 keepalive（14 个参数）与 DSH web（22 个参数，首次启动形态）argv 与旧实现进程的 `/proc/<pid>/cmdline` 逐 token 一致。
+- 同轮 `supervisor-observe`、`guest-exec` 均 Agree；停止后无残留进程、无崩溃。

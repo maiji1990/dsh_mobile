@@ -43,6 +43,12 @@ public sealed class MigrationOptions
     /// </summary>
     public SliceMode LayerExtract { get; set; } = SliceMode.LegacyWithShadow;
 
+    /// <summary>
+    /// Guest command execution (PR-03 first slice): after the legacy diagnostics, the same fixed commands run through
+    /// the C# PRoot launcher and the outputs are compared.
+    /// </summary>
+    public SliceMode GuestExec { get; set; } = SliceMode.LegacyWithShadow;
+
     /// <summary>Host-path probe for the extractor; null = the real filesystem (the right choice on a device).</summary>
     public Func<string, bool>? HostPathExists { get; set; }
 }

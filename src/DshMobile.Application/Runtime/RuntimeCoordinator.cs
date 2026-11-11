@@ -2,6 +2,7 @@ using System.Diagnostics;
 using DshMobile.Application.Shadow;
 using DshMobile.Runtime;
 using DshMobile.Runtime.Bundle;
+using DshMobile.Runtime.Guest;
 using DshMobile.Runtime.Layers;
 
 namespace DshMobile.Application.Runtime;
@@ -283,6 +284,70 @@ public sealed class RuntimeCoordinator : IDisposable
         }
         State.TryTransition(RuntimeState.Ready, "import done (csharp)", after.Harness, dshVersion: after.DshVersion);
         return new RuntimeInstallResult(true, RuntimeErrorCodes.Ok, null);
+    }
+
+    /// <summary>
+    /// Shadow for the guest-exec slice: runs <see cref="GuestDiagnostics.Commands"/> through the C# PRoot launcher and
+    /// compares with the legacy diagnostics results the caller just obtained. Null when the slice is not shadowed.
+    /// </summary>
+    public async Task<ShadowReport?> ShadowGuestDiagnosticsAsync(IReadOnlyList<(string Key, bool Ok, string Output)> legacy, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(legacy);
+        if (_options.GuestExec != SliceMode.LegacyWithShadow || _layout is null)
+        {
+            return null;
+        }
+        await _op.WaitAsync(ct).ConfigureAwait(false);
+        try
+        {
+            var exec = new ProotGuestProcess(_layout);
+            // Paths only (no secrets): lets the device run compare with the legacy process's /proc/<pid>/cmdline.
+            _log.Note("csharp guest argv: " + string.Join(' ', exec.Builder.GuestCommand(GuestDiagnostics.Commands[0].Command)));
+            var sw = Stopwatch.StartNew();
+            var results = await exec.RunDiagnosticsAsync(ct).ConfigureAwait(false);
+            var report = GuestExecShadowCheck.Compare(legacy, results, sw.ElapsedMilliseconds, _time.GetUtcNow());
+            _shadow.Report(report);
+            _log.Note($"shadow {report.Slice}: {report.Verdict} ({report.Detail}; csharp {report.CSharpMs} ms)");
+            return report;
+        }
+        finally
+        {
+            _op.Release();
+        }
+    }
+
+    /// <summary>
+    /// Read-only supervisor shadow: C# looks at <c>/proc</c> and probes the WebUI itself, and compares with the legacy
+    /// status / health the caller just obtained. Never starts, stops or signals anything.
+    /// </summary>
+    public async Task<ShadowReport?> ShadowSupervisorAsync(string legacySandboxState, string legacyDshState, bool legacyHealthOk, CancellationToken ct)
+    {
+        if (_options.GuestExec != SliceMode.LegacyWithShadow)
+        {
+            return null;
+        }
+        var sw = Stopwatch.StartNew();
+        var processes = OperatingSystem.IsWindows() ? null : DshMobile.Runtime.Supervision.RuntimeProcessSnapshot.Observe(Environment.ProcessId);
+        var health = await DshMobile.Runtime.Supervision.HttpHealthProbe.CheckAsync(ct: ct).ConfigureAwait(false);
+        var report = SupervisorObserveShadowCheck.Compare(legacySandboxState, legacyDshState, legacyHealthOk, processes, health, sw.ElapsedMilliseconds, _time.GetUtcNow());
+        _shadow.Report(report);
+        _log.Note($"shadow {report.Slice}: {report.Verdict} ({report.Detail}; csharp {report.CSharpMs} ms)");
+
+        // Launcher argv: what C# would start vs the exact argv of the running legacy processes.
+        if (processes is not null && _layout is not null && (processes.SandboxRootPid is not null || processes.DshRootPid is not null))
+        {
+            sw.Restart();
+            var table = DshMobile.Runtime.Supervision.ProcessTable.Read();
+            var builder = new ProotCommandBuilder(_layout);
+            var argv = LauncherArgvShadowCheck.Compare(
+                processes.SandboxRootPid is { } s ? table?.Argv(s) : null,
+                processes.DshRootPid is { } d ? table?.Argv(d) : null,
+                builder.SandboxCommand(), builder.DshCommand(), builder.DshCommand(inPlaceRestart: true),
+                sw.ElapsedMilliseconds, _time.GetUtcNow());
+            _shadow.Report(argv);
+            _log.Note($"shadow {argv.Slice}: {argv.Verdict} ({argv.Detail}; csharp {argv.CSharpMs} ms)");
+        }
+        return report;
     }
 
     /// <summary>Aligns the journal with what the runtime actually reports before deciding a transition.</summary>

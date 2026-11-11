@@ -225,7 +225,8 @@ public sealed class BridgeHost : IDisposable, IDiagnosticsLog
     /// <summary>Fixed guest diagnostics (uname/debian/node/dsh --version) plus health.</summary>
     public Task RunDiagnosticsAsync() => RunExclusive("diagnostics", async () =>
     {
-        LogStatus("status", await Client.ExecuteAsync(BridgeMethods.RuntimeStatus).ConfigureAwait(false));
+        var statusResp = await Client.ExecuteAsync(BridgeMethods.RuntimeStatus).ConfigureAwait(false);
+        LogStatus("status", statusResp);
         var health = await Client.ExecuteAsync(BridgeMethods.RuntimeHealth).ConfigureAwait(false);
         if (health.Ok)
         {
@@ -236,16 +237,25 @@ public sealed class BridgeHost : IDisposable, IDiagnosticsLog
         {
             Append($"health FAILED {health.Code}: {health.Message}");
         }
+        // PR-03 read-only shadow, right after the legacy readings: C# /proc view + own HTTP probe.
+        if (statusResp.Ok && BridgeCodec.ReadPayload(statusResp, BridgeJsonContext.Default.RuntimeStatus) is { } st)
+        {
+            await Runtime.ShadowSupervisorAsync(st.SandboxState, st.DshState, health.Ok, CancellationToken.None).ConfigureAwait(false);
+        }
         var diag = await Client.ExecuteAsync(BridgeMethods.RuntimeDiagnostics, deadline: DiagnosticsDeadline).ConfigureAwait(false);
         if (!diag.Ok)
         {
             Append($"diagnostics FAILED {diag.Code}: {diag.Message}");
             return;
         }
+        var legacy = new List<(string Key, bool Ok, string Output)>();
         foreach (var (key, r) in BridgeCodec.ReadPayload(diag, BridgeJsonContext.Default.DictionaryStringDiagnosticResult)!)
         {
             Append($"diag {key}: {(r.Ok ? r.Output.Trim() : "FAILED " + r.Error)}");
+            legacy.Add((key, r.Ok, r.Output));
         }
+        // PR-03 shadow: the same fixed commands through the C# PRoot launcher (no DSHBox code); legacy result stands.
+        await Runtime.ShadowGuestDiagnosticsAsync(legacy, CancellationToken.None).ConfigureAwait(false);
     });
 
     private static readonly TimeSpan ProbeDeadline = TimeSpan.FromMinutes(10);

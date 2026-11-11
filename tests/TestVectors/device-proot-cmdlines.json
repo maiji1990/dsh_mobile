@@ -1,0 +1,43 @@
+{
+  "description": "Real argv of the two long-lived PRoot processes started by the LEGACY DSHBox sandbox-manager, read from /proc/<pid>/cmdline on Honor PTP-AN10 / Android 17 (2026-11-11, Release build, DSH 0.2.1-rc.5). @NATIVE@ = nativeLibraryDir, @FILES@ = filesDir. Golden input for porting buildProotSandboxCommand / buildProotDshCommand (next PR-03 slice); not yet consumed by a test.",
+  "sandboxKeepalive": [
+    "@NATIVE@/libproot.so",
+    "--rootfs=@FILES@/runtime/runtime-current/base",
+    "--bind=/system",
+    "--bind=/apex",
+    "--bind=/proc",
+    "--bind=/dev",
+    "--bind=@FILES@/runtime/runtime-current/node:/usr/local",
+    "--bind=@FILES@/runtime/runtime-current/dsh:/opt/dshapp/runtime",
+    "--bind=@FILES@/user-data:/root/projects",
+    "--cwd=/root",
+    "--kill-on-exit",
+    "/usr/bin/bash",
+    "-c",
+    "echo dshapp-sandbox-keepalive; trap \"\" HUP INT TERM; while true; do sleep 3600; done"
+  ],
+  "dshWeb": [
+    "@NATIVE@/libproot.so",
+    "--rootfs=@FILES@/runtime/runtime-current/base",
+    "--bind=/system",
+    "--bind=/apex",
+    "--bind=/proc",
+    "--bind=/dev",
+    "--bind=@FILES@/runtime/runtime-current/node:/usr/local",
+    "--bind=@FILES@/runtime/runtime-current/dsh:/opt/dshapp/runtime",
+    "--bind=@FILES@/dshbox:/opt/dshbox",
+    "--bind=@FILES@/pilot:/opt/pilot",
+    "--bind=@FILES@/browser-tools:/opt/browser",
+    "--bind=@FILES@/guest-cache:/opt/dshbox-cache",
+    "--bind=@FILES@/user-data:/root/projects",
+    "--cwd=/root/projects",
+    "--kill-on-exit",
+    "/usr/local/bin/node",
+    "--expose-internals",
+    "--import",
+    "/opt/dshbox/link-shim.mjs",
+    "/opt/dshapp/runtime/node_modules/@deepseek-ai/dsh/lib/bin.js",
+    "--profile",
+    "web"
+  ]
+}
