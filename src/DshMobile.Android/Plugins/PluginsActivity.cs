@@ -3,6 +3,7 @@ using Android.Views;
 using DshMobile.App.Bridge;
 using DshMobile.Core.Bridge;
 using DshMobile.Runtime.Guest;
+using DshMobile.Runtime.Plugins;
 
 namespace DshMobile.App.Plugins;
 
@@ -39,7 +40,13 @@ public sealed class PluginsActivity : Activity
         _spec = new EditText(this) { Hint = GetString(Resource.String.plugins_spec_hint) };
         _spec.SetSingleLine(true);
         _add = new Button(this) { Text = GetString(Resource.String.plugins_add) };
-        _add.Click += (_, _) => ConfirmAdd();
+        _add.Click += (_, _) => ConfirmAdd(csharp: false);
+        // Developer opt-in (ADR-0007 PR-05): the C# PRoot launcher + ported install guard (verify, roll back), one change only.
+        _add.LongClick += (_, e) =>
+        {
+            e.Handled = true;
+            ConfirmAdd(csharp: true);
+        };
         row.AddView(_spec, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WrapContent, 1f));
         row.AddView(_add);
         root.AddView(row);
@@ -51,16 +58,22 @@ public sealed class PluginsActivity : Activity
         root.AddView(statusScroll, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MatchParent, 0, 1f));
 
         _list = new ListView(this);
-        _list.ItemClick += (_, e) => ConfirmRemove(_plugins[e.Position].Name);
+        _list.ItemClick += (_, e) => ConfirmRemove(_plugins[e.Position].Name, csharp: false);
+        _list.ItemLongClick += (_, e) =>
+        {
+            e.Handled = true;
+            ConfirmRemove(_plugins[e.Position].Name, csharp: true);
+        };
         root.AddView(_list, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MatchParent, 0, 2f));
         SetContentView(root);
 
         _ = RefreshAsync();
     }
 
-    private async Task RefreshAsync()
+    /// <summary>Re-reads the list; <paramref name="keepStatus"/> keeps the result of the change that was just made on screen.</summary>
+    private async Task RefreshAsync(bool keepStatus = false)
     {
-        SetBusy(true, GetString(Resource.String.plugins_loading));
+        SetBusy(true, keepStatus ? null : GetString(Resource.String.plugins_loading));
         var r = await RunAsync(BridgeMethods.PluginList, new PluginRequest(Profile), ListDeadline);
         _plugins = r is { Ok: true } ? GuestPlugins.ParseList(r.Output).ToList() : [];
         if (r is not null)
@@ -72,10 +85,10 @@ public sealed class PluginsActivity : Activity
         _list.Adapter = new ArrayAdapter<string>(this, Android.Resource.Layout.SimpleListItem1,
             _plugins.Count == 0 ? [GetString(Resource.String.plugins_none)] : _plugins.Select(p => $"{p.Name}  {p.Version}").ToList());
         _list.Enabled = _plugins.Count > 0;
-        SetBusy(false, r is null ? null : Describe("list", r));
+        SetBusy(false, r is null || keepStatus ? null : Describe("list", r));
     }
 
-    private void ConfirmAdd()
+    private void ConfirmAdd(bool csharp)
     {
         var spec = _spec.Text?.Trim() ?? "";
         if (spec.Length == 0)
@@ -83,35 +96,78 @@ public sealed class PluginsActivity : Activity
             return;
         }
         new AlertDialog.Builder(this)
-            .SetTitle(Fmt(Resource.String.plugins_add_confirm_title, spec))!
-            .SetMessage(Resource.String.plugins_add_confirm_body)!
+            .SetTitle(Fmt(Resource.String.plugins_add_confirm_title, spec) + (csharp ? CSharpTag : ""))!
+            .SetMessage(GetString(Resource.String.plugins_add_confirm_body) + (csharp ? "\n\n" + CSharpAddNote : ""))!
             .SetNegativeButton(Android.Resource.String.Cancel, (_, _) => { })!
             .SetPositiveButton(Resource.String.plugins_add, async (_, _) =>
             {
                 SetBusy(true, Fmt(Resource.String.plugins_installing, spec));
-                var r = await RunAsync(BridgeMethods.PluginAdd, new PluginRequest(Profile, Spec: spec), ChangeDeadline);
-                SetBusy(false, r is null ? null : Describe("add " + spec, r));
-                if (r is { Ok: true })
+                bool ok;
+                if (csharp)
+                {
+                    var r = await ChangeWithCSharpAsync("add", spec);
+                    ok = r.Ok;
+                    SetBusy(false, Describe("add " + spec + CSharpTag, r));
+                }
+                else
+                {
+                    var r = await RunAsync(BridgeMethods.PluginAdd, new PluginRequest(Profile, Spec: spec), ChangeDeadline);
+                    ok = r is { Ok: true };
+                    SetBusy(false, r is null ? null : Describe("add " + spec, r));
+                }
+                if (ok)
                 {
                     _spec.Text = "";
-                    await RefreshAsync();
                 }
+                await RefreshAsync(keepStatus: csharp);
             })!
             .Show();
     }
 
-    private void ConfirmRemove(string name) =>
+    private void ConfirmRemove(string name, bool csharp) =>
         new AlertDialog.Builder(this)
-            .SetTitle(Fmt(Resource.String.plugins_remove_confirm, name))!
+            .SetTitle(Fmt(Resource.String.plugins_remove_confirm, name) + (csharp ? CSharpTag : ""))!
             .SetNegativeButton(Android.Resource.String.Cancel, (_, _) => { })!
             .SetPositiveButton(Resource.String.plugins_remove, async (_, _) =>
             {
                 SetBusy(true, Fmt(Resource.String.plugins_removing, name));
-                var r = await RunAsync(BridgeMethods.PluginRemove, new PluginRequest(Profile, Name: name), ChangeDeadline);
-                SetBusy(false, r is null ? null : Describe("remove " + name, r));
-                await RefreshAsync();
+                if (csharp)
+                {
+                    SetBusy(false, Describe("remove " + name + CSharpTag, await ChangeWithCSharpAsync("remove", name)));
+                }
+                else
+                {
+                    var r = await RunAsync(BridgeMethods.PluginRemove, new PluginRequest(Profile, Name: name), ChangeDeadline);
+                    SetBusy(false, r is null ? null : Describe("remove " + name, r));
+                }
+                await RefreshAsync(keepStatus: csharp);
             })!
             .Show();
+
+    private const string CSharpTag = "（C#）";
+    private const string CSharpAddNote = "C# 实现（实验）：安装后核对新增的包是否为可加载的 DSH 插件，不是则自动卸载（回滚）。";
+
+    private async Task<PluginChangeResult> ChangeWithCSharpAsync(string verb, string operand)
+    {
+        var runtime = DshMobileApplication.Current.Bridge.Runtime;
+        try
+        {
+            using var cts = new CancellationTokenSource(ChangeDeadline);
+            return await Task.Run(() => runtime.ChangePluginWithCSharpAsync(verb, Profile, operand, cts.Token));
+        }
+        catch (OperationCanceledException)
+        {
+            return new PluginChangeResult(false, "TIMEOUT", $"no result within {ChangeDeadline.TotalMinutes:F0} min", []);
+        }
+    }
+
+    private string Describe(string what, PluginChangeResult r)
+    {
+        var tail = string.Join('\n', r.Lines.TakeLast(25));
+        return r.Ok
+            ? $"{what}: OK\n{GetString(Resource.String.plugins_restart_hint)}\n\n{tail}"
+            : $"{what}: FAILED {r.Code}{(r.RolledBack ? " (rolled back)" : "")}\n{r.Message}\n\n{tail}";
+    }
 
     private async Task<PluginCommandResult?> RunAsync(string method, PluginRequest request, TimeSpan deadline)
     {

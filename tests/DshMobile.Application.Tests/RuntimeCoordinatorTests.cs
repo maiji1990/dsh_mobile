@@ -363,4 +363,36 @@ public sealed class RuntimeCoordinatorTests : IDisposable
         Assert.Equal(RuntimeErrorCodes.InvalidTransition, r.Code);
         Assert.Empty(_runtime.Calls);
     }
+
+    [Fact]
+    public async Task CSharpPluginChange_WithoutLayout_IsRefused()
+    {
+        var r = await Coordinator().ChangePluginWithCSharpAsync("add", "web", "foo", CancellationToken.None);
+        Assert.False(r.Ok);
+        Assert.Equal(RuntimeErrorCodes.NotInstalled, r.Code);
+    }
+
+    [Theory]
+    [InlineData("list", "web", "foo")]
+    [InlineData("add", "desktop", "foo")]
+    [InlineData("add", "web", "pkg; rm -rf /")]
+    [InlineData("remove", "web", "foo@1.0.0")]
+    public async Task CSharpPluginChange_BadArguments_AreBadRequestAndRunNothing(string verb, string profile, string operand)
+    {
+        // nativeLibraryDir has no libproot.so: reaching the launcher would fail differently, so BAD_REQUEST proves nothing ran.
+        var layout = new DshMobile.Runtime.RuntimeLayout(Path.Combine(_dir, "files"), null, Path.Combine(_dir, "no-lib"));
+        var r = await CSharpCoordinator(layout).ChangePluginWithCSharpAsync(verb, profile, operand, CancellationToken.None);
+        Assert.False(r.Ok);
+        Assert.Equal("BAD_REQUEST", r.Code);
+        Assert.Empty(r.Lines);
+        Assert.Empty(_runtime.Calls);
+    }
+
+    [Theory]
+    [InlineData("foo", "foo")]
+    [InlineData("foo@^1.0.0", "foo")]
+    [InlineData("@scope/foo", "@scope/foo")]
+    [InlineData("@scope/foo@1.2.3", "@scope/foo")]
+    public void SpecPackageName_StripsOnlyTheVersion(string spec, string name) =>
+        Assert.Equal(name, RuntimeCoordinator.SpecPackageName(spec));
 }
