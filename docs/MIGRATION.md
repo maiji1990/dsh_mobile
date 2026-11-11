@@ -47,7 +47,7 @@ MainActivity ─▶ BridgeHost ─▶ RuntimeCoordinator (C#, 状态机 + journa
 |---|---|---|
 | PR-00 | CI `node --test` 目录解析（Windows Node 22）、插件参数 shell 引号、契约向量 | 已合并（#1）；CI 通过；真机回归：冷启动 228–293 ms（基线 220–290 ms）、PSS 128 MB、导入 / 启停正常（[真机证据](../migration/parity/2026-11-11-PTP-AN10-A17-runtime.md)） |
 | PR-01 | ADR-0007、AGENTS.md、`DshMobile.Native/Runtime/Application` 接口 + DI + 单测 | 已合并（#1）；Release（full trim）真机运行通过 |
-| PR-02 | Runtime：Versions/Constants → RuntimeManifest/层校验 → 层解包（均为影子） | 校验段已合并（#1），解包段待合并（#2）；两段真机影子均 `Agree`；换层 / 回滚未开始 |
+| PR-02 | Runtime：Versions/Constants → RuntimeManifest/层校验 → 层解包（均为影子） | 校验段已合并（#1），解包段已合并（#3）；两段真机影子均 `Agree`；换层 / 回滚未开始 |
 | PR-03 … PR-11 | 见迁移方案第 6 节 | 未开始 |
 
 ## 4. 已修复的现有缺陷（迁移方案第 7 节）
