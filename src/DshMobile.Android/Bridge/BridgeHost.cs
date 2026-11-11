@@ -207,9 +207,9 @@ public sealed class BridgeHost : IDisposable, IDiagnosticsLog
     /// Foreground service, sandbox, then DSH, supervised by <see cref="RuntimeCoordinator"/>: a failed sandbox start
     /// is cleaned up and releases the service; a failed stop keeps it (PR-00 defect 3).
     /// </summary>
-    public Task RunStartAsync() => RunExclusive("start", async () =>
+    public Task RunStartAsync(bool csharpHost = false) => RunExclusive("start", async () =>
     {
-        var r = await Runtime.StartAsync(DshProfile.Web, CancellationToken.None).ConfigureAwait(false);
+        var r = await Runtime.StartAsync(DshProfile.Web, CancellationToken.None, csharpHost ? SliceMode.CSharp : null).ConfigureAwait(false);
         var s = r.Snapshot;
         Append(r.Ok
             ? $"start: ok sandbox={s.State} dsh={s.Harness} version={s.DshVersion ?? "-"} gen={s.Generation}"

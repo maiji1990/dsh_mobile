@@ -70,6 +70,7 @@
 | 2026-11-11 | `sandbox-manager/.../DshHealthPolicy.kt`、`HttpHealthChecker.kt`、`SandboxProcessRunner.kt` `readProcTable` / `childrenOf` / `findDescendantByCmdline` / `descendantPids` / `killAll`（顺序） | `src/DshMobile.Runtime/Supervision/*.cs` | 全部判定逻辑；HTTP 探测改为单连接原生 socket 读状态行（不跟随重定向、不发 token；避免 `HttpClient` 让 APK 增大 ~2.7 MB）；`killAll` 只计算顺序、不发信号 | `dsh-health-policy.json`（旧实现反射）+ 伪 `/proc` 单测 + 真机影子 Agree |
 | 2026-11-11 | `sandbox-manager/.../SandboxProcessRunner.kt` `buildProotSandboxCommand` / `buildProotDshCommand` / `layeredProotPrefix`；`DefaultSandboxManager.kt` `dshOverlayGuestPaths` / `linkShimHostDir` / `pilotHostDir` / `browserHostDir` | `src/DshMobile.Runtime/Guest/ProotCommandBuilder.cs` | 本 App 配置下的两种 DSH 调用形态（首次启动 / 就地重启）与沙箱命令；无共享区 / 追加绑定 | 真机黄金 argv + 真机影子 Agree |
 | 2026-11-11 | `dsh-renderer/api/.../DshOriginPolicy.kt`、`DshTokenRevisionTracker.kt`；`WebUiController.urlWithToken`（源自 `app/.../webview/DshUrl.kt`）及其导航 / 401 规则 | `src/DshMobile.Core/WebUi/*.cs` | 全部判定逻辑；源策略用自写的 `java.net.URI` 兼容解析（不用 `System.Uri`） | `webview-policy.json`（旧实现：真实 `java.net.URI`） |
+| 2026-11-11 | `common/.../LogRedactor.kt`；`sandbox-manager/.../DshWriterLockSweeper.kt`；`DefaultSandboxManager` 的 `ingestDshWebLaunchToken`、启停与健康循环语义；`WebUiController.kt` 的 WebView 设置与回调 | `src/DshMobile.Runtime/Hosting/*.cs`、`src/DshMobile.Android/WebUi/CSharpWebUiController.cs` | 本 App 用到的启停 / token / 健康循环 / WebView；就地重启使用完整 DSH argv（不复制旧实现缺 guest-cache 绑定）；宿主按子进程优先顺序杀树 | `log-redactor.json`（旧实现）+ 真机里程碑 |
 
 ## C# 运行时依赖（NuGet）
 

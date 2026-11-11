@@ -1,0 +1,25 @@
+{
+  "description": "Log redaction (DSHBox v1.5.1 common LogRedactor). Every line the C# host logs from guest output passes through this. Run by the legacy object (native-bridge LegacyLogRedactorParityTest) and the C# port (HostingTests). Also: launch-token parsing of `dsh web:` lines (legacy DefaultSandboxManager.ingestDshWebLaunchToken, private: C# only).",
+  "redact": [
+    { "in": "dsh web: http://127.0.0.1:3080/?token=abc.DEF-123", "out": "dsh web: http://127.0.0.1:3080/?token=***" },
+    { "in": "Authorization: Bearer eyJhbGciOi.x-y_z", "out": "Authorization: ***" },
+    { "in": "api_key=AbC_123 and API-KEY: zz", "out": "api_key=*** and API-KEY: ***" },
+    { "in": "cookie=sid=1; other", "out": "cookie=***; other" },
+    { "in": "password = hunter2 next", "out": "password = *** next" },
+    { "in": "key sk-ABCdef_12-3 end", "out": "key sk-*** end" },
+    { "in": "TOKEN:xyz", "out": "TOKEN:***" },
+    { "in": "nothing secret here", "out": "nothing secret here" },
+    { "in": "token= spaced", "out": "token= ***" },
+    { "in": "", "out": "" }
+  ],
+  "launchToken": [
+    { "line": "dsh web: http://127.0.0.1:3080/?token=abc123", "token": "abc123" },
+    { "line": "[dsh] dsh web: http://127.0.0.1:3080/?a=1&token=t-2&b=3", "token": "t-2" },
+    { "line": "dsh web: http://127.0.0.1:3080/?token=  tok  ", "token": "tok" },
+    { "line": "dsh web: http://127.0.0.1:3080/", "token": null },
+    { "line": "dsh web: http://127.0.0.1:3080/?token=", "token": null },
+    { "line": "token=abc without marker", "token": null },
+    { "line": "dsh web: https://example/?token=x", "token": "x" },
+    { "line": "dsh webui ready", "token": null }
+  ]
+}

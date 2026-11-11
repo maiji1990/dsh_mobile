@@ -266,3 +266,12 @@ APK SHA-256 `a084dc5fb2559bea84d04caef8050b63f8006f23f7dc8dd639f08c41b9a2a392`�
 
 - 影子 `runtime.launcher-argv` **Agree**：C# 构建的沙箱 keepalive（14 个参数）与 DSH web（22 个参数，首次启动形态）argv 与旧实现进程的 `/proc/<pid>/cmdline` 逐 token 一致。
 - 同轮 `supervisor-observe`、`guest-exec` 均 Agree；停止后无残留进程、无崩溃。
+
+## ADR-0007 里程碑 · C# 宿主启动 → WebUI → 停止（无 DSHBox 代码）真机记录 — 2026-11-11
+
+同一设备；Release（`-t:Rebuild`）APK 126,051,165 B。原始日志：[migration/parity/2026-11-11-PTP-AN10-A17-csharp-host-milestone.md](../migration/parity/2026-11-11-PTP-AN10-A17-csharp-host-milestone.md)。
+
+- 长按「启动 DSH」选 C# 宿主：C# 直接启动沙箱 / DSH PRoot，从 DSH stdout 取 launch token，**10.1 s READY**（旧实现 17–21 s）；C# WebView 加载官方 WebUI（`LOADED /`，截图确认已登录首页，无 401）。
+- logcat 全量检查：DSH launch token 0 处泄漏（唯一相关行为 `token=***`；其余 `token=` 均为 Android binder 句柄）。
+- 停止：无残留进程、无崩溃；运行中强杀：无孤儿，journal 恢复为 `RUNTIME_INTERRUPTED`；之后默认旧实现启停照常。
+- 结合同日 C# LayerInstaller 导入，迁移方案第 12 节「导入 → 启动 PRoot → READY → WebUI → 停止无孤儿」全链路均已有 C# 实现的真机证据（仍为开发者可选路径）。
