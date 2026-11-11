@@ -65,6 +65,7 @@
 | 2026-11-10 | `sandbox-manager/.../RuntimeProfile.kt` | `src/DshMobile.Runtime/Bundle/RuntimeProfile.cs` | 全部（`System.Text.Json` 源生成） | 单测 + 真实锁定包 |
 | 2026-11-10 | `sandbox-manager/.../DefaultSandboxManager.kt` `importRuntimeBundle` / `extractStagedLayers` 的**校验段**；`BundleManager.verifySha256` | `src/DshMobile.Runtime/Bundle/RuntimeBundleInspector.cs` | 只读校验（顺序与 `BUNDLE_*` 错误码一致）；解包 / 换层未移植 | 单测 12 例 + 真机影子比对（待采集） |
 | 2026-11-11 | `sandbox-manager/.../BundleManager.kt` `extractTarGz` / `applyEntryMode` / `isWithinRoot` / `is*File` 魔数识别 | `src/DshMobile.Runtime/Layers/LayerExtractor.cs` | 解包语义全部（受保护路径、规范路径越界、链接校验、硬链接延后、属主权限位、commons-compress 类型分派）；bzip2 / xz 容器未移植 | `layer-extract.json` 新旧双跑（夹具由 `tooling/gen-layer-fixtures.py` 生成）+ 真实锁定包干跑 + 真机影子（待采集） |
+| 2026-11-11 | `sandbox-manager/.../DefaultSandboxManager.kt` `importRuntimeBundle`（zip 分支）/ `extractStagedLayers` / `swapRuntimeBody` / `writeFileAtomically` | `src/DshMobile.Runtime/Layers/LayerInstaller.cs` | zip 导入全流程（staging 改用独立目录 `dshmobile-bundle-staging`；解包期间重算压缩流 SHA-256；换层失败的复制回退保留符号链接）；tar 快照布局（非 zip）未移植 | `install-scenarios.json` 新旧双跑 + 真机（见 COMPATIBILITY） |
 
 ## C# 运行时依赖（NuGet）
 

@@ -2,6 +2,7 @@ using System.Diagnostics;
 using DshMobile.Application.Shadow;
 using DshMobile.Runtime;
 using DshMobile.Runtime.Bundle;
+using DshMobile.Runtime.Layers;
 
 namespace DshMobile.Application.Runtime;
 
@@ -167,20 +168,27 @@ public sealed class RuntimeCoordinator : IDisposable
     /// Imports a runtime bundle through the legacy installer. In <see cref="SliceMode.LegacyWithShadow"/> the C#
     /// inspector reads the same ZIP concurrently (read-only) and the comparison is reported; the legacy result stands.
     /// </summary>
-    public async Task<RuntimeInstallResult> InstallAsync(RuntimePackage package, IProgress<RuntimeProgress>? progress, CancellationToken ct)
+    /// <param name="mode">Overrides <see cref="MigrationOptions.BundleImport"/> for this import only (developer opt-in
+    /// to <see cref="SliceMode.CSharp"/> for device acceptance).</param>
+    public async Task<RuntimeInstallResult> InstallAsync(RuntimePackage package, IProgress<RuntimeProgress>? progress, CancellationToken ct, SliceMode? mode = null)
     {
         ArgumentNullException.ThrowIfNull(package);
+        var effective = mode ?? _options.BundleImport;
         await _op.WaitAsync(ct).ConfigureAwait(false);
         try
         {
             await SyncAsync(ct).ConfigureAwait(false);
             var before = State.Current.State;
-            if (!State.TryTransition(RuntimeState.Staging, "import requested"))
+            if (!State.TryTransition(RuntimeState.Staging, effective == SliceMode.CSharp ? "import requested (csharp)" : "import requested"))
             {
                 return new RuntimeInstallResult(false, RuntimeErrorCodes.InvalidTransition, $"cannot import while {before}");
             }
+            if (effective == SliceMode.CSharp)
+            {
+                return await InstallWithCSharpAsync(package, progress, ct).ConfigureAwait(false);
+            }
             Task<(BundleInspection Result, long Ms)>? shadow = null;
-            if (_options.BundleImport == SliceMode.LegacyWithShadow)
+            if (effective == SliceMode.LegacyWithShadow)
             {
                 shadow = Task.Run(async () =>
                 {
@@ -230,6 +238,51 @@ public sealed class RuntimeCoordinator : IDisposable
         {
             _op.Release();
         }
+    }
+
+    /// <summary>
+    /// <see cref="SliceMode.CSharp"/> import (caller holds the lock, state is Staging): the C# <see cref="LayerInstaller"/>
+    /// decides; the installed tree is then checked against a fresh dry-run of the same ZIP (slice
+    /// <c>runtime.layer-install</c>); finally the legacy <c>runtime.prepare</c> provisions the APK-bundled DSH layer,
+    /// exactly as the legacy import does after its own install.
+    /// </summary>
+    private async Task<RuntimeInstallResult> InstallWithCSharpAsync(RuntimePackage package, IProgress<RuntimeProgress>? progress, CancellationToken ct)
+    {
+        if (_layout is null)
+        {
+            State.TryTransition(RuntimeState.Failed, "csharp import unavailable", errorCode: RuntimeErrorCodes.NotImplemented, errorMessage: "no runtime layout");
+            return new RuntimeInstallResult(false, RuntimeErrorCodes.NotImplemented, "C# import needs the runtime layout");
+        }
+        _log.Note("import: C# LayerInstaller (legacy importer not used)");
+        var installed = await new LayerInstaller(_layout, _options.HostPathExists).InstallAsync(package.Path, progress, ct).ConfigureAwait(false);
+        _log.Note(installed.Ok
+            ? $"csharp install: ok in {installed.ElapsedMs} ms ({string.Join(", ", installed.Layers.Select((l, i) => $"{installed.Inspection!.Layers[i].Layer}={l.Entries.Count}"))})"
+            : $"csharp install: FAILED {installed.Code}: {installed.Message}");
+        if (!installed.Ok)
+        {
+            State.TryTransition(RuntimeState.Failed, "csharp import failed", errorCode: installed.Code, errorMessage: installed.Message);
+            return new RuntimeInstallResult(false, RuntimeErrorCodes.Upstream, $"{installed.Code}: {installed.Message}", installed.Code);
+        }
+
+        var verify = await LayerExtractShadowCheck.RunAsync(package.Path, installed.Inspection!, _layout, _options.HostPathExists, _time, ct).ConfigureAwait(false);
+        verify = verify with { Slice = "runtime.layer-install" };
+        _shadow.Report(verify);
+        _log.Note($"verify {verify.Slice}: {verify.Verdict} ({verify.Detail}; {verify.CSharpMs} ms)");
+
+        var prepare = await _runtime.PrepareAsync(ct).ConfigureAwait(false);
+        _log.Note(prepare.Ok ? $"runtime.prepare: ok ({prepare.Message})" : $"runtime.prepare FAILED {prepare.Code}: {prepare.Message}");
+
+        var after = await _runtime.GetStateAsync(ct).ConfigureAwait(false);
+        if (verify.Verdict != ShadowVerdict.Agree || !prepare.Ok || after.State == RuntimeState.NotInstalled)
+        {
+            var why = verify.Verdict != ShadowVerdict.Agree ? $"installed tree check {verify.Verdict}"
+                : !prepare.Ok ? $"runtime.prepare failed: {prepare.Message}"
+                : "legacy runtime does not recognize the installed layers";
+            State.TryTransition(RuntimeState.Failed, "csharp import incomplete", after.Harness, "RUNTIME_IMPORT_UNVERIFIED", why);
+            return new RuntimeInstallResult(false, "RUNTIME_IMPORT_UNVERIFIED", why);
+        }
+        State.TryTransition(RuntimeState.Ready, "import done (csharp)", after.Harness, dshVersion: after.DshVersion);
+        return new RuntimeInstallResult(true, RuntimeErrorCodes.Ok, null);
     }
 
     /// <summary>Aligns the journal with what the runtime actually reports before deciding a transition.</summary>

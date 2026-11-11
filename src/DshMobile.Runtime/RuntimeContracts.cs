@@ -81,6 +81,12 @@ public interface IRuntimeManager
 
     Task<RuntimeInstallResult> InstallAsync(RuntimePackage package, IProgress<RuntimeProgress>? progress, CancellationToken ct);
 
+    /// <summary>
+    /// Installs what ships inside the APK (the bundled DSH layer, with version arbitration) on top of installed
+    /// base/node layers. Runs after every successful bundle import, whichever importer did the import.
+    /// </summary>
+    Task<RuntimeInstallResult> PrepareAsync(CancellationToken ct);
+
     Task<RuntimeStartResult> StartSandboxAsync(CancellationToken ct);
 
     Task<RuntimeStartResult> StartHarnessAsync(DshProfile profile, CancellationToken ct);

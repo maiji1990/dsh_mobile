@@ -19,14 +19,16 @@ public static class BundleErrorCodes
     public const string NotAZip = "BUNDLE_NOT_A_ZIP";
 }
 
-public sealed record LayerVerification(string Layer, string ArchivePath, long SizeBytes, string? ExpectedSha256, string ActualSha256, bool Verified);
+/// <summary>One verified layer; <paramref name="ZipEntryName"/> is the raw entry name in the ZIP (null when not from a ZIP).</summary>
+public sealed record LayerVerification(string Layer, string ArchivePath, long SizeBytes, string? ExpectedSha256, string ActualSha256, bool Verified, string? ZipEntryName = null);
 
 public sealed record BundleInspection(
     bool Ok,
     string? ErrorCode,
     string? Message,
     RuntimeProfile? Profile,
-    IReadOnlyList<LayerVerification> Layers)
+    IReadOnlyList<LayerVerification> Layers,
+    string? ProfileEntryName = null)
 {
     internal static BundleInspection Fail(string code, string message, RuntimeProfile? profile = null, IReadOnlyList<LayerVerification>? layers = null) =>
         new(false, code, message, profile, layers ?? []);
@@ -119,13 +121,13 @@ public static class RuntimeBundleInspector
             var actual = await Sha256Async(archive, n => progress?.Report(new RuntimeProgress($"verify {layer}", baseline + n, total)), ct).ConfigureAwait(false);
             done += archive.Length;
             var verified = expected is not null && actual.Equals(expected.Trim(), StringComparison.OrdinalIgnoreCase);
-            results.Add(new LayerVerification(layer, archivePath, archive.Length, expected, actual, verified));
+            results.Add(new LayerVerification(layer, archivePath, archive.Length, expected, actual, verified, archive.FullName));
             if (expected is not null && !verified)
             {
                 return BundleInspection.Fail(BundleErrorCodes.Sha256Mismatch, $"Layer {layer} SHA-256 verification failed", profile, results);
             }
         }
-        return new BundleInspection(true, null, null, profile, results);
+        return new BundleInspection(true, null, null, profile, results, profileEntry.FullName);
     }
 
     private static string? NullIfBlank(string? s) => string.IsNullOrWhiteSpace(s) ? null : s;

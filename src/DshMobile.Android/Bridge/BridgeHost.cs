@@ -170,7 +170,7 @@ public sealed class BridgeHost : IDisposable, IDiagnosticsLog
     /// system picker copy (MainActivity); without it, falls back to the app-specific external directory
     /// where a developer can `adb push` the bundle.
     /// </summary>
-    public Task RunImportAsync(string? zipPath = null, bool deleteAfter = false) => RunExclusive("runtime.importBundle", async () =>
+    public Task RunImportAsync(string? zipPath = null, bool deleteAfter = false, bool csharpImporter = false) => RunExclusive("runtime.importBundle", async () =>
     {
         var dir = _context.GetExternalFilesDir(null)?.AbsolutePath;
         var zip = zipPath ?? (dir is null ? null : Directory.EnumerateFiles(dir, "dshapp-runtime-*.zip").OrderDescending().FirstOrDefault());
@@ -183,8 +183,10 @@ public sealed class BridgeHost : IDisposable, IDiagnosticsLog
         var sw = Stopwatch.StartNew();
         try
         {
-            // Legacy installer decides; the C# inspector shadow-checks the same zip (PR-02, see shadow-reports.jsonl).
-            var r = await Runtime.InstallAsync(new RuntimePackage(zip), null, CancellationToken.None).ConfigureAwait(false);
+            // Default: legacy installer decides, the C# inspector / extractor shadow-check the same zip (PR-02).
+            // csharpImporter: developer opt-in, the C# LayerInstaller decides for this one import (device acceptance).
+            var mode = csharpImporter ? SliceMode.CSharp : (SliceMode?)null;
+            var r = await Runtime.InstallAsync(new RuntimePackage(zip), null, CancellationToken.None, mode).ConfigureAwait(false);
             Append($"import: took {sw.Elapsed.TotalSeconds:F1} s");
             Append(r.Ok ? "import: ok" : $"import FAILED {r.Code}{(r.UpstreamCode is null ? "" : "/" + r.UpstreamCode)}: {r.Message}");
             LogStatus("status", await Client.ExecuteAsync(BridgeMethods.RuntimeStatus).ConfigureAwait(false));

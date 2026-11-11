@@ -231,6 +231,115 @@ def write_expectations():
     with open(path, "w", encoding="utf-8", newline="\n") as fh:
         json.dump(doc, fh, indent=2, ensure_ascii=False)
         fh.write("\n")
+    write_install_scenarios()
+
+
+# ---------------------------------------------------------------------------------------------------------------
+# LayerInstaller (import + swap) scenarios, run by the legacy DefaultSandboxManager.importRuntimeBundle
+# (native-bridge LegacyBundleImportParityTest) and the C# LayerInstaller (LayerInstallerParityTests).
+# Each scenario: an initial files/ tree, a bundle zip, the expected result code and the ENTIRE files/ tree afterwards
+# (path -> "dir" | file content). Staging directories must be gone afterwards on both sides.
+# ---------------------------------------------------------------------------------------------------------------
+import zipfile
+
+BUNDLES = os.path.join(OUT, "..", "bundles")
+
+
+def stable_zip(path, members):
+    with zipfile.ZipFile(path, "w", compression=zipfile.ZIP_STORED) as z:
+        for name, data in members:
+            zi = zipfile.ZipInfo(name, date_time=(1980, 1, 1, 0, 0, 0))
+            zi.external_attr = 0o644 << 16
+            z.writestr(zi, data)
+
+
+def bundle(name, layers, corrupt=None):
+    """layers: {layer: tar bytes}. corrupt: layer whose archive is altered AFTER its digest was declared."""
+    sha = {k: hashlib.sha256(v).hexdigest() for k, v in layers.items()}
+    profile = json.dumps({
+        "bundle": {"kind": "runtime", "name": "fixture", "version": "9.9.9", "arch": "arm64", "compression": "none"},
+        "layers": [{"name": k, "version": "9.9.9", "compression": "none", "sha256": sha[k], "size_bytes": len(v),
+                    "env_file": "", "file": f"{k}.tar", "deps": [] if k == "base" else ["base"]} for k, v in layers.items()],
+        "assembly": list(layers),
+    }, indent=2).encode()
+    members = []
+    for k, v in layers.items():
+        members.append((f"{k}.tar", v + b"\0" * 512 if k == corrupt else v))
+        members.append((f"{k}.tar.sha256", f"{sha[k]}  build/layers/{k}.tar\n".encode()))
+    members.append(("runtime-profile.json", profile))
+    stable_zip(os.path.join(BUNDLES, name), members)
+    return sha, profile.decode()
+
+
+def write_install_scenarios():
+    os.makedirs(BUNDLES, exist_ok=True)
+    F = tarfile.REGTYPE
+    layers = {
+        "base": tar_bytes([info("etc/os-release", F, 0o644, b"new-base\n")]),
+        "node": tar_bytes([info("bin/node", F, 0o755, b"new-node\n")]),
+        "android-side": tar_bytes([info("proot/README", F, 0o644, b"new-side\n")]),
+    }
+    sha, profile = bundle("good.zip", layers)
+    bundle("corrupt-node.zip", layers, corrupt="node")
+
+    rc = "runtime/runtime-current"
+    new_body = {
+        f"{rc}/base": "dir", f"{rc}/base/etc": "dir", f"{rc}/base/etc/os-release": "new-base\n",
+        f"{rc}/base/.dshbox": "dir", f"{rc}/base/.dshbox/layer-base.sha256": sha["base"],
+        f"{rc}/node": "dir", f"{rc}/node/bin": "dir", f"{rc}/node/bin/node": "new-node\n",
+        f"{rc}/node/.dshbox": "dir", f"{rc}/node/.dshbox/layer-node.sha256": sha["node"],
+        f"{rc}/android-side": "dir", f"{rc}/android-side/proot": "dir", f"{rc}/android-side/proot/README": "new-side\n",
+        f"{rc}/android-side/.dshbox": "dir", f"{rc}/android-side/.dshbox/layer-android-side.sha256": sha["android-side"],
+        f"{rc}/runtime-profile.json": profile,
+    }
+    common = {"runtime": "dir", rc: "dir", "user-data": "dir", "user-data/keep.txt": "user\n"}
+    old_body = {
+        f"{rc}/base": "dir", f"{rc}/base/old.txt": "old-base\n",
+        f"{rc}/node": "dir", f"{rc}/node/old.txt": "old-node\n",
+        f"{rc}/android-side": "dir", f"{rc}/android-side/old.txt": "old-side\n",
+        f"{rc}/runtime-profile.json": "old-profile\n",
+        f"{rc}/dsh": "dir", f"{rc}/dsh/dsh.txt": "dsh\n",
+    }
+    older_previous = {
+        f"{rc}/previous": "dir", f"{rc}/previous/base": "dir", f"{rc}/previous/base/older.txt": "older-base\n",
+        f"{rc}/previous/runtime-profile.json": "older-profile\n",
+        f"{rc}/previous/dsh": "dir", f"{rc}/previous/dsh/prev-dsh.txt": "prev-dsh\n",
+    }
+    moved_previous = {
+        f"{rc}/previous": "dir",
+        f"{rc}/previous/base": "dir", f"{rc}/previous/base/old.txt": "old-base\n",
+        f"{rc}/previous/node": "dir", f"{rc}/previous/node/old.txt": "old-node\n",
+        f"{rc}/previous/android-side": "dir", f"{rc}/previous/android-side/old.txt": "old-side\n",
+        f"{rc}/previous/runtime-profile.json": "old-profile\n",
+        f"{rc}/previous/dsh": "dir", f"{rc}/previous/dsh/prev-dsh.txt": "prev-dsh\n",
+    }
+    dsh_only = {f"{rc}/dsh": "dir", f"{rc}/dsh/dsh.txt": "dsh\n"}
+
+    def sc(name, zip_name, before, code, after):
+        return {"name": name, "bundle": zip_name, "before": dict(sorted(before.items())), "result": code,
+                "after": dict(sorted(after.items()))}
+
+    scenarios = [
+        sc("fresh install into an empty runtime-current", "good.zip", common, "OK", {**common, **new_body}),
+        # Legacy quirk: previous/ does not exist, so renaming the old layers into it fails and they are DELETED;
+        # the old profile cannot be moved either and is overwritten. No rollback copy remains.
+        sc("replace without previous/: old body discarded", "good.zip", {**common, **old_body}, "OK",
+           {**common, **new_body, **dsh_only}),
+        sc("replace with previous/: old body becomes previous, older previous dropped, dsh untouched", "good.zip",
+           {**common, **old_body, **older_previous}, "OK", {**common, **new_body, **dsh_only, **moved_previous}),
+        sc("corrupt layer: nothing changes", "corrupt-node.zip", {**common, **old_body, **older_previous},
+           "BUNDLE_SHA256_MISMATCH", {**common, **old_body, **older_previous}),
+    ]
+    doc = {
+        "description": "LayerInstaller scenarios (generated by tooling/gen-layer-fixtures.py). `before`/`after` list the whole "
+                       "files/ tree: path -> \"dir\" or the file's UTF-8 content. Run by the legacy "
+                       "DefaultSandboxManager.importRuntimeBundle (native-bridge LegacyBundleImportParityTest) and the C# "
+                       "LayerInstaller (LayerInstallerParityTests); both must leave no staging directory behind.",
+        "scenarios": scenarios,
+    }
+    with open(os.path.join(OUT, "..", "install-scenarios.json"), "w", encoding="utf-8", newline="\n") as fh:
+        json.dump(doc, fh, indent=2, ensure_ascii=False)
+        fh.write("\n")
 
 
 if __name__ == "__main__":

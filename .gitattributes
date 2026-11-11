@@ -10,3 +10,4 @@ gradlew text eol=lf
 native/native-bridge/src/main/guest-assets/** text eol=lf
 # Layer-archive parity fixtures (tooling/gen-layer-fixtures.py): byte-exact, never EOL-converted
 tests/TestVectors/layers/** binary
+tests/TestVectors/bundles/** binary

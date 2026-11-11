@@ -42,6 +42,20 @@ public sealed class LegacyBridgeRuntimeManager : IRuntimeManager
         return new RuntimeInstallResult(resp.Ok, resp.Code, resp.Message, UpstreamCode(resp));
     }
 
+    public static readonly TimeSpan PrepareDeadline = TimeSpan.FromMinutes(10);
+
+    /// <summary><c>runtime.prepare</c>: APK-bundled layers + the bundled DSH layer (provisionBundledDsh).</summary>
+    public async Task<RuntimeInstallResult> PrepareAsync(CancellationToken ct)
+    {
+        var resp = await _client.ExecuteAsync(BridgeMethods.RuntimePrepare, deadline: PrepareDeadline, cancellationToken: ct).ConfigureAwait(false);
+        string? steps = null;
+        if (resp.Ok && resp.Payload is { ValueKind: JsonValueKind.Object } p && p.TryGetProperty("steps", out var s) && s.ValueKind == JsonValueKind.Array)
+        {
+            steps = string.Join("; ", s.EnumerateArray().Select(e => e.GetString()));
+        }
+        return new RuntimeInstallResult(resp.Ok, resp.Code, resp.Ok ? steps : resp.Message, UpstreamCode(resp));
+    }
+
     public async Task<RuntimeStartResult> StartSandboxAsync(CancellationToken ct) =>
         ToResult(await _client.ExecuteAsync(BridgeMethods.SandboxStart, deadline: SandboxDeadline, cancellationToken: ct).ConfigureAwait(false));
 
