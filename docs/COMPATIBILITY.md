@@ -214,3 +214,22 @@ APK SHA-256 `a084dc5fb2559bea84d04caef8050b63f8006f23f7dc8dd639f08c41b9a2a392`�
 - 停止：PC 3091 无监听（Windows OpenSSH 在通道关闭时结束 `dsh`）。首版停止核查报「未知」，已改为会话在时请求失败即「已不响应」（修正版未上真机）。
 - 断线（`adb kill-server` 60 s）：`DISCONNECTED · UNREACHABLE`，token 作废；以固定指纹重连无需确认，再次启动得新转发端口 34137、HTTP 401、新 token。
 - 隔离：远端 READY 时启动本机 DSH（20.5 s READY），两者并存；断开远端后 PC 端口释放，本机 DSH 不受影响。
+
+## ADR-0007 迁移 PR-00/01/02 真机验收（C# 层 + 影子比对）— 2026-11-11
+
+同一设备 Honor PTP-AN10 / Android 17（API 37）/ arm64-v8a；Release（full trim，CoreCLR）APK 124,130,141 B，分支
+`migration/pr02-layer-extract@8a672b1`；`adb install -r` 覆盖安装（签名证书 SHA-256 `9F:E6:85:50…0C:36:13` 与已装版本一致，数据保留）。
+原始日志摘录：[migration/parity/2026-11-11-PTP-AN10-A17-runtime.md](../migration/parity/2026-11-11-PTP-AN10-A17-runtime.md)。
+
+- 冷启动 `am start -W` 三次 293 / 238 / 228 ms（迁移前基线 220–290 ms），PSS 128 MB；启动日志
+  `runtime coordinator: impl=legacy-bridge journal=NotInstalled/Stopped gen=0`。
+- bridge.info：`native=NATIVE_UNAVAILABLE`（尚未打包 `libdshmobile_native.so`，如实报告），journal 位于 `files/dshmobile-runtime/`。
+- 导入锁定包 `dshapp-runtime-debian-arm64-0.1.0.zip`（设备侧 SHA-256 与 lock 一致）：旧实现导入成功，总计 9.2 s；
+  影子 `runtime.bundle-verify`：**Agree**（三层 SHA-256 均通过，C# 415 ms）；
+  影子 `runtime.layer-extract`：**Agree**（base 10,325 / node 5,782 / android-side 12 项与旧实现装好的目录逐项一致，含哨兵；5,583 ms）。
+- 启动（`RuntimeCoordinator` → 旧桥）：sandbox 3 ms、DSH web 21.0 s `Ready`，gen=1，前台服务在、PRoot/node 进程在；
+  再次点击启动 → `already running (harness Ready)`，无重复调用。
+- 停止：`dsh.stop` → `sandbox.stop` → `Ready`，PRoot/node 进程 0，前台服务已释放。
+- 运行中 `am force-stop`：PRoot/node 进程 0（无孤儿）；重启 App 后 journal 恢复为 `Failed/Stopped gen=2 last error RUNTIME_INTERRUPTED`；
+  再启动 gen=3 `Ready`，停止后进程 0。
+- 未在真机验证：沙箱启动失败 / 停止失败的清理分支（无法安全注入故障，仅单测覆盖）；Android 10；16 KB 页设备。

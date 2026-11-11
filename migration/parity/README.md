@@ -15,4 +15,4 @@ adb shell run-as org.example.dshmobile cat files/dshmobile-runtime/runtime-journ
 
 桌面侧新旧双跑（不需要设备）见 `tests/TestVectors/` 与 docs/MIGRATION.md 第 5 节。
 
-当前：**尚无真机报告**（2026-11-10 无设备连接）。
+报告：[2026-11-11 Honor PTP-AN10 · Android 17](2026-11-11-PTP-AN10-A17-runtime.md)（两段影子均 `Agree`）。
