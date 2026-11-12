@@ -36,4 +36,4 @@ try {
 }
 
 # ADR-0007 minimal native layer (own C source, NDK, 16 KB aligned): artifacts/native/dshmobile-native/<abi>/
-& (Join-Path $here 'dshmobile-nativeuild.ps1')
+& (Join-Path $here 'dshmobile-native/build.ps1')
