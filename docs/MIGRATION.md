@@ -62,7 +62,7 @@ MainActivity ─▶ BridgeHost ─▶ RuntimeCoordinator (C#, 状态机 + journa
 | PR-01 | ADR-0007、AGENTS.md、`DshMobile.Native/Runtime/Application` 接口 + DI + 单测 | 已合并（#1）；Release（full trim）真机运行通过 |
 | PR-02 | Runtime：Versions/Constants → RuntimeManifest/层校验 → 层解包（均为影子） | 校验段已合并（#1），解包段已合并（#3）；两段真机影子均 `Agree`；换层 / 回滚未开始 |
 | PR-06 | 终端：C# PTY 后端（`libdshmobile_native` + `ProotPtySession`）+ 终端 argv 影子 | 第一段 maiji1990/dsh_mobile#13（含 CI 修复，CI 通过）：真机 PTY 自检 PASS ×3、终端 argv 影子 Agree。第二段 maiji1990/dsh_mobile#14（C# 多会话终端界面，开发者可选）：真机主要路径通过 |
-| PR-07 | 手机操控：`ui_*` 工具注册与状态（第一段）→ Relay 信封解码（第二段）→ 审批前准入 + 回包编码（第三段）→ 执行面裁决 + 执行配额（第四段）→ 审批闸门判定（第五段）→ 执行层其余 | 第一段已合并（maiji1990/dsh_mobile#16）；第二段 maiji1990/dsh_mobile#17、第三段 maiji1990/dsh_mobile#18 待合并；第四段完成待提交：向量新旧双绿、真机前台 / 优先后台两种偏好 Agree；第五段（审批闸门判定，不含确认框）完成待提交：向量新旧双绿、真机被动比对与必拒探针 Agree；确认框、无障碍后端、信箱服务循环、控制通道未开始 |
+| PR-07 | 手机操控：`ui_*` 工具注册与状态（第一段）→ Relay 信封解码（第二段）→ 审批前准入 + 回包编码（第三段）→ 执行面裁决 + 执行配额（第四段）→ 审批闸门判定（第五段）→ 执行层其余 | 第一至四段已合并（maiji1990/dsh_mobile#16、maiji1990/dsh_mobile#17；第三、四段随 maiji1990/dsh_mobile#19 进入 main）；第五段（审批闸门判定，不含确认框）待合并：向量新旧双绿、真机被动比对与必拒探针 Agree；确认框、无障碍后端、信箱服务循环、控制通道未开始 |
 | PR-03 … PR-11（其余） | 见迁移方案第 6 节与切片总表 | 见各切片行 |
 
 ## 4. 已修复的现有缺陷（迁移方案第 7 节）
