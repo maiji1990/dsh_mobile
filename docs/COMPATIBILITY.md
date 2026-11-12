@@ -307,3 +307,7 @@ APK SHA-256 `a084dc5fb2559bea84d04caef8050b63f8006f23f7dc8dd639f08c41b9a2a392`�
 ## ADR-0007 迁移 · `ui_*` 工具注册与状态（PR-07 第一段，只读影子）真机记录 — 2026-11-12
 
 「手机操控（实验）」页的 `relay.status` / `relay.start` / `relay.stop` 之后，C# 读同一 patch 层与无障碍设置：三次 `automation.ui-tools` **Agree**；开启后层文件与 C# 渲染逐字节一致。无障碍「已开启」与冲突分支只有向量证据。详见 [证据](../migration/parity/2026-11-12-PTP-AN10-A17-ui-tools.md)。
+
+## ADR-0007 迁移 · Relay 信箱信封解码（PR-07 第二段，只读影子）真机记录 — 2026-11-12
+
+「手机操控（实验）」页「协议信封比对（开发者）」：向真实信箱写 16 条解码阶段必被拒的请求（v1 / v2 各 8 条，12 种拒绝原因），旧 Relay 回包与 C# `RelayEnvelope` 判定两次 **16/16 Agree**（约 1 s）；中继未开时 Inconclusive 并收回请求；期间无审批通知。合法请求只有向量证据。详见 [证据](../migration/parity/2026-11-12-PTP-AN10-A17-relay-envelope.md)。

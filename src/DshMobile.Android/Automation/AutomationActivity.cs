@@ -9,7 +9,8 @@ namespace DshMobile.App.Automation;
 /// <summary>
 /// Mobile automation (TASK-010, ADR-0004), experimental and off by default. Starts/stops the Interlock Relay
 /// execution layer, links to system accessibility settings (the user enables the service; the app never does),
-/// and runs a fixed read-only self-test (relay doctor + one ui.snapshot) through the real guest mailbox.
+/// runs a fixed read-only self-test (relay doctor + one ui.snapshot) through the real guest mailbox, and (developer)
+/// the PR-07 envelope probe: always-rejected requests into the live mailbox, answers compared with the C# decoder.
 /// </summary>
 [Activity(Label = "@string/automation_title", Exported = false)]
 public sealed class AutomationActivity : Activity
@@ -45,7 +46,10 @@ public sealed class AutomationActivity : Activity
         row2.AddView(settings, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WrapContent, 1f));
         row2.AddView(selftest, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WrapContent, 1f));
         root.AddView(row2);
-        _buttons = [start, stop, selftest];
+        // PR-07 segment 2 shadow, developer action: only always-rejected requests, never anything that reaches approval.
+        var probe = Make(Resource.String.automation_envelope_probe, () => _ = EnvelopeProbeAsync());
+        root.AddView(probe);
+        _buttons = [start, stop, selftest, probe];
 
         _output = new TextView(this) { TextSize = 11 };
         _output.SetTextIsSelectable(true);
@@ -137,6 +141,18 @@ public sealed class AutomationActivity : Activity
         var r = BridgeCodec.ReadPayload(resp, BridgeJsonContext.Default.PluginCommandResult)!;
         _output.Text = $"exit={r.ExitCode?.ToString() ?? "?"}\n\n{r.Output}";
         _bridge.Note($"relay.selftest exit={r.ExitCode}");
+    }
+
+    private async Task EnvelopeProbeAsync()
+    {
+        Enable(false);
+        _output.Text = GetString(Resource.String.automation_envelope_probe_running);
+        var runtime = _bridge.Runtime;
+        var report = await Task.Run(() => runtime.ShadowRelayEnvelopeAsync(TimeSpan.FromSeconds(20), CancellationToken.None));
+        Enable(true);
+        _output.Text = report is null
+            ? GetString(Resource.String.automation_envelope_probe_off)
+            : $"{report.Slice}: {report.Verdict}\n\n{report.Detail}";
     }
 
     private void Enable(bool on)

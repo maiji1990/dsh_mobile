@@ -1,0 +1,1434 @@
+{
+  "description": "PR-07 segment 2: Relay mailbox envelope decoding (DSHBox interlock-relay-core EnvelopeCodec). 'request' = v1 decodeRequest(text, file), 'control' = v2 decodeControl(text, file). Both lists run in the legacy Kotlin LegacyRelayEnvelopeParityTest (upstream codec, Maven org.json) and in C# RelayEnvelopeParityTests. 'csharpOnly' cases follow Android libcore org.json (what Relay uses on the device) where Maven org.json differs, or are deliberate C# strictness. 'padTo' = append spaces until the text has that many UTF-16 chars. 'probe' = always rejected at decoding, so the on-device probe may write it into the real mailbox (nothing reaches an approval or a backend).",
+  "capabilities": [
+    "ui.snapshot",
+    "screen.capture",
+    "screen.observe",
+    "screen.record",
+    "notify.read",
+    "ui.tap",
+    "ui.swipe",
+    "ui.text",
+    "ui.key",
+    "ui.click",
+    "ui.longClick",
+    "ui.select",
+    "ui.dismiss",
+    "ui.scroll",
+    "ui.setValue",
+    "ui.waitFor",
+    "ui.node",
+    "ui.setProgress",
+    "ui.imeAction",
+    "app.launch",
+    "app.stop",
+    "surface.virtual",
+    "clip.read",
+    "clip.write",
+    "contact.read",
+    "contact.write",
+    "cal.read",
+    "cal.write",
+    "loc.read",
+    "media.read",
+    "media.write",
+    "audio.capture",
+    "pkg.query",
+    "app.install",
+    "sys.settings.write",
+    "appops.set",
+    "sys.intent",
+    "sys.shell",
+    "notify.post"
+  ],
+  "errors": [
+    {
+      "name": "GATE_HOST_DENIED",
+      "code": "E_GATE_HOST_DENIED",
+      "retryable": false,
+      "exitCode": 2
+    },
+    {
+      "name": "GATE_SYSTEM_MISSING",
+      "code": "E_GATE_SYSTEM_MISSING",
+      "retryable": false,
+      "exitCode": 4
+    },
+    {
+      "name": "GATE_APPROVAL_TIMEOUT",
+      "code": "E_GATE_APPROVAL_TIMEOUT",
+      "retryable": false,
+      "exitCode": 3
+    },
+    {
+      "name": "GATE_AWAITING_CONSENT",
+      "code": "E_AWAITING_CONSENT",
+      "retryable": true,
+      "exitCode": 5
+    },
+    {
+      "name": "GATE_WAITING_TURN",
+      "code": "E_GATE_WAITING_TURN",
+      "retryable": true,
+      "exitCode": 5
+    },
+    {
+      "name": "GATE_CANCELLED",
+      "code": "E_GATE_CANCELLED",
+      "retryable": false,
+      "exitCode": 5
+    },
+    {
+      "name": "GATE_SUSPENDED_BY_HOST",
+      "code": "E_TASK_SUSPENDED_BY_HOST",
+      "retryable": true,
+      "exitCode": 5
+    },
+    {
+      "name": "NO_EDITABLE_TARGET",
+      "code": "E_NO_EDITABLE_TARGET",
+      "retryable": false,
+      "exitCode": 1
+    },
+    {
+      "name": "NODE_NOT_FOUND",
+      "code": "E_NODE_NOT_FOUND",
+      "retryable": false,
+      "exitCode": 1
+    },
+    {
+      "name": "NODE_AMBIGUOUS",
+      "code": "E_NODE_AMBIGUOUS",
+      "retryable": false,
+      "exitCode": 1
+    },
+    {
+      "name": "NODE_NOT_ACTIONABLE",
+      "code": "E_NODE_NOT_ACTIONABLE",
+      "retryable": false,
+      "exitCode": 1
+    },
+    {
+      "name": "NODE_ACTION_REJECTED",
+      "code": "E_ACTION_REJECTED",
+      "retryable": true,
+      "exitCode": 5
+    },
+    {
+      "name": "WAIT_TIMEOUT",
+      "code": "E_WAIT_TIMEOUT",
+      "retryable": true,
+      "exitCode": 3
+    },
+    {
+      "name": "GATE_NO_FOREGROUND",
+      "code": "E_GATE_NO_FOREGROUND",
+      "retryable": true,
+      "exitCode": 4
+    },
+    {
+      "name": "CLIPBOARD_NO_FOCUS",
+      "code": "E_CLIPBOARD_NO_FOCUS",
+      "retryable": true,
+      "exitCode": 4
+    },
+    {
+      "name": "CAPABILITY_UNAVAILABLE_ON_DEVICE",
+      "code": "E_CAPABILITY_UNAVAILABLE_ON_DEVICE",
+      "retryable": false,
+      "exitCode": 4
+    },
+    {
+      "name": "CAPABILITY_NOT_IMPLEMENTED",
+      "code": "E_NOT_IMPLEMENTED",
+      "retryable": false,
+      "exitCode": 1
+    },
+    {
+      "name": "NODE_NO_IME_ACTION",
+      "code": "E_NODE_NO_IME_ACTION",
+      "retryable": false,
+      "exitCode": 1
+    },
+    {
+      "name": "NODE_SYSTEM_CONSENT_TARGET",
+      "code": "E_NODE_SYSTEM_CONSENT_TARGET",
+      "retryable": false,
+      "exitCode": 4
+    },
+    {
+      "name": "LAUNCH_NOT_LANDED",
+      "code": "E_LAUNCH_NOT_LANDED",
+      "retryable": true,
+      "exitCode": 5
+    },
+    {
+      "name": "SURFACE_API_LEVEL",
+      "code": "E_SURFACE_API_LEVEL",
+      "retryable": false,
+      "exitCode": 4
+    },
+    {
+      "name": "SURFACE_NO_SHELL",
+      "code": "E_SURFACE_NO_SHELL",
+      "retryable": true,
+      "exitCode": 4
+    },
+    {
+      "name": "SURFACE_TRUSTED_DENIED",
+      "code": "E_SURFACE_TRUSTED_DENIED",
+      "retryable": false,
+      "exitCode": 4
+    },
+    {
+      "name": "SURFACE_UNAVAILABLE",
+      "code": "E_SURFACE_UNAVAILABLE",
+      "retryable": false,
+      "exitCode": 4
+    },
+    {
+      "name": "SURFACE_MODE_REQUIRED",
+      "code": "E_SURFACE_MODE_REQUIRED",
+      "retryable": false,
+      "exitCode": 4
+    },
+    {
+      "name": "SURFACE_SYSTEM_CONSENT_REQUIRED",
+      "code": "E_SURFACE_SYSTEM_CONSENT_REQUIRED",
+      "retryable": true,
+      "exitCode": 4
+    },
+    {
+      "name": "SURFACE_SECURE_WINDOW",
+      "code": "E_SURFACE_SECURE_WINDOW",
+      "retryable": false,
+      "exitCode": 2
+    },
+    {
+      "name": "BACKEND_SHIZUKU_DEAD",
+      "code": "E_BACKEND_SHIZUKU_DEAD",
+      "retryable": true,
+      "exitCode": 5
+    },
+    {
+      "name": "BACKEND_UNAVAILABLE",
+      "code": "E_BACKEND_UNAVAILABLE",
+      "retryable": true,
+      "exitCode": 5
+    },
+    {
+      "name": "STORAGE_FULL",
+      "code": "E_STORAGE_FULL",
+      "retryable": true,
+      "exitCode": 5
+    },
+    {
+      "name": "RATE_LIMITED",
+      "code": "E_RATE_LIMITED",
+      "retryable": true,
+      "exitCode": 5
+    },
+    {
+      "name": "QUEUE_FULL",
+      "code": "E_QUEUE_FULL",
+      "retryable": true,
+      "exitCode": 5
+    },
+    {
+      "name": "REQUEST_TOO_LARGE",
+      "code": "E_REQUEST_TOO_LARGE",
+      "retryable": false,
+      "exitCode": 1
+    },
+    {
+      "name": "TRANSPORT_MALFORMED",
+      "code": "E_TRANSPORT_MALFORMED",
+      "retryable": false,
+      "exitCode": 1
+    },
+    {
+      "name": "TRANSPORT_TIMEOUT",
+      "code": "E_TRANSPORT_TIMEOUT",
+      "retryable": true,
+      "exitCode": 3
+    },
+    {
+      "name": "INTERNAL",
+      "code": "E_INTERNAL",
+      "retryable": false,
+      "exitCode": 6
+    }
+  ],
+  "request": [
+    {
+      "name": "minimal",
+      "file": "r1.json",
+      "text": "{\"v\":1,\"id\":\"r1\",\"capability\":\"ui.snapshot\",\"args\":{}}",
+      "expect": {
+        "valid": {
+          "id": "r1",
+          "sentAtMs": 0,
+          "capability": "ui.snapshot",
+          "args": {},
+          "timeoutMs": 90000
+        }
+      }
+    },
+    {
+      "name": "as the guest CLI writes it",
+      "file": "r2.json",
+      "text": "{\"v\":1,\"id\":\"r2\",\"ts\":1762900000000,\"capability\":\"ui.node\",\"args\":{\"ref\":\"n12\",\"depth\":2},\"ttlMs\":5000}\n",
+      "expect": {
+        "valid": {
+          "id": "r2",
+          "sentAtMs": 1762900000000,
+          "capability": "ui.node",
+          "args": {
+            "ref": "n12",
+            "depth": 2
+          },
+          "timeoutMs": 5000
+        }
+      }
+    },
+    {
+      "name": "ttl below the minimum is raised",
+      "file": "r3.json",
+      "text": "{\"v\":1,\"id\":\"r3\",\"capability\":\"ui.snapshot\",\"args\":{},\"ttlMs\":10}",
+      "expect": {
+        "valid": {
+          "id": "r3",
+          "sentAtMs": 0,
+          "capability": "ui.snapshot",
+          "args": {},
+          "timeoutMs": 1000
+        }
+      }
+    },
+    {
+      "name": "ttl above the maximum is capped",
+      "file": "r4.json",
+      "text": "{\"v\":1,\"id\":\"r4\",\"capability\":\"ui.snapshot\",\"args\":{},\"ttlMs\":999999}",
+      "expect": {
+        "valid": {
+          "id": "r4",
+          "sentAtMs": 0,
+          "capability": "ui.snapshot",
+          "args": {},
+          "timeoutMs": 120000
+        }
+      }
+    },
+    {
+      "name": "zero ttl means the default",
+      "file": "r5.json",
+      "text": "{\"v\":1,\"id\":\"r5\",\"capability\":\"ui.snapshot\",\"args\":{},\"ttlMs\":0}",
+      "expect": {
+        "valid": {
+          "id": "r5",
+          "sentAtMs": 0,
+          "capability": "ui.snapshot",
+          "args": {},
+          "timeoutMs": 90000
+        }
+      }
+    },
+    {
+      "name": "negative ttl means the default",
+      "file": "r6.json",
+      "text": "{\"v\":1,\"id\":\"r6\",\"capability\":\"ui.snapshot\",\"args\":{},\"ttlMs\":-5}",
+      "expect": {
+        "valid": {
+          "id": "r6",
+          "sentAtMs": 0,
+          "capability": "ui.snapshot",
+          "args": {},
+          "timeoutMs": 90000
+        }
+      }
+    },
+    {
+      "name": "negative ts becomes 0",
+      "file": "r7.json",
+      "text": "{\"v\":1,\"id\":\"r7\",\"capability\":\"ui.snapshot\",\"args\":{},\"ts\":-7}",
+      "expect": {
+        "valid": {
+          "id": "r7",
+          "sentAtMs": 0,
+          "capability": "ui.snapshot",
+          "args": {},
+          "timeoutMs": 90000
+        }
+      }
+    },
+    {
+      "name": "string version 1 counts",
+      "file": "r8.json",
+      "text": "{\"v\":\"1\",\"id\":\"r8\",\"capability\":\"ui.snapshot\",\"args\":{}}",
+      "expect": {
+        "valid": {
+          "id": "r8",
+          "sentAtMs": 0,
+          "capability": "ui.snapshot",
+          "args": {},
+          "timeoutMs": 90000
+        }
+      }
+    },
+    {
+      "name": "fractional version truncates to 1",
+      "file": "r9.json",
+      "text": "{\"v\":1.9,\"id\":\"r9\",\"capability\":\"ui.snapshot\",\"args\":{}}",
+      "expect": {
+        "valid": {
+          "id": "r9",
+          "sentAtMs": 0,
+          "capability": "ui.snapshot",
+          "args": {},
+          "timeoutMs": 90000
+        }
+      }
+    },
+    {
+      "name": "long version keeps its low 32 bits",
+      "file": "r9b.json",
+      "text": "{\"v\":4294967297,\"id\":\"r9b\",\"capability\":\"ui.snapshot\",\"args\":{}}",
+      "expect": {
+        "valid": {
+          "id": "r9b",
+          "sentAtMs": 0,
+          "capability": "ui.snapshot",
+          "args": {},
+          "timeoutMs": 90000
+        }
+      }
+    },
+    {
+      "name": "string ttl is read as a number",
+      "file": "r10.json",
+      "text": "{\"v\":1,\"id\":\"r10\",\"capability\":\"ui.snapshot\",\"args\":{},\"ttlMs\":\"3000\"}",
+      "expect": {
+        "valid": {
+          "id": "r10",
+          "sentAtMs": 0,
+          "capability": "ui.snapshot",
+          "args": {},
+          "timeoutMs": 3000
+        }
+      }
+    },
+    {
+      "name": "extra fields are ignored",
+      "file": "r11.json",
+      "text": "{\"v\":1,\"id\":\"r11\",\"capability\":\"ui.snapshot\",\"args\":{},\"surface\":\"virtual\",\"mode\":\"x\"}",
+      "expect": {
+        "valid": {
+          "id": "r11",
+          "sentAtMs": 0,
+          "capability": "ui.snapshot",
+          "args": {},
+          "timeoutMs": 90000
+        }
+      }
+    },
+    {
+      "name": "numeric id names the file",
+      "file": "123.json",
+      "text": "{\"v\":1,\"id\":123,\"capability\":\"ui.snapshot\",\"args\":{}}",
+      "expect": {
+        "valid": {
+          "id": "123",
+          "sentAtMs": 0,
+          "capability": "ui.snapshot",
+          "args": {},
+          "timeoutMs": 90000
+        }
+      }
+    },
+    {
+      "name": "version 2 on the v1 channel",
+      "file": "pv1-version.json",
+      "text": "{\"v\":2,\"id\":\"pv1-version\",\"capability\":\"ui.snapshot\",\"args\":{}}",
+      "expect": {
+        "rejected": {
+          "id": "pv1-version",
+          "code": "E_TRANSPORT_MALFORMED",
+          "cause": "version"
+        }
+      },
+      "probe": true
+    },
+    {
+      "name": "version missing",
+      "file": "r14.json",
+      "text": "{\"id\":\"r14\",\"capability\":\"ui.snapshot\",\"args\":{}}",
+      "expect": {
+        "rejected": {
+          "id": "r14",
+          "code": "E_TRANSPORT_MALFORMED",
+          "cause": "version"
+        }
+      }
+    },
+    {
+      "name": "boolean version",
+      "file": "r15.json",
+      "text": "{\"v\":true,\"id\":\"r15\",\"capability\":\"ui.snapshot\",\"args\":{}}",
+      "expect": {
+        "rejected": {
+          "id": "r15",
+          "code": "E_TRANSPORT_MALFORMED",
+          "cause": "version"
+        }
+      }
+    },
+    {
+      "name": "body id differs from the file name",
+      "file": "pv1-mismatch.json",
+      "text": "{\"v\":1,\"id\":\"other\",\"capability\":\"ui.snapshot\",\"args\":{}}",
+      "expect": {
+        "rejected": {
+          "id": "pv1-mismatch",
+          "code": "E_TRANSPORT_MALFORMED",
+          "cause": "id mismatch"
+        }
+      },
+      "probe": true
+    },
+    {
+      "name": "id with a slash",
+      "file": "pv1-badid.json",
+      "text": "{\"v\":1,\"id\":\"a/b\",\"capability\":\"ui.snapshot\",\"args\":{}}",
+      "expect": {
+        "rejected": {
+          "id": "pv1-badid",
+          "code": "E_TRANSPORT_MALFORMED",
+          "cause": "bad id"
+        }
+      },
+      "probe": true
+    },
+    {
+      "name": "id of 65 characters",
+      "file": "r18.json",
+      "text": "{\"v\":1,\"id\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"capability\":\"ui.snapshot\",\"args\":{}}",
+      "expect": {
+        "rejected": {
+          "id": "r18",
+          "code": "E_TRANSPORT_MALFORMED",
+          "cause": "bad id"
+        }
+      }
+    },
+    {
+      "name": "id of 64 characters",
+      "file": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.json",
+      "text": "{\"v\":1,\"id\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"capability\":\"ui.snapshot\",\"args\":{}}",
+      "expect": {
+        "valid": {
+          "id": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "sentAtMs": 0,
+          "capability": "ui.snapshot",
+          "args": {},
+          "timeoutMs": 90000
+        }
+      }
+    },
+    {
+      "name": "id missing",
+      "file": "r20.json",
+      "text": "{\"v\":1,\"capability\":\"ui.snapshot\",\"args\":{}}",
+      "expect": {
+        "rejected": {
+          "id": "r20",
+          "code": "E_TRANSPORT_MALFORMED",
+          "cause": "bad id"
+        }
+      }
+    },
+    {
+      "name": "unknown capability",
+      "file": "pv1-cap.json",
+      "text": "{\"v\":1,\"id\":\"pv1-cap\",\"capability\":\"ui.hack\",\"args\":{}}",
+      "expect": {
+        "rejected": {
+          "id": "pv1-cap",
+          "code": "E_NOT_IMPLEMENTED",
+          "cause": "unknown capability"
+        }
+      },
+      "probe": true
+    },
+    {
+      "name": "capability is case-sensitive",
+      "file": "r22.json",
+      "text": "{\"v\":1,\"id\":\"r22\",\"capability\":\"UI.SNAPSHOT\",\"args\":{}}",
+      "expect": {
+        "rejected": {
+          "id": "r22",
+          "code": "E_NOT_IMPLEMENTED",
+          "cause": "unknown capability"
+        }
+      }
+    },
+    {
+      "name": "ui.imeAction is a known capability",
+      "file": "r36.json",
+      "text": "{\"v\":1,\"id\":\"r36\",\"capability\":\"ui.imeAction\",\"args\":{}}",
+      "expect": {
+        "valid": {
+          "id": "r36",
+          "sentAtMs": 0,
+          "capability": "ui.imeAction",
+          "args": {},
+          "timeoutMs": 90000
+        }
+      }
+    },
+    {
+      "name": "args missing",
+      "file": "pv1-noargs.json",
+      "text": "{\"v\":1,\"id\":\"pv1-noargs\",\"capability\":\"ui.snapshot\"}",
+      "expect": {
+        "rejected": {
+          "id": "pv1-noargs",
+          "code": "E_TRANSPORT_MALFORMED",
+          "cause": "args missing"
+        }
+      },
+      "probe": true
+    },
+    {
+      "name": "args is an array",
+      "file": "r24.json",
+      "text": "{\"v\":1,\"id\":\"r24\",\"capability\":\"ui.snapshot\",\"args\":[]}",
+      "expect": {
+        "rejected": {
+          "id": "r24",
+          "code": "E_TRANSPORT_MALFORMED",
+          "cause": "args missing"
+        }
+      }
+    },
+    {
+      "name": "args is a string",
+      "file": "r25.json",
+      "text": "{\"v\":1,\"id\":\"r25\",\"capability\":\"ui.snapshot\",\"args\":\"{}\"}",
+      "expect": {
+        "rejected": {
+          "id": "r25",
+          "code": "E_TRANSPORT_MALFORMED",
+          "cause": "args missing"
+        }
+      }
+    },
+    {
+      "name": "top level is an array",
+      "file": "pv1-array.json",
+      "text": "[]",
+      "expect": {
+        "rejected": {
+          "id": "pv1-array",
+          "code": "E_TRANSPORT_MALFORMED",
+          "cause": "not an object"
+        }
+      },
+      "probe": true
+    },
+    {
+      "name": "not JSON at all",
+      "file": "r27.json",
+      "text": "hello",
+      "expect": {
+        "rejected": {
+          "id": "r27",
+          "code": "E_TRANSPORT_MALFORMED",
+          "cause": "not an object"
+        }
+      }
+    },
+    {
+      "name": "empty text",
+      "file": "r28.json",
+      "text": "",
+      "expect": {
+        "rejected": {
+          "id": "r28",
+          "code": "E_TRANSPORT_MALFORMED",
+          "cause": "not an object"
+        }
+      }
+    },
+    {
+      "name": "unterminated object",
+      "file": "r35.json",
+      "text": "{\"v\":1,\"id\":\"r35\"",
+      "expect": {
+        "rejected": {
+          "id": "r35",
+          "code": "E_TRANSPORT_MALFORMED",
+          "cause": "not an object"
+        }
+      }
+    },
+    {
+      "name": "one character over the size limit",
+      "file": "pv1-big.json",
+      "text": "{\"v\":1,\"id\":\"pv1-big\",\"capability\":\"ui.snapshot\",\"args\":{}}",
+      "padTo": 200001,
+      "expect": {
+        "rejected": {
+          "id": "pv1-big",
+          "code": "E_REQUEST_TOO_LARGE",
+          "cause": "oversized"
+        }
+      },
+      "probe": true
+    },
+    {
+      "name": "exactly at the size limit",
+      "file": "r30.json",
+      "text": "{\"v\":1,\"id\":\"r30\",\"capability\":\"ui.snapshot\",\"args\":{}}",
+      "padTo": 200000,
+      "expect": {
+        "valid": {
+          "id": "r30",
+          "sentAtMs": 0,
+          "capability": "ui.snapshot",
+          "args": {},
+          "timeoutMs": 90000
+        }
+      }
+    },
+    {
+      "name": "nesting depth 25",
+      "file": "pv1-deep.json",
+      "text": "{\"v\":1,\"id\":\"pv1-deep\",\"capability\":\"ui.snapshot\",\"args\":{\"x\":[[[[[[[[[[[[[[[[[[[[[[[]]]]]]]]]]]]]]]]]]]]]]]}}",
+      "expect": {
+        "rejected": {
+          "id": "pv1-deep",
+          "code": "E_TRANSPORT_MALFORMED",
+          "cause": "too deep"
+        }
+      },
+      "probe": true
+    },
+    {
+      "name": "nesting depth 24",
+      "file": "r32.json",
+      "text": "{\"v\":1,\"id\":\"r32\",\"capability\":\"ui.snapshot\",\"args\":{\"x\":[[[[[[[[[[[[[[[[[[[[[[]]]]]]]]]]]]]]]]]]]]]]}}",
+      "expect": {
+        "valid": {
+          "id": "r32",
+          "sentAtMs": 0,
+          "capability": "ui.snapshot",
+          "args": {
+            "x": [
+              [
+                [
+                  [
+                    [
+                      [
+                        [
+                          [
+                            [
+                              [
+                                [
+                                  [
+                                    [
+                                      [
+                                        [
+                                          [
+                                            [
+                                              [
+                                                [
+                                                  [
+                                                    [
+                                                      []
+                                                    ]
+                                                  ]
+                                                ]
+                                              ]
+                                            ]
+                                          ]
+                                        ]
+                                      ]
+                                    ]
+                                  ]
+                                ]
+                              ]
+                            ]
+                          ]
+                        ]
+                      ]
+                    ]
+                  ]
+                ]
+              ]
+            ]
+          },
+          "timeoutMs": 90000
+        }
+      }
+    },
+    {
+      "name": "brackets inside strings do not count",
+      "file": "r33.json",
+      "text": "{\"v\":1,\"id\":\"r33\",\"capability\":\"ui.snapshot\",\"args\":{\"s\":\"[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[\"}}",
+      "expect": {
+        "valid": {
+          "id": "r33",
+          "sentAtMs": 0,
+          "capability": "ui.snapshot",
+          "args": {
+            "s": "[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[["
+          },
+          "timeoutMs": 90000
+        }
+      }
+    },
+    {
+      "name": "an escaped quote does not end the string",
+      "file": "r34.json",
+      "text": "{\"v\":1,\"id\":\"r34\",\"capability\":\"ui.snapshot\",\"args\":{\"s\":\"a\\\"[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[\"}}",
+      "expect": {
+        "valid": {
+          "id": "r34",
+          "sentAtMs": 0,
+          "capability": "ui.snapshot",
+          "args": {
+            "s": "a\"[[[[[[[[[[[[[[[[[[[[[[[[[[[[[["
+          },
+          "timeoutMs": 90000
+        }
+      }
+    }
+  ],
+  "control": [
+    {
+      "name": "health",
+      "file": "c1.json",
+      "text": "{\"v\":2,\"id\":\"c1\",\"op\":\"health\"}",
+      "expect": {
+        "valid": {
+          "op": "health",
+          "id": "c1"
+        }
+      }
+    },
+    {
+      "name": "status",
+      "file": "c2.json",
+      "text": "{\"v\":2,\"id\":\"c2\",\"op\":\"status\",\"targetId\":\"r1\"}",
+      "expect": {
+        "valid": {
+          "op": "status",
+          "id": "c2",
+          "targetId": "r1"
+        }
+      }
+    },
+    {
+      "name": "cancel",
+      "file": "c3.json",
+      "text": "{\"v\":2,\"id\":\"c3\",\"op\":\"cancel\",\"targetId\":\"r1\"}",
+      "expect": {
+        "valid": {
+          "op": "cancel",
+          "id": "c3",
+          "targetId": "r1"
+        }
+      }
+    },
+    {
+      "name": "submit as the guest CLI writes it",
+      "file": "c4.json",
+      "text": "{\"v\":2,\"id\":\"c4\",\"op\":\"submit\",\"capability\":\"ui.node\",\"args\":{\"ref\":\"n1\"},\"hostTtlMs\":3000,\"payloadDigest\":\"a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1\"}\n",
+      "expect": {
+        "valid": {
+          "op": "submit",
+          "id": "c4",
+          "capability": "ui.node",
+          "args": {
+            "ref": "n1"
+          },
+          "hostTtlMs": 3000,
+          "payloadDigest": "a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1"
+        }
+      }
+    },
+    {
+      "name": "submit without ttl uses the default",
+      "file": "c5.json",
+      "text": "{\"v\":2,\"id\":\"c5\",\"op\":\"submit\",\"capability\":\"ui.node\",\"args\":{},\"payloadDigest\":\"a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1\"}",
+      "expect": {
+        "valid": {
+          "op": "submit",
+          "id": "c5",
+          "capability": "ui.node",
+          "args": {},
+          "hostTtlMs": 90000,
+          "payloadDigest": "a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1"
+        }
+      }
+    },
+    {
+      "name": "submit ttl below the minimum is raised",
+      "file": "c5b.json",
+      "text": "{\"v\":2,\"id\":\"c5b\",\"op\":\"submit\",\"capability\":\"ui.node\",\"args\":{},\"hostTtlMs\":10,\"payloadDigest\":\"a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1\"}",
+      "expect": {
+        "valid": {
+          "op": "submit",
+          "id": "c5b",
+          "capability": "ui.node",
+          "args": {},
+          "hostTtlMs": 1000,
+          "payloadDigest": "a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1"
+        }
+      }
+    },
+    {
+      "name": "submit digest in upper case",
+      "file": "pv2-digest.json",
+      "text": "{\"v\":2,\"id\":\"pv2-digest\",\"op\":\"submit\",\"capability\":\"ui.node\",\"args\":{},\"payloadDigest\":\"A1A1A1A1A1A1A1A1A1A1A1A1A1A1A1A1A1A1A1A1A1A1A1A1A1A1A1A1A1A1A1A1\"}",
+      "expect": {
+        "rejected": {
+          "id": "pv2-digest",
+          "code": "E_TRANSPORT_MALFORMED",
+          "cause": "digest"
+        }
+      },
+      "probe": true
+    },
+    {
+      "name": "submit digest too short",
+      "file": "c7.json",
+      "text": "{\"v\":2,\"id\":\"c7\",\"op\":\"submit\",\"capability\":\"ui.node\",\"args\":{},\"payloadDigest\":\"a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a\"}",
+      "expect": {
+        "rejected": {
+          "id": "c7",
+          "code": "E_TRANSPORT_MALFORMED",
+          "cause": "digest"
+        }
+      }
+    },
+    {
+      "name": "submit unknown capability",
+      "file": "pv2-cap.json",
+      "text": "{\"v\":2,\"id\":\"pv2-cap\",\"op\":\"submit\",\"capability\":\"sys.root\",\"args\":{},\"payloadDigest\":\"a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1\"}",
+      "expect": {
+        "rejected": {
+          "id": "pv2-cap",
+          "code": "E_NOT_IMPLEMENTED",
+          "cause": "unknown capability"
+        }
+      },
+      "probe": true
+    },
+    {
+      "name": "submit args missing",
+      "file": "c9.json",
+      "text": "{\"v\":2,\"id\":\"c9\",\"op\":\"submit\",\"capability\":\"ui.node\",\"payloadDigest\":\"a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1\"}",
+      "expect": {
+        "rejected": {
+          "id": "c9",
+          "code": "E_TRANSPORT_MALFORMED",
+          "cause": "args missing"
+        }
+      }
+    },
+    {
+      "name": "submit args are checked before the digest",
+      "file": "c10.json",
+      "text": "{\"v\":2,\"id\":\"c10\",\"op\":\"submit\",\"capability\":\"ui.node\",\"payloadDigest\":\"x\"}",
+      "expect": {
+        "rejected": {
+          "id": "c10",
+          "code": "E_TRANSPORT_MALFORMED",
+          "cause": "args missing"
+        }
+      }
+    },
+    {
+      "name": "status target with a space",
+      "file": "pv2-target.json",
+      "text": "{\"v\":2,\"id\":\"pv2-target\",\"op\":\"status\",\"targetId\":\"a b\"}",
+      "expect": {
+        "rejected": {
+          "id": "pv2-target",
+          "code": "E_TRANSPORT_MALFORMED",
+          "cause": "target"
+        }
+      },
+      "probe": true
+    },
+    {
+      "name": "status target missing",
+      "file": "c12.json",
+      "text": "{\"v\":2,\"id\":\"c12\",\"op\":\"status\"}",
+      "expect": {
+        "rejected": {
+          "id": "c12",
+          "code": "E_TRANSPORT_MALFORMED",
+          "cause": "target"
+        }
+      }
+    },
+    {
+      "name": "unknown op",
+      "file": "pv2-op.json",
+      "text": "{\"v\":2,\"id\":\"pv2-op\",\"op\":\"exec\"}",
+      "expect": {
+        "rejected": {
+          "id": "pv2-op",
+          "code": "E_TRANSPORT_MALFORMED",
+          "cause": "op"
+        }
+      },
+      "probe": true
+    },
+    {
+      "name": "op missing",
+      "file": "c14.json",
+      "text": "{\"v\":2,\"id\":\"c14\"}",
+      "expect": {
+        "rejected": {
+          "id": "c14",
+          "code": "E_TRANSPORT_MALFORMED",
+          "cause": "op"
+        }
+      }
+    },
+    {
+      "name": "version 1 on the control channel",
+      "file": "pv2-version.json",
+      "text": "{\"v\":1,\"id\":\"pv2-version\",\"op\":\"health\"}",
+      "expect": {
+        "rejected": {
+          "id": "pv2-version",
+          "code": "E_TRANSPORT_MALFORMED",
+          "cause": "version"
+        }
+      },
+      "probe": true
+    },
+    {
+      "name": "string version 2 counts",
+      "file": "c15b.json",
+      "text": "{\"v\":\"2\",\"id\":\"c15b\",\"op\":\"health\"}",
+      "expect": {
+        "valid": {
+          "op": "health",
+          "id": "c15b"
+        }
+      }
+    },
+    {
+      "name": "body id differs from the file name",
+      "file": "c16.json",
+      "text": "{\"v\":2,\"id\":\"c16x\",\"op\":\"health\"}",
+      "expect": {
+        "rejected": {
+          "id": "c16",
+          "code": "E_TRANSPORT_MALFORMED",
+          "cause": "id mismatch"
+        }
+      }
+    },
+    {
+      "name": "bad id",
+      "file": "c17.json",
+      "text": "{\"v\":2,\"id\":\"c 17\",\"op\":\"health\"}",
+      "expect": {
+        "rejected": {
+          "id": "c17",
+          "code": "E_TRANSPORT_MALFORMED",
+          "cause": "bad id"
+        }
+      }
+    },
+    {
+      "name": "not an object",
+      "file": "pv2-array.json",
+      "text": "[1,2]",
+      "expect": {
+        "rejected": {
+          "id": "pv2-array",
+          "code": "E_TRANSPORT_MALFORMED",
+          "cause": "not an object"
+        }
+      },
+      "probe": true
+    },
+    {
+      "name": "one character over the control size limit",
+      "file": "pv2-big.json",
+      "text": "{\"v\":2,\"id\":\"pv2-big\",\"op\":\"health\"}",
+      "padTo": 64001,
+      "expect": {
+        "rejected": {
+          "id": "pv2-big",
+          "code": "E_REQUEST_TOO_LARGE",
+          "cause": "oversized"
+        }
+      },
+      "probe": true
+    },
+    {
+      "name": "exactly at the control size limit",
+      "file": "c19b.json",
+      "text": "{\"v\":2,\"id\":\"c19b\",\"op\":\"health\"}",
+      "padTo": 64000,
+      "expect": {
+        "valid": {
+          "op": "health",
+          "id": "c19b"
+        }
+      }
+    },
+    {
+      "name": "control nesting depth 25",
+      "file": "c19c.json",
+      "text": "{\"v\":2,\"id\":\"c19c\",\"op\":\"health\",\"x\":[[[[[[[[[[[[[[[[[[[[[[[[]]]]]]]]]]]]]]]]]]]]]]]]}",
+      "expect": {
+        "rejected": {
+          "id": "c19c",
+          "code": "E_TRANSPORT_MALFORMED",
+          "cause": "too deep"
+        }
+      }
+    },
+    {
+      "name": "ask, trimmed",
+      "file": "c20.json",
+      "text": "{\"v\":2,\"id\":\"c20\",\"op\":\"ask\",\"question\":\" 继续吗？ \",\"options\":[\" 是 \",\"否\"]}",
+      "expect": {
+        "valid": {
+          "op": "ask",
+          "id": "c20",
+          "question": "继续吗？",
+          "options": [
+            "是",
+            "否"
+          ],
+          "timeoutMs": 60000
+        }
+      }
+    },
+    {
+      "name": "ask trims ideographic spaces",
+      "file": "c21.json",
+      "text": "{\"v\":2,\"id\":\"c21\",\"op\":\"ask\",\"question\":\"　问　\",\"options\":[\"a\",\"　b\"]}",
+      "expect": {
+        "valid": {
+          "op": "ask",
+          "id": "c21",
+          "question": "问",
+          "options": [
+            "a",
+            "b"
+          ],
+          "timeoutMs": 60000
+        }
+      }
+    },
+    {
+      "name": "ask timeout below the minimum is raised",
+      "file": "c22.json",
+      "text": "{\"v\":2,\"id\":\"c22\",\"op\":\"ask\",\"question\":\"q\",\"options\":[\"a\",\"b\"],\"timeoutMs\":100}",
+      "expect": {
+        "valid": {
+          "op": "ask",
+          "id": "c22",
+          "question": "q",
+          "options": [
+            "a",
+            "b"
+          ],
+          "timeoutMs": 5000
+        }
+      }
+    },
+    {
+      "name": "ask timeout above the maximum is capped",
+      "file": "c22b.json",
+      "text": "{\"v\":2,\"id\":\"c22b\",\"op\":\"ask\",\"question\":\"q\",\"options\":[\"a\",\"b\",\"c\"],\"timeoutMs\":999999}",
+      "expect": {
+        "valid": {
+          "op": "ask",
+          "id": "c22b",
+          "question": "q",
+          "options": [
+            "a",
+            "b",
+            "c"
+          ],
+          "timeoutMs": 120000
+        }
+      }
+    },
+    {
+      "name": "ask with one option",
+      "file": "pv2-ask1.json",
+      "text": "{\"v\":2,\"id\":\"pv2-ask1\",\"op\":\"ask\",\"question\":\"q\",\"options\":[\"a\"]}",
+      "expect": {
+        "rejected": {
+          "id": "pv2-ask1",
+          "code": "E_TRANSPORT_MALFORMED",
+          "cause": "options count"
+        }
+      },
+      "probe": true
+    },
+    {
+      "name": "ask with four options",
+      "file": "c24.json",
+      "text": "{\"v\":2,\"id\":\"c24\",\"op\":\"ask\",\"question\":\"q\",\"options\":[\"a\",\"b\",\"c\",\"d\"]}",
+      "expect": {
+        "rejected": {
+          "id": "c24",
+          "code": "E_TRANSPORT_MALFORMED",
+          "cause": "options count"
+        }
+      }
+    },
+    {
+      "name": "ask options that are numbers",
+      "file": "c25.json",
+      "text": "{\"v\":2,\"id\":\"c25\",\"op\":\"ask\",\"question\":\"q\",\"options\":[1,2]}",
+      "expect": {
+        "rejected": {
+          "id": "c25",
+          "code": "E_TRANSPORT_MALFORMED",
+          "cause": "options shape"
+        }
+      }
+    },
+    {
+      "name": "ask blank option",
+      "file": "c26.json",
+      "text": "{\"v\":2,\"id\":\"c26\",\"op\":\"ask\",\"question\":\"q\",\"options\":[\"a\",\"  \"]}",
+      "expect": {
+        "rejected": {
+          "id": "c26",
+          "code": "E_TRANSPORT_MALFORMED",
+          "cause": "option text"
+        }
+      }
+    },
+    {
+      "name": "ask option of 61 characters",
+      "file": "c27.json",
+      "text": "{\"v\":2,\"id\":\"c27\",\"op\":\"ask\",\"question\":\"q\",\"options\":[\"a\",\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\"]}",
+      "expect": {
+        "rejected": {
+          "id": "c27",
+          "code": "E_TRANSPORT_MALFORMED",
+          "cause": "option text"
+        }
+      }
+    },
+    {
+      "name": "ask option of 60 characters",
+      "file": "c27b.json",
+      "text": "{\"v\":2,\"id\":\"c27b\",\"op\":\"ask\",\"question\":\"q\",\"options\":[\"a\",\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\"]}",
+      "expect": {
+        "valid": {
+          "op": "ask",
+          "id": "c27b",
+          "question": "q",
+          "options": [
+            "a",
+            "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+          ],
+          "timeoutMs": 60000
+        }
+      }
+    },
+    {
+      "name": "ask empty question",
+      "file": "c28.json",
+      "text": "{\"v\":2,\"id\":\"c28\",\"op\":\"ask\",\"question\":\"   \",\"options\":[\"a\",\"b\"]}",
+      "expect": {
+        "rejected": {
+          "id": "c28",
+          "code": "E_TRANSPORT_MALFORMED",
+          "cause": "question"
+        }
+      }
+    },
+    {
+      "name": "ask question of 201 characters",
+      "file": "c28b.json",
+      "text": "{\"v\":2,\"id\":\"c28b\",\"op\":\"ask\",\"question\":\"qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq\",\"options\":[\"a\",\"b\"]}",
+      "expect": {
+        "rejected": {
+          "id": "c28b",
+          "code": "E_TRANSPORT_MALFORMED",
+          "cause": "question"
+        }
+      }
+    },
+    {
+      "name": "ask question of 200 characters",
+      "file": "c28c.json",
+      "text": "{\"v\":2,\"id\":\"c28c\",\"op\":\"ask\",\"question\":\"qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq\",\"options\":[\"a\",\"b\"]}",
+      "expect": {
+        "valid": {
+          "op": "ask",
+          "id": "c28c",
+          "question": "qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq",
+          "options": [
+            "a",
+            "b"
+          ],
+          "timeoutMs": 60000
+        }
+      }
+    },
+    {
+      "name": "ask options missing",
+      "file": "c29.json",
+      "text": "{\"v\":2,\"id\":\"c29\",\"op\":\"ask\",\"question\":\"q\"}",
+      "expect": {
+        "rejected": {
+          "id": "c29",
+          "code": "E_TRANSPORT_MALFORMED",
+          "cause": "options"
+        }
+      }
+    },
+    {
+      "name": "ask options as an object",
+      "file": "c29b.json",
+      "text": "{\"v\":2,\"id\":\"c29b\",\"op\":\"ask\",\"question\":\"q\",\"options\":{\"a\":1}}",
+      "expect": {
+        "rejected": {
+          "id": "c29b",
+          "code": "E_TRANSPORT_MALFORMED",
+          "cause": "options"
+        }
+      }
+    },
+    {
+      "name": "ask numeric question",
+      "file": "c30.json",
+      "text": "{\"v\":2,\"id\":\"c30\",\"op\":\"ask\",\"question\":123,\"options\":[\"a\",\"b\"]}",
+      "expect": {
+        "valid": {
+          "op": "ask",
+          "id": "c30",
+          "question": "123",
+          "options": [
+            "a",
+            "b"
+          ],
+          "timeoutMs": 60000
+        }
+      }
+    }
+  ],
+  "csharpOnly": {
+    "request": [
+      {
+        "name": "id null is the string \"null\" (libcore)",
+        "file": "null.json",
+        "text": "{\"v\":1,\"id\":null,\"capability\":\"ui.snapshot\",\"args\":{}}",
+        "expect": {
+          "valid": {
+            "id": "null",
+            "sentAtMs": 0,
+            "capability": "ui.snapshot",
+            "args": {},
+            "timeoutMs": 90000
+          }
+        },
+        "why": "libcore optString(null) = \"null\"; Maven gives \"\""
+      },
+      {
+        "name": "duplicate name, last one wins (libcore)",
+        "file": "dup.json",
+        "text": "{\"v\":1,\"id\":\"x\",\"id\":\"dup\",\"capability\":\"ui.snapshot\",\"args\":{}}",
+        "expect": {
+          "valid": {
+            "id": "dup",
+            "sentAtMs": 0,
+            "capability": "ui.snapshot",
+            "args": {},
+            "timeoutMs": 90000
+          }
+        },
+        "why": "Maven org.json throws on duplicate keys"
+      },
+      {
+        "name": "version string with spaces (libcore parseDouble trims)",
+        "file": "sp.json",
+        "text": "{\"v\":\" 1 \",\"id\":\"sp\",\"capability\":\"ui.snapshot\",\"args\":{}}",
+        "expect": {
+          "valid": {
+            "id": "sp",
+            "sentAtMs": 0,
+            "capability": "ui.snapshot",
+            "args": {},
+            "timeoutMs": 90000
+          }
+        },
+        "why": "Maven stringToNumber does not trim"
+      },
+      {
+        "name": "version string with a d suffix (Java parseDouble)",
+        "file": "dsuf.json",
+        "text": "{\"v\":\"1d\",\"id\":\"dsuf\",\"capability\":\"ui.snapshot\",\"args\":{}}",
+        "expect": {
+          "valid": {
+            "id": "dsuf",
+            "sentAtMs": 0,
+            "capability": "ui.snapshot",
+            "args": {},
+            "timeoutMs": 90000
+          }
+        },
+        "why": "Java Double.parseDouble accepts a type suffix"
+      },
+      {
+        "name": "single quotes are not JSON",
+        "file": "sq.json",
+        "text": "{'v':1,'id':'sq','capability':'ui.snapshot','args':{}}",
+        "expect": {
+          "rejected": {
+            "id": "sq",
+            "code": "E_TRANSPORT_MALFORMED",
+            "cause": "not an object"
+          }
+        },
+        "why": "deliberate: C# parses strict JSON only; org.json accepts single quotes"
+      },
+      {
+        "name": "text after the object",
+        "file": "tail.json",
+        "text": "{\"v\":1,\"id\":\"tail\",\"capability\":\"ui.snapshot\",\"args\":{}} x",
+        "expect": {
+          "rejected": {
+            "id": "tail",
+            "code": "E_TRANSPORT_MALFORMED",
+            "cause": "not an object"
+          }
+        },
+        "why": "deliberate: C# parses strict JSON only; org.json ignores trailing text"
+      },
+      {
+        "name": "comment",
+        "file": "cm.json",
+        "text": "{\"v\":1,/*c*/\"id\":\"cm\",\"capability\":\"ui.snapshot\",\"args\":{}}",
+        "expect": {
+          "rejected": {
+            "id": "cm",
+            "code": "E_TRANSPORT_MALFORMED",
+            "cause": "not an object"
+          }
+        },
+        "why": "deliberate: C# parses strict JSON only; libcore org.json skips comments"
+      }
+    ]
+  }
+}

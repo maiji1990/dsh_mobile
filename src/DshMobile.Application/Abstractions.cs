@@ -61,6 +61,12 @@ public sealed class MigrationOptions
     /// </summary>
     public SliceMode UiTools { get; set; } = SliceMode.LegacyWithShadow;
 
+    /// <summary>
+    /// Relay mailbox envelope decoding (PR-07 second segment): a developer-run probe writes always-rejected requests into
+    /// the live legacy Relay's mailbox and compares its answers with the C# decoder. Decoding stays legacy.
+    /// </summary>
+    public SliceMode RelayEnvelopeCodec { get; set; } = SliceMode.LegacyWithShadow;
+
     /// <summary>Host-path probe for the extractor; null = the real filesystem (the right choice on a device).</summary>
     public Func<string, bool>? HostPathExists { get; set; }
 }
