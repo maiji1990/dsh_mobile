@@ -119,7 +119,49 @@ public sealed class AutomationActivity : Activity
             var runtime = _bridge.Runtime;
             var preference = StoredSurfacePreference();
             _ = Task.Run(() => runtime.ShadowRelaySurface(preference, (int)Android.OS.Build.VERSION.SdkInt));
+            // PR-07 segment 5 shadow (read-only): Relay's published system state / tier / ceiling against the C# gate.
+            var device = RelayDevice();
+            var readPref = RelayPrefReader();
+            _ = Task.Run(() => runtime.ShadowRelayGate(device, readPref));
         }
+    }
+
+    /// <summary>
+    /// What Android tells this app directly about the facts Relay's system-state probe reads (upstream
+    /// <c>SystemStateProbe</c>): the Settings lists, the runtime permissions the capability table names, the
+    /// microphone app-op. Whether a service is bound right now is the legacy process's and is not read here.
+    /// </summary>
+    private RelayDeviceFacts RelayDevice()
+    {
+        var package = PackageName!;
+        bool Listed(string key) =>
+            (Android.Provider.Settings.Secure.GetString(ContentResolver, key) ?? "")
+                .Split(':').Any(c => c.Contains(package, StringComparison.OrdinalIgnoreCase));
+        var granted = RelayProtocol.Capabilities.SelectMany(RelayGatePolicy.RuntimePermissionsOf).Distinct()
+            .Where(p => CheckSelfPermission(p) == Android.Content.PM.Permission.Granted)
+            .ToHashSet(StringComparer.Ordinal);
+        var micBlocked = false;
+        try
+        {
+            var ops = (Android.App.AppOpsManager?)GetSystemService(AppOpsService);
+#pragma warning disable CA1422 // same deprecated call as upstream (its replacement needs Android 14+)
+            micBlocked = ops?.UnsafeCheckOpNoThrow(Android.App.AppOpsManager.OpstrRecordAudio!, Android.OS.Process.MyUid(), package)
+                == Android.App.AppOpsManagerMode.Ignored;
+#pragma warning restore CA1422
+        }
+        catch (Java.Lang.Exception)
+        {
+            // Upstream: getOrDefault(MODE_ALLOWED).
+        }
+        return new RelayDeviceFacts((int)Android.OS.Build.VERSION.SdkInt, Listed("enabled_accessibility_services"),
+            Listed("enabled_notification_listeners"), granted, micBlocked);
+    }
+
+    /// <summary>Reads Relay's private "relay" preferences (tiers, surface preference); never writes.</summary>
+    private Func<string, string?> RelayPrefReader()
+    {
+        var prefs = GetSharedPreferences(RelaySurfaces.PrefsFile, FileCreationMode.Private)!;
+        return key => prefs.GetString(key, null);
     }
 
     /// <summary>Relay's stored preference (upstream <c>SurfacePreferences</c>: "relay" prefs, null = never set).</summary>
@@ -197,11 +239,15 @@ public sealed class AutomationActivity : Activity
         var package = PackageName!;
         var preference = StoredSurfacePreference();
         var sdk = (int)Android.OS.Build.VERSION.SdkInt;
+        var device = RelayDevice();
+        var readPref = RelayPrefReader();
         var reports = await Task.Run(async () => new[]
         {
             await runtime.ShadowRelayEnvelopeAsync(TimeSpan.FromSeconds(20), CancellationToken.None),
             await runtime.ShadowRelayAdmissionAsync(package, TimeSpan.FromSeconds(20), CancellationToken.None),
             runtime.ShadowRelaySurface(preference, sdk),
+            runtime.ShadowRelayGate(device, readPref),
+            await runtime.ShadowRelayGateProbeAsync(device, readPref, package, TimeSpan.FromSeconds(20), CancellationToken.None),
         });
         Enable(true);
         _output.Text = reports.All(r => r is null)

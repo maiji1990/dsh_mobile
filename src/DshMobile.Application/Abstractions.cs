@@ -81,6 +81,13 @@ public sealed class MigrationOptions
     /// </summary>
     public SliceMode RelaySurface { get; set; } = SliceMode.LegacyWithShadow;
 
+    /// <summary>
+    /// PR-07 segment 5 (approval gate decision, not the prompt): shadow compares the live Relay's published system state,
+    /// tier and ceiling per capability with the C# probe / tier store, and a developer-run probe sends two read-only calls
+    /// the gate must refuse for a missing system permission (only when accessibility is off). The gate stays legacy.
+    /// </summary>
+    public SliceMode RelayGate { get; set; } = SliceMode.LegacyWithShadow;
+
     /// <summary>Host-path probe for the extractor; null = the real filesystem (the right choice on a device).</summary>
     public Func<string, bool>? HostPathExists { get; set; }
 }

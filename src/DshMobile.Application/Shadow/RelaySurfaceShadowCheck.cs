@@ -129,7 +129,7 @@ public static class RelaySurfaceShadowCheck
         : d.DegradedFrom is { } f ? $"{d.Surface.Wire()} (from {f.Wire()}: {d.Reason})"
         : d.Surface.Wire();
 
-    private static bool TryShizuku(JsonElement root, out bool running, out bool bound, out bool alive, out long displayId)
+    internal static bool TryShizuku(JsonElement root, out bool running, out bool bound, out bool alive, out long displayId)
     {
         running = bound = alive = false;
         displayId = -1;
@@ -151,9 +151,9 @@ public static class RelaySurfaceShadowCheck
         return true;
     }
 
-    private static string? Str(JsonElement o, string name) =>
+    internal static string? Str(JsonElement o, string name) =>
         o.TryGetProperty(name, out var p) && p.ValueKind == JsonValueKind.String ? p.GetString() : null;
 
-    private static bool? Bool(JsonElement o, string name) =>
+    internal static bool? Bool(JsonElement o, string name) =>
         o.TryGetProperty(name, out var p) && p.ValueKind is JsonValueKind.True or JsonValueKind.False ? p.GetBoolean() : null;
 }

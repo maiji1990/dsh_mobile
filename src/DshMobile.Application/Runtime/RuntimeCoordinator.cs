@@ -502,6 +502,65 @@ public sealed class RuntimeCoordinator : IDisposable
     }
 
     /// <summary>
+    /// PR-07 segment 5 shadow (read-only): Relay's published per-capability system state, tier and ceiling against the
+    /// C# probe and tier store. <paramref name="readRelayPref"/> reads Relay's "relay" preferences. Null when not in
+    /// shadow mode.
+    /// </summary>
+    public ShadowReport? ShadowRelayGate(RelayDeviceFacts device, Func<string, string?> readRelayPref)
+    {
+        if (_options.RelayGate != SliceMode.LegacyWithShadow || _layout is null)
+        {
+            return null;
+        }
+        ShadowReport report;
+        try
+        {
+            report = RelayGateShadowCheck.Compare(ReadCapabilities(), device, readRelayPref, UiToolsShadowCheck.AllowedWire, _time.GetUtcNow());
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            report = new ShadowReport(RelayGateShadowCheck.Slice, _time.GetUtcNow(), ShadowVerdict.Inconclusive, false, null, true,
+                ex.GetType().Name, $"could not read capabilities.json: {ex.Message}", 0);
+        }
+        _shadow.Report(report);
+        _log.Note($"shadow {report.Slice}: {report.Verdict} ({report.Detail})");
+        return report;
+    }
+
+    /// <summary>
+    /// PR-07 segment 5 shadow (developer action, needs a running relay, runs only while accessibility is off): two
+    /// read-only calls the gate must refuse before any prompt, answers compared byte for byte. Null when not in shadow mode.
+    /// </summary>
+    public async Task<ShadowReport?> ShadowRelayGateProbeAsync(RelayDeviceFacts device, Func<string, string?> readRelayPref, string selfPackage,
+        TimeSpan timeout, CancellationToken ct)
+    {
+        if (_options.RelayGate != SliceMode.LegacyWithShadow || _layout is null)
+        {
+            return null;
+        }
+        ShadowReport report;
+        try
+        {
+            report = await RelayGateShadowCheck.RunProbeAsync(_layout.PilotEntryDir, ReadCapabilities(), device, readRelayPref, selfPackage,
+                UiToolsShadowCheck.AllowedWire, _time, timeout, ct).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            report = new ShadowReport(RelayGateShadowCheck.Slice, _time.GetUtcNow(), ShadowVerdict.Inconclusive, false, null, true,
+                ex.GetType().Name, $"probe could not use the mailbox: {ex.Message}", 0);
+        }
+        _shadow.Report(report);
+        _log.Note($"shadow {report.Slice}: {report.Verdict} ({report.Detail})");
+        return report;
+    }
+
+    private string? ReadCapabilities()
+    {
+        var path = Path.Combine(_layout!.PilotEntryDir, "capabilities.json");
+        return File.Exists(path) ? File.ReadAllText(path) : null;
+    }
+
+    /// <summary>
     /// PR-05 C# path (developer opt-in, per call): <c>dsh plugin add/remove</c> through the C# PRoot launcher with the
     /// ported install guard — an install that exits 0 but added a package that cannot load is rolled back (only the
     /// packages this install added); a remove is checked against the profile's dependencies afterwards.

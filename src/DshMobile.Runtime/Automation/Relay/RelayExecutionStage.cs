@@ -55,6 +55,29 @@ public sealed class RelayExecutionStage
     }
 
     /// <summary>
+    /// Upstream <c>finishAfterGate</c>: a gate refusal is answered with <c>"&lt;code&gt;/&lt;decision label&gt;"</c> (plus the
+    /// dead-end hint for <c>E_GATE_NO_FOREGROUND</c> when the host has one); an allowed call goes on to the quota.
+    /// Null means dispatch.
+    /// </summary>
+    public RelayResponse? AfterGate(RelayRequest request, SurfaceDecision decision, GateResult gate, long elapsedMs = 0, string? deadEndHint = null)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(decision);
+        ArgumentNullException.ThrowIfNull(gate);
+        if (gate.Allowed)
+        {
+            return AfterGate(request, decision, gate.RequiresApproval, elapsedMs);
+        }
+        var error = gate.Error ?? RelayError.GateHostDenied;
+        var reason = error.Code + "/" + gate.DecisionLabel;
+        if (error == RelayError.GateNoForeground && deadEndHint is not null)
+        {
+            reason += "; " + deadEndHint;
+        }
+        return RelayAdmission.Rejected(request.Id, error, reason, request.Capability, elapsedMs, decision.Surface, decision.DegradedFrom);
+    }
+
+    /// <summary>
     /// After the gate allowed the call: the execution quota. <paramref name="requiresApproval"/> is the gate's
     /// <c>requiresApproval</c>; such calls are not charged here. Null means dispatch.
     /// </summary>
