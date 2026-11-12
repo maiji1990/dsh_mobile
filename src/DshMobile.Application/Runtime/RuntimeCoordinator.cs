@@ -474,6 +474,34 @@ public sealed class RuntimeCoordinator : IDisposable
     }
 
     /// <summary>
+    /// PR-07 segment 4 shadow (read-only): Relay's published per-capability surface decision against the C# surface
+    /// policy, from the same preference and device facts. <paramref name="preferenceRaw"/> is Relay's stored
+    /// <c>surface_preference</c> (null = never set). Null when not in shadow mode.
+    /// </summary>
+    public ShadowReport? ShadowRelaySurface(string? preferenceRaw, int sdkInt)
+    {
+        if (_options.RelaySurface != SliceMode.LegacyWithShadow || _layout is null)
+        {
+            return null;
+        }
+        var path = Path.Combine(_layout.PilotEntryDir, "capabilities.json");
+        ShadowReport report;
+        try
+        {
+            var text = File.Exists(path) ? File.ReadAllText(path) : null;
+            report = RelaySurfaceShadowCheck.Compare(text, preferenceRaw, sdkInt, UiToolsShadowCheck.AllowedWire, _time.GetUtcNow());
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            report = new ShadowReport(RelaySurfaceShadowCheck.Slice, _time.GetUtcNow(), ShadowVerdict.Inconclusive, false, null, true,
+                ex.GetType().Name, $"could not read {path}: {ex.Message}", 0);
+        }
+        _shadow.Report(report);
+        _log.Note($"shadow {report.Slice}: {report.Verdict} ({report.Detail})");
+        return report;
+    }
+
+    /// <summary>
     /// PR-05 C# path (developer opt-in, per call): <c>dsh plugin add/remove</c> through the C# PRoot launcher with the
     /// ported install guard — an install that exits 0 but added a package that cannot load is rolled back (only the
     /// packages this install added); a remove is checked against the profile's dependencies afterwards.

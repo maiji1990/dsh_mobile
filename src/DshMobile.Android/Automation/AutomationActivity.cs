@@ -3,6 +3,7 @@ using Android.Views;
 using DshMobile.App.Bridge;
 using DshMobile.Application.Shadow;
 using DshMobile.Core.Bridge;
+using DshMobile.Runtime.Automation.Relay;
 
 namespace DshMobile.App.Automation;
 
@@ -19,6 +20,7 @@ public sealed class AutomationActivity : Activity
     private TextView _status = null!;
     private TextView _output = null!;
     private Button[] _buttons = [];
+    private Button _surfacePref = null!;
 
     protected override void OnCreate(Bundle? savedInstanceState)
     {
@@ -49,7 +51,15 @@ public sealed class AutomationActivity : Activity
         // PR-07 segment 2 shadow, developer action: only always-rejected requests, never anything that reaches approval.
         var probe = Make(Resource.String.automation_envelope_probe, () => _ = EnvelopeProbeAsync());
         root.AddView(probe);
-        _buttons = [start, stop, selftest, probe];
+        // PR-07 segment 4, developer action: Relay's own stored surface preference (the setting upstream's UI writes),
+        // so the fallback path of the surface shadow can be checked. It never grants anything: without Shizuku and a
+        // trusted display, "background preferred" falls back to the foreground and Relay says so.
+        _surfacePref = new Button(this);
+        _surfacePref.SetMinHeight((int)(48 * Resources!.DisplayMetrics!.Density));
+        _surfacePref.Click += (_, _) => ToggleSurfacePreference();
+        ShowSurfacePreference();
+        root.AddView(_surfacePref);
+        _buttons = [start, stop, selftest, probe, _surfacePref];
 
         _output = new TextView(this) { TextSize = 11 };
         _output.SetTextIsSelectable(true);
@@ -103,6 +113,42 @@ public sealed class AutomationActivity : Activity
             var package = PackageName!;
             _ = Task.Run(() => runtime.ShadowUiTools(legacy, enabled, package));
         }
+        if (s.ChannelRunning)
+        {
+            // PR-07 segment 4 shadow (read-only): Relay's published surface decision against the C# policy.
+            var runtime = _bridge.Runtime;
+            var preference = StoredSurfacePreference();
+            _ = Task.Run(() => runtime.ShadowRelaySurface(preference, (int)Android.OS.Build.VERSION.SdkInt));
+        }
+    }
+
+    /// <summary>Relay's stored preference (upstream <c>SurfacePreferences</c>: "relay" prefs, null = never set).</summary>
+    private string? StoredSurfacePreference() =>
+        GetSharedPreferences(RelaySurfaces.PrefsFile, FileCreationMode.Private)!
+            .GetString(RelaySurfaces.PreferenceKey, null);
+
+    private SurfacePreference CurrentSurfacePreference() =>
+        RelaySurfaces.ParsePreference(StoredSurfacePreference());
+
+    private string SurfacePreferenceLabel(SurfacePreference p) =>
+        GetString(p == SurfacePreference.BackgroundPreferred
+            ? Resource.String.automation_surface_pref_bg
+            : Resource.String.automation_surface_pref_fg);
+
+    private void ShowSurfacePreference() =>
+        _surfacePref.Text = GetString(Resource.String.automation_surface_pref, new Java.Lang.String(SurfacePreferenceLabel(CurrentSurfacePreference())));
+
+    private void ToggleSurfacePreference()
+    {
+        var next = CurrentSurfacePreference() == SurfacePreference.BackgroundPreferred
+            ? SurfacePreference.Foreground
+            : SurfacePreference.BackgroundPreferred;
+        var editor = GetSharedPreferences(RelaySurfaces.PrefsFile, FileCreationMode.Private)!.Edit()!;
+        editor.PutString(RelaySurfaces.PreferenceKey, next.Name());
+        editor.Commit();
+        ShowSurfacePreference();
+        _output.Text = GetString(Resource.String.automation_surface_pref_changed, new Java.Lang.String(SurfacePreferenceLabel(next)));
+        _bridge.Note($"relay surface preference -> {next.Name()} (developer)");
     }
 
     /// <summary>Says plainly whether DSH has the ui_* tools now; never implies they are live when DSH has not reloaded.</summary>
@@ -149,10 +195,13 @@ public sealed class AutomationActivity : Activity
         _output.Text = GetString(Resource.String.automation_envelope_probe_running);
         var runtime = _bridge.Runtime;
         var package = PackageName!;
+        var preference = StoredSurfacePreference();
+        var sdk = (int)Android.OS.Build.VERSION.SdkInt;
         var reports = await Task.Run(async () => new[]
         {
             await runtime.ShadowRelayEnvelopeAsync(TimeSpan.FromSeconds(20), CancellationToken.None),
             await runtime.ShadowRelayAdmissionAsync(package, TimeSpan.FromSeconds(20), CancellationToken.None),
+            runtime.ShadowRelaySurface(preference, sdk),
         });
         Enable(true);
         _output.Text = reports.All(r => r is null)

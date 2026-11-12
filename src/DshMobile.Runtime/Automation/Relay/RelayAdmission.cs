@@ -104,9 +104,13 @@ public sealed class RelayAdmission
         return null;
     }
 
-    /// <summary>Upstream <c>rejected()</c>: no surface yet, retry policy only when the capability is known.</summary>
-    public static RelayResponse Rejected(string id, RelayError error, string detail, string? capability, long elapsedMs) =>
-        new(id, false, null, [], null, null, detail, error, elapsedMs,
+    /// <summary>
+    /// Upstream <c>rejected()</c>: retry policy only when the capability is known; the surface (and what it fell back
+    /// from) only once the surface policy has decided.
+    /// </summary>
+    public static RelayResponse Rejected(string id, RelayError error, string detail, string? capability, long elapsedMs,
+        SurfaceKind? surface = null, SurfaceKind? degradedFrom = null) =>
+        new(id, false, null, [], surface, degradedFrom, detail, error, elapsedMs,
             RetryPolicy: capability is null ? null : RelaySemantics.RetryPolicyOf(capability),
             EffectState: RelaySemantics.EffectStateFor(false, error),
             ConsentKind: RelaySemantics.ConsentKindFor(error));

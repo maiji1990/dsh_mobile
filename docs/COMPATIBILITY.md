@@ -315,3 +315,7 @@ APK SHA-256 `a084dc5fb2559bea84d04caef8050b63f8006f23f7dc8dd639f08c41b9a2a392`�
 ## ADR-0007 迁移 · Relay 审批前准入与回包编码（PR-07 第三段，只读影子）真机记录 — 2026-11-12
 
 「协议信封比对（开发者）」现在先发第二段的 16 条解码必拒请求、再发 12 条合法信封但准入必拒的请求，旧 Relay 回包与 C# 回包逐字节比对（只归一 `elapsedMs`）：两轮 **16/16 + 12/12 逐字节一致**；中继未开时 Inconclusive；期间无审批通知。详见 [证据](../migration/parity/2026-11-12-PTP-AN10-A17-relay-admission.md)。
+
+## ADR-0007 迁移 · Relay 执行面裁决与执行配额（PR-07 第四段，只读影子）真机记录 — 2026-11-12
+
+「协议信封比对（开发者）」在第二、三段两组请求之后，再只读比对 Relay 发布的执行面裁决（`files/pilot/capabilities.json`）与 C# `SurfacePolicy`：前台偏好两次、优先后台一次 **Agree**（无 Shizuku 时旧 Relay 发布 `E_SURFACE_NO_SHELL` 退回前台，C# 一致）；不写信箱、不弹审批。无障碍未开时落点未实比；可信屏、需要指定模式、执行配额只有向量证据。详见 [证据](../migration/parity/2026-11-12-PTP-AN10-A17-relay-surface.md)。

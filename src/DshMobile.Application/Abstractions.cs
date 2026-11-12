@@ -74,6 +74,13 @@ public sealed class MigrationOptions
     /// </summary>
     public SliceMode RelayAdmission { get; set; } = SliceMode.LegacyWithShadow;
 
+    /// <summary>
+    /// PR-07 segment 4 (execution surface and execution quota): shadow reads the live Relay's published surface
+    /// decision (<c>files/pilot/capabilities.json</c>) and compares it with the C# surface policy. Read-only; the
+    /// decision and the quota stay legacy.
+    /// </summary>
+    public SliceMode RelaySurface { get; set; } = SliceMode.LegacyWithShadow;
+
     /// <summary>Host-path probe for the extractor; null = the real filesystem (the right choice on a device).</summary>
     public Func<string, bool>? HostPathExists { get; set; }
 }
