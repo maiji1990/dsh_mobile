@@ -13,21 +13,28 @@ namespace DshMobile.Application.Tests;
 /// </summary>
 public class PtyProbeTests
 {
+    /// <summary>Timeout scale for tests that wait the timeouts out (the failure paths).</summary>
     private const double Fast = 0.05;
 
-    private static Task<PtyProbeReport> Probe(FakeShell shell) =>
+    /// <summary>
+    /// Timeout scale for the passing path: timeouts are upper bounds, so a healthy run still finishes quickly, but at
+    /// 0.05 the ^C step allowed only 400 ms and failed on a busy CI runner (xUnit runs classes in parallel).
+    /// </summary>
+    private const double Roomy = 0.5;
+
+    private static Task<PtyProbeReport> Probe(FakeShell shell, double scale = Fast) =>
         PtyProbe.RunAsync(
             _ => Task.FromResult(new ProotPtySession(shell, "test-pty", ["proot", "/usr/bin/bash"])),
             _ => [4243],
             _ => !shell.Exited,
             CancellationToken.None,
-            Fast);
+            scale);
 
     [Fact]
     public async Task WellBehavedShell_PassesEveryStep_AndExitsByItself()
     {
         var shell = new FakeShell();
-        var r = await Probe(shell);
+        var r = await Probe(shell, Roomy);
         Assert.True(r.Ok, r.Summary);
         Assert.Equal(["open", "prompt", "tty", "resize", "ctrl-c", "exit", "no-orphans"], r.Steps.Select(s => s.Name));
         Assert.All(r.Steps, s => Assert.True(s.Ok, s.Name));
