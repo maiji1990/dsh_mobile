@@ -40,7 +40,8 @@ public sealed class RuntimeCoordinator : IDisposable
         IShadowReportSink shadow,
         MigrationOptions options,
         TimeProvider? time = null,
-        RuntimeLayout? layout = null)
+        RuntimeLayout? layout = null,
+        PtyOpener? terminalOpener = null)
     {
         _runtime = runtime;
         State = state;
@@ -50,6 +51,33 @@ public sealed class RuntimeCoordinator : IDisposable
         _options = options;
         _time = time ?? TimeProvider.System;
         _layout = layout;
+        Terminals = terminalOpener is not null ? new TerminalSessions(terminalOpener, log.Note)
+            : layout is null ? null : new TerminalSessions(
+            async (rows, columns, ct) =>
+            {
+                // Like the legacy TerminalController.newSession: make the app uid known to the guest first.
+                var user = GuestUser.Provision(Path.Combine(layout.RuntimeCurrentDir, "base"));
+                if (user == GuestUser.Outcome.Updated)
+                {
+                    _log.Note($"{TerminalSessions.Slice}: guest passwd entry written for {GuestUser.UserName}");
+                }
+                return await new ProotGuestProcess(layout).OpenPtyAsync(new GuestExecutionOptions(), rows, columns, ct).ConfigureAwait(false);
+            },
+            log.Note);
+    }
+
+    /// <summary>
+    /// PR-06: the C#-owned terminal sessions (developer opt-in screen). Closed whenever the runtime stops, at the same
+    /// point the legacy <c>sandbox.stop</c> stops its terminal shells. Null without a runtime layout (or a test opener).
+    /// </summary>
+    public TerminalSessions? Terminals { get; }
+
+    private async Task CloseTerminalsAsync()
+    {
+        if (Terminals is not null && await Terminals.CloseAllAsync().ConfigureAwait(false) is var n and > 0)
+        {
+            _log.Note($"{TerminalSessions.Slice}: closed {n} session(s) on stop");
+        }
     }
 
     /// <summary>Where the legacy installer puts the layers; required for the layer-extraction shadow.</summary>
@@ -151,7 +179,10 @@ public sealed class RuntimeCoordinator : IDisposable
             await SyncAsync(ct).ConfigureAwait(false);
             if (State.Current.State is RuntimeState.Ready or RuntimeState.NotInstalled)
             {
-                // Nothing runs, so releasing the service cannot orphan anything (and frees a stale one).
+                // The C# terminal opens its own PRoot shells without a started sandbox, so they can be the only thing
+                // running here (device run 2026-11-12: two shells survived "stop: nothing running"). Close them too;
+                // then nothing runs, so releasing the service cannot orphan anything (and frees a stale one).
+                await CloseTerminalsAsync().ConfigureAwait(false);
                 _foreground.Release();
                 _log.Note("stop: nothing running");
                 return new RuntimeStartResult(true, RuntimeErrorCodes.Ok, "already stopped", State.Current);
@@ -162,6 +193,7 @@ public sealed class RuntimeCoordinator : IDisposable
             }
             var dsh = await _runtime.StopHarnessAsync(ct).ConfigureAwait(false);
             _log.Note($"dsh.stop: {Describe(dsh)}");
+            await CloseTerminalsAsync().ConfigureAwait(false);
             var sandbox = await _runtime.StopSandboxAsync(ct).ConfigureAwait(false);
             _log.Note($"sandbox.stop: {Describe(sandbox)}");
             var stopped = dsh.Ok && sandbox.Ok && sandbox.Snapshot.State is RuntimeState.Ready or RuntimeState.NotInstalled;
@@ -447,7 +479,9 @@ public sealed class RuntimeCoordinator : IDisposable
         if (_layout is not null && !OperatingSystem.IsWindows() && DshMobile.Runtime.Supervision.ProcessTable.Read() is { } procs)
         {
             sw.Restart();
+            var csharpOwned = Terminals?.Pids ?? [];
             var sessions = procs.ChildrenOf(Environment.ProcessId)
+                .Where(pid => !csharpOwned.Contains(pid))
                 .Select(procs.Argv)
                 .Where(a => a is not null && TerminalArgvShadowCheck.IsTerminalShell(a))
                 .Select(a => a!)
@@ -532,6 +566,7 @@ public sealed class RuntimeCoordinator : IDisposable
     private async Task<RuntimeStartResult> StopCSharpHostAsync(DshHost host, CancellationToken ct)
     {
         State.TryTransition(RuntimeState.Stopping, "stop requested (csharp host)");
+        await CloseTerminalsAsync().ConfigureAwait(false);
         var r = await host.StopAsync(ct).ConfigureAwait(false);
         _log.Note(r.Ok ? "csharp host: stopped, no marker process left" : $"csharp host: stop FAILED {r.Code}: {r.Message}");
         if (!r.Ok)

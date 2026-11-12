@@ -93,6 +93,17 @@ public class MainActivity : Activity
         openDsh.Click += (_, _) => StartActivity(new Android.Content.Intent(this, typeof(DshWebActivity)));
         files.Click += (_, _) => StartActivity(new Android.Content.Intent(this, typeof(FilesActivity)));
         terminal.Click += (_, _) => StartActivity(new Android.Content.Intent(this, typeof(DshMobile.App.Terminal.TerminalActivity)));
+        // Developer opt-in (ADR-0007 PR-06): C#-owned PTY sessions + xterm.js screen; the legacy TerminalView stays the default.
+        terminal.LongClick += (_, e) =>
+        {
+            e.Handled = true;
+            new AlertDialog.Builder(this)
+                .SetTitle("终端实现")!
+                .SetMessage("打开 C# 终端（实验，用于真机验收）？会话由 C# 经 libdshmobile_native 持有、界面为本地 xterm.js；与旧终端的会话互相独立。默认终端仍使用旧实现。")!
+                .SetPositiveButton("C# 终端", (_, _) => StartActivity(new Android.Content.Intent(this, typeof(DshMobile.App.Terminal.CSharpTerminalActivity))))!
+                .SetNegativeButton("取消", (_, _) => { })!
+                .Show();
+        };
         plugins.Click += (_, _) => StartActivity(new Android.Content.Intent(this, typeof(DshMobile.App.Plugins.PluginsActivity)));
         automation.Click += (_, _) => StartActivity(new Android.Content.Intent(this, typeof(DshMobile.App.Automation.AutomationActivity)));
         FindViewById<Button>(Resource.Id.btn_browser)!.Click +=

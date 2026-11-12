@@ -72,8 +72,19 @@
 | 2026-11-11 | `dsh-renderer/api/.../DshOriginPolicy.kt`、`DshTokenRevisionTracker.kt`；`WebUiController.urlWithToken`（源自 `app/.../webview/DshUrl.kt`）及其导航 / 401 规则 | `src/DshMobile.Core/WebUi/*.cs` | 全部判定逻辑；源策略用自写的 `java.net.URI` 兼容解析（不用 `System.Uri`） | `webview-policy.json`（旧实现：真实 `java.net.URI`） |
 | 2026-11-11 | `common/.../LogRedactor.kt`；`sandbox-manager/.../DshWriterLockSweeper.kt`；`DefaultSandboxManager` 的 `ingestDshWebLaunchToken`、启停与健康循环语义；`WebUiController.kt` 的 WebView 设置与回调 | `src/DshMobile.Runtime/Hosting/*.cs`、`src/DshMobile.Android/WebUi/CSharpWebUiController.cs` | 本 App 用到的启停 / token / 健康循环 / WebView；就地重启使用完整 DSH argv（不复制旧实现缺 guest-cache 绑定）；宿主按子进程优先顺序杀树 | `log-redactor.json`（旧实现）+ 真机里程碑 |
 | 2026-11-11 | `plugin-manager/.../market/data/InstallGuard.kt`（`InstallGuard.install`、`installGap`、`declaredPackageName`）；`ProfileReader.kt`（`PackageFacts`、`hasUsableEntry`、`parsePackageFacts`、`entryArtifactExists`、`dependencyNames`、`facts`、`carrierEntryUsable`）；`PackageRowIds.kt`（`declaredPatchFiles`、`patchTargetNames`、`patchFiles`）；`contract/PatchSyntax.kt`（`NAME_VALUE`、`unquote`）；`core/PluginPaths.kt`（profile 目录） | `src/DshMobile.Runtime/Plugins/{PluginPackageFacts, PluginProfileReader, PluginInstallGuard}.cs` | 安装守卫（装前 / 装后依赖差集、可加载性判定、只回收本次新增且不可加载的包、载体挂载）；不移植市场 / 启停 / 补丁层写入 / `declaredLibrary`。偏离：声明的**绝对**补丁路径被忽略（上游在宿主上解析，guest 路径无意义）；`RemoveAsync` 的装后核对为本仓库新增 | `InstallGuardTest.kt` 21 例逐例转写为 C#（plugin-manager 不在本仓库 Gradle 构建内，无法双跑）+ 临时目录文件系统测试 |
-| 2026-11-12 | `terminal-session/.../TerminalCommandFactory.kt`（`sandboxLoginShell`、`LOGIN_FLAGS`）；`TerminalEnvFactory.kt`（`sandboxEnv`、`buildGuestPath`）；`TerminalProcFake.kt`（`ensureBindArgs` 与 3 个文件文本）；`TerminalPathsResolver.kt`（`resolve` 的目录存在判定） | `src/DshMobile.Runtime/Guest/TerminalCommandBuilder.cs` | 本 App 旧 TerminalController 用到的配置（无 overlay 初始化片段、无共享区 / 能力绑定 / 追加 PATH）；`android-side/bin/proot` 回退因 W^X 不移植 | `terminal-command.json` 新旧双跑 + 真机 `/proc` 影子（待采集） |
-| 2026-11-12 | `terminal-emulator/src/main/jni/termux.c`（`create_subprocess` 的 PTY 建立顺序：打开 `/dev/ptmx` → `grantpt`/`unlockpt`/`ptsname_r` → IUTF8、关闭 IXON/IXOFF → `TIOCSWINSZ` → fork → 解除信号屏蔽 → `setsid` → 打开从端 → dup2 → 关其余 fd → chdir → exec） | `native/dshmobile-native/src/dshm_native.c` | 重写而非复制（同一顺序；`posix_openpt` 等价于打开 `/dev/ptmx`）；新增：子进程信号处理复位为 `SIG_DFL`、显式 `TIOCSCTTY`、`O_CLOEXEC` 错误管道回传 exec errno、fork 期间屏蔽全部信号、`close_range`（失败时回退逐个关闭）、`execve` 显式环境；不移植 JNI 与 Termux 品牌 | ABI 源码契约测试 + 真机 PTY 自检（待采集） |
+| 2026-11-12 | `terminal-session/.../TerminalCommandFactory.kt`（`sandboxLoginShell`、`LOGIN_FLAGS`）；`TerminalEnvFactory.kt`（`sandboxEnv`、`buildGuestPath`）；`TerminalProcFake.kt`（`ensureBindArgs` 与 3 个文件文本）；`TerminalPathsResolver.kt`（`resolve` 的目录存在判定） | `src/DshMobile.Runtime/Guest/TerminalCommandBuilder.cs` | 本 App 旧 TerminalController 用到的配置（无 overlay 初始化片段、无共享区 / 能力绑定 / 追加 PATH）；`android-side/bin/proot` 回退因 W^X 不移植 | `terminal-command.json` 新旧双跑 + 真机 `/proc` 影子 Agree |
+| 2026-11-12 | `terminal-emulator/src/main/jni/termux.c`（`create_subprocess` 的 PTY 建立顺序：打开 `/dev/ptmx` → `grantpt`/`unlockpt`/`ptsname_r` → IUTF8、关闭 IXON/IXOFF → `TIOCSWINSZ` → fork → 解除信号屏蔽 → `setsid` → 打开从端 → dup2 → 关其余 fd → chdir → exec） | `native/dshmobile-native/src/dshm_native.c` | 重写而非复制（同一顺序；`posix_openpt` 等价于打开 `/dev/ptmx`）；新增：子进程信号处理复位为 `SIG_DFL`、显式 `TIOCSCTTY`、`O_CLOEXEC` 错误管道回传 exec errno、fork 期间屏蔽全部信号、`close_range`（失败时回退逐个关闭）、`execve` 显式环境；不移植 JNI 与 Termux 品牌 | ABI 源码契约测试 + 真机 PTY 自检 PASS ×3（[证据](../migration/parity/2026-11-12-PTP-AN10-A17-terminal-pty.md)） |
+| 2026-11-12 | `app/.../runtime/GuestUserProvisioner.kt`（经本仓库过渡实现 `native/native-bridge/.../GuestUser.kt`） | `src/DshMobile.Runtime/Guest/GuestUser.cs` | 全部：幂等写入 guest `/etc/passwd` 中 App uid 的 `dshmobile` 条目（同名用户、临时文件 + 原子替换）；uid/gid 经 `DshMobile.Native.Posix`（libc `getuid`/`getgid`） | `GuestUserTests` 6 例 + 真机 C# 终端提示符 |
+| 2026-11-12 | `terminal-session/.../DshTerminalManager.kt`（会话模型：全局递增 id、显示序号「终端 N」仅在清空后重置、新建即激活、关闭后激活首个幸存者、关闭全部） | `src/DshMobile.Application/Terminal/TerminalSessions.cs` | 只取会话列表语义；PTY / 输出环形缓冲（256 KiB）/ 附着重放 / 自然退出保留状态为本仓库实现，不复制 Termux `TerminalSession` | `TerminalSessionsTests` 9 例 + 真机多会话 |
+
+## 前端资源（随 APK 打包，离线）
+
+npm 包只取发布 tarball 中的必要文件，**逐字节**放入 `src/DshMobile.Android/Assets/terminal/vendor/`；`tooling/terminal-web.lock.json` 记录精确版本、tarball `sha512` integrity 与每个文件的 `sha256`，`TerminalWebAssetsTests` 校验哈希并拒绝未登记文件。
+
+| 包 | 版本 | 许可证 | 文件 | 用途 | 引入 |
+|---|---|---|---|---|---|
+| `@xterm/xterm` | 6.0.0 | MIT（`LICENSE-xterm.txt`） | `lib/xterm.js`、`css/xterm.css` | C# 终端的渲染（WebView 只显示；键盘由原生 `TerminalInputView` 接管） | PR-06 第二段 |
+| `@xterm/addon-fit` | 0.11.0 | MIT（`LICENSE-addon-fit.txt`） | `lib/addon-fit.js` | 按容器计算行列 | PR-06 第二段 |
 
 ## C# 运行时依赖（NuGet）
 
@@ -81,6 +92,7 @@
 |---|---|---|---|---|
 | `ZstdSharp.Port` | 0.8.8（2026-04-29 发布） | MIT | 运行时层 `.tar.zst` 解压（.NET 11 无内置 Zstandard）；纯托管 | PR-02 解包段 |
 | `Microsoft.Extensions.DependencyInjection` | 10.0.14 | MIT | Android 组合根 | PR-01 |
+| `Xamarin.Google.Android.Material` | 1.14.0.6 | MIT（绑定）/ Apache-2.0（Material Components） | C# 终端界面的 Material 3 主题与组件（AGENTS.md 规则 12） | PR-06 第二段 |
 
 ## 同步记录
 
