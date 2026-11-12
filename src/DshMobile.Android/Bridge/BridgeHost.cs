@@ -258,6 +258,22 @@ public sealed class BridgeHost : IDisposable, IDiagnosticsLog
         await Runtime.ShadowGuestDiagnosticsAsync(legacy, CancellationToken.None).ConfigureAwait(false);
     });
 
+    /// <summary>
+    /// PR-06 developer acceptance: the guest login shell on a C#-owned PTY (libdshmobile_native), driven by PtyProbe.
+    /// Independent of the legacy terminal; the steps (prompt, tty, resize, ^C, exit, no orphans) are logged.
+    /// </summary>
+    public Task RunCSharpPtyProbeAsync() => RunExclusive("terminal.pty-probe", async () =>
+    {
+        var native = DshMobile.Native.DshNativeLibrary.Probe();
+        Append(native.Ok ? $"native: libdshmobile_native ABI {native.Value}" : $"native: {native.Code}: {native.Message}");
+        using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(3));
+        var r = await Runtime.ProbeCSharpPtyAsync(cts.Token).ConfigureAwait(false);
+        foreach (var step in r.Steps)
+        {
+            Append($"pty {step.Name}: {(step.Ok ? "ok" : "FAILED")} ({step.Detail}, {step.Ms} ms)");
+        }
+    });
+
     private static readonly TimeSpan ProbeDeadline = TimeSpan.FromMinutes(10);
 
     /// <summary>TASK-005: runs the guest probe for every shipped profile, in order, and logs each check.</summary>

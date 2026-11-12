@@ -1,0 +1,245 @@
+{
+  "_comment": [
+    "PR-06 terminal launch vectors: the legacy DSHBox TerminalPathsResolver + TerminalProcFake + TerminalCommandFactory.sandboxLoginShell / TerminalEnvFactory.sandboxEnv",
+    "(native-bridge LegacyTerminalCommandParityTest) and the C# TerminalCommandBuilder (TerminalCommandParityTests) run every case.",
+    "@FILES@ = app filesDir, @NATIVE@ = nativeLibraryDir; paths normalized to '/'. /linkerconfig is absent on the test host (the device shadow covers its bind).",
+    "argv/env null = no terminal can start (legacy resolve() returns null)."
+  ],
+  "cases": [
+    {
+      "name": "layered runtime with node/dsh/shim, APK-bundled proot + shmem",
+      "dirs": [
+        "runtime/runtime-current/base",
+        "runtime/runtime-current/node",
+        "runtime/runtime-current/dsh",
+        "dshbox"
+      ],
+      "files": [],
+      "nativeLibs": [
+        "libproot.so",
+        "libproot-loader.so",
+        "libandroid-shmem.so"
+      ],
+      "argv": [
+        "@NATIVE@/libproot.so",
+        "--kill-on-exit",
+        "-0",
+        "--rootfs=@FILES@/runtime/runtime-current/base",
+        "--bind=/system",
+        "--bind=/apex",
+        "--bind=/proc",
+        "--bind=/dev",
+        "--bind=@FILES@/runtime/runtime-current/node:/usr/local",
+        "--bind=@FILES@/runtime/runtime-current/dsh:/opt/dshapp/runtime",
+        "--bind=@FILES@/dshbox:/opt/dshbox",
+        "--bind=@FILES@/guest-cache:/opt/dshbox-cache",
+        "--bind=@FILES@/pilot:/opt/pilot",
+        "--bind=@FILES@/browser-tools:/opt/browser",
+        "--bind=@FILES@/runtime/runtime-current/base/root/.procfake/stat:/proc/stat",
+        "--bind=@FILES@/runtime/runtime-current/base/root/.procfake/uptime:/proc/uptime",
+        "--bind=@FILES@/runtime/runtime-current/base/root/.procfake/loadavg:/proc/loadavg",
+        "--bind=@FILES@/user-data:/root/projects",
+        "--cwd=/root",
+        "/usr/bin/bash",
+        "--noprofile",
+        "--login"
+      ],
+      "env": [
+        "LD_LIBRARY_PATH=@NATIVE@",
+        "PROOT_LOADER=@NATIVE@/libproot-loader.so",
+        "PROOT_TMP_DIR=@FILES@/runtime/tmp/terminal",
+        "HOME=/root",
+        "USER=root",
+        "LOGNAME=root",
+        "PATH=/root/projects/.dsh/dshbox/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/system/bin:/system/xbin",
+        "SHELL=/usr/bin/bash",
+        "TERM=xterm-256color",
+        "LANG=C.UTF-8",
+        "COLORTERM=truecolor",
+        "PS1=\\u@\\h:\\w\\$ ",
+        "TMPDIR=/tmp",
+        "PWD=/root",
+        "DSH_HOME=/root/projects/.dsh",
+        "DSH_BIN=/opt/dshapp/runtime/node_modules/@deepseek-ai/dsh/lib/bin.js",
+        "DSH_PERMISSION_MODE=danger-full-access"
+      ]
+    },
+    {
+      "name": "base only, proot from the android-side layer (no APK libs)",
+      "dirs": [
+        "runtime/runtime-current/base"
+      ],
+      "files": [
+        "runtime/runtime-current/android-side/bin/proot"
+      ],
+      "nativeLibs": [],
+      "argv": [
+        "@FILES@/runtime/runtime-current/android-side/bin/proot",
+        "--kill-on-exit",
+        "-0",
+        "--rootfs=@FILES@/runtime/runtime-current/base",
+        "--bind=/system",
+        "--bind=/apex",
+        "--bind=/proc",
+        "--bind=/dev",
+        "--bind=@FILES@/guest-cache:/opt/dshbox-cache",
+        "--bind=@FILES@/pilot:/opt/pilot",
+        "--bind=@FILES@/browser-tools:/opt/browser",
+        "--bind=@FILES@/runtime/runtime-current/base/root/.procfake/stat:/proc/stat",
+        "--bind=@FILES@/runtime/runtime-current/base/root/.procfake/uptime:/proc/uptime",
+        "--bind=@FILES@/runtime/runtime-current/base/root/.procfake/loadavg:/proc/loadavg",
+        "--bind=@FILES@/user-data:/root/projects",
+        "--cwd=/root",
+        "/usr/bin/bash",
+        "--noprofile",
+        "--login"
+      ],
+      "env": [
+        "LD_LIBRARY_PATH=@FILES@/runtime/runtime-current/android-side/lib",
+        "PROOT_LOADER=@FILES@/runtime/runtime-current/android-side/libexec/proot/loader",
+        "PROOT_TMP_DIR=@FILES@/runtime/tmp/terminal",
+        "HOME=/root",
+        "USER=root",
+        "LOGNAME=root",
+        "PATH=/root/projects/.dsh/dshbox/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/system/bin:/system/xbin",
+        "SHELL=/usr/bin/bash",
+        "TERM=xterm-256color",
+        "LANG=C.UTF-8",
+        "COLORTERM=truecolor",
+        "PS1=\\u@\\h:\\w\\$ ",
+        "TMPDIR=/tmp",
+        "PWD=/root",
+        "DSH_HOME=/root/projects/.dsh",
+        "DSH_BIN=/opt/dshapp/runtime/node_modules/@deepseek-ai/dsh/lib/bin.js",
+        "DSH_PERMISSION_MODE=danger-full-access"
+      ]
+    },
+    {
+      "name": "bundled proot without libandroid-shmem.so: libs from android-side",
+      "dirs": [
+        "runtime/runtime-current/base",
+        "runtime/runtime-current/node"
+      ],
+      "files": [],
+      "nativeLibs": [
+        "libproot.so",
+        "libproot-loader.so"
+      ],
+      "argv": [
+        "@NATIVE@/libproot.so",
+        "--kill-on-exit",
+        "-0",
+        "--rootfs=@FILES@/runtime/runtime-current/base",
+        "--bind=/system",
+        "--bind=/apex",
+        "--bind=/proc",
+        "--bind=/dev",
+        "--bind=@FILES@/runtime/runtime-current/node:/usr/local",
+        "--bind=@FILES@/guest-cache:/opt/dshbox-cache",
+        "--bind=@FILES@/pilot:/opt/pilot",
+        "--bind=@FILES@/browser-tools:/opt/browser",
+        "--bind=@FILES@/runtime/runtime-current/base/root/.procfake/stat:/proc/stat",
+        "--bind=@FILES@/runtime/runtime-current/base/root/.procfake/uptime:/proc/uptime",
+        "--bind=@FILES@/runtime/runtime-current/base/root/.procfake/loadavg:/proc/loadavg",
+        "--bind=@FILES@/user-data:/root/projects",
+        "--cwd=/root",
+        "/usr/bin/bash",
+        "--noprofile",
+        "--login"
+      ],
+      "env": [
+        "LD_LIBRARY_PATH=@FILES@/runtime/runtime-current/android-side/lib",
+        "PROOT_LOADER=@NATIVE@/libproot-loader.so",
+        "PROOT_TMP_DIR=@FILES@/runtime/tmp/terminal",
+        "HOME=/root",
+        "USER=root",
+        "LOGNAME=root",
+        "PATH=/root/projects/.dsh/dshbox/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/system/bin:/system/xbin",
+        "SHELL=/usr/bin/bash",
+        "TERM=xterm-256color",
+        "LANG=C.UTF-8",
+        "COLORTERM=truecolor",
+        "PS1=\\u@\\h:\\w\\$ ",
+        "TMPDIR=/tmp",
+        "PWD=/root",
+        "DSH_HOME=/root/projects/.dsh",
+        "DSH_BIN=/opt/dshapp/runtime/node_modules/@deepseek-ai/dsh/lib/bin.js",
+        "DSH_PERMISSION_MODE=danger-full-access"
+      ]
+    },
+    {
+      "name": "legacy single debian rootfs",
+      "dirs": [
+        "runtime/runtime-current/debian"
+      ],
+      "files": [],
+      "nativeLibs": [
+        "libproot.so",
+        "libproot-loader.so",
+        "libandroid-shmem.so"
+      ],
+      "argv": [
+        "@NATIVE@/libproot.so",
+        "--kill-on-exit",
+        "-0",
+        "--rootfs=@FILES@/runtime/runtime-current/debian",
+        "--bind=/system",
+        "--bind=/apex",
+        "--bind=/proc",
+        "--bind=/dev",
+        "--bind=@FILES@/guest-cache:/opt/dshbox-cache",
+        "--bind=@FILES@/pilot:/opt/pilot",
+        "--bind=@FILES@/browser-tools:/opt/browser",
+        "--bind=@FILES@/runtime/runtime-current/debian/root/.procfake/stat:/proc/stat",
+        "--bind=@FILES@/runtime/runtime-current/debian/root/.procfake/uptime:/proc/uptime",
+        "--bind=@FILES@/runtime/runtime-current/debian/root/.procfake/loadavg:/proc/loadavg",
+        "--bind=@FILES@/user-data:/root/projects",
+        "--cwd=/root",
+        "/usr/bin/bash",
+        "--noprofile",
+        "--login"
+      ],
+      "env": [
+        "LD_LIBRARY_PATH=@NATIVE@",
+        "PROOT_LOADER=@NATIVE@/libproot-loader.so",
+        "PROOT_TMP_DIR=@FILES@/runtime/tmp/terminal",
+        "HOME=/root",
+        "USER=root",
+        "LOGNAME=root",
+        "PATH=/root/projects/.dsh/dshbox/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/system/bin:/system/xbin",
+        "SHELL=/usr/bin/bash",
+        "TERM=xterm-256color",
+        "LANG=C.UTF-8",
+        "COLORTERM=truecolor",
+        "PS1=\\u@\\h:\\w\\$ ",
+        "TMPDIR=/tmp",
+        "PWD=/root",
+        "DSH_HOME=/root/projects/.dsh",
+        "DSH_BIN=/opt/dshapp/runtime/node_modules/@deepseek-ai/dsh/lib/bin.js",
+        "DSH_PERMISSION_MODE=danger-full-access"
+      ]
+    },
+    {
+      "name": "no rootfs installed",
+      "dirs": [],
+      "files": [],
+      "nativeLibs": [
+        "libproot.so",
+        "libproot-loader.so",
+        "libandroid-shmem.so"
+      ],
+      "argv": null,
+      "env": null
+    },
+    {
+      "name": "rootfs but no proot binary anywhere",
+      "dirs": [
+        "runtime/runtime-current/base"
+      ],
+      "files": [],
+      "nativeLibs": [],
+      "argv": null,
+      "env": null
+    }
+  ]
+}

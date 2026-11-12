@@ -78,6 +78,17 @@ public class MainActivity : Activity
         };
         stop.Click += (_, _) => _ = _bridge.RunStopAsync();
         diag.Click += (_, _) => _ = _bridge.RunDiagnosticsAsync();
+        // Developer opt-in (ADR-0007 PR-06): self-test of the C#-owned PTY (guest login shell, no legacy terminal code).
+        diag.LongClick += (_, e) =>
+        {
+            e.Handled = true;
+            new AlertDialog.Builder(this)
+                .SetTitle("终端 PTY 自检")!
+                .SetMessage("用 C# + libdshmobile_native 打开一个 guest 登录 shell，自动执行 tty / stty / 调整窗口大小 / Ctrl-C / exit 并检查无残留进程（实验，用于真机验收）。终端界面仍使用旧实现。")!
+                .SetPositiveButton("开始自检", (_, _) => _ = _bridge.RunCSharpPtyProbeAsync())!
+                .SetNegativeButton("取消", (_, _) => { })!
+                .Show();
+        };
         probe.Click += (_, _) => _ = _bridge.RunProbesAsync();
         openDsh.Click += (_, _) => StartActivity(new Android.Content.Intent(this, typeof(DshWebActivity)));
         files.Click += (_, _) => StartActivity(new Android.Content.Intent(this, typeof(FilesActivity)));

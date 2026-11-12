@@ -31,6 +31,22 @@
     <Warning Text="Runtime layers not staged ($(RuntimeAssetsDir)); the APK will not contain android-side/DSH. Run: pwsh runtime-bundle/fetch-runtime.ps1" />
   </Target>
 
+  <!--
+    ADR-0007 minimal native layer: libdshmobile_native.so built from native/dshmobile-native/src (own source, NDK,
+    16 KB aligned) by native/build-native.*. Loaded by DshMobile.Native's P/Invoke (PTY spawn / resize / wait / kill).
+  -->
+  <PropertyGroup>
+    <DshNativeDir>$(MSBuildThisFileDirectory)..\..\artifacts\native\dshmobile-native\</DshNativeDir>
+  </PropertyGroup>
+  <ItemGroup>
+    <AndroidNativeLibrary Include="$(DshNativeDir)arm64-v8a\libdshmobile_native.so" Abi="arm64-v8a" />
+    <AndroidNativeLibrary Include="$(DshNativeDir)x86_64\libdshmobile_native.so" Abi="x86_64" />
+  </ItemGroup>
+  <Target Name="DshRequireNativeLibrary" BeforeTargets="PrepareForBuild">
+    <Error Condition="!Exists('$(DshNativeDir)arm64-v8a\libdshmobile_native.so') Or !Exists('$(DshNativeDir)x86_64\libdshmobile_native.so')"
+           Text="libdshmobile_native.so not built ($(DshNativeDir)). Run: pwsh native/build-native.ps1 (or native/dshmobile-native/build.ps1 alone)" />
+  </Target>
+
   <ItemGroup>
     <ProjectReference Include="..\DshMobile.Core\DshMobile.Core.csproj" />
     <!-- C#-first layers (ADR-0007). -->

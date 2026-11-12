@@ -36,10 +36,12 @@ public sealed class ProotCommandBuilder(RuntimeLayout layout)
         }
     }
 
-    private string ProotLibDir =>
+    /// <summary>LD_LIBRARY_PATH for PRoot: nativeLibraryDir when it has libandroid-shmem.so, else the android-side lib dir.</summary>
+    public string ProotLibDir =>
         File.Exists(Path.Combine(layout.NativeLibraryDir, "libandroid-shmem.so")) ? layout.NativeLibraryDir : Path.Combine(ProotSideDir, "lib");
 
-    private string ProotLoaderFile
+    /// <summary>PROOT_LOADER: the APK-bundled libproot-loader.so, else the android-side loader.</summary>
+    public string ProotLoaderFile
     {
         get
         {
