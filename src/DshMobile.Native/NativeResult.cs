@@ -9,6 +9,8 @@ public static class NativeErrorCodes
     public const string AbiMismatch = "NATIVE_ABI_MISMATCH";
     /// <summary>The requested executable violates the W^X policy.</summary>
     public const string ExecutableNotAllowed = "EXECUTABLE_NOT_ALLOWED";
+    /// <summary>fork / exec of a PTY child failed (message carries errno; an exec failure is reported, never hidden).</summary>
+    public const string SpawnFailed = "NATIVE_SPAWN_FAILED";
     /// <summary>The operation is declared but not implemented in this slice.</summary>
     public const string NotImplemented = "NOT_IMPLEMENTED";
 }

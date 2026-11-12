@@ -160,8 +160,43 @@ public sealed class ProotGuestProcess(RuntimeLayout layout) : IGuestProcess
         return results;
     }
 
-    public Task<GuestPtySession> OpenPtyAsync(GuestExecutionOptions options, CancellationToken ct) =>
-        throw new NotSupportedException("interactive PTY sessions need libdshmobile_native (PR-06); terminal still uses the legacy TerminalView");
+    public async Task<GuestPtySession> OpenPtyAsync(GuestExecutionOptions options, CancellationToken ct) =>
+        await OpenPtyAsync(options, rows: 24, columns: 80, ct).ConfigureAwait(false);
+
+    /// <summary>
+    /// PR-06: the guest login shell (<see cref="TerminalCommandBuilder"/>, same argv as the legacy terminal) on a PTY
+    /// spawned by libdshmobile_native. The guest starts in <c>/root</c> like the legacy terminal
+    /// (<see cref="GuestExecutionOptions.WorkingDirectory"/> does not apply); <see cref="GuestExecutionOptions.Environment"/>
+    /// entries replace or extend the terminal environment. Failures are <see cref="GuestPtyException"/> with a stable code.
+    /// </summary>
+    public Task<ProotPtySession> OpenPtyAsync(GuestExecutionOptions options, int rows, int columns, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+        ct.ThrowIfCancellationRequested();
+        var terminal = new TerminalCommandBuilder(layout);
+        var argv = terminal.LoginShell()
+            ?? throw new GuestPtyException(RuntimeErrorCodes.NotInstalled, "no runtime rootfs under " + layout.RuntimeCurrentDir);
+        if (!_policy.IsExecutableLocation(argv[0]))
+        {
+            throw new GuestPtyException(NativeErrorCodes.ExecutableNotAllowed, argv[0] + " is not in nativeLibraryDir");
+        }
+        var env = terminal.Environment().ToList();
+        if (options.Environment is { } extra)
+        {
+            foreach (var (k, v) in extra)
+            {
+                env.RemoveAll(e => e.StartsWith(k + "=", StringComparison.Ordinal));
+                env.Add($"{k}={v}");
+            }
+        }
+        // Host cwd "/" like the legacy TerminalSession; the guest cwd comes from --cwd.
+        var spawned = NativePty.Spawn(argv[0], argv, env, "/", rows, columns);
+        if (!spawned.Ok)
+        {
+            throw new GuestPtyException(spawned.Code, spawned.Message ?? spawned.Code);
+        }
+        return Task.FromResult(new ProotPtySession(spawned.Value!, "csharp-pty-" + spawned.Value!.Pid.ToString(System.Globalization.CultureInfo.InvariantCulture), argv));
+    }
 
     private static async Task PumpAsync(StreamReader reader, Action<string?> onLine)
     {

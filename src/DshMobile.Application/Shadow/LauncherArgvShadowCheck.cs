@@ -53,6 +53,8 @@ public static class LauncherArgvShadowCheck
         return new ShadowReport(Slice, at, diverged ? ShadowVerdict.Diverge : ShadowVerdict.Agree, true, null, !diverged, null, string.Join("; ", details), csharpMs);
     }
 
+    internal static string FirstDifferenceOf(IReadOnlyList<string> legacy, IReadOnlyList<string> csharp) => FirstDifference(legacy, csharp);
+
     private static string FirstDifference(IReadOnlyList<string> legacy, IReadOnlyList<string> csharp)
     {
         var n = Math.Min(legacy.Count, csharp.Count);

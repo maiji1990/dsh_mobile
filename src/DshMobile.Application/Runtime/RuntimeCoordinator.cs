@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using DshMobile.Application.Shadow;
+using DshMobile.Application.Terminal;
 using DshMobile.Core.Bridge;
 using DshMobile.Runtime;
 using DshMobile.Runtime.Bundle;
@@ -441,7 +442,49 @@ public sealed class RuntimeCoordinator : IDisposable
             _shadow.Report(argv);
             _log.Note($"shadow {argv.Slice}: {argv.Verdict} ({argv.Detail}; csharp {argv.CSharpMs} ms)");
         }
+
+        // PR-06 terminal argv: each open legacy terminal session (a PRoot child of this app process) vs the C# builder.
+        if (_layout is not null && !OperatingSystem.IsWindows() && DshMobile.Runtime.Supervision.ProcessTable.Read() is { } procs)
+        {
+            sw.Restart();
+            var sessions = procs.ChildrenOf(Environment.ProcessId)
+                .Select(procs.Argv)
+                .Where(a => a is not null && TerminalArgvShadowCheck.IsTerminalShell(a))
+                .Select(a => a!)
+                .ToList();
+            var terminal = TerminalArgvShadowCheck.Compare(sessions, new TerminalCommandBuilder(_layout).LoginShell(), sw.ElapsedMilliseconds, _time.GetUtcNow());
+            _shadow.Report(terminal);
+            _log.Note($"shadow {terminal.Slice}: {terminal.Verdict} ({terminal.Detail}; csharp {terminal.CSharpMs} ms)");
+        }
         return report;
+    }
+
+    /// <summary>
+    /// PR-06 developer acceptance: a C#-owned PTY running the guest login shell (no legacy code on the path), driven by
+    /// <see cref="PtyProbe"/>. Holds the operation lock so no shadow observes the probe's own PRoot as a legacy session.
+    /// </summary>
+    public async Task<PtyProbeReport> ProbeCSharpPtyAsync(CancellationToken ct)
+    {
+        if (_layout is null)
+        {
+            return new PtyProbeReport(false, [new PtyProbeStep("open", false, "no runtime layout", 0)], "");
+        }
+        await _op.WaitAsync(ct).ConfigureAwait(false);
+        try
+        {
+            var exec = new ProotGuestProcess(_layout);
+            var report = await PtyProbe.RunAsync(
+                c => exec.OpenPtyAsync(new GuestExecutionOptions(), 24, 80, c),
+                pid => DshMobile.Runtime.Supervision.ProcessTable.Read()?.DescendantPids(pid) ?? [],
+                pid => Directory.Exists("/proc/" + pid.ToString(System.Globalization.CultureInfo.InvariantCulture)),
+                ct).ConfigureAwait(false);
+            _log.Note($"{PtyProbe.Slice}: {report.Summary}");
+            return report;
+        }
+        finally
+        {
+            _op.Release();
+        }
     }
 
     private DshHost? _host;
