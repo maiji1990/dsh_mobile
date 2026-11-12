@@ -303,3 +303,7 @@ APK SHA-256 `a084dc5fb2559bea84d04caef8050b63f8006f23f7dc8dd639f08c41b9a2a392`�
 | resize / ^C / 大量输出 | 键盘弹出后 `15 41`；^C → `$?=130`；`seq 1 100000` 0.085 s，之后输入正常 |
 | 关闭 / 强杀 | 「关闭」后无 `proot` / `bash`（PRoot 未在 SIGHUP 宽限期退出，升级 SIGKILL）；`force-stop` 无孤儿 |
 | 首页「停止」 | 首版在沙箱未启动时漏关 C# 会话（`stop: nothing running`）；修正并加单测后复测通过（2 个会话关闭，无残留） |
+
+## ADR-0007 迁移 · `ui_*` 工具注册与状态（PR-07 第一段，只读影子）真机记录 — 2026-11-12
+
+「手机操控（实验）」页的 `relay.status` / `relay.start` / `relay.stop` 之后，C# 读同一 patch 层与无障碍设置：三次 `automation.ui-tools` **Agree**；开启后层文件与 C# 渲染逐字节一致。无障碍「已开启」与冲突分支只有向量证据。详见 [证据](../migration/parity/2026-11-12-PTP-AN10-A17-ui-tools.md)。
