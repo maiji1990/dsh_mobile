@@ -32,8 +32,12 @@
     <string name="automation_selftest">只读自检</string>
     <string name="automation_selftest_running">正在运行 relay doctor 与 ui_* 工具自检（ui_snapshot + ui_get_element）… 请下拉通知栏，在「DSH 请求执行 …」上选择：点「本次会话允许」只需答一次；点「允许一次」则会再问一次（每次约 50 秒内）。</string>
     <string name="automation_envelope_probe">协议信封比对（开发者）</string>
-    <string name="automation_envelope_probe_running">正在向中继信箱写入 16 条故意写错的请求（全部在解析阶段被拒，不会弹审批、不会读取或操作手机），比对中继的拒绝结果与 C# 解码器… 需要先「开启中继」。</string>
+    <string name="automation_envelope_probe_running">正在向中继信箱写入两组故意写错的请求：16 条在解析阶段被拒，12 条在审批之前的准入检查被拒（未开放的能力、参数不合规、参数指向本 App），不会弹审批、不会读取或操作手机；逐字节比对中继的回包与 C#；再只读比对中继发布的执行面裁决（capabilities.json）… 需要先「开启中继」。</string>
     <string name="automation_envelope_probe_off">信封比对未启用（切片不在影子模式）</string>
+    <string name="automation_surface_pref">执行面偏好（开发者）：%1$s</string>
+    <string name="automation_surface_pref_fg">前台</string>
+    <string name="automation_surface_pref_bg">优先后台</string>
+    <string name="automation_surface_pref_changed">已改为「%1$s」。中继在下次开启时重新发布执行面裁决：请先「关闭中继」再「开启中继」，然后运行比对。没有 Shizuku 与可信虚拟屏时，优先后台会如实退回前台并注明原因。</string>
     <string name="automation_a11y_on">无障碍服务：已开启</string>
     <string name="automation_a11y_off">无障碍服务：未开启（读取界面需要先开启）</string>
     <string name="action_browser">浏览器</string>

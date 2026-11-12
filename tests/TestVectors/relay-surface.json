@@ -1,0 +1,1517 @@
+{
+  "description": "PR-07 segment 4: Relay's execution-surface decision and execution quota (DSHBox interlock-relay-core SurfacePolicy, CapabilityRegistry surfaces/backends, BackendDispatcher canServe/isImplemented, the three backends' supports(), RelayCoordinator handle (bring-to-front, requiresMode, isImplemented) and finishAfterGate (execRate)). 'registry' = allowed surfaces (registry order) and backend order per capability. 'decide' = SurfacePolicy.decide with the given preference / shell / sdk; backendCanServe is true except for the 'cannotServe' surfaces; 'surfaces' overrides the registry. 'stage' = the steps before the gate: decision, then E_SURFACE_MODE_REQUIRED, then E_NOT_IMPLEMENTED ('implemented' stands for dispatcher.isImplemented); 'json' is the text Relay writes on the device (libcore org.json). 'execQuota' = execRate after the gate with a fake ms clock: calls that went through approval are not charged. 'csharpOnly.backendMatrix' = every true backend:capability@surface for a set of device facts (the backends need an Android Context, so the JVM test cannot build them; the device shadow checks the registered capabilities).",
+  "selfPackage": "org.example.dshmobile",
+  "registry": {
+    "ui.snapshot": {
+      "surfaces": [
+        "foreground",
+        "trusted-display"
+      ],
+      "backends": [
+        "a11y"
+      ]
+    },
+    "screen.capture": {
+      "surfaces": [
+        "foreground",
+        "trusted-display",
+        "observe-only"
+      ],
+      "backends": [
+        "a11y",
+        "direct",
+        "shizuku"
+      ]
+    },
+    "screen.observe": {
+      "surfaces": [
+        "observe-only"
+      ],
+      "backends": [
+        "direct"
+      ]
+    },
+    "screen.record": {
+      "surfaces": [
+        "observe-only",
+        "foreground",
+        "trusted-display"
+      ],
+      "backends": [
+        "direct",
+        "shizuku"
+      ]
+    },
+    "notify.read": {
+      "surfaces": [],
+      "backends": [
+        "direct"
+      ]
+    },
+    "ui.tap": {
+      "surfaces": [
+        "foreground",
+        "trusted-display"
+      ],
+      "backends": [
+        "a11y",
+        "shizuku"
+      ]
+    },
+    "ui.swipe": {
+      "surfaces": [
+        "foreground",
+        "trusted-display"
+      ],
+      "backends": [
+        "a11y",
+        "shizuku"
+      ]
+    },
+    "ui.text": {
+      "surfaces": [
+        "foreground",
+        "trusted-display"
+      ],
+      "backends": [
+        "a11y",
+        "shizuku"
+      ]
+    },
+    "ui.key": {
+      "surfaces": [
+        "foreground",
+        "trusted-display"
+      ],
+      "backends": [
+        "a11y",
+        "shizuku"
+      ]
+    },
+    "ui.click": {
+      "surfaces": [
+        "foreground",
+        "trusted-display"
+      ],
+      "backends": [
+        "a11y"
+      ]
+    },
+    "ui.longClick": {
+      "surfaces": [
+        "foreground",
+        "trusted-display"
+      ],
+      "backends": [
+        "a11y"
+      ]
+    },
+    "ui.select": {
+      "surfaces": [
+        "foreground",
+        "trusted-display"
+      ],
+      "backends": [
+        "a11y"
+      ]
+    },
+    "ui.dismiss": {
+      "surfaces": [
+        "foreground",
+        "trusted-display"
+      ],
+      "backends": [
+        "a11y"
+      ]
+    },
+    "ui.scroll": {
+      "surfaces": [
+        "foreground",
+        "trusted-display"
+      ],
+      "backends": [
+        "a11y"
+      ]
+    },
+    "ui.setValue": {
+      "surfaces": [
+        "foreground",
+        "trusted-display"
+      ],
+      "backends": [
+        "a11y"
+      ]
+    },
+    "ui.waitFor": {
+      "surfaces": [
+        "foreground",
+        "trusted-display"
+      ],
+      "backends": [
+        "a11y"
+      ]
+    },
+    "ui.node": {
+      "surfaces": [
+        "foreground",
+        "trusted-display"
+      ],
+      "backends": [
+        "a11y"
+      ]
+    },
+    "ui.setProgress": {
+      "surfaces": [
+        "foreground",
+        "trusted-display"
+      ],
+      "backends": [
+        "a11y"
+      ]
+    },
+    "ui.imeAction": {
+      "surfaces": [
+        "foreground",
+        "trusted-display"
+      ],
+      "backends": [
+        "a11y"
+      ]
+    },
+    "app.launch": {
+      "surfaces": [
+        "foreground",
+        "trusted-display"
+      ],
+      "backends": [
+        "direct",
+        "shizuku"
+      ]
+    },
+    "app.stop": {
+      "surfaces": [],
+      "backends": [
+        "shizuku"
+      ]
+    },
+    "surface.virtual": {
+      "surfaces": [
+        "trusted-display"
+      ],
+      "backends": [
+        "shizuku"
+      ]
+    },
+    "clip.read": {
+      "surfaces": [
+        "foreground"
+      ],
+      "backends": [
+        "direct"
+      ]
+    },
+    "clip.write": {
+      "surfaces": [
+        "foreground"
+      ],
+      "backends": [
+        "direct"
+      ]
+    },
+    "contact.read": {
+      "surfaces": [],
+      "backends": [
+        "direct"
+      ]
+    },
+    "contact.write": {
+      "surfaces": [],
+      "backends": [
+        "direct"
+      ]
+    },
+    "cal.read": {
+      "surfaces": [],
+      "backends": [
+        "direct"
+      ]
+    },
+    "cal.write": {
+      "surfaces": [],
+      "backends": [
+        "direct"
+      ]
+    },
+    "loc.read": {
+      "surfaces": [],
+      "backends": [
+        "direct"
+      ]
+    },
+    "media.read": {
+      "surfaces": [],
+      "backends": [
+        "direct"
+      ]
+    },
+    "media.write": {
+      "surfaces": [],
+      "backends": [
+        "direct"
+      ]
+    },
+    "audio.capture": {
+      "surfaces": [],
+      "backends": [
+        "direct"
+      ]
+    },
+    "pkg.query": {
+      "surfaces": [],
+      "backends": [
+        "direct"
+      ]
+    },
+    "app.install": {
+      "surfaces": [],
+      "backends": [
+        "shizuku"
+      ]
+    },
+    "sys.settings.write": {
+      "surfaces": [],
+      "backends": [
+        "shizuku"
+      ]
+    },
+    "appops.set": {
+      "surfaces": [],
+      "backends": [
+        "shizuku"
+      ]
+    },
+    "sys.intent": {
+      "surfaces": [
+        "foreground"
+      ],
+      "backends": [
+        "direct"
+      ]
+    },
+    "sys.shell": {
+      "surfaces": [],
+      "backends": [
+        "shizuku"
+      ]
+    },
+    "notify.post": {
+      "surfaces": [],
+      "backends": [
+        "direct"
+      ]
+    }
+  },
+  "decide": [
+    {
+      "name": "no surfaces: foreground, never degraded",
+      "capability": "contact.read",
+      "preference": "BACKGROUND_PREFERRED",
+      "shell": false,
+      "sdk": 36,
+      "expect": {
+        "surface": "foreground"
+      }
+    },
+    {
+      "name": "node cap, foreground preference",
+      "capability": "ui.node",
+      "preference": "FOREGROUND",
+      "shell": false,
+      "sdk": 36,
+      "expect": {
+        "surface": "foreground"
+      }
+    },
+    {
+      "name": "node cap, background, shell up",
+      "capability": "ui.node",
+      "preference": "BACKGROUND_PREFERRED",
+      "shell": true,
+      "sdk": 36,
+      "expect": {
+        "surface": "trusted-display"
+      }
+    },
+    {
+      "name": "node cap, background, no shell: falls back, says so",
+      "capability": "ui.node",
+      "preference": "BACKGROUND_PREFERRED",
+      "shell": false,
+      "sdk": 36,
+      "expect": {
+        "surface": "foreground",
+        "degradedFrom": "trusted-display",
+        "reason": "E_SURFACE_NO_SHELL"
+      }
+    },
+    {
+      "name": "node cap, background, old sdk",
+      "capability": "ui.snapshot",
+      "preference": "BACKGROUND_PREFERRED",
+      "shell": true,
+      "sdk": 32,
+      "expect": {
+        "surface": "foreground",
+        "degradedFrom": "trusted-display",
+        "reason": "E_SURFACE_API_LEVEL"
+      }
+    },
+    {
+      "name": "node cap, background, old sdk and no shell: api level wins",
+      "capability": "ui.snapshot",
+      "preference": "BACKGROUND_PREFERRED",
+      "shell": false,
+      "sdk": 30,
+      "expect": {
+        "surface": "foreground",
+        "degradedFrom": "trusted-display",
+        "reason": "E_SURFACE_API_LEVEL"
+      }
+    },
+    {
+      "name": "node cap, background, backend cannot serve trusted display",
+      "capability": "ui.click",
+      "preference": "BACKGROUND_PREFERRED",
+      "shell": true,
+      "sdk": 36,
+      "cannotServe": [
+        "trusted-display"
+      ],
+      "expect": {
+        "surface": "foreground",
+        "degradedFrom": "trusted-display",
+        "reason": "E_SURFACE_UNAVAILABLE"
+      }
+    },
+    {
+      "name": "foreground-only cap under background: degraded from trusted display",
+      "capability": "sys.intent",
+      "preference": "BACKGROUND_PREFERRED",
+      "shell": true,
+      "sdk": 36,
+      "expect": {
+        "surface": "foreground",
+        "degradedFrom": "trusted-display",
+        "reason": "E_SURFACE_UNAVAILABLE"
+      }
+    },
+    {
+      "name": "foreground-only cap under foreground: not degraded",
+      "capability": "clip.read",
+      "preference": "FOREGROUND",
+      "shell": true,
+      "sdk": 36,
+      "expect": {
+        "surface": "foreground"
+      }
+    },
+    {
+      "name": "observe-only cap: lands on observe-only, never degraded",
+      "capability": "screen.observe",
+      "preference": "BACKGROUND_PREFERRED",
+      "shell": false,
+      "sdk": 36,
+      "expect": {
+        "surface": "observe-only"
+      }
+    },
+    {
+      "name": "observe-only cap under foreground",
+      "capability": "screen.observe",
+      "preference": "FOREGROUND",
+      "shell": false,
+      "sdk": 36,
+      "expect": {
+        "surface": "observe-only"
+      }
+    },
+    {
+      "name": "trusted-only cap under foreground: mode required",
+      "capability": "surface.virtual",
+      "preference": "FOREGROUND",
+      "shell": true,
+      "sdk": 36,
+      "expect": {
+        "surface": "trusted-display",
+        "requiresMode": "trusted-display",
+        "reason": "E_SURFACE_MODE_REQUIRED"
+      }
+    },
+    {
+      "name": "trusted-only cap under background, shell up",
+      "capability": "surface.virtual",
+      "preference": "BACKGROUND_PREFERRED",
+      "shell": true,
+      "sdk": 36,
+      "expect": {
+        "surface": "trusted-display"
+      }
+    },
+    {
+      "name": "trusted-only cap under background, no shell: mode required",
+      "capability": "surface.virtual",
+      "preference": "BACKGROUND_PREFERRED",
+      "shell": false,
+      "sdk": 36,
+      "expect": {
+        "surface": "trusted-display",
+        "requiresMode": "trusted-display",
+        "reason": "E_SURFACE_MODE_REQUIRED"
+      }
+    },
+    {
+      "name": "trusted-only cap under background, old sdk: mode required",
+      "capability": "surface.virtual",
+      "preference": "BACKGROUND_PREFERRED",
+      "shell": true,
+      "sdk": 29,
+      "expect": {
+        "surface": "trusted-display",
+        "requiresMode": "trusted-display",
+        "reason": "E_SURFACE_MODE_REQUIRED"
+      }
+    },
+    {
+      "name": "capture: background, no shell, foreground serves",
+      "capability": "screen.capture",
+      "preference": "BACKGROUND_PREFERRED",
+      "shell": false,
+      "sdk": 36,
+      "expect": {
+        "surface": "foreground",
+        "degradedFrom": "trusted-display",
+        "reason": "E_SURFACE_NO_SHELL"
+      }
+    },
+    {
+      "name": "capture: background, nothing on foreground either: observe-only, not degraded",
+      "capability": "screen.capture",
+      "preference": "BACKGROUND_PREFERRED",
+      "shell": false,
+      "sdk": 36,
+      "cannotServe": [
+        "foreground"
+      ],
+      "expect": {
+        "surface": "observe-only"
+      }
+    },
+    {
+      "name": "record: observe-only first in registry, foreground preference picks foreground",
+      "capability": "screen.record",
+      "preference": "FOREGROUND",
+      "shell": false,
+      "sdk": 36,
+      "expect": {
+        "surface": "foreground"
+      }
+    },
+    {
+      "name": "record: foreground cannot serve under foreground preference: observe-only",
+      "capability": "screen.record",
+      "preference": "FOREGROUND",
+      "shell": false,
+      "sdk": 36,
+      "cannotServe": [
+        "foreground"
+      ],
+      "expect": {
+        "surface": "observe-only"
+      }
+    },
+    {
+      "name": "nothing serves anywhere, foreground allowed: plain foreground",
+      "capability": "ui.tap",
+      "preference": "FOREGROUND",
+      "shell": true,
+      "sdk": 36,
+      "cannotServe": [
+        "foreground",
+        "trusted-display"
+      ],
+      "expect": {
+        "surface": "foreground"
+      }
+    },
+    {
+      "name": "nothing serves anywhere under background: degraded from trusted display (no shell)",
+      "capability": "ui.tap",
+      "preference": "BACKGROUND_PREFERRED",
+      "shell": false,
+      "sdk": 36,
+      "cannotServe": [
+        "foreground",
+        "trusted-display"
+      ],
+      "expect": {
+        "surface": "foreground",
+        "degradedFrom": "trusted-display",
+        "reason": "E_SURFACE_NO_SHELL"
+      }
+    },
+    {
+      "name": "nothing serves anywhere under background with shell: degraded, unavailable",
+      "capability": "ui.tap",
+      "preference": "BACKGROUND_PREFERRED",
+      "shell": true,
+      "sdk": 36,
+      "cannotServe": [
+        "foreground",
+        "trusted-display"
+      ],
+      "expect": {
+        "surface": "foreground",
+        "degradedFrom": "trusted-display",
+        "reason": "E_SURFACE_UNAVAILABLE"
+      }
+    },
+    {
+      "name": "variant: observe-only then trusted (no foreground), foreground pref, observe cannot serve",
+      "capability": "screen.record",
+      "preference": "FOREGROUND",
+      "shell": true,
+      "sdk": 36,
+      "surfaces": [
+        "observe-only",
+        "trusted-display"
+      ],
+      "cannotServe": [
+        "observe-only"
+      ],
+      "expect": {
+        "surface": "observe-only",
+        "requiresMode": "observe-only",
+        "reason": "E_SURFACE_MODE_REQUIRED"
+      }
+    },
+    {
+      "name": "variant: trusted then observe-only under background, observe serves",
+      "capability": "screen.record",
+      "preference": "BACKGROUND_PREFERRED",
+      "shell": false,
+      "sdk": 36,
+      "surfaces": [
+        "trusted-display",
+        "observe-only"
+      ],
+      "expect": {
+        "surface": "observe-only"
+      }
+    }
+  ],
+  "stage": [
+    {
+      "name": "trusted-only cap, foreground preference: refused before the gate",
+      "id": "s1",
+      "capability": "surface.virtual",
+      "args": "{\"width\":720,\"height\":1280,\"densityDpi\":320}",
+      "preference": "FOREGROUND",
+      "shell": true,
+      "sdk": 36,
+      "implemented": true,
+      "decision": {
+        "surface": "trusted-display",
+        "requiresMode": "trusted-display",
+        "reason": "E_SURFACE_MODE_REQUIRED"
+      },
+      "rejected": {
+        "code": "E_SURFACE_MODE_REQUIRED",
+        "json": "{\"v\":1,\"id\":\"s1\",\"ok\":false,\"elapsedMs\":3,\"surface\":\"trusted-display\",\"degraded\":false,\"reason\":\"capability surface.virtual only runs on the trusted-display execution mode; switch the surface preference or bring that display up, then retry\",\"error\":{\"code\":\"E_SURFACE_MODE_REQUIRED\",\"retryable\":false,\"exitCode\":4},\"retryPolicy\":\"user_decide\",\"effectState\":\"not_started\"}"
+      }
+    },
+    {
+      "name": "trusted-only cap, background, no shell: refused",
+      "id": "s2",
+      "capability": "surface.virtual",
+      "args": "{\"width\":720,\"height\":1280,\"densityDpi\":320}",
+      "preference": "BACKGROUND_PREFERRED",
+      "shell": false,
+      "sdk": 36,
+      "implemented": true,
+      "decision": {
+        "surface": "trusted-display",
+        "requiresMode": "trusted-display",
+        "reason": "E_SURFACE_MODE_REQUIRED"
+      },
+      "rejected": {
+        "code": "E_SURFACE_MODE_REQUIRED",
+        "json": "{\"v\":1,\"id\":\"s2\",\"ok\":false,\"elapsedMs\":3,\"surface\":\"trusted-display\",\"degraded\":false,\"reason\":\"capability surface.virtual only runs on the trusted-display execution mode; switch the surface preference or bring that display up, then retry\",\"error\":{\"code\":\"E_SURFACE_MODE_REQUIRED\",\"retryable\":false,\"exitCode\":4},\"retryPolicy\":\"user_decide\",\"effectState\":\"not_started\"}"
+      }
+    },
+    {
+      "name": "node cap goes on to the gate",
+      "id": "s3",
+      "capability": "ui.node",
+      "args": "{\"nodeId\":3}",
+      "preference": "FOREGROUND",
+      "shell": false,
+      "sdk": 36,
+      "implemented": true,
+      "decision": {
+        "surface": "foreground"
+      },
+      "rejected": null
+    },
+    {
+      "name": "node cap, background, no shell: degraded, goes on",
+      "id": "s4",
+      "capability": "ui.snapshot",
+      "args": "{}",
+      "preference": "BACKGROUND_PREFERRED",
+      "shell": false,
+      "sdk": 36,
+      "implemented": true,
+      "decision": {
+        "surface": "foreground",
+        "degradedFrom": "trusted-display",
+        "reason": "E_SURFACE_NO_SHELL"
+      },
+      "rejected": null
+    },
+    {
+      "name": "nothing implemented: refused with the decided surface",
+      "id": "s5",
+      "capability": "ui.tap",
+      "args": "{\"x\":1,\"y\":2}",
+      "preference": "BACKGROUND_PREFERRED",
+      "shell": false,
+      "sdk": 36,
+      "implemented": false,
+      "decision": {
+        "surface": "foreground",
+        "degradedFrom": "trusted-display",
+        "reason": "E_SURFACE_NO_SHELL"
+      },
+      "rejected": {
+        "code": "E_NOT_IMPLEMENTED",
+        "json": "{\"v\":1,\"id\":\"s5\",\"ok\":false,\"elapsedMs\":3,\"surface\":\"foreground\",\"degradedFrom\":\"trusted-display\",\"degraded\":true,\"reason\":\"ui.tap\",\"error\":{\"code\":\"E_NOT_IMPLEMENTED\",\"retryable\":false,\"exitCode\":1},\"retryPolicy\":\"user_decide\",\"effectState\":\"not_started\"}"
+      }
+    },
+    {
+      "name": "nothing implemented, foreground",
+      "id": "s6",
+      "capability": "ui.node",
+      "args": "{\"nodeId\":0}",
+      "preference": "FOREGROUND",
+      "shell": false,
+      "sdk": 36,
+      "implemented": false,
+      "decision": {
+        "surface": "foreground"
+      },
+      "rejected": {
+        "code": "E_NOT_IMPLEMENTED",
+        "json": "{\"v\":1,\"id\":\"s6\",\"ok\":false,\"elapsedMs\":3,\"surface\":\"foreground\",\"degraded\":false,\"reason\":\"ui.node\",\"error\":{\"code\":\"E_NOT_IMPLEMENTED\",\"retryable\":false,\"exitCode\":1},\"retryPolicy\":\"safe_retry\",\"effectState\":\"not_started\"}"
+      }
+    },
+    {
+      "name": "bring host to front under background: foreground, goes on",
+      "id": "s7",
+      "capability": "app.launch",
+      "args": "{\"package\":\"org.example.dshmobile\"}",
+      "preference": "BACKGROUND_PREFERRED",
+      "shell": true,
+      "sdk": 36,
+      "implemented": true,
+      "decision": {
+        "surface": "foreground"
+      },
+      "rejected": null
+    },
+    {
+      "name": "launch another app under background with shell: trusted display",
+      "id": "s8",
+      "capability": "app.launch",
+      "args": "{\"package\":\"com.example.other\"}",
+      "preference": "BACKGROUND_PREFERRED",
+      "shell": true,
+      "sdk": 36,
+      "implemented": true,
+      "decision": {
+        "surface": "trusted-display"
+      },
+      "rejected": null
+    },
+    {
+      "name": "mode required wins over not implemented",
+      "id": "s9",
+      "capability": "surface.virtual",
+      "args": "{\"width\":1,\"height\":1,\"densityDpi\":1}",
+      "preference": "FOREGROUND",
+      "shell": false,
+      "sdk": 36,
+      "implemented": false,
+      "decision": {
+        "surface": "trusted-display",
+        "requiresMode": "trusted-display",
+        "reason": "E_SURFACE_MODE_REQUIRED"
+      },
+      "rejected": {
+        "code": "E_SURFACE_MODE_REQUIRED",
+        "json": "{\"v\":1,\"id\":\"s9\",\"ok\":false,\"elapsedMs\":3,\"surface\":\"trusted-display\",\"degraded\":false,\"reason\":\"capability surface.virtual only runs on the trusted-display execution mode; switch the surface preference or bring that display up, then retry\",\"error\":{\"code\":\"E_SURFACE_MODE_REQUIRED\",\"retryable\":false,\"exitCode\":4},\"retryPolicy\":\"user_decide\",\"effectState\":\"not_started\"}"
+      }
+    }
+  ],
+  "execQuota": [
+    {
+      "name": "ui.node: 30 executions per minute, then refused",
+      "capability": "ui.node",
+      "limit": 30,
+      "events": [
+        {
+          "at": 0,
+          "repeat": 30,
+          "approval": false,
+          "accepted": true
+        },
+        {
+          "at": 100,
+          "repeat": 1,
+          "approval": false,
+          "accepted": false
+        },
+        {
+          "at": 60001,
+          "repeat": 30,
+          "approval": false,
+          "accepted": true
+        },
+        {
+          "at": 60002,
+          "repeat": 1,
+          "approval": false,
+          "accepted": false
+        }
+      ]
+    },
+    {
+      "name": "approved calls are not charged and never refused here",
+      "capability": "ui.node",
+      "limit": 30,
+      "events": [
+        {
+          "at": 0,
+          "repeat": 50,
+          "approval": true,
+          "accepted": true
+        },
+        {
+          "at": 1,
+          "repeat": 30,
+          "approval": false,
+          "accepted": true
+        },
+        {
+          "at": 2,
+          "repeat": 3,
+          "approval": true,
+          "accepted": true
+        },
+        {
+          "at": 3,
+          "repeat": 1,
+          "approval": false,
+          "accepted": false
+        }
+      ]
+    },
+    {
+      "name": "app.launch: control category, 60",
+      "capability": "app.launch",
+      "limit": 60,
+      "events": [
+        {
+          "at": 0,
+          "repeat": 60,
+          "approval": false,
+          "accepted": true
+        },
+        {
+          "at": 59999,
+          "repeat": 1,
+          "approval": false,
+          "accepted": false
+        },
+        {
+          "at": 60000,
+          "repeat": 1,
+          "approval": false,
+          "accepted": false
+        },
+        {
+          "at": 60001,
+          "repeat": 1,
+          "approval": false,
+          "accepted": true
+        }
+      ]
+    },
+    {
+      "name": "sys.shell: 20",
+      "capability": "sys.shell",
+      "limit": 20,
+      "events": [
+        {
+          "at": 0,
+          "repeat": 20,
+          "approval": false,
+          "accepted": true
+        },
+        {
+          "at": 5,
+          "repeat": 1,
+          "approval": false,
+          "accepted": false
+        }
+      ]
+    }
+  ],
+  "execReject": [
+    {
+      "name": "execution quota refusal",
+      "id": "q1",
+      "capability": "ui.node",
+      "decision": {
+        "surface": "trusted-display"
+      },
+      "json": "{\"v\":1,\"id\":\"q1\",\"ok\":false,\"elapsedMs\":4,\"surface\":\"trusted-display\",\"degraded\":false,\"reason\":\"E_RATE_LIMITED\\/execution_rate\",\"error\":{\"code\":\"E_RATE_LIMITED\",\"retryable\":true,\"exitCode\":5},\"retryPolicy\":\"safe_retry\",\"effectState\":\"not_started\"}"
+    },
+    {
+      "name": "execution quota refusal after a fallback",
+      "id": "q2",
+      "capability": "ui.snapshot",
+      "decision": {
+        "surface": "foreground",
+        "degradedFrom": "trusted-display",
+        "reason": "E_SURFACE_NO_SHELL"
+      },
+      "json": "{\"v\":1,\"id\":\"q2\",\"ok\":false,\"elapsedMs\":4,\"surface\":\"foreground\",\"degradedFrom\":\"trusted-display\",\"degraded\":true,\"reason\":\"E_RATE_LIMITED\\/execution_rate\",\"error\":{\"code\":\"E_RATE_LIMITED\",\"retryable\":true,\"exitCode\":5},\"retryPolicy\":\"safe_retry\",\"effectState\":\"not_started\"}"
+    }
+  ],
+  "csharpOnly": {
+    "backendMatrix": [
+      {
+        "name": "Android 17, no Shizuku (the test phone)",
+        "sdk": 37,
+        "shell": false,
+        "displayAlive": false,
+        "supports": [
+          "a11y:ui.snapshot@foreground",
+          "direct:screen.capture@foreground",
+          "direct:screen.capture@observe-only",
+          "a11y:screen.capture@foreground",
+          "direct:screen.observe@observe-only",
+          "direct:screen.record@foreground",
+          "direct:screen.record@observe-only",
+          "direct:notify.read@foreground",
+          "direct:notify.read@observe-only",
+          "a11y:ui.tap@foreground",
+          "a11y:ui.swipe@foreground",
+          "a11y:ui.text@foreground",
+          "a11y:ui.key@foreground",
+          "a11y:ui.click@foreground",
+          "a11y:ui.longClick@foreground",
+          "a11y:ui.select@foreground",
+          "a11y:ui.dismiss@foreground",
+          "a11y:ui.scroll@foreground",
+          "a11y:ui.setValue@foreground",
+          "a11y:ui.waitFor@foreground",
+          "a11y:ui.node@foreground",
+          "a11y:ui.setProgress@foreground",
+          "a11y:ui.imeAction@foreground",
+          "direct:app.launch@foreground",
+          "direct:app.launch@observe-only",
+          "shizuku:app.stop@foreground",
+          "shizuku:app.stop@trusted-display",
+          "shizuku:app.stop@observe-only",
+          "shizuku:surface.virtual@trusted-display",
+          "direct:clip.read@foreground",
+          "direct:clip.write@foreground",
+          "direct:contact.read@foreground",
+          "direct:contact.read@observe-only",
+          "direct:contact.write@foreground",
+          "direct:contact.write@observe-only",
+          "direct:cal.read@foreground",
+          "direct:cal.read@observe-only",
+          "direct:cal.write@foreground",
+          "direct:cal.write@observe-only",
+          "direct:loc.read@foreground",
+          "direct:loc.read@observe-only",
+          "direct:media.read@foreground",
+          "direct:media.read@observe-only",
+          "direct:media.write@foreground",
+          "direct:media.write@observe-only",
+          "direct:audio.capture@foreground",
+          "direct:audio.capture@observe-only",
+          "direct:pkg.query@foreground",
+          "direct:pkg.query@observe-only",
+          "shizuku:app.install@foreground",
+          "shizuku:app.install@trusted-display",
+          "shizuku:app.install@observe-only",
+          "shizuku:sys.settings.write@foreground",
+          "shizuku:sys.settings.write@trusted-display",
+          "shizuku:sys.settings.write@observe-only",
+          "shizuku:appops.set@foreground",
+          "shizuku:appops.set@trusted-display",
+          "shizuku:appops.set@observe-only",
+          "direct:sys.intent@foreground",
+          "direct:sys.intent@observe-only",
+          "shizuku:sys.shell@foreground",
+          "shizuku:sys.shell@trusted-display",
+          "shizuku:sys.shell@observe-only",
+          "direct:notify.post@foreground",
+          "direct:notify.post@observe-only"
+        ],
+        "notImplemented": [],
+        "decideForeground": {
+          "ui.node": {
+            "surface": "foreground"
+          },
+          "ui.snapshot": {
+            "surface": "foreground"
+          },
+          "surface.virtual": {
+            "surface": "trusted-display",
+            "requiresMode": "trusted-display",
+            "reason": "E_SURFACE_MODE_REQUIRED"
+          },
+          "screen.capture": {
+            "surface": "foreground"
+          },
+          "ui.tap": {
+            "surface": "foreground"
+          }
+        },
+        "decideBackground": {
+          "ui.node": {
+            "surface": "foreground",
+            "degradedFrom": "trusted-display",
+            "reason": "E_SURFACE_NO_SHELL"
+          },
+          "ui.snapshot": {
+            "surface": "foreground",
+            "degradedFrom": "trusted-display",
+            "reason": "E_SURFACE_NO_SHELL"
+          },
+          "surface.virtual": {
+            "surface": "trusted-display",
+            "requiresMode": "trusted-display",
+            "reason": "E_SURFACE_MODE_REQUIRED"
+          },
+          "screen.capture": {
+            "surface": "foreground",
+            "degradedFrom": "trusted-display",
+            "reason": "E_SURFACE_NO_SHELL"
+          },
+          "ui.tap": {
+            "surface": "foreground",
+            "degradedFrom": "trusted-display",
+            "reason": "E_SURFACE_NO_SHELL"
+          }
+        }
+      },
+      {
+        "name": "Android 17, Shizuku, trusted display up",
+        "sdk": 37,
+        "shell": true,
+        "displayAlive": true,
+        "supports": [
+          "a11y:ui.snapshot@foreground",
+          "a11y:ui.snapshot@trusted-display",
+          "direct:screen.capture@foreground",
+          "direct:screen.capture@observe-only",
+          "a11y:screen.capture@foreground",
+          "shizuku:screen.capture@trusted-display",
+          "direct:screen.observe@observe-only",
+          "direct:screen.record@foreground",
+          "direct:screen.record@observe-only",
+          "shizuku:screen.record@trusted-display",
+          "direct:notify.read@foreground",
+          "direct:notify.read@observe-only",
+          "a11y:ui.tap@foreground",
+          "shizuku:ui.tap@trusted-display",
+          "a11y:ui.swipe@foreground",
+          "shizuku:ui.swipe@trusted-display",
+          "a11y:ui.text@foreground",
+          "shizuku:ui.text@trusted-display",
+          "a11y:ui.key@foreground",
+          "shizuku:ui.key@trusted-display",
+          "a11y:ui.click@foreground",
+          "a11y:ui.click@trusted-display",
+          "a11y:ui.longClick@foreground",
+          "a11y:ui.longClick@trusted-display",
+          "a11y:ui.select@foreground",
+          "a11y:ui.select@trusted-display",
+          "a11y:ui.dismiss@foreground",
+          "a11y:ui.dismiss@trusted-display",
+          "a11y:ui.scroll@foreground",
+          "a11y:ui.scroll@trusted-display",
+          "a11y:ui.setValue@foreground",
+          "a11y:ui.setValue@trusted-display",
+          "a11y:ui.waitFor@foreground",
+          "a11y:ui.waitFor@trusted-display",
+          "a11y:ui.node@foreground",
+          "a11y:ui.node@trusted-display",
+          "a11y:ui.setProgress@foreground",
+          "a11y:ui.setProgress@trusted-display",
+          "a11y:ui.imeAction@foreground",
+          "a11y:ui.imeAction@trusted-display",
+          "direct:app.launch@foreground",
+          "direct:app.launch@observe-only",
+          "shizuku:app.launch@trusted-display",
+          "shizuku:app.stop@foreground",
+          "shizuku:app.stop@trusted-display",
+          "shizuku:app.stop@observe-only",
+          "shizuku:surface.virtual@trusted-display",
+          "direct:clip.read@foreground",
+          "direct:clip.write@foreground",
+          "direct:contact.read@foreground",
+          "direct:contact.read@observe-only",
+          "direct:contact.write@foreground",
+          "direct:contact.write@observe-only",
+          "direct:cal.read@foreground",
+          "direct:cal.read@observe-only",
+          "direct:cal.write@foreground",
+          "direct:cal.write@observe-only",
+          "direct:loc.read@foreground",
+          "direct:loc.read@observe-only",
+          "direct:media.read@foreground",
+          "direct:media.read@observe-only",
+          "direct:media.write@foreground",
+          "direct:media.write@observe-only",
+          "direct:audio.capture@foreground",
+          "direct:audio.capture@observe-only",
+          "direct:pkg.query@foreground",
+          "direct:pkg.query@observe-only",
+          "shizuku:app.install@foreground",
+          "shizuku:app.install@trusted-display",
+          "shizuku:app.install@observe-only",
+          "shizuku:sys.settings.write@foreground",
+          "shizuku:sys.settings.write@trusted-display",
+          "shizuku:sys.settings.write@observe-only",
+          "shizuku:appops.set@foreground",
+          "shizuku:appops.set@trusted-display",
+          "shizuku:appops.set@observe-only",
+          "direct:sys.intent@foreground",
+          "direct:sys.intent@observe-only",
+          "shizuku:sys.shell@foreground",
+          "shizuku:sys.shell@trusted-display",
+          "shizuku:sys.shell@observe-only",
+          "direct:notify.post@foreground",
+          "direct:notify.post@observe-only"
+        ],
+        "notImplemented": [],
+        "decideForeground": {
+          "ui.node": {
+            "surface": "foreground"
+          },
+          "ui.snapshot": {
+            "surface": "foreground"
+          },
+          "surface.virtual": {
+            "surface": "trusted-display",
+            "requiresMode": "trusted-display",
+            "reason": "E_SURFACE_MODE_REQUIRED"
+          },
+          "screen.capture": {
+            "surface": "foreground"
+          },
+          "ui.tap": {
+            "surface": "foreground"
+          }
+        },
+        "decideBackground": {
+          "ui.node": {
+            "surface": "trusted-display"
+          },
+          "ui.snapshot": {
+            "surface": "trusted-display"
+          },
+          "surface.virtual": {
+            "surface": "trusted-display"
+          },
+          "screen.capture": {
+            "surface": "trusted-display"
+          },
+          "ui.tap": {
+            "surface": "trusted-display"
+          }
+        }
+      },
+      {
+        "name": "Android 17, Shizuku, no display yet",
+        "sdk": 37,
+        "shell": true,
+        "displayAlive": false,
+        "supports": [
+          "a11y:ui.snapshot@foreground",
+          "direct:screen.capture@foreground",
+          "direct:screen.capture@observe-only",
+          "a11y:screen.capture@foreground",
+          "direct:screen.observe@observe-only",
+          "direct:screen.record@foreground",
+          "direct:screen.record@observe-only",
+          "direct:notify.read@foreground",
+          "direct:notify.read@observe-only",
+          "a11y:ui.tap@foreground",
+          "a11y:ui.swipe@foreground",
+          "a11y:ui.text@foreground",
+          "a11y:ui.key@foreground",
+          "a11y:ui.click@foreground",
+          "a11y:ui.longClick@foreground",
+          "a11y:ui.select@foreground",
+          "a11y:ui.dismiss@foreground",
+          "a11y:ui.scroll@foreground",
+          "a11y:ui.setValue@foreground",
+          "a11y:ui.waitFor@foreground",
+          "a11y:ui.node@foreground",
+          "a11y:ui.setProgress@foreground",
+          "a11y:ui.imeAction@foreground",
+          "direct:app.launch@foreground",
+          "direct:app.launch@observe-only",
+          "shizuku:app.stop@foreground",
+          "shizuku:app.stop@trusted-display",
+          "shizuku:app.stop@observe-only",
+          "shizuku:surface.virtual@trusted-display",
+          "direct:clip.read@foreground",
+          "direct:clip.write@foreground",
+          "direct:contact.read@foreground",
+          "direct:contact.read@observe-only",
+          "direct:contact.write@foreground",
+          "direct:contact.write@observe-only",
+          "direct:cal.read@foreground",
+          "direct:cal.read@observe-only",
+          "direct:cal.write@foreground",
+          "direct:cal.write@observe-only",
+          "direct:loc.read@foreground",
+          "direct:loc.read@observe-only",
+          "direct:media.read@foreground",
+          "direct:media.read@observe-only",
+          "direct:media.write@foreground",
+          "direct:media.write@observe-only",
+          "direct:audio.capture@foreground",
+          "direct:audio.capture@observe-only",
+          "direct:pkg.query@foreground",
+          "direct:pkg.query@observe-only",
+          "shizuku:app.install@foreground",
+          "shizuku:app.install@trusted-display",
+          "shizuku:app.install@observe-only",
+          "shizuku:sys.settings.write@foreground",
+          "shizuku:sys.settings.write@trusted-display",
+          "shizuku:sys.settings.write@observe-only",
+          "shizuku:appops.set@foreground",
+          "shizuku:appops.set@trusted-display",
+          "shizuku:appops.set@observe-only",
+          "direct:sys.intent@foreground",
+          "direct:sys.intent@observe-only",
+          "shizuku:sys.shell@foreground",
+          "shizuku:sys.shell@trusted-display",
+          "shizuku:sys.shell@observe-only",
+          "direct:notify.post@foreground",
+          "direct:notify.post@observe-only"
+        ],
+        "notImplemented": [],
+        "decideForeground": {
+          "ui.node": {
+            "surface": "foreground"
+          },
+          "ui.snapshot": {
+            "surface": "foreground"
+          },
+          "surface.virtual": {
+            "surface": "trusted-display",
+            "requiresMode": "trusted-display",
+            "reason": "E_SURFACE_MODE_REQUIRED"
+          },
+          "screen.capture": {
+            "surface": "foreground"
+          },
+          "ui.tap": {
+            "surface": "foreground"
+          }
+        },
+        "decideBackground": {
+          "ui.node": {
+            "surface": "foreground",
+            "degradedFrom": "trusted-display",
+            "reason": "E_SURFACE_UNAVAILABLE"
+          },
+          "ui.snapshot": {
+            "surface": "foreground",
+            "degradedFrom": "trusted-display",
+            "reason": "E_SURFACE_UNAVAILABLE"
+          },
+          "surface.virtual": {
+            "surface": "trusted-display"
+          },
+          "screen.capture": {
+            "surface": "foreground",
+            "degradedFrom": "trusted-display",
+            "reason": "E_SURFACE_UNAVAILABLE"
+          },
+          "ui.tap": {
+            "surface": "foreground",
+            "degradedFrom": "trusted-display",
+            "reason": "E_SURFACE_UNAVAILABLE"
+          }
+        }
+      },
+      {
+        "name": "Android 12, Shizuku, display up",
+        "sdk": 32,
+        "shell": true,
+        "displayAlive": true,
+        "supports": [
+          "a11y:ui.snapshot@foreground",
+          "direct:screen.capture@foreground",
+          "direct:screen.capture@observe-only",
+          "a11y:screen.capture@foreground",
+          "shizuku:screen.capture@trusted-display",
+          "direct:screen.observe@observe-only",
+          "direct:screen.record@foreground",
+          "direct:screen.record@observe-only",
+          "shizuku:screen.record@trusted-display",
+          "direct:notify.read@foreground",
+          "direct:notify.read@observe-only",
+          "a11y:ui.tap@foreground",
+          "shizuku:ui.tap@trusted-display",
+          "a11y:ui.swipe@foreground",
+          "shizuku:ui.swipe@trusted-display",
+          "a11y:ui.text@foreground",
+          "shizuku:ui.text@trusted-display",
+          "a11y:ui.key@foreground",
+          "shizuku:ui.key@trusted-display",
+          "a11y:ui.click@foreground",
+          "a11y:ui.longClick@foreground",
+          "a11y:ui.select@foreground",
+          "a11y:ui.dismiss@foreground",
+          "a11y:ui.scroll@foreground",
+          "a11y:ui.setValue@foreground",
+          "a11y:ui.waitFor@foreground",
+          "a11y:ui.node@foreground",
+          "a11y:ui.setProgress@foreground",
+          "a11y:ui.imeAction@foreground",
+          "direct:app.launch@foreground",
+          "direct:app.launch@observe-only",
+          "shizuku:app.launch@trusted-display",
+          "shizuku:app.stop@foreground",
+          "shizuku:app.stop@trusted-display",
+          "shizuku:app.stop@observe-only",
+          "shizuku:surface.virtual@trusted-display",
+          "direct:clip.read@foreground",
+          "direct:clip.write@foreground",
+          "direct:contact.read@foreground",
+          "direct:contact.read@observe-only",
+          "direct:contact.write@foreground",
+          "direct:contact.write@observe-only",
+          "direct:cal.read@foreground",
+          "direct:cal.read@observe-only",
+          "direct:cal.write@foreground",
+          "direct:cal.write@observe-only",
+          "direct:loc.read@foreground",
+          "direct:loc.read@observe-only",
+          "direct:media.read@foreground",
+          "direct:media.read@observe-only",
+          "direct:media.write@foreground",
+          "direct:media.write@observe-only",
+          "direct:audio.capture@foreground",
+          "direct:audio.capture@observe-only",
+          "direct:pkg.query@foreground",
+          "direct:pkg.query@observe-only",
+          "shizuku:app.install@foreground",
+          "shizuku:app.install@trusted-display",
+          "shizuku:app.install@observe-only",
+          "shizuku:sys.settings.write@foreground",
+          "shizuku:sys.settings.write@trusted-display",
+          "shizuku:sys.settings.write@observe-only",
+          "shizuku:appops.set@foreground",
+          "shizuku:appops.set@trusted-display",
+          "shizuku:appops.set@observe-only",
+          "direct:sys.intent@foreground",
+          "direct:sys.intent@observe-only",
+          "shizuku:sys.shell@foreground",
+          "shizuku:sys.shell@trusted-display",
+          "shizuku:sys.shell@observe-only",
+          "direct:notify.post@foreground",
+          "direct:notify.post@observe-only"
+        ],
+        "notImplemented": [],
+        "decideForeground": {
+          "ui.node": {
+            "surface": "foreground"
+          },
+          "ui.snapshot": {
+            "surface": "foreground"
+          },
+          "surface.virtual": {
+            "surface": "trusted-display",
+            "requiresMode": "trusted-display",
+            "reason": "E_SURFACE_MODE_REQUIRED"
+          },
+          "screen.capture": {
+            "surface": "foreground"
+          },
+          "ui.tap": {
+            "surface": "foreground"
+          }
+        },
+        "decideBackground": {
+          "ui.node": {
+            "surface": "foreground",
+            "degradedFrom": "trusted-display",
+            "reason": "E_SURFACE_API_LEVEL"
+          },
+          "ui.snapshot": {
+            "surface": "foreground",
+            "degradedFrom": "trusted-display",
+            "reason": "E_SURFACE_API_LEVEL"
+          },
+          "surface.virtual": {
+            "surface": "trusted-display",
+            "requiresMode": "trusted-display",
+            "reason": "E_SURFACE_MODE_REQUIRED"
+          },
+          "screen.capture": {
+            "surface": "foreground",
+            "degradedFrom": "trusted-display",
+            "reason": "E_SURFACE_API_LEVEL"
+          },
+          "ui.tap": {
+            "surface": "foreground",
+            "degradedFrom": "trusted-display",
+            "reason": "E_SURFACE_API_LEVEL"
+          }
+        }
+      },
+      {
+        "name": "Android 10",
+        "sdk": 29,
+        "shell": false,
+        "displayAlive": false,
+        "supports": [
+          "a11y:ui.snapshot@foreground",
+          "direct:screen.capture@foreground",
+          "direct:screen.capture@observe-only",
+          "direct:screen.observe@observe-only",
+          "direct:screen.record@foreground",
+          "direct:screen.record@observe-only",
+          "direct:notify.read@foreground",
+          "direct:notify.read@observe-only",
+          "a11y:ui.tap@foreground",
+          "a11y:ui.swipe@foreground",
+          "a11y:ui.text@foreground",
+          "a11y:ui.key@foreground",
+          "a11y:ui.click@foreground",
+          "a11y:ui.longClick@foreground",
+          "a11y:ui.select@foreground",
+          "a11y:ui.dismiss@foreground",
+          "a11y:ui.scroll@foreground",
+          "a11y:ui.setValue@foreground",
+          "a11y:ui.waitFor@foreground",
+          "a11y:ui.node@foreground",
+          "a11y:ui.setProgress@foreground",
+          "a11y:ui.imeAction@foreground",
+          "direct:app.launch@foreground",
+          "direct:app.launch@observe-only",
+          "shizuku:app.stop@foreground",
+          "shizuku:app.stop@trusted-display",
+          "shizuku:app.stop@observe-only",
+          "shizuku:surface.virtual@trusted-display",
+          "direct:clip.read@foreground",
+          "direct:clip.write@foreground",
+          "direct:contact.read@foreground",
+          "direct:contact.read@observe-only",
+          "direct:contact.write@foreground",
+          "direct:contact.write@observe-only",
+          "direct:cal.read@foreground",
+          "direct:cal.read@observe-only",
+          "direct:cal.write@foreground",
+          "direct:cal.write@observe-only",
+          "direct:loc.read@foreground",
+          "direct:loc.read@observe-only",
+          "direct:media.read@foreground",
+          "direct:media.read@observe-only",
+          "direct:media.write@foreground",
+          "direct:media.write@observe-only",
+          "direct:audio.capture@foreground",
+          "direct:audio.capture@observe-only",
+          "direct:pkg.query@foreground",
+          "direct:pkg.query@observe-only",
+          "shizuku:app.install@foreground",
+          "shizuku:app.install@trusted-display",
+          "shizuku:app.install@observe-only",
+          "shizuku:sys.settings.write@foreground",
+          "shizuku:sys.settings.write@trusted-display",
+          "shizuku:sys.settings.write@observe-only",
+          "shizuku:appops.set@foreground",
+          "shizuku:appops.set@trusted-display",
+          "shizuku:appops.set@observe-only",
+          "direct:sys.intent@foreground",
+          "direct:sys.intent@observe-only",
+          "shizuku:sys.shell@foreground",
+          "shizuku:sys.shell@trusted-display",
+          "shizuku:sys.shell@observe-only",
+          "direct:notify.post@foreground",
+          "direct:notify.post@observe-only"
+        ],
+        "notImplemented": [],
+        "decideForeground": {
+          "ui.node": {
+            "surface": "foreground"
+          },
+          "ui.snapshot": {
+            "surface": "foreground"
+          },
+          "surface.virtual": {
+            "surface": "trusted-display",
+            "requiresMode": "trusted-display",
+            "reason": "E_SURFACE_MODE_REQUIRED"
+          },
+          "screen.capture": {
+            "surface": "foreground"
+          },
+          "ui.tap": {
+            "surface": "foreground"
+          }
+        },
+        "decideBackground": {
+          "ui.node": {
+            "surface": "foreground",
+            "degradedFrom": "trusted-display",
+            "reason": "E_SURFACE_API_LEVEL"
+          },
+          "ui.snapshot": {
+            "surface": "foreground",
+            "degradedFrom": "trusted-display",
+            "reason": "E_SURFACE_API_LEVEL"
+          },
+          "surface.virtual": {
+            "surface": "trusted-display",
+            "requiresMode": "trusted-display",
+            "reason": "E_SURFACE_MODE_REQUIRED"
+          },
+          "screen.capture": {
+            "surface": "foreground",
+            "degradedFrom": "trusted-display",
+            "reason": "E_SURFACE_API_LEVEL"
+          },
+          "ui.tap": {
+            "surface": "foreground",
+            "degradedFrom": "trusted-display",
+            "reason": "E_SURFACE_API_LEVEL"
+          }
+        }
+      }
+    ]
+  }
+}

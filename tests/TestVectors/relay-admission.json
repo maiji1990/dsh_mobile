@@ -1,0 +1,945 @@
+{
+  "description": "PR-07 segment 3: Relay admission before the gate (DSHBox interlock-relay-core RelayCoordinator.handle up to the args pre-check, CapabilityArgsSpec, ArgErrors, RateLimiter) and response encoding (EnvelopeCodec.encode / encodeControl). 'args' = CapabilityArgsSpec.validate(capability, args) -> reason or null. 'admission' = registered-capability check, self-target scan, args pre-check (selfPackage below; 'registered' defaults to the list below) -> null or the rejection fields. 'rate' = entry limiter with a fake ms clock. 'encode' / 'controlEncode' = the text Relay writes on the device (Android libcore org.json: insertion order, '/' escaped); the JVM test compares structure because Maven org.json orders and escapes differently. 'csharpOnly' cases follow libcore where Maven org.json differs.",
+  "selfPackage": "org.example.dshmobile",
+  "registered": [
+    "ui.snapshot",
+    "ui.node"
+  ],
+  "category": {
+    "ui.snapshot": "OBSERVE",
+    "screen.capture": "OBSERVE",
+    "screen.observe": "OBSERVE",
+    "screen.record": "OBSERVE",
+    "notify.read": "OBSERVE",
+    "ui.node": "OBSERVE",
+    "ui.tap": "CONTROL",
+    "ui.swipe": "CONTROL",
+    "ui.text": "CONTROL",
+    "ui.key": "CONTROL",
+    "ui.click": "CONTROL",
+    "ui.longClick": "CONTROL",
+    "ui.select": "CONTROL",
+    "ui.dismiss": "CONTROL",
+    "ui.scroll": "CONTROL",
+    "ui.setValue": "CONTROL",
+    "ui.waitFor": "CONTROL",
+    "ui.setProgress": "CONTROL",
+    "ui.imeAction": "CONTROL",
+    "app.launch": "CONTROL",
+    "app.stop": "CONTROL",
+    "surface.virtual": "CONTROL",
+    "clip.read": "DATA",
+    "clip.write": "DATA",
+    "contact.read": "DATA",
+    "contact.write": "DATA",
+    "cal.read": "DATA",
+    "cal.write": "DATA",
+    "loc.read": "DATA",
+    "media.read": "DATA",
+    "media.write": "DATA",
+    "audio.capture": "DATA",
+    "pkg.query": "SYSTEM",
+    "app.install": "SYSTEM",
+    "sys.settings.write": "SYSTEM",
+    "appops.set": "SYSTEM",
+    "sys.intent": "SYSTEM",
+    "notify.post": "SYSTEM",
+    "sys.shell": "DANGEROUS"
+  },
+  "executionLimit": {
+    "ui.snapshot": 30,
+    "screen.capture": 30,
+    "screen.observe": 30,
+    "screen.record": 30,
+    "notify.read": 30,
+    "ui.tap": 60,
+    "ui.swipe": 60,
+    "ui.text": 60,
+    "ui.key": 60,
+    "ui.click": 60,
+    "ui.longClick": 60,
+    "ui.select": 60,
+    "ui.dismiss": 60,
+    "ui.scroll": 60,
+    "ui.setValue": 60,
+    "ui.waitFor": 60,
+    "ui.node": 30,
+    "ui.setProgress": 60,
+    "ui.imeAction": 60,
+    "app.launch": 60,
+    "app.stop": 60,
+    "surface.virtual": 60,
+    "clip.read": 20,
+    "clip.write": 20,
+    "contact.read": 20,
+    "contact.write": 20,
+    "cal.read": 20,
+    "cal.write": 20,
+    "loc.read": 20,
+    "media.read": 20,
+    "media.write": 20,
+    "audio.capture": 20,
+    "pkg.query": 20,
+    "app.install": 20,
+    "sys.settings.write": 20,
+    "appops.set": 20,
+    "sys.intent": 20,
+    "sys.shell": 20,
+    "notify.post": 20
+  },
+  "retryPolicy": {
+    "ui.snapshot": "safe_retry",
+    "screen.capture": "query_first",
+    "screen.observe": "query_first",
+    "screen.record": "query_first",
+    "notify.read": "query_first",
+    "ui.tap": "user_decide",
+    "ui.swipe": "user_decide",
+    "ui.text": "user_decide",
+    "ui.key": "user_decide",
+    "ui.click": "user_decide",
+    "ui.longClick": "user_decide",
+    "ui.select": "user_decide",
+    "ui.dismiss": "user_decide",
+    "ui.scroll": "user_decide",
+    "ui.setValue": "query_first",
+    "ui.waitFor": "safe_retry",
+    "ui.node": "safe_retry",
+    "ui.setProgress": "user_decide",
+    "ui.imeAction": "user_decide",
+    "app.launch": "user_decide",
+    "app.stop": "user_decide",
+    "surface.virtual": "user_decide",
+    "clip.read": "user_decide",
+    "clip.write": "query_first",
+    "contact.read": "user_decide",
+    "contact.write": "user_decide",
+    "cal.read": "user_decide",
+    "cal.write": "user_decide",
+    "loc.read": "query_first",
+    "media.read": "query_first",
+    "media.write": "user_decide",
+    "audio.capture": "query_first",
+    "pkg.query": "safe_retry",
+    "app.install": "user_decide",
+    "sys.settings.write": "query_first",
+    "appops.set": "query_first",
+    "sys.intent": "user_decide",
+    "sys.shell": "user_decide",
+    "notify.post": "user_decide"
+  },
+  "errors": [
+    {
+      "code": "E_GATE_HOST_DENIED",
+      "effectStateOnFailure": "not_started",
+      "consentKind": null
+    },
+    {
+      "code": "E_GATE_SYSTEM_MISSING",
+      "effectStateOnFailure": "not_started",
+      "consentKind": null
+    },
+    {
+      "code": "E_GATE_APPROVAL_TIMEOUT",
+      "effectStateOnFailure": "unknown",
+      "consentKind": null
+    },
+    {
+      "code": "E_AWAITING_CONSENT",
+      "effectStateOnFailure": "not_started",
+      "consentKind": "relay_policy"
+    },
+    {
+      "code": "E_GATE_WAITING_TURN",
+      "effectStateOnFailure": "not_started",
+      "consentKind": "relay_policy"
+    },
+    {
+      "code": "E_GATE_CANCELLED",
+      "effectStateOnFailure": "not_started",
+      "consentKind": "relay_policy"
+    },
+    {
+      "code": "E_TASK_SUSPENDED_BY_HOST",
+      "effectStateOnFailure": "not_started",
+      "consentKind": null
+    },
+    {
+      "code": "E_NO_EDITABLE_TARGET",
+      "effectStateOnFailure": "not_started",
+      "consentKind": null
+    },
+    {
+      "code": "E_NODE_NOT_FOUND",
+      "effectStateOnFailure": "not_started",
+      "consentKind": null
+    },
+    {
+      "code": "E_NODE_AMBIGUOUS",
+      "effectStateOnFailure": "not_started",
+      "consentKind": null
+    },
+    {
+      "code": "E_NODE_NOT_ACTIONABLE",
+      "effectStateOnFailure": "not_started",
+      "consentKind": null
+    },
+    {
+      "code": "E_ACTION_REJECTED",
+      "effectStateOnFailure": "not_started",
+      "consentKind": null
+    },
+    {
+      "code": "E_WAIT_TIMEOUT",
+      "effectStateOnFailure": "unknown",
+      "consentKind": null
+    },
+    {
+      "code": "E_GATE_NO_FOREGROUND",
+      "effectStateOnFailure": "not_started",
+      "consentKind": "relay_policy"
+    },
+    {
+      "code": "E_CLIPBOARD_NO_FOCUS",
+      "effectStateOnFailure": "not_started",
+      "consentKind": null
+    },
+    {
+      "code": "E_CAPABILITY_UNAVAILABLE_ON_DEVICE",
+      "effectStateOnFailure": "not_started",
+      "consentKind": null
+    },
+    {
+      "code": "E_NOT_IMPLEMENTED",
+      "effectStateOnFailure": "not_started",
+      "consentKind": null
+    },
+    {
+      "code": "E_NODE_NO_IME_ACTION",
+      "effectStateOnFailure": "not_started",
+      "consentKind": null
+    },
+    {
+      "code": "E_NODE_SYSTEM_CONSENT_TARGET",
+      "effectStateOnFailure": "not_started",
+      "consentKind": null
+    },
+    {
+      "code": "E_LAUNCH_NOT_LANDED",
+      "effectStateOnFailure": "not_started",
+      "consentKind": null
+    },
+    {
+      "code": "E_SURFACE_API_LEVEL",
+      "effectStateOnFailure": "not_started",
+      "consentKind": null
+    },
+    {
+      "code": "E_SURFACE_NO_SHELL",
+      "effectStateOnFailure": "not_started",
+      "consentKind": null
+    },
+    {
+      "code": "E_SURFACE_TRUSTED_DENIED",
+      "effectStateOnFailure": "not_started",
+      "consentKind": null
+    },
+    {
+      "code": "E_SURFACE_UNAVAILABLE",
+      "effectStateOnFailure": "not_started",
+      "consentKind": null
+    },
+    {
+      "code": "E_SURFACE_MODE_REQUIRED",
+      "effectStateOnFailure": "not_started",
+      "consentKind": null
+    },
+    {
+      "code": "E_SURFACE_SYSTEM_CONSENT_REQUIRED",
+      "effectStateOnFailure": "not_started",
+      "consentKind": null
+    },
+    {
+      "code": "E_SURFACE_SECURE_WINDOW",
+      "effectStateOnFailure": "not_started",
+      "consentKind": null
+    },
+    {
+      "code": "E_BACKEND_SHIZUKU_DEAD",
+      "effectStateOnFailure": "not_started",
+      "consentKind": null
+    },
+    {
+      "code": "E_BACKEND_UNAVAILABLE",
+      "effectStateOnFailure": "not_started",
+      "consentKind": null
+    },
+    {
+      "code": "E_STORAGE_FULL",
+      "effectStateOnFailure": "not_started",
+      "consentKind": null
+    },
+    {
+      "code": "E_RATE_LIMITED",
+      "effectStateOnFailure": "not_started",
+      "consentKind": null
+    },
+    {
+      "code": "E_QUEUE_FULL",
+      "effectStateOnFailure": "not_started",
+      "consentKind": null
+    },
+    {
+      "code": "E_REQUEST_TOO_LARGE",
+      "effectStateOnFailure": "not_started",
+      "consentKind": null
+    },
+    {
+      "code": "E_TRANSPORT_MALFORMED",
+      "effectStateOnFailure": "not_started",
+      "consentKind": null
+    },
+    {
+      "code": "E_TRANSPORT_TIMEOUT",
+      "effectStateOnFailure": "unknown",
+      "consentKind": null
+    },
+    {
+      "code": "E_INTERNAL",
+      "effectStateOnFailure": "not_started",
+      "consentKind": null
+    }
+  ],
+  "args": [
+    {
+      "name": "snapshot takes no args",
+      "capability": "ui.snapshot",
+      "args": "{}",
+      "expect": null
+    },
+    {
+      "name": "snapshot unknown key",
+      "capability": "ui.snapshot",
+      "args": "{\"foo\":1}",
+      "expect": "unknown arg: foo"
+    },
+    {
+      "name": "snapshot display key gets the surface explanation",
+      "capability": "ui.snapshot",
+      "args": "{\"display\":0}",
+      "expect": "unknown arg: display — which display a call runs on is decided by the user's surface preference, not by the caller. Read capabilities.json backend.shizuku.trustedDisplay {alive,displayId} to see whether a virtual display exists, and each response's surface/degraded fields to see where it actually ran."
+    },
+    {
+      "name": "node empty",
+      "capability": "ui.node",
+      "args": "{}",
+      "expect": null
+    },
+    {
+      "name": "node by id",
+      "capability": "ui.node",
+      "args": "{\"nodeId\":5}",
+      "expect": null
+    },
+    {
+      "name": "node id and selector",
+      "capability": "ui.node",
+      "args": "{\"nodeId\":5,\"selector\":{}}",
+      "expect": null
+    },
+    {
+      "name": "node id as a string",
+      "capability": "ui.node",
+      "args": "{\"nodeId\":\"5\"}",
+      "expect": "nodeId must be a number, got \"5\" (string)"
+    },
+    {
+      "name": "node id null",
+      "capability": "ui.node",
+      "args": "{\"nodeId\":null}",
+      "expect": "nodeId must be a number, got nothing"
+    },
+    {
+      "name": "node id boolean",
+      "capability": "ui.node",
+      "args": "{\"nodeId\":true}",
+      "expect": "nodeId must be a number, got true (Boolean)"
+    },
+    {
+      "name": "node id long",
+      "capability": "ui.node",
+      "args": "{\"nodeId\":5000000000}",
+      "expect": null
+    },
+    {
+      "name": "node id 5.0 is whole",
+      "capability": "ui.node",
+      "args": "{\"nodeId\":5.0}",
+      "expect": null
+    },
+    {
+      "name": "node id 1e2 is whole",
+      "capability": "ui.node",
+      "args": "{\"nodeId\":1e2}",
+      "expect": null
+    },
+    {
+      "name": "node id -0 is whole",
+      "capability": "ui.node",
+      "args": "{\"nodeId\":-0}",
+      "expect": null
+    },
+    {
+      "name": "selector as an array",
+      "capability": "ui.node",
+      "args": "{\"selector\":[1]}",
+      "expect": "selector must be an object, got [1] (JSONArray)"
+    },
+    {
+      "name": "selector as a string",
+      "capability": "ui.node",
+      "args": "{\"selector\":\"x\"}",
+      "expect": "selector must be an object, got \"x\" (string)"
+    },
+    {
+      "name": "selector boolean",
+      "capability": "ui.node",
+      "args": "{\"selector\":true}",
+      "expect": "selector must be an object, got true (Boolean)"
+    },
+    {
+      "name": "long string is cut at 40 chars",
+      "capability": "ui.node",
+      "args": "{\"selector\":\"ssssssssssssssssssssssssssssssssssssssssssssssssss\"}",
+      "expect": "selector must be an object, got \"ssssssssssssssssssssssssssssssssssssssss\" (string)"
+    },
+    {
+      "name": "relative integer",
+      "capability": "ui.node",
+      "args": "{\"relative\":5}",
+      "expect": "relative must be an object, got 5 (Integer)"
+    },
+    {
+      "name": "relative long",
+      "capability": "ui.node",
+      "args": "{\"relative\":12345678901}",
+      "expect": "relative must be an object, got 12345678901 (Long)"
+    },
+    {
+      "name": "relative object",
+      "capability": "ui.node",
+      "args": "{\"relative\":{\"a\":1}}",
+      "expect": null
+    },
+    {
+      "name": "node unknown key lists what it takes",
+      "capability": "ui.node",
+      "args": "{\"bogus\":1}",
+      "expect": "unknown arg: bogus — this call takes: nodeId, relative, selector"
+    },
+    {
+      "name": "node surface key",
+      "capability": "ui.node",
+      "args": "{\"surface\":\"virtual\"}",
+      "expect": "unknown arg: surface — which display a call runs on is decided by the user's surface preference, not by the caller. Read capabilities.json backend.shizuku.trustedDisplay {alive,displayId} to see whether a virtual display exists, and each response's surface/degraded fields to see where it actually ran."
+    },
+    {
+      "name": "tap needs y",
+      "capability": "ui.tap",
+      "args": "{\"x\":1}",
+      "expect": "missing arg: y"
+    },
+    {
+      "name": "tap needs x first",
+      "capability": "ui.tap",
+      "args": "{}",
+      "expect": "missing arg: x"
+    },
+    {
+      "name": "tap blank x is missing",
+      "capability": "ui.tap",
+      "args": "{\"x\":\" \",\"y\":2}",
+      "expect": "missing arg: x"
+    },
+    {
+      "name": "tap x as a string",
+      "capability": "ui.tap",
+      "args": "{\"x\":\"1\",\"y\":2}",
+      "expect": "x must be a number, got \"1\" (string)"
+    },
+    {
+      "name": "tap ok",
+      "capability": "ui.tap",
+      "args": "{\"x\":1,\"y\":2}",
+      "expect": null
+    },
+    {
+      "name": "swipe duration has no type",
+      "capability": "ui.swipe",
+      "args": "{\"fromX\":1,\"fromY\":1,\"toX\":1,\"toY\":1,\"durationMs\":\"slow\"}",
+      "expect": null
+    },
+    {
+      "name": "shell args as a string",
+      "capability": "sys.shell",
+      "args": "{\"verb\":\"id\",\"args\":\"-a\"}",
+      "expect": "args must be an array, got \"-a\" (string)"
+    },
+    {
+      "name": "shell verb as a number",
+      "capability": "sys.shell",
+      "args": "{\"verb\":5}",
+      "expect": "verb must be a string, got 5 (Integer)"
+    },
+    {
+      "name": "shell needs verb",
+      "capability": "sys.shell",
+      "args": "{\"args\":[]}",
+      "expect": "missing arg: verb"
+    },
+    {
+      "name": "scroll times as a string",
+      "capability": "ui.scroll",
+      "args": "{\"direction\":\"down\",\"times\":\"2\"}",
+      "expect": "times must be a number, got \"2\" (string)"
+    },
+    {
+      "name": "scroll needs direction",
+      "capability": "ui.scroll",
+      "args": "{\"times\":2}",
+      "expect": "missing arg: direction"
+    },
+    {
+      "name": "launch ok",
+      "capability": "app.launch",
+      "args": "{\"package\":\"com.x\"}",
+      "expect": null
+    },
+    {
+      "name": "waitFor checked has no type",
+      "capability": "ui.waitFor",
+      "args": "{\"checked\":\"yes\"}",
+      "expect": null
+    },
+    {
+      "name": "text empty is missing",
+      "capability": "ui.text",
+      "args": "{\"text\":\"\"}",
+      "expect": "missing arg: text"
+    },
+    {
+      "name": "notify.post ok",
+      "capability": "notify.post",
+      "args": "{\"title\":\"t\",\"text\":\"x\",\"id\":1}",
+      "expect": null
+    },
+    {
+      "name": "setProgress percent as a string",
+      "capability": "ui.setProgress",
+      "args": "{\"percent\":\"50\"}",
+      "expect": "percent must be a number, got \"50\" (string)"
+    },
+    {
+      "name": "settings value 0 is not blank",
+      "capability": "sys.settings.write",
+      "args": "{\"key\":\"k\",\"value\":0}",
+      "expect": null
+    },
+    {
+      "name": "clip.read takes nothing",
+      "capability": "clip.read",
+      "args": "{\"text\":\"x\"}",
+      "expect": "unknown arg: text"
+    },
+    {
+      "name": "pkg.query unknown key",
+      "capability": "pkg.query",
+      "args": "{\"q\":\"x\"}",
+      "expect": "unknown arg: q — this call takes: keyword"
+    }
+  ],
+  "admission": [
+    {
+      "name": "unregistered capability",
+      "capability": "ui.tap",
+      "args": "{\"x\":1,\"y\":2}",
+      "expect": {
+        "code": "E_NOT_IMPLEMENTED",
+        "reason": "ui.tap",
+        "retryPolicy": null,
+        "effectState": "not_started"
+      }
+    },
+    {
+      "name": "dangerous capability is not registered",
+      "capability": "sys.shell",
+      "args": "{\"verb\":\"id\"}",
+      "expect": {
+        "code": "E_NOT_IMPLEMENTED",
+        "reason": "sys.shell",
+        "retryPolicy": null,
+        "effectState": "not_started"
+      }
+    },
+    {
+      "name": "snapshot admitted",
+      "capability": "ui.snapshot",
+      "args": "{}",
+      "expect": null
+    },
+    {
+      "name": "node admitted",
+      "capability": "ui.node",
+      "args": "{\"nodeId\":3}",
+      "expect": null
+    },
+    {
+      "name": "args pre-check",
+      "capability": "ui.snapshot",
+      "args": "{\"foo\":1}",
+      "expect": {
+        "code": "E_TRANSPORT_MALFORMED",
+        "reason": "unknown arg: foo",
+        "retryPolicy": "safe_retry",
+        "effectState": "not_started"
+      }
+    },
+    {
+      "name": "selector naming this app",
+      "capability": "ui.node",
+      "args": "{\"selector\":{\"package\":\"org.example.dshmobile\"}}",
+      "expect": {
+        "code": "E_GATE_HOST_DENIED",
+        "reason": "arg \"selector.package\" names this app itself, and the assistant cannot read or act on the host app: drop that argument or name another app",
+        "retryPolicy": "safe_retry",
+        "effectState": "not_started"
+      }
+    },
+    {
+      "name": "self check runs before the args check",
+      "capability": "ui.snapshot",
+      "args": "{\"x\":\"org.example.dshmobile\"}",
+      "expect": {
+        "code": "E_GATE_HOST_DENIED",
+        "reason": "arg \"x\" names this app itself, and the assistant cannot read or act on the host app: drop that argument or name another app",
+        "retryPolicy": "safe_retry",
+        "effectState": "not_started"
+      }
+    },
+    {
+      "name": "self inside an array",
+      "capability": "ui.node",
+      "args": "{\"selector\":{\"text\":[\"a\",\"org.example.dshmobile\"]}}",
+      "expect": {
+        "code": "E_GATE_HOST_DENIED",
+        "reason": "arg \"selector.text[1]\" names this app itself, and the assistant cannot read or act on the host app: drop that argument or name another app",
+        "retryPolicy": "safe_retry",
+        "effectState": "not_started"
+      }
+    },
+    {
+      "name": "self under an empty key",
+      "capability": "ui.node",
+      "args": "{\"\":\"org.example.dshmobile\"}",
+      "expect": {
+        "code": "E_GATE_HOST_DENIED",
+        "reason": "arg \"<no-name>\" names this app itself, and the assistant cannot read or act on the host app: drop that argument or name another app",
+        "retryPolicy": "safe_retry",
+        "effectState": "not_started"
+      }
+    },
+    {
+      "name": "self as the node id",
+      "capability": "ui.node",
+      "args": "{\"nodeId\":\"org.example.dshmobile\"}",
+      "expect": {
+        "code": "E_GATE_HOST_DENIED",
+        "reason": "arg \"nodeId\" names this app itself, and the assistant cannot read or act on the host app: drop that argument or name another app",
+        "retryPolicy": "safe_retry",
+        "effectState": "not_started"
+      }
+    },
+    {
+      "name": "a longer package is not this app",
+      "capability": "ui.node",
+      "args": "{\"selector\":{\"package\":\"org.example.dshmobile.other\"}}",
+      "expect": null
+    },
+    {
+      "name": "bringing the host to front is allowed",
+      "capability": "app.launch",
+      "args": "{\"package\":\"org.example.dshmobile\"}",
+      "registered": [
+        "ui.snapshot",
+        "ui.node",
+        "app.launch"
+      ],
+      "expect": null
+    },
+    {
+      "name": "bring-to-front with anything else is not",
+      "capability": "app.launch",
+      "args": "{\"package\":\"org.example.dshmobile\",\"x\":1}",
+      "registered": [
+        "ui.snapshot",
+        "ui.node",
+        "app.launch"
+      ],
+      "expect": {
+        "code": "E_GATE_HOST_DENIED",
+        "reason": "arg \"package\" names this app itself, and the assistant cannot read or act on the host app: drop that argument or name another app",
+        "retryPolicy": "user_decide",
+        "effectState": "not_started"
+      }
+    }
+  ],
+  "rate": [
+    {
+      "name": "ui.snapshot: 60 per minute, then refused",
+      "capability": "ui.snapshot",
+      "events": [
+        {
+          "at": 0,
+          "repeat": 60,
+          "accepted": true
+        },
+        {
+          "at": 59999,
+          "repeat": 1,
+          "accepted": false
+        },
+        {
+          "at": 60000,
+          "repeat": 1,
+          "accepted": false
+        },
+        {
+          "at": 60001,
+          "repeat": 60,
+          "accepted": true
+        },
+        {
+          "at": 60001,
+          "repeat": 1,
+          "accepted": false
+        }
+      ]
+    },
+    {
+      "name": "ui.tap: 120 per minute",
+      "capability": "ui.tap",
+      "events": [
+        {
+          "at": 10,
+          "repeat": 120,
+          "accepted": true
+        },
+        {
+          "at": 20,
+          "repeat": 1,
+          "accepted": false
+        }
+      ]
+    },
+    {
+      "name": "sys.shell: 40 per minute",
+      "capability": "sys.shell",
+      "events": [
+        {
+          "at": 0,
+          "repeat": 40,
+          "accepted": true
+        },
+        {
+          "at": 1,
+          "repeat": 1,
+          "accepted": false
+        }
+      ]
+    },
+    {
+      "name": "capabilities are counted apart",
+      "capability": "clip.read",
+      "events": [
+        {
+          "at": 0,
+          "repeat": 40,
+          "accepted": true
+        },
+        {
+          "at": 0,
+          "repeat": 1,
+          "accepted": false
+        },
+        {
+          "at": 70000,
+          "repeat": 40,
+          "accepted": true
+        }
+      ]
+    }
+  ],
+  "encode": [
+    {
+      "name": "mailbox failure (decode rejection)",
+      "response": {
+        "id": "pv1-cap",
+        "ok": false,
+        "error": "E_NOT_IMPLEMENTED",
+        "elapsedMs": 3
+      },
+      "json": "{\"v\":1,\"id\":\"pv1-cap\",\"ok\":false,\"elapsedMs\":3,\"error\":{\"code\":\"E_NOT_IMPLEMENTED\",\"retryable\":false,\"exitCode\":1}}"
+    },
+    {
+      "name": "admission rejection",
+      "response": {
+        "id": "a4",
+        "ok": false,
+        "reason": "unknown arg: foo",
+        "error": "E_TRANSPORT_MALFORMED",
+        "elapsedMs": 2,
+        "retryPolicy": "safe_retry",
+        "effectState": "not_started"
+      },
+      "json": "{\"v\":1,\"id\":\"a4\",\"ok\":false,\"elapsedMs\":2,\"reason\":\"unknown arg: foo\",\"error\":{\"code\":\"E_TRANSPORT_MALFORMED\",\"retryable\":false,\"exitCode\":1},\"retryPolicy\":\"safe_retry\",\"effectState\":\"not_started\"}"
+    },
+    {
+      "name": "reason with a slash and quotes",
+      "response": {
+        "id": "q",
+        "ok": false,
+        "reason": "a/b \"c\"",
+        "error": "E_INTERNAL",
+        "elapsedMs": 0
+      },
+      "json": "{\"v\":1,\"id\":\"q\",\"ok\":false,\"elapsedMs\":0,\"reason\":\"a\\/b \\\"c\\\"\",\"error\":{\"code\":\"E_INTERNAL\",\"retryable\":false,\"exitCode\":6}}"
+    },
+    {
+      "name": "success with a degraded surface, data and an artifact",
+      "response": {
+        "id": "e4",
+        "ok": true,
+        "elapsedMs": 10,
+        "surface": "foreground",
+        "degradedFrom": "trusted-display",
+        "reason": "fell back",
+        "degradeReason": "E_SURFACE_UNAVAILABLE",
+        "data": "{\"n\":1,\"s\":\"x/y\"}",
+        "artifacts": [
+          "artifacts/a.png"
+        ],
+        "retryPolicy": "safe_retry",
+        "effectState": "verified"
+      },
+      "json": "{\"v\":1,\"id\":\"e4\",\"ok\":true,\"elapsedMs\":10,\"surface\":\"foreground\",\"degradedFrom\":\"trusted-display\",\"degraded\":true,\"note\":\"fell back\",\"degradeReason\":\"E_SURFACE_UNAVAILABLE\",\"data\":{\"n\":1,\"s\":\"x\\/y\"},\"artifacts\":[\"artifacts\\/a.png\"],\"retryPolicy\":\"safe_retry\",\"effectState\":\"verified\"}"
+    },
+    {
+      "name": "surface without degradation",
+      "response": {
+        "id": "e5",
+        "ok": true,
+        "elapsedMs": 1,
+        "surface": "trusted-display"
+      },
+      "json": "{\"v\":1,\"id\":\"e5\",\"ok\":true,\"elapsedMs\":1,\"surface\":\"trusted-display\",\"degraded\":false}"
+    },
+    {
+      "name": "awaiting consent carries the consent kind",
+      "response": {
+        "id": "e6",
+        "ok": false,
+        "elapsedMs": 4,
+        "reason": "waiting",
+        "error": "E_AWAITING_CONSENT",
+        "effectState": "not_started",
+        "consentKind": "relay_policy"
+      },
+      "json": "{\"v\":1,\"id\":\"e6\",\"ok\":false,\"elapsedMs\":4,\"reason\":\"waiting\",\"error\":{\"code\":\"E_AWAITING_CONSENT\",\"retryable\":true,\"exitCode\":5},\"effectState\":\"not_started\",\"consentKind\":\"relay_policy\"}"
+    },
+    {
+      "name": "control characters and a raw dash",
+      "response": {
+        "id": "e7",
+        "ok": false,
+        "elapsedMs": 0,
+        "reason": "a\tb\u0001\n—",
+        "error": "E_INTERNAL"
+      },
+      "json": "{\"v\":1,\"id\":\"e7\",\"ok\":false,\"elapsedMs\":0,\"reason\":\"a\\tb\\u0001\\n—\",\"error\":{\"code\":\"E_INTERNAL\",\"retryable\":false,\"exitCode\":6}}"
+    },
+    {
+      "name": "empty data is left out",
+      "response": {
+        "id": "e8",
+        "ok": true,
+        "elapsedMs": 0,
+        "data": "{}"
+      },
+      "json": "{\"v\":1,\"id\":\"e8\",\"ok\":true,\"elapsedMs\":0}"
+    }
+  ],
+  "controlEncode": [
+    {
+      "name": "rejection",
+      "id": "c1",
+      "op": "unknown",
+      "ok": false,
+      "payload": "{\"cause\":\"E_TRANSPORT_MALFORMED/version\"}",
+      "json": "{\"v\":2,\"id\":\"c1\",\"op\":\"unknown\",\"ok\":false,\"cause\":\"E_TRANSPORT_MALFORMED\\/version\"}"
+    },
+    {
+      "name": "health",
+      "id": "h",
+      "op": "health",
+      "ok": true,
+      "payload": "{\"channelLive\":true,\"queueDepth\":0}",
+      "json": "{\"v\":2,\"id\":\"h\",\"op\":\"health\",\"ok\":true,\"channelLive\":true,\"queueDepth\":0}"
+    }
+  ],
+  "csharpOnly": {
+    "args": [
+      {
+        "name": "fractional node id (libcore Double)",
+        "capability": "ui.node",
+        "args": "{\"nodeId\":1.5}",
+        "expect": "nodeId must be a whole number, got 1.5 (Double)",
+        "why": "Maven org.json parses decimals as BigDecimal"
+      },
+      {
+        "name": "relative decimal (libcore Double)",
+        "capability": "ui.node",
+        "args": "{\"relative\":1.5}",
+        "expect": "relative must be an object, got 1.5 (Double)",
+        "why": "Maven org.json parses decimals as BigDecimal"
+      },
+      {
+        "name": "null required value is the string null (libcore)",
+        "capability": "ui.tap",
+        "args": "{\"x\":null,\"y\":1}",
+        "expect": "x must be a number, got nothing",
+        "why": "Maven optString(null) is \"\", which reads as missing"
+      },
+      {
+        "name": "first unknown key in document order (libcore LinkedHashMap)",
+        "capability": "ui.node",
+        "args": "{\"zzz\":1,\"aaa\":2}",
+        "expect": "unknown arg: zzz — this call takes: nodeId, relative, selector",
+        "why": "Maven JSONObject iterates a HashMap"
+      },
+      {
+        "name": "array printed the libcore way (slash escaped)",
+        "capability": "ui.node",
+        "args": "{\"selector\":[1,\"a/b\"]}",
+        "expect": "selector must be an object, got [1,\"a\\/b\"] (JSONArray)",
+        "why": "Maven does not escape '/' here"
+      },
+      {
+        "name": "array printed the libcore way (dash raw)",
+        "capability": "ui.node",
+        "args": "{\"selector\":[\"—\"]}",
+        "expect": "selector must be an object, got [\"—\"] (JSONArray)",
+        "why": "Maven escapes U+2000..U+20FF"
+      }
+    ]
+  }
+}
