@@ -58,5 +58,7 @@
   <ItemGroup>
     <!-- Concrete container for the composition root (the abstractions are in-box). Trim/AOT safe for ctor/factory registrations. -->
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.14" />
+    <!-- Material 3 for C#-written screens (AGENTS.md rule 12); brings AndroidX AppCompat. Published 2026-07-29. -->
+    <PackageReference Include="Xamarin.Google.Android.Material" Version="1.14.0.6" />
   </ItemGroup>
 </Project>

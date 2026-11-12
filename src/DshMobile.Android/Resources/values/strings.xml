@@ -117,6 +117,11 @@
     <string name="terminal_paste">粘贴</string>
     <string name="terminal_no_session">没有打开的会话：点上方 “+” 新建</string>
     <string name="terminal_no_runtime">运行环境尚未安装：请先在首页导入运行环境包</string>
+    <string name="terminal_csharp_title">终端（C#）</string>
+    <string name="terminal_new">新建</string>
+    <string name="terminal_close">关闭</string>
+    <string name="terminal_new_session">新建会话</string>
+    <string name="terminal_open_failed">无法打开终端：%1$s</string>
     <string name="files_title">文件 · /root/projects</string>
     <string name="files_up">上一级</string>
     <string name="files_import">导入</string>

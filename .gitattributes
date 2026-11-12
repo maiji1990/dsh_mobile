@@ -11,3 +11,5 @@ native/native-bridge/src/main/guest-assets/** text eol=lf
 # Layer-archive parity fixtures (tooling/gen-layer-fixtures.py): byte-exact, never EOL-converted
 tests/TestVectors/layers/** binary
 tests/TestVectors/bundles/** binary
+# Vendored third-party web assets: byte-exact (SHA-256 pinned in tooling/terminal-web.lock.json)
+src/DshMobile.Android/Assets/terminal/vendor/** -text
