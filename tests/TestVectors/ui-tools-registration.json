@@ -1,0 +1,95 @@
+{
+  "description": "PR-07: ui_* tool registration patch layer. Legacy Kotlin UiToolsRegistration (LegacyUiToolsRegistrationParityTest) and C# DshMobile.Runtime.Automation.UiToolsRegistration (UiToolsRegistrationParityTests) run every case. 'initial' / 'after': null = path absent, '@dir' = a directory at the path, '@render' = exactly the rendered layer, '@initial' = unchanged, any other string = file content.",
+  "overlayRelativePath": ".dsh/dshbox/dsh-official-plugin/dsh-official-plugin-overlay.yml",
+  "render": "# dshmobile:ui-tools v1\n# Written by DSH Mobile while 手机操控 is on; deleted when it is turned off. Read-only ui_* tools.\n- insert:\n    - id: dshmobile-ui\n      name: '@deepseek-ai/dsh-mcp-client'\n      config:\n        serverName: ui\n        transport: stdio\n        command: !!js process.execPath\n        args: ['/opt/dshbox-cache/dshmobile/ui-facade.mjs']\n        toolCallTimeoutMs: 120000\n        failOnStartupError: false\n",
+  "cases": [
+    {
+      "name": "absent",
+      "initial": null,
+      "isRegistered": false,
+      "hasConflict": false,
+      "register": { "result": true, "after": "@render" },
+      "unregister": { "result": true, "after": null }
+    },
+    {
+      "name": "ours, current",
+      "initial": "@render",
+      "isRegistered": true,
+      "hasConflict": false,
+      "register": { "result": true, "after": "@render" },
+      "unregister": { "result": true, "after": null }
+    },
+    {
+      "name": "ours, older body is replaced",
+      "initial": "# dshmobile:ui-tools v1\n- insert: []\n",
+      "isRegistered": true,
+      "hasConflict": false,
+      "register": { "result": true, "after": "@render" },
+      "unregister": { "result": true, "after": null }
+    },
+    {
+      "name": "ours, CRLF line ends",
+      "initial": "# dshmobile:ui-tools v1\r\n- insert: []\r\n",
+      "isRegistered": true,
+      "hasConflict": false,
+      "register": { "result": true, "after": "@render" },
+      "unregister": { "result": true, "after": null }
+    },
+    {
+      "name": "ours, marker alone without newline",
+      "initial": "# dshmobile:ui-tools v1",
+      "isRegistered": true,
+      "hasConflict": false,
+      "register": { "result": true, "after": "@render" },
+      "unregister": { "result": true, "after": null }
+    },
+    {
+      "name": "someone else's layer is never touched",
+      "initial": "- id: some-entry\n  disabled: false\n",
+      "isRegistered": false,
+      "hasConflict": true,
+      "register": { "result": false, "after": "@initial" },
+      "unregister": { "result": false, "after": "@initial" }
+    },
+    {
+      "name": "empty file is not ours",
+      "initial": "",
+      "isRegistered": false,
+      "hasConflict": true,
+      "register": { "result": false, "after": "@initial" },
+      "unregister": { "result": false, "after": "@initial" }
+    },
+    {
+      "name": "marker not on the first line",
+      "initial": "\n# dshmobile:ui-tools v1\n",
+      "isRegistered": false,
+      "hasConflict": true,
+      "register": { "result": false, "after": "@initial" },
+      "unregister": { "result": false, "after": "@initial" }
+    },
+    {
+      "name": "marker with trailing space",
+      "initial": "# dshmobile:ui-tools v1 \n",
+      "isRegistered": false,
+      "hasConflict": true,
+      "register": { "result": false, "after": "@initial" },
+      "unregister": { "result": false, "after": "@initial" }
+    },
+    {
+      "name": "different marker version",
+      "initial": "# dshmobile:ui-tools v2\n",
+      "isRegistered": false,
+      "hasConflict": true,
+      "register": { "result": false, "after": "@initial" },
+      "unregister": { "result": false, "after": "@initial" }
+    },
+    {
+      "name": "a directory in the way",
+      "initial": "@dir",
+      "isRegistered": false,
+      "hasConflict": true,
+      "register": { "result": false, "after": "@dir" },
+      "unregister": { "result": false, "after": "@dir" }
+    }
+  ]
+}

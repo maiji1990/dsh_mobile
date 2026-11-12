@@ -1,6 +1,7 @@
 using Android.Content;
 using Android.Views;
 using DshMobile.App.Bridge;
+using DshMobile.Application.Shadow;
 using DshMobile.Core.Bridge;
 
 namespace DshMobile.App.Automation;
@@ -89,6 +90,15 @@ public sealed class AutomationActivity : Activity
             $"guest CLI：{s.GuestCli}",
             UiToolsLine(s.UiTools));
         _bridge.Note($"{method}: phase={s.Phase} channel={s.ChannelRunning} a11y={s.AccessibilityEnabled}");
+        if (s.UiTools is { } tools)
+        {
+            // PR-07 shadow (read-only): the C# port reads the same layer and setting, compared in the background.
+            var legacy = new UiToolsLegacyView(method, tools.Registered, tools.Conflict, s.AccessibilityEnabled, s.Allowed, s.GuestCli, tools.ServerName);
+            var enabled = Android.Provider.Settings.Secure.GetString(ContentResolver, Android.Provider.Settings.Secure.EnabledAccessibilityServices);
+            var runtime = _bridge.Runtime;
+            var package = PackageName!;
+            _ = Task.Run(() => runtime.ShadowUiTools(legacy, enabled, package));
+        }
     }
 
     /// <summary>Says plainly whether DSH has the ui_* tools now; never implies they are live when DSH has not reloaded.</summary>

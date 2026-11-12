@@ -1,0 +1,19 @@
+{
+  "description": "PR-07: is the Relay accessibility service enabled, from the raw Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES value (legacy MobileAutomation.isAccessibilityEnabled: split on ':', ComponentName.unflattenFromString, exact compare). C# only: android.content.ComponentName is a stub in JVM unit tests (isReturnDefaultValues), so the legacy side is compared on the device by the automation.ui-tools shadow instead.",
+  "package": "org.example.dshmobile",
+  "service": "interlock.relay.core.exec.a11y.RelayAccessibilityService",
+  "cases": [
+    { "name": "setting missing", "setting": null, "expected": false },
+    { "name": "empty", "setting": "", "expected": false },
+    { "name": "only ours", "setting": "org.example.dshmobile/interlock.relay.core.exec.a11y.RelayAccessibilityService", "expected": true },
+    { "name": "ours after another", "setting": "com.other/.Reader:org.example.dshmobile/interlock.relay.core.exec.a11y.RelayAccessibilityService", "expected": true },
+    { "name": "ours before another, empty entries", "setting": "::org.example.dshmobile/interlock.relay.core.exec.a11y.RelayAccessibilityService::com.other/.Reader", "expected": true },
+    { "name": "relative class resolves against our package, not the service's", "setting": "org.example.dshmobile/.RelayAccessibilityService", "expected": false },
+    { "name": "same class in another package", "setting": "com.other/interlock.relay.core.exec.a11y.RelayAccessibilityService", "expected": false },
+    { "name": "case differs", "setting": "org.example.dshmobile/interlock.relay.core.exec.a11y.relayaccessibilityservice", "expected": false },
+    { "name": "leading space is part of the package", "setting": " org.example.dshmobile/interlock.relay.core.exec.a11y.RelayAccessibilityService", "expected": false },
+    { "name": "no slash", "setting": "org.example.dshmobile", "expected": false },
+    { "name": "nothing after the slash", "setting": "org.example.dshmobile/", "expected": false },
+    { "name": "package only of ours, other service", "setting": "org.example.dshmobile/org.example.dshmobile.Other", "expected": false }
+  ]
+}

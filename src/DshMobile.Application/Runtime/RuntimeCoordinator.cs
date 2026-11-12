@@ -393,6 +393,35 @@ public sealed class RuntimeCoordinator : IDisposable
     }
 
     /// <summary>
+    /// PR-07 shadow: the C# port of the ui_* registration reads the patch layer and the accessibility setting after a
+    /// legacy <c>relay.*</c> call and is compared with what that call reported. Null when not shadowed or no layout.
+    /// Read-only: it never writes or deletes the layer.
+    /// </summary>
+    public ShadowReport? ShadowUiTools(UiToolsLegacyView legacy, string? enabledAccessibilityServices, string packageName)
+    {
+        ArgumentNullException.ThrowIfNull(legacy);
+        if (_options.UiTools != SliceMode.LegacyWithShadow || _layout is null)
+        {
+            return null;
+        }
+        var sw = Stopwatch.StartNew();
+        ShadowReport report;
+        try
+        {
+            report = UiToolsShadowCheck.Compare(legacy, _layout.UserDataDir, enabledAccessibilityServices, packageName, 0, _time.GetUtcNow())
+                with { CSharpMs = sw.ElapsedMilliseconds };
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            report = new ShadowReport(UiToolsShadowCheck.Slice, _time.GetUtcNow(), ShadowVerdict.Inconclusive, true, null, false,
+                ex.GetType().Name, $"after {legacy.Method}: C# could not read the layer: {ex.Message}", sw.ElapsedMilliseconds);
+        }
+        _shadow.Report(report);
+        _log.Note($"shadow {report.Slice}: {report.Verdict} ({report.Detail})");
+        return report;
+    }
+
+    /// <summary>
     /// PR-05 C# path (developer opt-in, per call): <c>dsh plugin add/remove</c> through the C# PRoot launcher with the
     /// ported install guard — an install that exits 0 but added a package that cannot load is rolled back (only the
     /// packages this install added); a remove is checked against the profile's dependencies afterwards.

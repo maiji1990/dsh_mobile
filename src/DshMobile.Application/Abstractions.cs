@@ -55,6 +55,12 @@ public sealed class MigrationOptions
     /// </summary>
     public SliceMode PluginList { get; set; } = SliceMode.LegacyWithShadow;
 
+    /// <summary>
+    /// Mobile automation, ui_* registration and status (PR-07 first segment): after each legacy <c>relay.*</c> call the
+    /// C# port reads the same patch layer and accessibility setting and is compared. Writing stays legacy.
+    /// </summary>
+    public SliceMode UiTools { get; set; } = SliceMode.LegacyWithShadow;
+
     /// <summary>Host-path probe for the extractor; null = the real filesystem (the right choice on a device).</summary>
     public Func<string, bool>? HostPathExists { get; set; }
 }
