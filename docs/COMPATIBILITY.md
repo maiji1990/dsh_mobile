@@ -319,3 +319,7 @@ APK SHA-256 `a084dc5fb2559bea84d04caef8050b63f8006f23f7dc8dd639f08c41b9a2a392`�
 ## ADR-0007 迁移 · Relay 执行面裁决与执行配额（PR-07 第四段，只读影子）真机记录 — 2026-11-12
 
 「协议信封比对（开发者）」在第二、三段两组请求之后，再只读比对 Relay 发布的执行面裁决（`files/pilot/capabilities.json`）与 C# `SurfacePolicy`：前台偏好两次、优先后台一次 **Agree**（无 Shizuku 时旧 Relay 发布 `E_SURFACE_NO_SHELL` 退回前台，C# 一致）；不写信箱、不弹审批。无障碍未开时落点未实比；可信屏、需要指定模式、执行配额只有向量证据。详见 [证据](../migration/parity/2026-11-12-PTP-AN10-A17-relay-surface.md)。
+
+## ADR-0007 迁移 · Relay 审批闸门判定（PR-07 第五段，只读影子 + 必拒探针）真机记录 — 2026-11-12
+
+「协议信封比对（开发者）」在前几段之后再做两件事：只读比对 Relay 发布的每行系统态 / 档位 / 上限（`capabilities.json`）与 C# 探测、档位库、策略表，两轮 **Agree**（`MANUAL_ONLY ×2`，`ASK ×2`）；无障碍未在系统设置列出时，往信箱写 `ui.snapshot` / `ui.node` 两条必被闸门以 `E_GATE_SYSTEM_MISSING/system_missing` 拒绝的只读请求，回包两轮 2/2 逐字节一致；全程没有审批通知。用户开启无障碍后再跑一次：被动比对 `GRANTED ×2` 也 **Agree**，活体探针按设计拒绝运行。Shizuku 在跑但本 App 清单按只读白名单移除了 Shizuku provider，Relay 报 no Shizuku 属正确。运行时权限 / 通知监听 / Shell 事实、档位变化与确认窗口只有向量证据。详见 [证据](../migration/parity/2026-11-12-PTP-AN10-A17-relay-gate.md)。
