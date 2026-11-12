@@ -148,11 +148,16 @@ public sealed class AutomationActivity : Activity
         Enable(false);
         _output.Text = GetString(Resource.String.automation_envelope_probe_running);
         var runtime = _bridge.Runtime;
-        var report = await Task.Run(() => runtime.ShadowRelayEnvelopeAsync(TimeSpan.FromSeconds(20), CancellationToken.None));
+        var package = PackageName!;
+        var reports = await Task.Run(async () => new[]
+        {
+            await runtime.ShadowRelayEnvelopeAsync(TimeSpan.FromSeconds(20), CancellationToken.None),
+            await runtime.ShadowRelayAdmissionAsync(package, TimeSpan.FromSeconds(20), CancellationToken.None),
+        });
         Enable(true);
-        _output.Text = report is null
+        _output.Text = reports.All(r => r is null)
             ? GetString(Resource.String.automation_envelope_probe_off)
-            : $"{report.Slice}: {report.Verdict}\n\n{report.Detail}";
+            : string.Join("\n\n", reports.OfType<ShadowReport>().Select(r => $"{r.Slice}: {r.Verdict}\n{r.Detail}"));
     }
 
     private void Enable(bool on)

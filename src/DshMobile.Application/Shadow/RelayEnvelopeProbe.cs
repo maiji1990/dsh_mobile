@@ -1,5 +1,4 @@
 using System.Diagnostics;
-using System.Text;
 using System.Text.Json;
 using DshMobile.Runtime.Automation.Relay;
 
@@ -10,9 +9,10 @@ public sealed record RelayProbeCase(bool Control, string File, string Text);
 
 /// <summary>
 /// PR-07 segment 2 shadow (developer action): the live legacy Relay against the C# <see cref="RelayEnvelope"/>.
-/// Writes a fixed set of requests into the real mailbox (<c>files/pilot/run/inbox</c> and <c>control-inbox</c>), the
-/// way the guest CLI does (<c>.&lt;name&gt;.part</c>, then rename), waits for Relay's answers and compares them with
-/// what the C# decoder says about the same text: v1 <c>error.code</c>, v2 <c>cause</c> (<c>"&lt;code&gt;/&lt;cause&gt;"</c>).
+/// Writes a fixed set of requests into the real mailbox (<c>files/pilot/run/inbox</c> and <c>control-inbox</c>) through
+/// <see cref="RelayMailboxExchange"/>, and compares each answer, byte for byte (only <c>elapsedMs</c> normalised), with
+/// what C# would answer for the same text: <see cref="RelayEncoding.Encode"/> of the mailbox failure (v1) or
+/// <see cref="RelayEncoding.EncodeControlRejection"/> with <c>"&lt;code&gt;/&lt;cause&gt;"</c> (v2).
 /// <para>
 /// Safety: every probe request is malformed on purpose and is rejected while the envelope is decoded, before any
 /// approval, gate or backend (the shared vectors mark them <c>probe</c> and a test keeps them rejections; the probe
@@ -47,34 +47,27 @@ public static class RelayEnvelopeProbe
         new(true, "pv2-ask1.json", """{"v":2,"id":"pv2-ask1","op":"ask","question":"q","options":["a"]}"""),
     ];
 
-    private sealed record Expected(RelayProbeCase Case, string Id, string Code, string Cause);
-
-    private static readonly UTF8Encoding Utf8 = new(encoderShouldEmitUTF8Identifier: false);
-
     public static async Task<ShadowReport> RunAsync(string pilotEntryDir, TimeProvider time, TimeSpan timeout, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(pilotEntryDir);
         ArgumentNullException.ThrowIfNull(time);
-        var run = Path.Combine(pilotEntryDir, "run");
-        var inbox = Path.Combine(run, "inbox");
-        var outbox = Path.Combine(run, "outbox");
-        var controlInbox = Path.Combine(run, "control-inbox");
-        var controlOutbox = Path.Combine(run, "control-outbox");
         ShadowReport Report(ShadowVerdict verdict, bool legacyOk, string? legacyCode, string detail, long ms) =>
             new(Slice, time.GetUtcNow(), verdict, legacyOk, legacyCode, true, null, detail, ms);
 
         // The C# side first: anything it would accept must never be written into the real mailbox.
         var sw = Stopwatch.StartNew();
-        var expected = new List<Expected>(Cases.Count);
+        var expected = new Dictionary<RelayProbeRequest, (string Want, string Code, string Cause)>();
         foreach (var c in Cases)
         {
             switch (c.Control ? (object)RelayEnvelope.DecodeControl(c.Text, c.File) : RelayEnvelope.DecodeRequest(c.Text, c.File))
             {
                 case RelayDecodeResult.Rejected r:
-                    expected.Add(new Expected(c, r.Id, r.Error.Code, r.Cause));
+                    expected[new RelayProbeRequest(false, c.File, c.Text, r.Id)] =
+                        (RelayEncoding.Encode(RelayResponse.Failure(r.Id, r.Error, 0)), r.Error.Code, r.Cause);
                     break;
                 case ControlDecodeResult.Rejected r:
-                    expected.Add(new Expected(c, r.Id, r.Error.Code, r.Cause));
+                    expected[new RelayProbeRequest(true, c.File, c.Text, r.Id)] =
+                        (RelayEncoding.EncodeControlRejection(r.Id, $"{r.Error.Code}/{r.Cause}"), r.Error.Code, r.Cause);
                     break;
                 default:
                     return Report(ShadowVerdict.Inconclusive, false, null, $"not run: C# accepts probe {c.File}, refusing to write it", sw.ElapsedMilliseconds);
@@ -82,131 +75,57 @@ public static class RelayEnvelopeProbe
         }
         var csharpMs = sw.ElapsedMilliseconds;
 
-        if (!Directory.Exists(inbox) || !Directory.Exists(outbox) || !Directory.Exists(controlInbox) || !Directory.Exists(controlOutbox))
+        var result = await RelayMailboxExchange.RunAsync(pilotEntryDir, [.. expected.Keys], time, timeout, ct).ConfigureAwait(false);
+        if (!result.MailboxPresent)
         {
-            return Report(ShadowVerdict.Inconclusive, false, null, $"not run: no Relay mailbox under {run} (start the relay first)", csharpMs);
+            return Report(ShadowVerdict.Inconclusive, false, null, $"not run: no Relay mailbox under {result.RunDir} (start the relay first)", csharpMs);
         }
-
-        string InboxOf(Expected e) => Path.Combine(e.Case.Control ? controlInbox : inbox, e.Case.File);
-        string ResponseOf(Expected e) => Path.Combine(e.Case.Control ? controlOutbox : outbox, e.Id + RelayEnvelope.JsonSuffix);
-
-        var answers = new Dictionary<Expected, string>();
-        try
-        {
-            foreach (var e in expected)
-            {
-                File.Delete(ResponseOf(e)); // a stale answer from an earlier probe must not count
-            }
-            foreach (var e in expected)
-            {
-                var dir = Path.GetDirectoryName(InboxOf(e))!;
-                var part = Path.Combine(dir, "." + e.Case.File + ".part"); // Relay skips dot names
-                await File.WriteAllTextAsync(part, e.Case.Text, Utf8, ct).ConfigureAwait(false);
-                File.Move(part, InboxOf(e), overwrite: true);
-            }
-
-            var deadline = time.GetUtcNow() + timeout;
-            while (answers.Count < expected.Count && time.GetUtcNow() < deadline)
-            {
-                await Task.Delay(TimeSpan.FromMilliseconds(200), time, ct).ConfigureAwait(false);
-                foreach (var e in expected.Where(e => !answers.ContainsKey(e)))
-                {
-                    if (TryRead(ResponseOf(e)) is { } text)
-                    {
-                        answers[e] = text;
-                    }
-                }
-            }
-        }
-        finally
-        {
-            foreach (var e in expected)
-            {
-                TryDelete(InboxOf(e)); // still unclaimed: take it back
-                TryDelete(Path.Combine(Path.GetDirectoryName(InboxOf(e))!, "." + e.Case.File + ".part"));
-                TryDelete(ResponseOf(e));
-            }
-        }
-
         var mismatches = new List<string>();
         string? firstLegacyCode = null;
-        foreach (var (e, text) in answers)
+        foreach (var (r, text) in result.Answers)
         {
-            var (ok, legacy) = Check(e, text);
-            if (!ok)
+            var want = expected[r].Want;
+            if (RelayMailboxExchange.NormalizeElapsed(text) != want)
             {
-                firstLegacyCode ??= legacy;
-                mismatches.Add($"{e.Case.File}: legacy {legacy}, C# {Want(e)}");
+                firstLegacyCode ??= LegacySummary(r.Control, text);
+                mismatches.Add($"{r.File}: legacy {RelayMailboxExchange.Excerpt(text)} | C# {RelayMailboxExchange.Excerpt(want)}");
             }
         }
-        var v1 = expected.Count(e => !e.Case.Control);
-        var v2 = expected.Count - v1;
+        var total = expected.Count;
+        var v1 = expected.Keys.Count(r => !r.Control);
         if (mismatches.Count > 0)
         {
-            return Report(ShadowVerdict.Diverge, answers.Count == expected.Count, firstLegacyCode,
-                $"{mismatches.Count}/{answers.Count} answers differ: {string.Join("; ", mismatches.Take(4))}", csharpMs);
+            return Report(ShadowVerdict.Diverge, result.Answers.Count == total, firstLegacyCode,
+                $"{mismatches.Count}/{result.Answers.Count} answers differ: {string.Join("; ", mismatches.Take(3))}", csharpMs);
         }
-        if (answers.Count < expected.Count)
+        if (result.Answers.Count < total)
         {
-            var missing = expected.Where(e => !answers.ContainsKey(e)).Select(e => e.Case.File);
-            return Report(ShadowVerdict.Inconclusive, false, null, answers.Count == 0
-                ? $"0/{expected.Count} answered within {timeout.TotalSeconds:0.#}s: Relay is not serving the mailbox (start the relay); requests taken back"
-                : $"{answers.Count}/{expected.Count} answered within {timeout.TotalSeconds:0.#}s, all equal; no answer for {string.Join(", ", missing.Take(6))}", csharpMs);
+            var missing = expected.Keys.Where(r => !result.Answers.ContainsKey(r)).Select(r => r.File);
+            return Report(ShadowVerdict.Inconclusive, false, null, result.Answers.Count == 0
+                ? $"0/{total} answered within {timeout.TotalSeconds:0.#}s: Relay is not serving the mailbox (start the relay); requests taken back"
+                : $"{result.Answers.Count}/{total} answered within {timeout.TotalSeconds:0.#}s, all equal; no answer for {string.Join(", ", missing.Take(6))}", csharpMs);
         }
         return Report(ShadowVerdict.Agree, true, null,
-            $"{expected.Count}/{expected.Count} rejections equal (v1 error.code ×{v1}, v2 code/cause ×{v2}; causes: {string.Join(", ", expected.Select(e => e.Cause).Distinct())})", csharpMs);
+            $"{total}/{total} answers byte-identical (v1 ×{v1}, v2 ×{total - v1}; causes: {string.Join(", ", expected.Values.Select(e => e.Cause).Distinct())})", csharpMs);
     }
 
-    private static string Want(Expected e) => e.Case.Control ? $"{e.Code}/{e.Cause}" : e.Code;
-
-    /// <summary>Relay's answer against the C# rejection; returns what legacy said for the report.</summary>
-    private static (bool Ok, string Legacy) Check(Expected e, string text)
+    /// <summary>What legacy said, for the report: v1 <c>error.code</c>, v2 <c>cause</c>.</summary>
+    internal static string LegacySummary(bool control, string text)
     {
         try
         {
             using var doc = JsonDocument.Parse(text);
             var root = doc.RootElement;
-            var id = root.TryGetProperty("id", out var i) && i.ValueKind == JsonValueKind.String ? i.GetString() : null;
-            var okFalse = root.TryGetProperty("ok", out var o) && o.ValueKind == JsonValueKind.False;
-            if (e.Case.Control)
+            if (control)
             {
-                var cause = root.TryGetProperty("cause", out var c) && c.ValueKind == JsonValueKind.String ? c.GetString() : null;
-                var op = root.TryGetProperty("op", out var p) && p.ValueKind == JsonValueKind.String ? p.GetString() : null;
-                var legacy = $"{cause ?? "(no cause)"}{(okFalse ? "" : " ok!=false")}{(id == e.Id ? "" : $" id={id}")}{(op == "unknown" ? "" : $" op={op}")}";
-                return (okFalse && id == e.Id && op == "unknown" && cause == Want(e), legacy);
+                return root.TryGetProperty("cause", out var c) && c.ValueKind == JsonValueKind.String ? c.GetString()! : "(no cause)";
             }
-            var code = root.TryGetProperty("error", out var err) && err.ValueKind == JsonValueKind.Object
-                && err.TryGetProperty("code", out var cd) && cd.ValueKind == JsonValueKind.String ? cd.GetString() : null;
-            var v1Legacy = $"{code ?? "(no error.code)"}{(okFalse ? "" : " ok!=false")}{(id == e.Id ? "" : $" id={id}")}";
-            return (okFalse && id == e.Id && code == e.Code, v1Legacy);
+            return root.TryGetProperty("error", out var e) && e.ValueKind == JsonValueKind.Object
+                && e.TryGetProperty("code", out var code) && code.ValueKind == JsonValueKind.String ? code.GetString()! : "(no error.code)";
         }
         catch (JsonException)
         {
-            return (false, "unparsable answer");
-        }
-    }
-
-    private static string? TryRead(string path)
-    {
-        try
-        {
-            return File.Exists(path) ? File.ReadAllText(path, Utf8) : null;
-        }
-        catch (IOException)
-        {
-            return null; // being renamed into place: next round
-        }
-    }
-
-    private static void TryDelete(string path)
-    {
-        try
-        {
-            File.Delete(path);
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-        {
-            // best effort; never fails the probe
+            return "unparsable answer";
         }
     }
 }
