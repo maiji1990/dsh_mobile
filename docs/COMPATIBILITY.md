@@ -291,3 +291,15 @@ APK SHA-256 `a084dc5fb2559bea84d04caef8050b63f8006f23f7dc8dd639f08c41b9a2a392`�
 - C# 卸载 `is-number`：1.0 s，核对依赖已移除（`still-present=False`）。
 - C# 安装 `is-number`：DSH 0.2.1-rc.5 只警告「declares no dsh.bundle」并退出 0；守卫差集 `[is-number]` → 无 `dsh` 字段 → `INSTALL_VERIFY_FAILED`，`dsh plugin remove` 回收，列表回到装前（旧桥与 C# 影子一致）。
 - 停止后无残留进程、无崩溃、无 token 泄漏；第三方输入法会吞 `adb input text` 字符，自动化输入改用按键事件。
+
+## ADR-0007 迁移 · C# 终端界面（PR-06 第二段）真机记录 — 2026-11-12
+
+开发者入口：长按「终端」→「C# 终端」；默认仍为旧 TerminalView。详见 [证据](../migration/parity/2026-11-12-PTP-AN10-A17-csharp-terminal-ui.md)。
+
+| 项 | 结果 |
+|---|---|
+| 键盘输入 | 首版用 xterm.js 自带 textarea：IME 下吞字 / 重复（`stty size` → `sttttty s ssizz`）；改为原生 `TYPE_NULL` 输入视图后通过 |
+| 多会话 | 双会话 `/dev/pts/0`、`/dev/pts/1`；切换重放历史；离开页面会话保留 |
+| resize / ^C / 大量输出 | 键盘弹出后 `15 41`；^C → `$?=130`；`seq 1 100000` 0.085 s，之后输入正常 |
+| 关闭 / 强杀 | 「关闭」后无 `proot` / `bash`（PRoot 未在 SIGHUP 宽限期退出，升级 SIGKILL）；`force-stop` 无孤儿 |
+| 首页「停止」 | 首版在沙箱未启动时漏关 C# 会话（`stop: nothing running`）；修正并加单测后复测通过（2 个会话关闭，无残留） |

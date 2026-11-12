@@ -36,6 +36,7 @@
 | Runtime 层管理（TASK-004） | 通过（Android 17 真机），部分验收未测 | 磁盘不足 / 层缺失 / 更新失败未测；见 milestones/M2.md |
 | C# 运行时协调器 + 影子比对（ADR-0007，PR-00/01/02） | 通过（Android 17 真机） | Release full-trim：启停 / 重复启动 / 停止无孤儿 / 强杀后 journal 恢复为 `RUNTIME_INTERRUPTED`；导入时 `runtime.bundle-verify` 与 `runtime.layer-extract` 影子均 `Agree`（16,119 项逐项一致）。实现仍为旧桥；失败清理分支仅单测。见 COMPATIBILITY.md「ADR-0007 迁移」 |
 | C# 宿主（开发者可选：长按「启动 DSH」） | 通过（Android 17 真机） | 不经 DSHBox 代码：C# 启动沙箱 + DSH、取 launch token、C# WebView 加载官方 WebUI；10.1 s READY；停止 / 强杀无孤儿；token 不入日志。运行期间终端 / 手机操控 / 浏览器不可用。见 COMPATIBILITY.md「ADR-0007 里程碑」 |
+| C# 终端（开发者可选：长按「终端」→「C# 终端」） | 通过（Android 17 真机），部分未测 | 不经 DSHBox 终端代码：C# PTY + PRoot bash、Material 3 界面、本地 xterm.js 显示、原生键盘输入；多会话 / 重放 / resize / ^C / 大量输出 / 关闭与强杀无残留已验证；中文组合输入、vim 等应用光标模式、横屏未测。见 COMPATIBILITY.md「C# 终端界面」 |
 
 ## 可选模块（方案 4.3）
 
