@@ -448,6 +448,32 @@ public sealed class RuntimeCoordinator : IDisposable
     }
 
     /// <summary>
+    /// PR-07 segment 3 shadow (developer action, needs a running relay): well-formed requests that the admission steps
+    /// before the approval gate must reject, answers compared byte for byte with C#. Null when not in shadow mode.
+    /// </summary>
+    public async Task<ShadowReport?> ShadowRelayAdmissionAsync(string selfPackage, TimeSpan timeout, CancellationToken ct)
+    {
+        if (_options.RelayAdmission != SliceMode.LegacyWithShadow || _layout is null)
+        {
+            return null;
+        }
+        ShadowReport report;
+        try
+        {
+            report = await RelayAdmissionProbe.RunAsync(_layout.PilotEntryDir, selfPackage, UiToolsShadowCheck.AllowedWire, _time, timeout, ct)
+                .ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            report = new ShadowReport(RelayAdmissionProbe.Slice, _time.GetUtcNow(), ShadowVerdict.Inconclusive, false, null, true,
+                ex.GetType().Name, $"probe could not use the mailbox: {ex.Message}", 0);
+        }
+        _shadow.Report(report);
+        _log.Note($"shadow {report.Slice}: {report.Verdict} ({report.Detail})");
+        return report;
+    }
+
+    /// <summary>
     /// PR-05 C# path (developer opt-in, per call): <c>dsh plugin add/remove</c> through the C# PRoot launcher with the
     /// ported install guard — an install that exits 0 but added a package that cannot load is rolled back (only the
     /// packages this install added); a remove is checked against the profile's dependencies afterwards.

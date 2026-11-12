@@ -75,7 +75,7 @@ internal static class OrgJson
                 {
                     return unchecked((int)l); // Integer as is; Long.intValue() keeps the low 32 bits
                 }
-                return JavaDoubleToInt(v.GetDouble());
+                return JavaDoubleToInt(double.Parse(raw, NumberStyles.Float, CultureInfo.InvariantCulture));
             case JsonValueKind.String:
                 return JavaParseDouble(v.GetString()!) is { } d ? JavaDoubleToInt(d) : 0;
             default:
@@ -98,7 +98,7 @@ internal static class OrgJson
                 {
                     return l;
                 }
-                return JavaDoubleToLong(v.GetDouble());
+                return JavaDoubleToLong(double.Parse(raw, NumberStyles.Float, CultureInfo.InvariantCulture));
             case JsonValueKind.String:
                 return JavaParseDouble(v.GetString()!) is { } d ? JavaDoubleToLong(d) : 0;
             default:

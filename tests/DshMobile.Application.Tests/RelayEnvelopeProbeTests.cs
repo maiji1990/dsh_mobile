@@ -1,5 +1,4 @@
 using System.Text.Json;
-using System.Text.Json.Nodes;
 using DshMobile.Application.Shadow;
 
 namespace DshMobile.Application.Tests;
@@ -91,11 +90,13 @@ public sealed class RelayEnvelopeProbeTests : IDisposable
                     File.Delete(f);
                     var r = expect[name];
                     var id = r.GetProperty("id").GetString()!;
+                    // Device text, as Relay writes it (libcore org.json); elapsedMs differs run to run.
                     var answer = control
-                        ? new JsonObject { ["v"] = 2, ["id"] = id, ["op"] = "unknown", ["ok"] = false, ["cause"] = code(name, $"{r.GetProperty("code").GetString()}/{r.GetProperty("cause").GetString()}") }
-                        : new JsonObject { ["v"] = 1, ["id"] = id, ["ok"] = false, ["elapsedMs"] = 1, ["error"] = new JsonObject { ["code"] = code(name, r.GetProperty("code").GetString()!), ["retryable"] = false, ["exitCode"] = 1 } };
+                        ? DshMobile.Runtime.Automation.Relay.RelayEncoding.EncodeControlRejection(id, code(name, $"{r.GetProperty("code").GetString()}/{r.GetProperty("cause").GetString()}"))
+                        : DshMobile.Runtime.Automation.Relay.RelayEncoding.Encode(DshMobile.Runtime.Automation.Relay.RelayResponse.Failure(
+                            id, DshMobile.Runtime.Automation.Relay.RelayError.FromCode(code(name, r.GetProperty("code").GetString()!))!, 17));
                     var target = Path.Combine(Run, outbox, id + ".json");
-                    File.WriteAllText(target + ".tmp", answer.ToJsonString());
+                    File.WriteAllText(target + ".tmp", answer);
                     File.Move(target + ".tmp", target, overwrite: true);
                 }
             }
@@ -162,7 +163,9 @@ public sealed class RelayEnvelopeProbeTests : IDisposable
         MakeMailbox();
         var report = await ProbeWith((file, c) => file == "pv1-cap.json" ? "E_TRANSPORT_MALFORMED" : c, TimeSpan.FromSeconds(20));
         Assert.Equal(ShadowVerdict.Diverge, report.Verdict);
-        Assert.Contains("pv1-cap.json: legacy E_TRANSPORT_MALFORMED, C# E_NOT_IMPLEMENTED", report.Detail, StringComparison.Ordinal);
+        Assert.Equal("E_TRANSPORT_MALFORMED", report.LegacyCode);
+        Assert.Contains("pv1-cap.json: legacy", report.Detail, StringComparison.Ordinal);
+        Assert.Contains("E_NOT_IMPLEMENTED", report.Detail, StringComparison.Ordinal);
     }
 
     [Fact]

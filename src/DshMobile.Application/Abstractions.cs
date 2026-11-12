@@ -67,6 +67,13 @@ public sealed class MigrationOptions
     /// </summary>
     public SliceMode RelayEnvelopeCodec { get; set; } = SliceMode.LegacyWithShadow;
 
+    /// <summary>
+    /// Relay admission before the approval gate and response encoding (PR-07 third segment): a developer-run probe
+    /// sends well-formed requests that admission must reject and compares Relay's answers byte for byte with C#.
+    /// Admission stays legacy.
+    /// </summary>
+    public SliceMode RelayAdmission { get; set; } = SliceMode.LegacyWithShadow;
+
     /// <summary>Host-path probe for the extractor; null = the real filesystem (the right choice on a device).</summary>
     public Func<string, bool>? HostPathExists { get; set; }
 }
