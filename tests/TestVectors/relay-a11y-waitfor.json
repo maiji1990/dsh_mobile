@@ -1,0 +1,1095 @@
+{
+ "comment": "PR-07 segment 8: ui.waitFor (NodeActions.waitFor / evaluate) over the read-path target rules. Expectations come from an independent reading of upstream Kotlin. Clock: monotonic, moving only in the 150 ms poll delay, so polls and waitedMs are exact; poll k reads timeline[min(k,len)-1] (null = no window tree). budgetMs is the channel budget the backend is handed. C#-only (the legacy JVM tests cannot build AccessibilityNodeInfo); the live legacy Relay is compared on the device (automation.relay-a11y-waitfor). Tree format as in relay-a11y-read.json. data is the exact JSONObject.toString text.",
+ "trees": {
+  "main": {
+   "cls": "android.widget.FrameLayout",
+   "b": [
+    0,
+    0,
+    1080,
+    2400
+   ],
+   "pkg": "com.example",
+   "flags": [
+    "visible",
+    "enabled"
+   ],
+   "actions": [],
+   "kids": [
+    {
+     "cls": "android.widget.TextView",
+     "b": [
+      40,
+      100,
+      520,
+      180
+     ],
+     "pkg": "com.example",
+     "flags": [
+      "visible",
+      "enabled",
+      "focused"
+     ],
+     "actions": [
+      16,
+      64
+     ],
+     "kids": [],
+     "text": "a/b \"q\" 中文"
+    },
+    null,
+    {
+     "cls": "android.widget.Button",
+     "b": [
+      600,
+      100,
+      1000,
+      180
+     ],
+     "pkg": "com.example",
+     "flags": [
+      "visible",
+      "enabled",
+      "clickable"
+     ],
+     "actions": [
+      16,
+      32
+     ],
+     "kids": [],
+     "text": "OK",
+     "id": "com.example:id/ok"
+    },
+    {
+     "cls": "android.widget.ScrollView",
+     "b": [
+      0,
+      300,
+      1080,
+      2000
+     ],
+     "pkg": "com.example",
+     "flags": [
+      "visible",
+      "enabled",
+      "scrollable"
+     ],
+     "actions": [
+      4096
+     ],
+     "kids": [
+      {
+       "cls": "android.widget.EditText",
+       "b": [
+        40,
+        340,
+        1040,
+        440
+       ],
+       "pkg": "com.example",
+       "flags": [
+        "visible",
+        "enabled",
+        "editable",
+        "focused"
+       ],
+       "actions": [
+        16,
+        2097152,
+        16908372
+       ],
+       "kids": [],
+       "text": "",
+       "desc": "Search"
+      },
+      {
+       "cls": "android.widget.CheckBox",
+       "b": [
+        40,
+        500,
+        1040,
+        580
+       ],
+       "pkg": "com.example",
+       "flags": [
+        "visible",
+        "enabled",
+        "checkable",
+        "checked",
+        "clickable"
+       ],
+       "actions": [
+        16
+       ],
+       "kids": [],
+       "text": "Wi‑Fi"
+      },
+      {
+       "cls": "android.widget.SeekBar",
+       "b": [
+        40,
+        640,
+        1040,
+        700
+       ],
+       "pkg": "com.example",
+       "flags": [
+        "visible",
+        "enabled"
+       ],
+       "actions": [
+        16908349,
+        4096,
+        8192
+       ],
+       "kids": [],
+       "desc": "Volume",
+       "range": {
+        "type": 1,
+        "min": 0.0,
+        "max": 1.0,
+        "current": 0.1,
+        "javaMin": "0",
+        "javaMax": "1",
+        "javaCurrent": "0.1"
+       }
+      },
+      {
+       "cls": "android.widget.ProgressBar",
+       "b": [
+        40,
+        720,
+        1040,
+        760
+       ],
+       "pkg": "com.example",
+       "flags": [
+        "visible",
+        "enabled"
+       ],
+       "actions": [],
+       "kids": [],
+       "range": {
+        "type": 0,
+        "min": 0.0,
+        "max": 100.0,
+        "current": 33.33333206176758,
+        "javaMin": "0",
+        "javaMax": "100",
+        "javaCurrent": "33.333332"
+       }
+      }
+     ]
+    },
+    {
+     "cls": "android.view.View",
+     "b": [
+      1300,
+      100,
+      1400,
+      200
+     ],
+     "pkg": "com.example",
+     "flags": [
+      "enabled"
+     ],
+     "actions": [],
+     "kids": [],
+     "text": "gone right"
+    },
+    {
+     "cls": "android.view.View",
+     "b": [
+      500,
+      2600,
+      100,
+      2200
+     ],
+     "pkg": "com.example",
+     "flags": [
+      "visible",
+      "enabled"
+     ],
+     "actions": [],
+     "kids": [],
+     "text": "inverted"
+    },
+    {
+     "cls": "android.widget.TextView",
+     "b": [
+      40,
+      2100,
+      520,
+      2180
+     ],
+     "pkg": "com.example",
+     "flags": [
+      "visible",
+      "enabled"
+     ],
+     "actions": [],
+     "kids": [],
+     "text": "OK"
+    },
+    {
+     "cls": "android.widget.TextView",
+     "b": [
+      600,
+      2100,
+      1000,
+      2180
+     ],
+     "pkg": "com.example",
+     "flags": [
+      "visible",
+      "enabled"
+     ],
+     "actions": [],
+     "kids": [],
+     "text": "OK"
+    }
+   ]
+  },
+  "row": {
+   "cls": "android.widget.LinearLayout",
+   "b": [
+    0,
+    0,
+    1080,
+    400
+   ],
+   "pkg": "com.example",
+   "flags": [
+    "visible",
+    "enabled"
+   ],
+   "actions": [],
+   "kids": [
+    {
+     "cls": "android.widget.TextView",
+     "b": [
+      0,
+      0,
+      300,
+      100
+     ],
+     "pkg": "com.example",
+     "flags": [
+      "visible",
+      "enabled"
+     ],
+     "actions": [],
+     "kids": [],
+     "text": "Name"
+    },
+    {
+     "cls": "android.widget.EditText",
+     "b": [
+      320,
+      0,
+      1000,
+      100
+     ],
+     "pkg": "com.example",
+     "flags": [
+      "visible",
+      "enabled",
+      "editable"
+     ],
+     "actions": [
+      2097152
+     ],
+     "kids": [],
+     "text": "Ann"
+    },
+    {
+     "cls": "android.widget.TextView",
+     "b": [
+      0,
+      200,
+      300,
+      300
+     ],
+     "pkg": "com.example",
+     "flags": [
+      "visible",
+      "enabled"
+     ],
+     "actions": [],
+     "kids": [],
+     "text": "Mail"
+    },
+    {
+     "cls": "android.widget.Switch",
+     "b": [
+      320,
+      200,
+      500,
+      300
+     ],
+     "pkg": "com.example",
+     "flags": [
+      "visible",
+      "enabled"
+     ],
+     "actions": [
+      16
+     ],
+     "kids": []
+    },
+    {
+     "cls": "android.widget.Switch",
+     "b": [
+      320,
+      320,
+      500,
+      380
+     ],
+     "pkg": "com.example",
+     "flags": [
+      "visible",
+      "enabled"
+     ],
+     "actions": [
+      16
+     ],
+     "kids": []
+    }
+   ]
+  },
+  "blank": {
+   "cls": "android.widget.FrameLayout",
+   "b": [
+    0,
+    0,
+    1080,
+    2400
+   ],
+   "pkg": "com.example",
+   "flags": [
+    "visible",
+    "enabled"
+   ],
+   "actions": [],
+   "kids": []
+  },
+  "dialog": {
+   "cls": "android.widget.FrameLayout",
+   "b": [
+    0,
+    0,
+    1080,
+    2400
+   ],
+   "pkg": "com.example",
+   "flags": [
+    "visible",
+    "enabled"
+   ],
+   "actions": [],
+   "kids": [
+    {
+     "cls": "android.widget.TextView",
+     "b": [
+      100,
+      1000,
+      980,
+      1100
+     ],
+     "pkg": "com.example",
+     "flags": [
+      "visible",
+      "enabled"
+     ],
+     "actions": [],
+     "kids": [],
+     "text": "Loading…"
+    }
+   ]
+  },
+  "dialogHidden": {
+   "cls": "android.widget.FrameLayout",
+   "b": [
+    0,
+    0,
+    1080,
+    2400
+   ],
+   "pkg": "com.example",
+   "flags": [
+    "visible",
+    "enabled"
+   ],
+   "actions": [],
+   "kids": [
+    {
+     "cls": "android.widget.TextView",
+     "b": [
+      100,
+      1000,
+      980,
+      1100
+     ],
+     "pkg": "com.example",
+     "flags": [
+      "enabled"
+     ],
+     "actions": [],
+     "kids": [],
+     "text": "Loading…"
+    }
+   ]
+  },
+  "toggleOff": {
+   "cls": "android.widget.LinearLayout",
+   "b": [
+    0,
+    0,
+    1080,
+    400
+   ],
+   "pkg": "com.example",
+   "flags": [
+    "visible",
+    "enabled"
+   ],
+   "actions": [],
+   "kids": [
+    {
+     "cls": "android.widget.Switch",
+     "b": [
+      0,
+      0,
+      200,
+      100
+     ],
+     "pkg": "com.example",
+     "flags": [
+      "visible",
+      "enabled",
+      "checkable",
+      "clickable"
+     ],
+     "actions": [
+      16
+     ],
+     "kids": [],
+     "text": "Dark"
+    }
+   ]
+  },
+  "toggleOn": {
+   "cls": "android.widget.LinearLayout",
+   "b": [
+    0,
+    0,
+    1080,
+    400
+   ],
+   "pkg": "com.example",
+   "flags": [
+    "visible",
+    "enabled"
+   ],
+   "actions": [],
+   "kids": [
+    {
+     "cls": "android.widget.Switch",
+     "b": [
+      0,
+      0,
+      200,
+      100
+     ],
+     "pkg": "com.example",
+     "flags": [
+      "visible",
+      "enabled",
+      "checkable",
+      "checked",
+      "clickable"
+     ],
+     "actions": [
+      16
+     ],
+     "kids": [],
+     "text": "Dark"
+    }
+   ]
+  }
+ },
+ "frames": {
+  "main": {
+   "screen": [
+    0,
+    0,
+    1080,
+    2400
+   ],
+   "dpi": 480,
+   "display": 0
+  },
+  "row": {
+   "screen": [
+    0,
+    0,
+    1080,
+    400
+   ],
+   "dpi": 420,
+   "display": 7
+  }
+ },
+ "cases": [
+  {
+   "args": "{\"nodeId\":0,\"timeoutMs\":0}",
+   "timeline": [
+    "main"
+   ],
+   "frame": "main",
+   "budgetMs": 60000,
+   "expect": {
+    "ok": true,
+    "data": "{\"satisfied\":true,\"polls\":1,\"waitedMs\":0,\"requestedMs\":0,\"cappedToBudget\":false,\"node\":{\"display\":0,\"class\":\"android.widget.FrameLayout\",\"package\":\"com.example\",\"enabled\":true,\"checkable\":false,\"checked\":false,\"clickable\":false,\"longClickable\":false,\"scrollable\":false,\"selected\":false,\"visible\":true,\"focused\":false,\"editable\":false,\"actions\":[],\"left\":0,\"top\":0,\"right\":1080,\"bottom\":2400}}"
+   }
+  },
+  {
+   "args": "{\"nodeId\":5,\"checked\":true}",
+   "timeline": [
+    "main"
+   ],
+   "frame": "main",
+   "budgetMs": 60000,
+   "expect": {
+    "ok": true,
+    "data": "{\"satisfied\":true,\"polls\":1,\"waitedMs\":0,\"requestedMs\":3000,\"cappedToBudget\":false,\"node\":{\"display\":0,\"class\":\"android.widget.CheckBox\",\"text\":\"Wi‑Fi\",\"package\":\"com.example\",\"enabled\":true,\"checkable\":true,\"checked\":true,\"clickable\":true,\"longClickable\":false,\"scrollable\":false,\"selected\":false,\"visible\":true,\"focused\":false,\"editable\":false,\"actions\":[\"click\"],\"left\":40,\"top\":500,\"right\":1040,\"bottom\":580}}"
+   }
+  },
+  {
+   "args": "{\"nodeId\":5,\"checked\":false,\"timeoutMs\":300}",
+   "timeline": [
+    "main"
+   ],
+   "frame": "main",
+   "budgetMs": 60000,
+   "expect": {
+    "ok": false,
+    "code": "E_WAIT_TIMEOUT",
+    "reason": "condition still false after 300ms of the requested 300ms and 3 polls: checked is true, wanted false"
+   }
+  },
+  {
+   "args": "{\"nodeId\":5,\"checked\":\"true\",\"timeoutMs\":0}",
+   "timeline": [
+    "main"
+   ],
+   "frame": "main",
+   "budgetMs": 60000,
+   "expect": {
+    "ok": false,
+    "code": "E_WAIT_TIMEOUT",
+    "reason": "condition still false after 0ms of the requested 0ms and 1 polls: checked is true, wanted true"
+   }
+  },
+  {
+   "args": "{\"nodeId\":5,\"checked\":1,\"timeoutMs\":0}",
+   "timeline": [
+    "main"
+   ],
+   "frame": "main",
+   "budgetMs": 60000,
+   "expect": {
+    "ok": false,
+    "code": "E_WAIT_TIMEOUT",
+    "reason": "condition still false after 0ms of the requested 0ms and 1 polls: checked is true, wanted 1"
+   }
+  },
+  {
+   "args": "{\"nodeId\":5,\"checked\":null,\"timeoutMs\":0}",
+   "timeline": [
+    "main"
+   ],
+   "frame": "main",
+   "budgetMs": 60000,
+   "expect": {
+    "ok": false,
+    "code": "E_WAIT_TIMEOUT",
+    "reason": "condition still false after 0ms of the requested 0ms and 1 polls: checked is true, wanted null"
+   }
+  },
+  {
+   "args": "{\"nodeId\":4,\"text\":\"\",\"timeoutMs\":0}",
+   "timeline": [
+    "main"
+   ],
+   "frame": "main",
+   "budgetMs": 60000,
+   "expect": {
+    "ok": true,
+    "data": "{\"satisfied\":true,\"polls\":1,\"waitedMs\":0,\"requestedMs\":0,\"cappedToBudget\":false,\"node\":{\"display\":0,\"class\":\"android.widget.EditText\",\"desc\":\"Search\",\"package\":\"com.example\",\"enabled\":true,\"checkable\":false,\"checked\":false,\"clickable\":true,\"longClickable\":false,\"scrollable\":false,\"selected\":false,\"visible\":true,\"focused\":true,\"editable\":true,\"actions\":[\"click\",\"setValue\",\"imeAction\"],\"left\":40,\"top\":340,\"right\":1040,\"bottom\":440}}"
+   }
+  },
+  {
+   "args": "{\"nodeId\":0,\"text\":\"\",\"timeoutMs\":0}",
+   "timeline": [
+    "main"
+   ],
+   "frame": "main",
+   "budgetMs": 60000,
+   "expect": {
+    "ok": false,
+    "code": "E_WAIT_TIMEOUT",
+    "reason": "condition still false after 0ms of the requested 0ms and 1 polls: text differs (length 0, wanted 0)"
+   }
+  },
+  {
+   "args": "{\"nodeId\":1,\"text\":\"a/b \\\"q\\\" 中文\",\"timeoutMs\":0}",
+   "timeline": [
+    "main"
+   ],
+   "frame": "main",
+   "budgetMs": 60000,
+   "expect": {
+    "ok": true,
+    "data": "{\"satisfied\":true,\"polls\":1,\"waitedMs\":0,\"requestedMs\":0,\"cappedToBudget\":false,\"node\":{\"display\":0,\"class\":\"android.widget.TextView\",\"text\":\"a\\/b \\\"q\\\" 中文\",\"package\":\"com.example\",\"enabled\":true,\"checkable\":false,\"checked\":false,\"clickable\":true,\"longClickable\":false,\"scrollable\":false,\"selected\":false,\"visible\":true,\"focused\":true,\"editable\":false,\"actions\":[\"click\",\"action(64)\"],\"left\":40,\"top\":100,\"right\":520,\"bottom\":180}}"
+   }
+  },
+  {
+   "args": "{\"nodeId\":1,\"text\":\"a/b\",\"timeoutMs\":0}",
+   "timeline": [
+    "main"
+   ],
+   "frame": "main",
+   "budgetMs": 60000,
+   "expect": {
+    "ok": false,
+    "code": "E_WAIT_TIMEOUT",
+    "reason": "condition still false after 0ms of the requested 0ms and 1 polls: text differs (length 10, wanted 3)"
+   }
+  },
+  {
+   "args": "{\"nodeId\":5,\"text\":5,\"timeoutMs\":0}",
+   "timeline": [
+    "main"
+   ],
+   "frame": "main",
+   "budgetMs": 60000,
+   "expect": {
+    "ok": false,
+    "code": "E_WAIT_TIMEOUT",
+    "reason": "condition still false after 0ms of the requested 0ms and 1 polls: text differs (length 5, wanted 1)"
+   }
+  },
+  {
+   "args": "{\"nodeId\":5,\"checked\":true,\"text\":\"Wi‑Fi\"}",
+   "timeline": [
+    "main"
+   ],
+   "frame": "main",
+   "budgetMs": 60000,
+   "expect": {
+    "ok": true,
+    "data": "{\"satisfied\":true,\"polls\":1,\"waitedMs\":0,\"requestedMs\":3000,\"cappedToBudget\":false,\"node\":{\"display\":0,\"class\":\"android.widget.CheckBox\",\"text\":\"Wi‑Fi\",\"package\":\"com.example\",\"enabled\":true,\"checkable\":true,\"checked\":true,\"clickable\":true,\"longClickable\":false,\"scrollable\":false,\"selected\":false,\"visible\":true,\"focused\":false,\"editable\":false,\"actions\":[\"click\"],\"left\":40,\"top\":500,\"right\":1040,\"bottom\":580}}"
+   }
+  },
+  {
+   "args": "{\"selector\":{\"text\":\"OK\"},\"timeoutMs\":3000}",
+   "timeline": [
+    "main"
+   ],
+   "frame": "main",
+   "budgetMs": 60000,
+   "expect": {
+    "ok": false,
+    "code": "E_NODE_AMBIGUOUS",
+    "reason": "selector is ambiguous"
+   }
+  },
+  {
+   "args": "{\"selector\":{\"text\":\"nothing here\"},\"absent\":true}",
+   "timeline": [
+    "main"
+   ],
+   "frame": "main",
+   "budgetMs": 60000,
+   "expect": {
+    "ok": true,
+    "data": "{\"satisfied\":true,\"polls\":1,\"waitedMs\":0,\"requestedMs\":3000,\"cappedToBudget\":false,\"node\":{\"gone\":true}}"
+   }
+  },
+  {
+   "args": "{\"selector\":{\"text\":\"nothing here\"},\"timeoutMs\":450}",
+   "timeline": [
+    "main"
+   ],
+   "frame": "main",
+   "budgetMs": 60000,
+   "expect": {
+    "ok": false,
+    "code": "E_WAIT_TIMEOUT",
+    "reason": "condition still false after 450ms of the requested 450ms and 4 polls: selector matched no node"
+   }
+  },
+  {
+   "args": "{\"nodeId\":12,\"absent\":true}",
+   "timeline": [
+    "main"
+   ],
+   "frame": "main",
+   "budgetMs": 60000,
+   "expect": {
+    "ok": true,
+    "data": "{\"satisfied\":true,\"polls\":1,\"waitedMs\":0,\"requestedMs\":3000,\"cappedToBudget\":false,\"node\":{\"gone\":true}}"
+   }
+  },
+  {
+   "args": "{\"nodeId\":12,\"timeoutMs\":0}",
+   "timeline": [
+    "main"
+   ],
+   "frame": "main",
+   "budgetMs": 60000,
+   "expect": {
+    "ok": false,
+    "code": "E_WAIT_TIMEOUT",
+    "reason": "condition still false after 0ms of the requested 0ms and 1 polls: no node with nodeId=12 in the current tree: node ids come from ui.snapshot and shift when the screen changes"
+   }
+  },
+  {
+   "args": "{\"nodeId\":8,\"absent\":true}",
+   "timeline": [
+    "main"
+   ],
+   "frame": "main",
+   "budgetMs": 60000,
+   "expect": {
+    "ok": true,
+    "data": "{\"satisfied\":true,\"polls\":1,\"waitedMs\":0,\"requestedMs\":3000,\"cappedToBudget\":false,\"node\":{\"display\":0,\"class\":\"android.view.View\",\"text\":\"gone right\",\"package\":\"com.example\",\"enabled\":true,\"checkable\":false,\"checked\":false,\"clickable\":false,\"longClickable\":false,\"scrollable\":false,\"selected\":false,\"visible\":false,\"focused\":false,\"editable\":false,\"actions\":[],\"offscreen\":true}}"
+   }
+  },
+  {
+   "args": "{\"nodeId\":2,\"absent\":true,\"timeoutMs\":0}",
+   "timeline": [
+    "main"
+   ],
+   "frame": "main",
+   "budgetMs": 60000,
+   "expect": {
+    "ok": false,
+    "code": "E_WAIT_TIMEOUT",
+    "reason": "condition still false after 0ms of the requested 0ms and 1 polls: node still visible"
+   }
+  },
+  {
+   "args": "{\"nodeId\":2,\"absent\":\"true\",\"timeoutMs\":0}",
+   "timeline": [
+    "main"
+   ],
+   "frame": "main",
+   "budgetMs": 60000,
+   "expect": {
+    "ok": true,
+    "data": "{\"satisfied\":true,\"polls\":1,\"waitedMs\":0,\"requestedMs\":0,\"cappedToBudget\":false,\"node\":{\"display\":0,\"class\":\"android.widget.Button\",\"text\":\"OK\",\"id\":\"com.example:id\\/ok\",\"package\":\"com.example\",\"enabled\":true,\"checkable\":false,\"checked\":false,\"clickable\":true,\"longClickable\":true,\"scrollable\":false,\"selected\":false,\"visible\":true,\"focused\":false,\"editable\":false,\"actions\":[\"click\",\"longClick\"],\"left\":600,\"top\":100,\"right\":1000,\"bottom\":180}}"
+   }
+  },
+  {
+   "args": "{\"nodeId\":0,\"absent\":true,\"absent\":false,\"timeoutMs\":0}",
+   "timeline": [
+    "main"
+   ],
+   "frame": "main",
+   "budgetMs": 60000,
+   "expect": {
+    "ok": true,
+    "data": "{\"satisfied\":true,\"polls\":1,\"waitedMs\":0,\"requestedMs\":0,\"cappedToBudget\":false,\"node\":{\"display\":0,\"class\":\"android.widget.FrameLayout\",\"package\":\"com.example\",\"enabled\":true,\"checkable\":false,\"checked\":false,\"clickable\":false,\"longClickable\":false,\"scrollable\":false,\"selected\":false,\"visible\":true,\"focused\":false,\"editable\":false,\"actions\":[],\"left\":0,\"top\":0,\"right\":1080,\"bottom\":2400}}"
+   }
+  },
+  {
+   "args": "{\"nodeId\":0,\"absent\":true}",
+   "timeline": [
+    null
+   ],
+   "frame": "main",
+   "budgetMs": 60000,
+   "expect": {
+    "ok": false,
+    "code": "E_BACKEND_UNAVAILABLE",
+    "reason": "no window tree to read on display 0 after a second read: no window holds focus there - retry once one does"
+   }
+  },
+  {
+   "args": "{\"selector\":{\"text\":\"x\"},\"timeoutMs\":0}",
+   "timeline": [
+    null
+   ],
+   "frame": "main",
+   "budgetMs": 60000,
+   "expect": {
+    "ok": false,
+    "code": "E_BACKEND_UNAVAILABLE",
+    "reason": "no window tree to read on display 0 after a second read: no window holds focus there - retry once one does"
+   }
+  },
+  {
+   "args": "{\"nodeId\":1,\"relative\":{\"side\":\"left\"},\"absent\":true}",
+   "timeline": [
+    "row"
+   ],
+   "frame": "row",
+   "budgetMs": 60000,
+   "expect": {
+    "ok": false,
+    "code": "E_NODE_NOT_FOUND",
+    "reason": "no node on the left of nodeId=1: read ui.snapshot or try another side (absence cannot be judged from here)"
+   }
+  },
+  {
+   "args": "{\"nodeId\":1,\"relative\":{\"side\":\"left\"},\"timeoutMs\":0}",
+   "timeline": [
+    "row"
+   ],
+   "frame": "row",
+   "budgetMs": 60000,
+   "expect": {
+    "ok": false,
+    "code": "E_WAIT_TIMEOUT",
+    "reason": "condition still false after 0ms of the requested 0ms and 1 polls: no node on the left of nodeId=1: read ui.snapshot or try another side"
+   }
+  },
+  {
+   "args": "{\"nodeId\":1,\"relative\":{\"side\":\"sideways\"},\"absent\":true}",
+   "timeline": [
+    "row"
+   ],
+   "frame": "row",
+   "budgetMs": 60000,
+   "expect": {
+    "ok": false,
+    "code": "E_TRANSPORT_MALFORMED",
+    "reason": "relative.side must be right|left|above|below, got 'sideways'"
+   }
+  },
+  {
+   "args": "{\"nodeId\":0,\"timeoutMs\":15001}",
+   "timeline": [
+    "main"
+   ],
+   "frame": "main",
+   "budgetMs": 60000,
+   "expect": {
+    "ok": false,
+    "code": "E_TRANSPORT_MALFORMED",
+    "reason": "timeoutMs must be within 0..15000"
+   }
+  },
+  {
+   "args": "{\"nodeId\":0,\"timeoutMs\":-1}",
+   "timeline": [
+    "main"
+   ],
+   "frame": "main",
+   "budgetMs": 60000,
+   "expect": {
+    "ok": false,
+    "code": "E_TRANSPORT_MALFORMED",
+    "reason": "timeoutMs must be within 0..15000"
+   }
+  },
+  {
+   "args": "{\"nodeId\":0,\"timeoutMs\":15000.9}",
+   "timeline": [
+    "main"
+   ],
+   "frame": "main",
+   "budgetMs": 60000,
+   "expect": {
+    "ok": true,
+    "data": "{\"satisfied\":true,\"polls\":1,\"waitedMs\":0,\"requestedMs\":15000,\"cappedToBudget\":false,\"node\":{\"display\":0,\"class\":\"android.widget.FrameLayout\",\"package\":\"com.example\",\"enabled\":true,\"checkable\":false,\"checked\":false,\"clickable\":false,\"longClickable\":false,\"scrollable\":false,\"selected\":false,\"visible\":true,\"focused\":false,\"editable\":false,\"actions\":[],\"left\":0,\"top\":0,\"right\":1080,\"bottom\":2400}}"
+   }
+  },
+  {
+   "args": "{\"nodeId\":0,\"timeoutMs\":-0.5}",
+   "timeline": [
+    "main"
+   ],
+   "frame": "main",
+   "budgetMs": 60000,
+   "expect": {
+    "ok": true,
+    "data": "{\"satisfied\":true,\"polls\":1,\"waitedMs\":0,\"requestedMs\":0,\"cappedToBudget\":false,\"node\":{\"display\":0,\"class\":\"android.widget.FrameLayout\",\"package\":\"com.example\",\"enabled\":true,\"checkable\":false,\"checked\":false,\"clickable\":false,\"longClickable\":false,\"scrollable\":false,\"selected\":false,\"visible\":true,\"focused\":false,\"editable\":false,\"actions\":[],\"left\":0,\"top\":0,\"right\":1080,\"bottom\":2400}}"
+   }
+  },
+  {
+   "args": "{\"nodeId\":0,\"timeoutMs\":1e3}",
+   "timeline": [
+    "main"
+   ],
+   "frame": "main",
+   "budgetMs": 60000,
+   "expect": {
+    "ok": true,
+    "data": "{\"satisfied\":true,\"polls\":1,\"waitedMs\":0,\"requestedMs\":1000,\"cappedToBudget\":false,\"node\":{\"display\":0,\"class\":\"android.widget.FrameLayout\",\"package\":\"com.example\",\"enabled\":true,\"checkable\":false,\"checked\":false,\"clickable\":false,\"longClickable\":false,\"scrollable\":false,\"selected\":false,\"visible\":true,\"focused\":false,\"editable\":false,\"actions\":[],\"left\":0,\"top\":0,\"right\":1080,\"bottom\":2400}}"
+   }
+  },
+  {
+   "args": "{\"nodeId\":0,\"timeoutMs\":\"5\"}",
+   "timeline": [
+    "main"
+   ],
+   "frame": "main",
+   "budgetMs": 60000,
+   "expect": {
+    "ok": false,
+    "code": "E_TRANSPORT_MALFORMED",
+    "reason": "timeoutMs must be a number, got \"5\" (string)"
+   }
+  },
+  {
+   "args": "{\"nodeId\":0,\"timeoutMs\":null}",
+   "timeline": [
+    "main"
+   ],
+   "frame": "main",
+   "budgetMs": 60000,
+   "expect": {
+    "ok": false,
+    "code": "E_TRANSPORT_MALFORMED",
+    "reason": "timeoutMs must be a number, got nothing"
+   }
+  },
+  {
+   "args": "{\"nodeId\":12,\"timeoutMs\":15000}",
+   "timeline": [
+    "main"
+   ],
+   "frame": "main",
+   "budgetMs": 60000,
+   "expect": {
+    "ok": false,
+    "code": "E_WAIT_TIMEOUT",
+    "reason": "condition still false after 15000ms of the requested 15000ms and 101 polls: no node with nodeId=12 in the current tree: node ids come from ui.snapshot and shift when the screen changes"
+   }
+  },
+  {
+   "args": "{\"nodeId\":0,\"timeoutMs\":3000}",
+   "timeline": [
+    "main"
+   ],
+   "frame": "main",
+   "budgetMs": 1000,
+   "expect": {
+    "ok": true,
+    "data": "{\"satisfied\":true,\"polls\":1,\"waitedMs\":0,\"requestedMs\":3000,\"cappedToBudget\":true,\"node\":{\"display\":0,\"class\":\"android.widget.FrameLayout\",\"package\":\"com.example\",\"enabled\":true,\"checkable\":false,\"checked\":false,\"clickable\":false,\"longClickable\":false,\"scrollable\":false,\"selected\":false,\"visible\":true,\"focused\":false,\"editable\":false,\"actions\":[],\"left\":0,\"top\":0,\"right\":1080,\"bottom\":2400}}"
+   }
+  },
+  {
+   "args": "{\"selector\":{\"text\":\"nothing here\"},\"timeoutMs\":3000}",
+   "timeline": [
+    "main"
+   ],
+   "frame": "main",
+   "budgetMs": 200,
+   "expect": {
+    "ok": false,
+    "code": "E_WAIT_TIMEOUT",
+    "reason": "condition still false after 200ms of the requested 3000ms (capped to the remaining channel budget) and 3 polls: selector matched no node"
+   }
+  },
+  {
+   "args": "{\"selector\":{\"text\":\"nothing here\"}}",
+   "timeline": [
+    "main"
+   ],
+   "frame": "main",
+   "budgetMs": -5,
+   "expect": {
+    "ok": false,
+    "code": "E_WAIT_TIMEOUT",
+    "reason": "condition still false after 0ms of the requested 3000ms (capped to the remaining channel budget) and 1 polls: selector matched no node"
+   }
+  },
+  {
+   "args": "{\"selector\":{\"text\":\"Loading…\"}}",
+   "timeline": [
+    "blank",
+    "blank",
+    "dialog"
+   ],
+   "frame": "main",
+   "budgetMs": 60000,
+   "expect": {
+    "ok": true,
+    "data": "{\"satisfied\":true,\"polls\":3,\"waitedMs\":300,\"requestedMs\":3000,\"cappedToBudget\":false,\"node\":{\"display\":0,\"class\":\"android.widget.TextView\",\"text\":\"Loading…\",\"package\":\"com.example\",\"enabled\":true,\"checkable\":false,\"checked\":false,\"clickable\":false,\"longClickable\":false,\"scrollable\":false,\"selected\":false,\"visible\":true,\"focused\":false,\"editable\":false,\"actions\":[],\"left\":100,\"top\":1000,\"right\":980,\"bottom\":1100}}"
+   }
+  },
+  {
+   "args": "{\"selector\":{\"text\":\"Loading…\"},\"absent\":true}",
+   "timeline": [
+    "dialog",
+    "dialog",
+    "dialogHidden"
+   ],
+   "frame": "main",
+   "budgetMs": 60000,
+   "expect": {
+    "ok": true,
+    "data": "{\"satisfied\":true,\"polls\":3,\"waitedMs\":300,\"requestedMs\":3000,\"cappedToBudget\":false,\"node\":{\"display\":0,\"class\":\"android.widget.TextView\",\"text\":\"Loading…\",\"package\":\"com.example\",\"enabled\":true,\"checkable\":false,\"checked\":false,\"clickable\":false,\"longClickable\":false,\"scrollable\":false,\"selected\":false,\"visible\":false,\"focused\":false,\"editable\":false,\"actions\":[],\"left\":100,\"top\":1000,\"right\":980,\"bottom\":1100}}"
+   }
+  },
+  {
+   "args": "{\"selector\":{\"text\":\"Loading…\"},\"absent\":true}",
+   "timeline": [
+    "dialog",
+    "blank"
+   ],
+   "frame": "main",
+   "budgetMs": 60000,
+   "expect": {
+    "ok": true,
+    "data": "{\"satisfied\":true,\"polls\":2,\"waitedMs\":150,\"requestedMs\":3000,\"cappedToBudget\":false,\"node\":{\"gone\":true}}"
+   }
+  },
+  {
+   "args": "{\"nodeId\":1,\"checked\":true,\"timeoutMs\":1000}",
+   "timeline": [
+    "toggleOff",
+    "toggleOff",
+    "toggleOn"
+   ],
+   "frame": "main",
+   "budgetMs": 60000,
+   "expect": {
+    "ok": true,
+    "data": "{\"satisfied\":true,\"polls\":3,\"waitedMs\":300,\"requestedMs\":1000,\"cappedToBudget\":false,\"node\":{\"display\":0,\"class\":\"android.widget.Switch\",\"text\":\"Dark\",\"package\":\"com.example\",\"enabled\":true,\"checkable\":true,\"checked\":true,\"clickable\":true,\"longClickable\":false,\"scrollable\":false,\"selected\":false,\"visible\":true,\"focused\":false,\"editable\":false,\"actions\":[\"click\"],\"left\":0,\"top\":0,\"right\":200,\"bottom\":100}}"
+   }
+  },
+  {
+   "args": "{\"nodeId\":1,\"checked\":true,\"timeoutMs\":200}",
+   "timeline": [
+    "toggleOff",
+    "toggleOff",
+    "toggleOn"
+   ],
+   "frame": "main",
+   "budgetMs": 60000,
+   "expect": {
+    "ok": true,
+    "data": "{\"satisfied\":true,\"polls\":3,\"waitedMs\":300,\"requestedMs\":200,\"cappedToBudget\":false,\"node\":{\"display\":0,\"class\":\"android.widget.Switch\",\"text\":\"Dark\",\"package\":\"com.example\",\"enabled\":true,\"checkable\":true,\"checked\":true,\"clickable\":true,\"longClickable\":false,\"scrollable\":false,\"selected\":false,\"visible\":true,\"focused\":false,\"editable\":false,\"actions\":[\"click\"],\"left\":0,\"top\":0,\"right\":200,\"bottom\":100}}"
+   }
+  },
+  {
+   "args": "{\"selector\":{\"text\":\"Loading…\"},\"absent\":true,\"timeoutMs\":600}",
+   "timeline": [
+    "dialog",
+    null
+   ],
+   "frame": "main",
+   "budgetMs": 60000,
+   "expect": {
+    "ok": false,
+    "code": "E_BACKEND_UNAVAILABLE",
+    "reason": "no window tree to read on display 0 after a second read: no window holds focus there - retry once one does"
+   }
+  }
+ ]
+}

@@ -291,11 +291,16 @@ public sealed class AutomationActivity : Activity
         var context = ApplicationContext!;
         try
         {
-            var report = await Task.Run(() => runtime.ShadowRelayA11yReadAsync(() => RelayA11yTreeSource.HostTree(context),
+            // Segment 7 (ui.snapshot / ui.node) then segment 8 (ui.waitFor): one card per capability, then none.
+            var read = await Task.Run(() => runtime.ShadowRelayA11yReadAsync(() => RelayA11yTreeSource.HostTree(context),
                 TimeSpan.FromMinutes(3), CancellationToken.None));
-            _output.Text = report is null
+            _output.Text = read is null ? GetString(Resource.String.automation_envelope_probe_off) : $"{read.Slice}: {read.Verdict}\n{read.Detail}";
+            var wait = await Task.Run(() => runtime.ShadowRelayA11yWaitForAsync(() => RelayA11yTreeSource.HostTree(context),
+                TimeSpan.FromMinutes(2), CancellationToken.None));
+            var reports = new[] { read, wait }.OfType<ShadowReport>().ToList();
+            _output.Text = reports.Count == 0
                 ? GetString(Resource.String.automation_envelope_probe_off)
-                : $"{report.Slice}: {report.Verdict}\n{report.Detail}";
+                : string.Join("\n\n", reports.Select(r => $"{r.Slice}: {r.Verdict}\n{r.Detail}"));
         }
         catch (Exception ex)
         {

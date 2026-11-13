@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Text.RegularExpressions;
 using DshMobile.Runtime.Automation.Relay;
 using DshMobile.Runtime.Automation.Relay.A11y;
 using DshMobile.Runtime.Automation.Relay.Exec;
@@ -23,9 +24,12 @@ namespace DshMobile.Application.Shadow;
 /// run Inconclusive.
 /// </para>
 /// </summary>
-public static class RelayA11yReadShadowCheck
+public static partial class RelayA11yReadShadowCheck
 {
     public const string Slice = "automation.relay-a11y-read";
+
+    /// <summary>PR-07 segment 8: <c>ui.waitFor</c> through the same bracketed comparison (one more approval card).</summary>
+    public const string WaitForSlice = "automation.relay-a11y-waitfor";
     public const long CallTtlMs = 60_000;
 
     private static readonly HashSet<string> Waiting = new(StringComparer.Ordinal)
@@ -37,18 +41,26 @@ public static class RelayA11yReadShadowCheck
     private static readonly HashSet<string> BackendCodes = new(StringComparer.Ordinal)
     {
         RelayError.BackendUnavailable.Code, RelayError.NodeNotFound.Code, RelayError.NodeAmbiguous.Code, RelayError.TransportMalformed.Code,
+        RelayError.WaitTimeout.Code,
     };
 
     /// <summary>One read call: the capability, its args, and how C# answers it from a tree.</summary>
     public sealed record ReadCall(string Capability, string Args)
     {
-        public BackendResult Answer(A11yTree tree)
+        public Task<BackendResult> AnswerAsync(A11yTree tree, CancellationToken ct = default)
         {
             ArgumentNullException.ThrowIfNull(tree);
-            return Capability == "ui.snapshot"
-                ? A11ySnapshot.Snapshot(tree)
-                : new NodeReader(tree).ReadNode(JsonElement.Parse(Args));
+            return Capability switch
+            {
+                "ui.snapshot" => Task.FromResult(A11ySnapshot.Snapshot(tree)),
+                // Legacy hands its backend the request ttl less what the call has spent; every call here asks for at
+                // most the default wait, far below that, so cappedToBudget is false on both sides.
+                "ui.waitFor" => new NodeReader(tree).WaitForAsync(JsonElement.Parse(Args), CallTtlMs, TimeProvider.System, ct),
+                _ => Task.FromResult(new NodeReader(tree).ReadNode(JsonElement.Parse(Args))),
+            };
         }
+
+        public BackendResult Answer(A11yTree tree) => AnswerAsync(tree).GetAwaiter().GetResult();
 
         public string Label => Capability == "ui.snapshot" ? Capability : $"{Capability} {Args}";
     }
@@ -56,7 +68,7 @@ public static class RelayA11yReadShadowCheck
     /// <summary>C#'s answer in comparable form: <c>ok:data</c> or <c>CODE:reason</c>.</summary>
     public static string Comparable(BackendResult result) => result switch
     {
-        BackendResult.Ok ok => "ok:" + RelayEncoding.EncodeData(ok.Data),
+        BackendResult.Ok ok => "ok:" + Timeless(RelayEncoding.EncodeData(ok.Data)),
         BackendResult.Failed f => f.Error.Code + ":" + f.Reason,
         _ => throw new ArgumentOutOfRangeException(nameof(result)),
     };
@@ -75,7 +87,7 @@ public static class RelayA11yReadShadowCheck
             if (root.TryGetProperty("ok", out var ok) && ok.ValueKind == JsonValueKind.True)
             {
                 summary = "ok";
-                return "ok:" + (root.TryGetProperty("data", out var data) ? data.GetRawText() : "{}");
+                return "ok:" + Timeless(root.TryGetProperty("data", out var data) ? data.GetRawText() : "{}");
             }
             var code = root.TryGetProperty("error", out var e) && e.TryGetProperty("code", out var c) ? c.GetString() : null;
             summary = code ?? "no error code";
@@ -90,6 +102,55 @@ public static class RelayA11yReadShadowCheck
             summary = "unparsable reply";
             return null;
         }
+    }
+
+    /// <summary>
+    /// <c>waitedMs</c> (ui.waitFor) is how long that run happened to wait: the one field two correct implementations
+    /// cannot agree on. Every other byte, <c>polls</c> included, is compared.
+    /// </summary>
+    private static string Timeless(string data) => WaitedMs().Replace(data, "\"waitedMs\":0");
+
+    [GeneratedRegex("\"waitedMs\":-?[0-9]+")]
+    private static partial Regex WaitedMs();
+
+    /// <summary>The marker text the ui.waitFor calls look for and must never find.</summary>
+    public const string AbsentText = "dshm-shadow: no such text";
+
+    /// <summary>
+    /// The ui.waitFor calls for one run (all answer at the first poll, so polls is 1 on both sides): satisfied by id and
+    /// by unique text, absence judged (gone) and refused (still visible, relative), a timeout for a missing node, text
+    /// and checked mismatches on the first clickable node, and an out-of-range timeout.
+    /// </summary>
+    public static IReadOnlyList<ReadCall> PickWaitForCalls(A11yTree tree)
+    {
+        ArgumentNullException.ThrowIfNull(tree);
+        var calls = new List<ReadCall>
+        {
+            new("ui.waitFor", """{"nodeId":0,"timeoutMs":0}"""),
+            new("ui.waitFor", new JsonObject { ["selector"] = new JsonObject { ["text"] = AbsentText }, ["absent"] = true, ["timeoutMs"] = 0 }.ToJsonString()),
+            new("ui.waitFor", new JsonObject { ["selector"] = new JsonObject { ["text"] = AbsentText }, ["timeoutMs"] = 0 }.ToJsonString()),
+            new("ui.waitFor", """{"nodeId":0,"relative":{"side":"above"},"absent":true,"timeoutMs":0}"""),
+            new("ui.waitFor", """{"nodeId":0,"timeoutMs":15001}"""),
+        };
+        if (A11ySnapshot.Snapshot(tree) is not BackendResult.Ok { Data: var data } || data["nodes"] is not JsonArray nodes)
+        {
+            return calls;
+        }
+        var list = nodes.OfType<JsonObject>().ToList();
+        var texts = list.Select(n => (string?)n["text"]).OfType<string>().ToList();
+        if (texts.FirstOrDefault(t => texts.Count(x => x == t) == 1) is { } unique)
+        {
+            calls.Add(new ReadCall("ui.waitFor", new JsonObject { ["selector"] = new JsonObject { ["text"] = unique } }.ToJsonString()));
+            calls.Add(new ReadCall("ui.waitFor",
+                new JsonObject { ["selector"] = new JsonObject { ["text"] = unique }, ["absent"] = true, ["timeoutMs"] = 0 }.ToJsonString()));
+        }
+        if (list.FirstOrDefault(n => n["clickable"] is not null && (int)n["nodeId"]! > 0) is { } clickable)
+        {
+            var id = (int)clickable["nodeId"]!;
+            calls.Add(new ReadCall("ui.waitFor", new JsonObject { ["nodeId"] = id, ["text"] = AbsentText, ["timeoutMs"] = 0 }.ToJsonString()));
+            calls.Add(new ReadCall("ui.waitFor", new JsonObject { ["nodeId"] = id, ["checked"] = true, ["timeoutMs"] = 0 }.ToJsonString()));
+        }
+        return calls;
     }
 
     /// <summary>
@@ -120,8 +181,17 @@ public static class RelayA11yReadShadowCheck
         return calls;
     }
 
-    public static async Task<ShadowReport> RunAsync(string pilotEntryDir, Func<A11yTree?> hostTree, TimeProvider time, TimeSpan timeout,
-        CancellationToken ct)
+    public static Task<ShadowReport> RunAsync(string pilotEntryDir, Func<A11yTree?> hostTree, TimeProvider time, TimeSpan timeout,
+        CancellationToken ct) =>
+        RunSliceAsync(Slice, PickCalls, pilotEntryDir, hostTree, time, timeout, ct);
+
+    /// <summary>PR-07 segment 8: the ui.waitFor calls through the same comparison.</summary>
+    public static Task<ShadowReport> RunWaitForAsync(string pilotEntryDir, Func<A11yTree?> hostTree, TimeProvider time, TimeSpan timeout,
+        CancellationToken ct) =>
+        RunSliceAsync(WaitForSlice, PickWaitForCalls, pilotEntryDir, hostTree, time, timeout, ct);
+
+    private static async Task<ShadowReport> RunSliceAsync(string slice, Func<A11yTree, IReadOnlyList<ReadCall>> pick, string pilotEntryDir,
+        Func<A11yTree?> hostTree, TimeProvider time, TimeSpan timeout, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(hostTree);
         ArgumentNullException.ThrowIfNull(time);
@@ -129,18 +199,18 @@ public static class RelayA11yReadShadowCheck
         if (Interlocked.Exchange(ref s_running, 1) == 1)
         {
             // Two runs would share the one session consent and the same calls: their verdicts would mean nothing.
-            return new ShadowReport(Slice, time.GetUtcNow(), ShadowVerdict.Inconclusive, false, null, true, null,
+            return new ShadowReport(slice, time.GetUtcNow(), ShadowVerdict.Inconclusive, false, null, true, null,
                 "not run: another accessibility read check is still running", 0);
         }
         try
         {
-            return await RunCoreAsync(pilotEntryDir, hostTree, time, timeout, sw, ct).ConfigureAwait(false);
+            return await RunCoreAsync(slice, pick, pilotEntryDir, hostTree, time, timeout, sw, ct).ConfigureAwait(false);
         }
         catch (Exception ex) when (ex is not (OperationCanceledException or IOException or UnauthorizedAccessException))
         {
             // A reader fault (the live tree, a platform call) must end the check visibly, never leave it hanging.
             var at = ex.StackTrace?.Split('\n', 2)[0].Trim();
-            return new ShadowReport(Slice, time.GetUtcNow(), ShadowVerdict.Inconclusive, false, null, false, ex.GetType().Name,
+            return new ShadowReport(slice, time.GetUtcNow(), ShadowVerdict.Inconclusive, false, null, false, ex.GetType().Name,
                 $"the C# reader failed: {ex.GetType().Name}: {ex.Message}{(at is null ? "" : " " + at)}", sw.ElapsedMilliseconds);
         }
         finally
@@ -157,11 +227,11 @@ public static class RelayA11yReadShadowCheck
     private static string Excerpt(string comparable) =>
         comparable.StartsWith("ok:", StringComparison.Ordinal) ? "ok" : RelayMailboxExchange.Excerpt(comparable, 120);
 
-    private static async Task<ShadowReport> RunCoreAsync(string pilotEntryDir, Func<A11yTree?> hostTree, TimeProvider time, TimeSpan timeout,
-        Stopwatch sw, CancellationToken ct)
+    private static async Task<ShadowReport> RunCoreAsync(string slice, Func<A11yTree, IReadOnlyList<ReadCall>> pick, string pilotEntryDir,
+        Func<A11yTree?> hostTree, TimeProvider time, TimeSpan timeout, Stopwatch sw, CancellationToken ct)
     {
         ShadowReport Report(ShadowVerdict verdict, bool legacyOk, string? legacyCode, string detail) =>
-            new(Slice, time.GetUtcNow(), verdict, legacyOk, legacyCode, true, null, detail, sw.ElapsedMilliseconds);
+            new(slice, time.GetUtcNow(), verdict, legacyOk, legacyCode, true, null, detail, sw.ElapsedMilliseconds);
 
         var run = Path.Combine(pilotEntryDir, "run");
         if (!Directory.Exists(Path.Combine(run, "inbox")) || !Directory.Exists(Path.Combine(run, "outbox")))
@@ -177,7 +247,7 @@ public static class RelayA11yReadShadowCheck
         var differ = new List<string>();
         var unsure = new List<string>();
         var stop = false;
-        foreach (var call in PickCalls(first))
+        foreach (var call in pick(first))
         {
             // A call is retried (no card the second time: consent is already given for the session) when the screen
             // moved under it or the service was momentarily gone; only a stable, comparable read can be a difference.
@@ -185,9 +255,9 @@ public static class RelayA11yReadShadowCheck
             for (var attempt = 1; attempt <= MaxAttempts && !stop; attempt++)
             {
                 retryReason = null;
-                var before = hostTree() is { } t0 ? Comparable(call.Answer(t0)) : null;
+                var before = hostTree() is { } t0 ? Comparable(await call.AnswerAsync(t0, ct).ConfigureAwait(false)) : null;
                 var reply = await CallAsync(run, call, time, deadline, ct).ConfigureAwait(false);
-                var after = hostTree() is { } t1 ? Comparable(call.Answer(t1)) : null;
+                var after = hostTree() is { } t1 ? Comparable(await call.AnswerAsync(t1, ct).ConfigureAwait(false)) : null;
                 if (reply is null)
                 {
                     unsure.Add($"{call.Label}: no final answer before the deadline (approve the card, or choose 本次会话允许)");

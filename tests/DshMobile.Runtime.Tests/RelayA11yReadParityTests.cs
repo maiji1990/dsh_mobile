@@ -14,7 +14,7 @@ public sealed class RelayA11yReadParityTests
 {
     private static readonly JsonElement V = Repo.Vectors("relay-a11y-read.json");
 
-    private sealed class FakeNode : IA11yNode
+    internal sealed class FakeNode : IA11yNode
     {
         private readonly List<FakeNode?> _kids = [];
 

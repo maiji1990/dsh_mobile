@@ -95,6 +95,12 @@ public sealed class MigrationOptions
     /// </summary>
     public SliceMode RelayA11yRead { get; set; } = SliceMode.LegacyWithShadow;
 
+    /// <summary>
+    /// PR-07 segment 8 (ui.waitFor): the same developer-run shadow sends wait calls that all answer at the first poll and
+    /// compares the legacy Relay's answers with the C# port (all bytes but <c>waitedMs</c>). Waiting stays legacy.
+    /// </summary>
+    public SliceMode RelayA11yWaitFor { get; set; } = SliceMode.LegacyWithShadow;
+
     /// <summary>Host-path probe for the extractor; null = the real filesystem (the right choice on a device).</summary>
     public Func<string, bool>? HostPathExists { get; set; }
 }
