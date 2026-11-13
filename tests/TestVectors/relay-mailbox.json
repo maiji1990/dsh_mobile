@@ -1,0 +1,2669 @@
+{
+ "_comment": "PR-07 segment 7 (mailbox loop + request state store). Shared by LegacyRelayMailboxParityTest (Kotlin, real upstream MailboxServer / RequestStateStore) and RelayMailboxParityTests (C#). Responses are compared structurally with every elapsedMs dropped and error reduced to its code (bytes are locked by relay-envelope.json).",
+ "upstream": "pilot/interlock-relay-core @ 7c9d33c1f29dd2c42dde6c7e2fcdf38814f491c4 (GPL-3.0)",
+ "orderPending": [
+  {
+   "entries": [
+    [
+     "b.json",
+     5
+    ],
+    [
+     "a.json",
+     5
+    ],
+    [
+     "c.json",
+     null
+    ],
+    [
+     "d.json",
+     1
+    ],
+    [
+     "0.json",
+     null
+    ]
+   ],
+   "ordered": [
+    "d.json",
+    "a.json",
+    "b.json",
+    "0.json",
+    "c.json"
+   ]
+  },
+  {
+   "entries": [],
+   "ordered": []
+  }
+ ],
+ "evictionVictims": [
+  {
+   "names": [
+    "a",
+    "b",
+    "c"
+   ],
+   "capacity": 3,
+   "victims": []
+  },
+  {
+   "names": [
+    "a",
+    "b",
+    "c",
+    "d"
+   ],
+   "capacity": 2,
+   "victims": [
+    "c",
+    "d"
+   ]
+  },
+  {
+   "names": [
+    "a"
+   ],
+   "capacity": 0,
+   "victims": [
+    "a"
+   ]
+  }
+ ],
+ "needsSettle": [
+  [
+   1000,
+   1299,
+   false,
+   true
+  ],
+  [
+   1000,
+   1300,
+   false,
+   false
+  ],
+  [
+   1000,
+   1000,
+   true,
+   false
+  ],
+  [
+   1000,
+   900,
+   false,
+   true
+  ]
+ ],
+ "incomingPart": [
+  [
+   ".a.json.part",
+   true
+  ],
+  [
+   "a.part",
+   true
+  ],
+  [
+   "a.json.tmp",
+   true
+  ],
+  [
+   ".hidden",
+   true
+  ],
+  [
+   "a.json",
+   false
+  ],
+  [
+   "a.json.bak",
+   false
+  ],
+  [
+   "bad name!.json",
+   false
+  ]
+ ],
+ "claimBlocked": [
+  {
+   "state": null,
+   "now": 0,
+   "processing": false,
+   "blocked": false
+  },
+  {
+   "state": null,
+   "now": 0,
+   "processing": true,
+   "blocked": true
+  },
+  {
+   "state": {
+    "id": "x",
+    "digest": "d",
+    "capability": "ui.node",
+    "phase": "QUEUED",
+    "createdAtMs": 0,
+    "ttlMs": 5000
+   },
+   "now": 0,
+   "processing": false,
+   "blocked": false
+  },
+  {
+   "state": {
+    "id": "x",
+    "digest": "d",
+    "capability": "ui.node",
+    "phase": "ADMITTED",
+    "createdAtMs": 0,
+    "ttlMs": 5000
+   },
+   "now": 0,
+   "processing": false,
+   "blocked": true
+  },
+  {
+   "state": {
+    "id": "x",
+    "digest": "d",
+    "capability": "ui.node",
+    "phase": "WAITING_RELAY_USER",
+    "createdAtMs": 0,
+    "ttlMs": 5000
+   },
+   "now": 599999,
+   "processing": false,
+   "blocked": true
+  },
+  {
+   "state": {
+    "id": "x",
+    "digest": "d",
+    "capability": "ui.node",
+    "phase": "EXECUTING",
+    "createdAtMs": 0,
+    "ttlMs": 5000
+   },
+   "now": 600000,
+   "processing": false,
+   "blocked": false
+  },
+  {
+   "state": {
+    "id": "x",
+    "digest": "d",
+    "capability": "ui.node",
+    "phase": "SUCCEEDED",
+    "createdAtMs": 0,
+    "ttlMs": 5000
+   },
+   "now": 0,
+   "processing": false,
+   "blocked": false
+  },
+  {
+   "state": {
+    "id": "x",
+    "digest": "d",
+    "capability": "ui.node",
+    "phase": "EXPIRED",
+    "createdAtMs": 0,
+    "ttlMs": 5000
+   },
+   "now": 0,
+   "processing": true,
+   "blocked": true
+  },
+  {
+   "state": {
+    "id": "x",
+    "digest": "d",
+    "capability": "ui.node",
+    "phase": "CANCEL_REQUESTED",
+    "createdAtMs": 0,
+    "ttlMs": 5000
+   },
+   "now": 5,
+   "processing": false,
+   "blocked": true
+  }
+ ],
+ "queueCounts": [
+  {
+   "inbox": [],
+   "processing": [],
+   "seen": {},
+   "admitted": {},
+   "now": 100,
+   "depth": 0,
+   "oldest": null
+  },
+  {
+   "inbox": [
+    "a",
+    "b"
+   ],
+   "processing": [
+    "c"
+   ],
+   "seen": {
+    "a": 50,
+    "b": 40
+   },
+   "admitted": {
+    "c": 60
+   },
+   "now": 100,
+   "depth": 3,
+   "oldest": 60
+  },
+  {
+   "inbox": [
+    "a"
+   ],
+   "processing": [
+    "a"
+   ],
+   "seen": {
+    "a": 70
+   },
+   "admitted": {
+    "a": 30
+   },
+   "now": 100,
+   "depth": 2,
+   "oldest": 70
+  },
+  {
+   "inbox": [
+    "z"
+   ],
+   "processing": [],
+   "seen": {},
+   "admitted": {},
+   "now": 100,
+   "depth": 1,
+   "oldest": null
+  },
+  {
+   "inbox": [
+    "a"
+   ],
+   "processing": [],
+   "seen": {
+    "a": 200
+   },
+   "admitted": {},
+   "now": 100,
+   "depth": 1,
+   "oldest": 0
+  }
+ ],
+ "terminalFrame": [
+  {
+   "id": "s1",
+   "responseOk": true,
+   "state": null,
+   "frame": {
+    "v": 2,
+    "id": "s1",
+    "op": "submit",
+    "ok": false,
+    "state": "UNKNOWN",
+    "targetId": "s1",
+    "cause": "E_INTERNAL/terminal state not persisted; outcome unknown"
+   }
+  },
+  {
+   "id": "s2",
+   "responseOk": true,
+   "state": {
+    "id": "x",
+    "digest": "d",
+    "capability": "ui.node",
+    "phase": "SUCCEEDED",
+    "createdAtMs": 0,
+    "ttlMs": 5000,
+    "resultJson": "{\"v\":1,\"id\":\"s2\",\"ok\":true,\"elapsedMs\":3}"
+   },
+   "frame": {
+    "v": 2,
+    "id": "s2",
+    "op": "submit",
+    "ok": true,
+    "state": "SUCCEEDED",
+    "targetId": "s2",
+    "result": {
+     "v": 1,
+     "id": "s2",
+     "ok": true,
+     "elapsedMs": 3
+    }
+   }
+  },
+  {
+   "id": "s3",
+   "responseOk": false,
+   "state": {
+    "id": "x",
+    "digest": "d",
+    "capability": "ui.node",
+    "phase": "FAILED",
+    "createdAtMs": 0,
+    "ttlMs": 5000,
+    "resultJson": "[1]"
+   },
+   "frame": {
+    "v": 2,
+    "id": "s3",
+    "op": "submit",
+    "ok": false,
+    "state": "FAILED",
+    "targetId": "s3",
+    "result": null
+   }
+  },
+  {
+   "id": "s4",
+   "responseOk": false,
+   "state": {
+    "id": "x",
+    "digest": "d",
+    "capability": "ui.node",
+    "phase": "CANCELLED",
+    "createdAtMs": 0,
+    "ttlMs": 5000
+   },
+   "frame": {
+    "v": 2,
+    "id": "s4",
+    "op": "submit",
+    "ok": false,
+    "state": "CANCELLED",
+    "targetId": "s4",
+    "result": null
+   }
+  },
+  {
+   "id": "s5",
+   "responseOk": true,
+   "state": {
+    "id": "x",
+    "digest": "d",
+    "capability": "ui.node",
+    "phase": "FAILED",
+    "createdAtMs": 0,
+    "ttlMs": 5000,
+    "resultJson": "not json"
+   },
+   "frame": {
+    "v": 2,
+    "id": "s5",
+    "op": "submit",
+    "ok": true,
+    "state": "FAILED",
+    "targetId": "s5",
+    "result": null
+   }
+  }
+ ],
+ "stateSteps": {
+  "wallMs": 1794467289123,
+  "steps": [
+   {
+    "op": "create",
+    "id": "a",
+    "digest": "d1",
+    "cap": "ui.node",
+    "ttl": 5000,
+    "t": 1000,
+    "outcome": "Created",
+    "record": {
+     "id": "a",
+     "digest": "d1",
+     "capability": "ui.node",
+     "phase": "QUEUED",
+     "createdAtMs": 1000,
+     "ttlMs": 5000,
+     "mayHaveDispatched": false,
+     "cancelRequested": false,
+     "updatedAtWallMs": 1794467289123
+    },
+    "recordText": "{\"id\":\"a\",\"digest\":\"d1\",\"capability\":\"ui.node\",\"phase\":\"QUEUED\",\"createdAtMs\":1000,\"ttlMs\":5000,\"mayHaveDispatched\":false,\"cancelRequested\":false,\"updatedAtWallMs\":1794467289123}"
+   },
+   {
+    "op": "create",
+    "id": "a",
+    "digest": "d1",
+    "cap": "ui.node",
+    "ttl": 5000,
+    "t": 1010,
+    "outcome": "Existing",
+    "record": {
+     "id": "a",
+     "digest": "d1",
+     "capability": "ui.node",
+     "phase": "QUEUED",
+     "createdAtMs": 1000,
+     "ttlMs": 5000,
+     "mayHaveDispatched": false,
+     "cancelRequested": false,
+     "updatedAtWallMs": 1794467289123
+    },
+    "recordText": "{\"id\":\"a\",\"digest\":\"d1\",\"capability\":\"ui.node\",\"phase\":\"QUEUED\",\"createdAtMs\":1000,\"ttlMs\":5000,\"mayHaveDispatched\":false,\"cancelRequested\":false,\"updatedAtWallMs\":1794467289123}"
+   },
+   {
+    "op": "create",
+    "id": "a",
+    "digest": "d2",
+    "cap": "ui.node",
+    "ttl": 5000,
+    "t": 1020,
+    "outcome": "DigestConflict",
+    "record": {
+     "id": "a",
+     "digest": "d1",
+     "capability": "ui.node",
+     "phase": "QUEUED",
+     "createdAtMs": 1000,
+     "ttlMs": 5000,
+     "mayHaveDispatched": false,
+     "cancelRequested": false,
+     "updatedAtWallMs": 1794467289123
+    },
+    "recordText": "{\"id\":\"a\",\"digest\":\"d1\",\"capability\":\"ui.node\",\"phase\":\"QUEUED\",\"createdAtMs\":1000,\"ttlMs\":5000,\"mayHaveDispatched\":false,\"cancelRequested\":false,\"updatedAtWallMs\":1794467289123}"
+   },
+   {
+    "op": "admit",
+    "id": "a",
+    "t": 1100,
+    "outcome": "ADMITTED",
+    "record": {
+     "id": "a",
+     "digest": "d1",
+     "capability": "ui.node",
+     "phase": "ADMITTED",
+     "createdAtMs": 1000,
+     "admittedAtMs": 1100,
+     "ttlMs": 5000,
+     "mayHaveDispatched": false,
+     "cancelRequested": false,
+     "updatedAtWallMs": 1794467289123
+    },
+    "recordText": "{\"id\":\"a\",\"digest\":\"d1\",\"capability\":\"ui.node\",\"phase\":\"ADMITTED\",\"createdAtMs\":1000,\"admittedAtMs\":1100,\"ttlMs\":5000,\"mayHaveDispatched\":false,\"cancelRequested\":false,\"updatedAtWallMs\":1794467289123}"
+   },
+   {
+    "op": "admit",
+    "id": "a",
+    "t": 1200,
+    "outcome": "ADMITTED",
+    "record": {
+     "id": "a",
+     "digest": "d1",
+     "capability": "ui.node",
+     "phase": "ADMITTED",
+     "createdAtMs": 1000,
+     "admittedAtMs": 1100,
+     "ttlMs": 5000,
+     "mayHaveDispatched": false,
+     "cancelRequested": false,
+     "updatedAtWallMs": 1794467289123
+    },
+    "recordText": "{\"id\":\"a\",\"digest\":\"d1\",\"capability\":\"ui.node\",\"phase\":\"ADMITTED\",\"createdAtMs\":1000,\"admittedAtMs\":1100,\"ttlMs\":5000,\"mayHaveDispatched\":false,\"cancelRequested\":false,\"updatedAtWallMs\":1794467289123}"
+   },
+   {
+    "op": "waiting",
+    "id": "a",
+    "relayUser": true,
+    "t": 1210,
+    "outcome": "WAITING_RELAY_USER",
+    "record": {
+     "id": "a",
+     "digest": "d1",
+     "capability": "ui.node",
+     "phase": "WAITING_RELAY_USER",
+     "createdAtMs": 1000,
+     "admittedAtMs": 1100,
+     "ttlMs": 5000,
+     "mayHaveDispatched": false,
+     "cancelRequested": false,
+     "updatedAtWallMs": 1794467289123
+    },
+    "recordText": "{\"id\":\"a\",\"digest\":\"d1\",\"capability\":\"ui.node\",\"phase\":\"WAITING_RELAY_USER\",\"createdAtMs\":1000,\"admittedAtMs\":1100,\"ttlMs\":5000,\"mayHaveDispatched\":false,\"cancelRequested\":false,\"updatedAtWallMs\":1794467289123}"
+   },
+   {
+    "op": "waiting",
+    "id": "a",
+    "relayUser": false,
+    "t": 1220,
+    "outcome": "WAITING_ANDROID_USER",
+    "record": {
+     "id": "a",
+     "digest": "d1",
+     "capability": "ui.node",
+     "phase": "WAITING_ANDROID_USER",
+     "createdAtMs": 1000,
+     "admittedAtMs": 1100,
+     "ttlMs": 5000,
+     "mayHaveDispatched": false,
+     "cancelRequested": false,
+     "updatedAtWallMs": 1794467289123
+    },
+    "recordText": "{\"id\":\"a\",\"digest\":\"d1\",\"capability\":\"ui.node\",\"phase\":\"WAITING_ANDROID_USER\",\"createdAtMs\":1000,\"admittedAtMs\":1100,\"ttlMs\":5000,\"mayHaveDispatched\":false,\"cancelRequested\":false,\"updatedAtWallMs\":1794467289123}"
+   },
+   {
+    "op": "cancel",
+    "id": "a",
+    "t": 1230,
+    "outcome": "Requested:true",
+    "record": {
+     "id": "a",
+     "digest": "d1",
+     "capability": "ui.node",
+     "phase": "WAITING_ANDROID_USER",
+     "createdAtMs": 1000,
+     "admittedAtMs": 1100,
+     "ttlMs": 5000,
+     "mayHaveDispatched": false,
+     "cancelRequested": true,
+     "updatedAtWallMs": 1794467289123
+    },
+    "recordText": "{\"id\":\"a\",\"digest\":\"d1\",\"capability\":\"ui.node\",\"phase\":\"WAITING_ANDROID_USER\",\"createdAtMs\":1000,\"admittedAtMs\":1100,\"ttlMs\":5000,\"mayHaveDispatched\":false,\"cancelRequested\":true,\"updatedAtWallMs\":1794467289123}"
+   },
+   {
+    "op": "guard",
+    "id": "a",
+    "t": 1300,
+    "outcome": "Armed",
+    "record": {
+     "id": "a",
+     "digest": "d1",
+     "capability": "ui.node",
+     "phase": "EXECUTING",
+     "createdAtMs": 1000,
+     "admittedAtMs": 1100,
+     "ttlMs": 5000,
+     "mayHaveDispatched": true,
+     "cancelRequested": true,
+     "updatedAtWallMs": 1794467289123
+    },
+    "recordText": "{\"id\":\"a\",\"digest\":\"d1\",\"capability\":\"ui.node\",\"phase\":\"EXECUTING\",\"createdAtMs\":1000,\"admittedAtMs\":1100,\"ttlMs\":5000,\"mayHaveDispatched\":true,\"cancelRequested\":true,\"updatedAtWallMs\":1794467289123}"
+   },
+   {
+    "op": "cancel",
+    "id": "a",
+    "t": 1310,
+    "outcome": "Requested:false",
+    "record": {
+     "id": "a",
+     "digest": "d1",
+     "capability": "ui.node",
+     "phase": "EXECUTING",
+     "createdAtMs": 1000,
+     "admittedAtMs": 1100,
+     "ttlMs": 5000,
+     "mayHaveDispatched": true,
+     "cancelRequested": true,
+     "updatedAtWallMs": 1794467289123
+    },
+    "recordText": "{\"id\":\"a\",\"digest\":\"d1\",\"capability\":\"ui.node\",\"phase\":\"EXECUTING\",\"createdAtMs\":1000,\"admittedAtMs\":1100,\"ttlMs\":5000,\"mayHaveDispatched\":true,\"cancelRequested\":true,\"updatedAtWallMs\":1794467289123}"
+   },
+   {
+    "op": "terminal",
+    "id": "a",
+    "phase": "SUCCEEDED",
+    "result": "{\"v\":1,\"id\":\"a\",\"ok\":true}",
+    "t": 1500,
+    "outcome": "SUCCEEDED",
+    "record": {
+     "id": "a",
+     "digest": "d1",
+     "capability": "ui.node",
+     "phase": "SUCCEEDED",
+     "createdAtMs": 1000,
+     "admittedAtMs": 1100,
+     "ttlMs": 5000,
+     "mayHaveDispatched": true,
+     "terminalAtMs": 1500,
+     "resultJson": "{\"v\":1,\"id\":\"a\",\"ok\":true}",
+     "cancelRequested": true,
+     "updatedAtWallMs": 1794467289123
+    },
+    "recordText": "{\"id\":\"a\",\"digest\":\"d1\",\"capability\":\"ui.node\",\"phase\":\"SUCCEEDED\",\"createdAtMs\":1000,\"admittedAtMs\":1100,\"ttlMs\":5000,\"mayHaveDispatched\":true,\"terminalAtMs\":1500,\"resultJson\":\"{\\\"v\\\":1,\\\"id\\\":\\\"a\\\",\\\"ok\\\":true}\",\"cancelRequested\":true,\"updatedAtWallMs\":1794467289123}"
+   },
+   {
+    "op": "terminal",
+    "id": "a",
+    "phase": "FAILED",
+    "result": null,
+    "t": 1600,
+    "outcome": "SUCCEEDED",
+    "record": {
+     "id": "a",
+     "digest": "d1",
+     "capability": "ui.node",
+     "phase": "SUCCEEDED",
+     "createdAtMs": 1000,
+     "admittedAtMs": 1100,
+     "ttlMs": 5000,
+     "mayHaveDispatched": true,
+     "terminalAtMs": 1500,
+     "resultJson": "{\"v\":1,\"id\":\"a\",\"ok\":true}",
+     "cancelRequested": true,
+     "updatedAtWallMs": 1794467289123
+    },
+    "recordText": "{\"id\":\"a\",\"digest\":\"d1\",\"capability\":\"ui.node\",\"phase\":\"SUCCEEDED\",\"createdAtMs\":1000,\"admittedAtMs\":1100,\"ttlMs\":5000,\"mayHaveDispatched\":true,\"terminalAtMs\":1500,\"resultJson\":\"{\\\"v\\\":1,\\\"id\\\":\\\"a\\\",\\\"ok\\\":true}\",\"cancelRequested\":true,\"updatedAtWallMs\":1794467289123}"
+   },
+   {
+    "op": "terminal",
+    "id": "a",
+    "phase": "QUEUED",
+    "result": null,
+    "t": 1600,
+    "outcome": null,
+    "record": {
+     "id": "a",
+     "digest": "d1",
+     "capability": "ui.node",
+     "phase": "SUCCEEDED",
+     "createdAtMs": 1000,
+     "admittedAtMs": 1100,
+     "ttlMs": 5000,
+     "mayHaveDispatched": true,
+     "terminalAtMs": 1500,
+     "resultJson": "{\"v\":1,\"id\":\"a\",\"ok\":true}",
+     "cancelRequested": true,
+     "updatedAtWallMs": 1794467289123
+    },
+    "recordText": "{\"id\":\"a\",\"digest\":\"d1\",\"capability\":\"ui.node\",\"phase\":\"SUCCEEDED\",\"createdAtMs\":1000,\"admittedAtMs\":1100,\"ttlMs\":5000,\"mayHaveDispatched\":true,\"terminalAtMs\":1500,\"resultJson\":\"{\\\"v\\\":1,\\\"id\\\":\\\"a\\\",\\\"ok\\\":true}\",\"cancelRequested\":true,\"updatedAtWallMs\":1794467289123}"
+   },
+   {
+    "op": "admit",
+    "id": "a",
+    "t": 1700,
+    "outcome": "SUCCEEDED",
+    "record": {
+     "id": "a",
+     "digest": "d1",
+     "capability": "ui.node",
+     "phase": "SUCCEEDED",
+     "createdAtMs": 1000,
+     "admittedAtMs": 1100,
+     "ttlMs": 5000,
+     "mayHaveDispatched": true,
+     "terminalAtMs": 1500,
+     "resultJson": "{\"v\":1,\"id\":\"a\",\"ok\":true}",
+     "cancelRequested": true,
+     "updatedAtWallMs": 1794467289123
+    },
+    "recordText": "{\"id\":\"a\",\"digest\":\"d1\",\"capability\":\"ui.node\",\"phase\":\"SUCCEEDED\",\"createdAtMs\":1000,\"admittedAtMs\":1100,\"ttlMs\":5000,\"mayHaveDispatched\":true,\"terminalAtMs\":1500,\"resultJson\":\"{\\\"v\\\":1,\\\"id\\\":\\\"a\\\",\\\"ok\\\":true}\",\"cancelRequested\":true,\"updatedAtWallMs\":1794467289123}"
+   },
+   {
+    "op": "guard",
+    "id": "a",
+    "t": 1700,
+    "outcome": "NotExecutable:SUCCEEDED",
+    "record": {
+     "id": "a",
+     "digest": "d1",
+     "capability": "ui.node",
+     "phase": "SUCCEEDED",
+     "createdAtMs": 1000,
+     "admittedAtMs": 1100,
+     "ttlMs": 5000,
+     "mayHaveDispatched": true,
+     "terminalAtMs": 1500,
+     "resultJson": "{\"v\":1,\"id\":\"a\",\"ok\":true}",
+     "cancelRequested": true,
+     "updatedAtWallMs": 1794467289123
+    },
+    "recordText": "{\"id\":\"a\",\"digest\":\"d1\",\"capability\":\"ui.node\",\"phase\":\"SUCCEEDED\",\"createdAtMs\":1000,\"admittedAtMs\":1100,\"ttlMs\":5000,\"mayHaveDispatched\":true,\"terminalAtMs\":1500,\"resultJson\":\"{\\\"v\\\":1,\\\"id\\\":\\\"a\\\",\\\"ok\\\":true}\",\"cancelRequested\":true,\"updatedAtWallMs\":1794467289123}"
+   },
+   {
+    "op": "cancel",
+    "id": "a",
+    "t": 1700,
+    "outcome": "AlreadyTerminal",
+    "record": {
+     "id": "a",
+     "digest": "d1",
+     "capability": "ui.node",
+     "phase": "SUCCEEDED",
+     "createdAtMs": 1000,
+     "admittedAtMs": 1100,
+     "ttlMs": 5000,
+     "mayHaveDispatched": true,
+     "terminalAtMs": 1500,
+     "resultJson": "{\"v\":1,\"id\":\"a\",\"ok\":true}",
+     "cancelRequested": true,
+     "updatedAtWallMs": 1794467289123
+    },
+    "recordText": "{\"id\":\"a\",\"digest\":\"d1\",\"capability\":\"ui.node\",\"phase\":\"SUCCEEDED\",\"createdAtMs\":1000,\"admittedAtMs\":1100,\"ttlMs\":5000,\"mayHaveDispatched\":true,\"terminalAtMs\":1500,\"resultJson\":\"{\\\"v\\\":1,\\\"id\\\":\\\"a\\\",\\\"ok\\\":true}\",\"cancelRequested\":true,\"updatedAtWallMs\":1794467289123}"
+   },
+   {
+    "op": "guard",
+    "id": "zz",
+    "t": 1700,
+    "outcome": "NotExecutable:null",
+    "record": null
+   },
+   {
+    "op": "cancel",
+    "id": "zz",
+    "t": 1700,
+    "outcome": "NotFound",
+    "record": null
+   },
+   {
+    "op": "admit",
+    "id": "zz",
+    "t": 1700,
+    "outcome": null,
+    "record": null
+   },
+   {
+    "op": "create",
+    "id": "b",
+    "digest": "d1",
+    "cap": "screen.capture",
+    "ttl": 9000,
+    "t": 2000,
+    "outcome": "Created",
+    "record": {
+     "id": "b",
+     "digest": "d1",
+     "capability": "screen.capture",
+     "phase": "QUEUED",
+     "createdAtMs": 2000,
+     "ttlMs": 9000,
+     "mayHaveDispatched": false,
+     "cancelRequested": false,
+     "updatedAtWallMs": 1794467289123
+    },
+    "recordText": "{\"id\":\"b\",\"digest\":\"d1\",\"capability\":\"screen.capture\",\"phase\":\"QUEUED\",\"createdAtMs\":2000,\"ttlMs\":9000,\"mayHaveDispatched\":false,\"cancelRequested\":false,\"updatedAtWallMs\":1794467289123}"
+   },
+   {
+    "op": "guard",
+    "id": "b",
+    "t": 2100,
+    "outcome": "Armed",
+    "record": {
+     "id": "b",
+     "digest": "d1",
+     "capability": "screen.capture",
+     "phase": "EXECUTING",
+     "createdAtMs": 2000,
+     "ttlMs": 9000,
+     "mayHaveDispatched": true,
+     "cancelRequested": false,
+     "updatedAtWallMs": 1794467289123
+    },
+    "recordText": "{\"id\":\"b\",\"digest\":\"d1\",\"capability\":\"screen.capture\",\"phase\":\"EXECUTING\",\"createdAtMs\":2000,\"ttlMs\":9000,\"mayHaveDispatched\":true,\"cancelRequested\":false,\"updatedAtWallMs\":1794467289123}"
+   },
+   {
+    "op": "create",
+    "id": "o",
+    "digest": "d1",
+    "cap": "ui.node",
+    "ttl": 5000,
+    "t": 2000,
+    "outcome": "Created",
+    "record": {
+     "id": "o",
+     "digest": "d1",
+     "capability": "ui.node",
+     "phase": "QUEUED",
+     "createdAtMs": 2000,
+     "ttlMs": 5000,
+     "mayHaveDispatched": false,
+     "cancelRequested": false,
+     "updatedAtWallMs": 1794467289123
+    },
+    "recordText": "{\"id\":\"o\",\"digest\":\"d1\",\"capability\":\"ui.node\",\"phase\":\"QUEUED\",\"createdAtMs\":2000,\"ttlMs\":5000,\"mayHaveDispatched\":false,\"cancelRequested\":false,\"updatedAtWallMs\":1794467289123}"
+   },
+   {
+    "op": "guard",
+    "id": "o",
+    "t": 602000,
+    "outcome": "NotExecutable:QUEUED",
+    "record": {
+     "id": "o",
+     "digest": "d1",
+     "capability": "ui.node",
+     "phase": "QUEUED",
+     "createdAtMs": 2000,
+     "ttlMs": 5000,
+     "mayHaveDispatched": false,
+     "cancelRequested": false,
+     "updatedAtWallMs": 1794467289123
+    },
+    "recordText": "{\"id\":\"o\",\"digest\":\"d1\",\"capability\":\"ui.node\",\"phase\":\"QUEUED\",\"createdAtMs\":2000,\"ttlMs\":5000,\"mayHaveDispatched\":false,\"cancelRequested\":false,\"updatedAtWallMs\":1794467289123}"
+   },
+   {
+    "op": "purge",
+    "now": 601999,
+    "t": 601999,
+    "records": {
+     "a": {
+      "id": "a",
+      "digest": "d1",
+      "capability": "ui.node",
+      "phase": "SUCCEEDED",
+      "createdAtMs": 1000,
+      "admittedAtMs": 1100,
+      "ttlMs": 5000,
+      "mayHaveDispatched": true,
+      "terminalAtMs": 1500,
+      "resultJson": "{\"v\":1,\"id\":\"a\",\"ok\":true}",
+      "cancelRequested": true,
+      "updatedAtWallMs": 1794467289123
+     },
+     "b": {
+      "id": "b",
+      "digest": "d1",
+      "capability": "screen.capture",
+      "phase": "EXECUTING",
+      "createdAtMs": 2000,
+      "ttlMs": 9000,
+      "mayHaveDispatched": true,
+      "cancelRequested": false,
+      "updatedAtWallMs": 1794467289123
+     },
+     "o": {
+      "id": "o",
+      "digest": "d1",
+      "capability": "ui.node",
+      "phase": "QUEUED",
+      "createdAtMs": 2000,
+      "ttlMs": 5000,
+      "mayHaveDispatched": false,
+      "cancelRequested": false,
+      "updatedAtWallMs": 1794467289123
+     }
+    },
+    "recordTexts": {
+     "a": "{\"id\":\"a\",\"digest\":\"d1\",\"capability\":\"ui.node\",\"phase\":\"SUCCEEDED\",\"createdAtMs\":1000,\"admittedAtMs\":1100,\"ttlMs\":5000,\"mayHaveDispatched\":true,\"terminalAtMs\":1500,\"resultJson\":\"{\\\"v\\\":1,\\\"id\\\":\\\"a\\\",\\\"ok\\\":true}\",\"cancelRequested\":true,\"updatedAtWallMs\":1794467289123}",
+     "b": "{\"id\":\"b\",\"digest\":\"d1\",\"capability\":\"screen.capture\",\"phase\":\"EXECUTING\",\"createdAtMs\":2000,\"ttlMs\":9000,\"mayHaveDispatched\":true,\"cancelRequested\":false,\"updatedAtWallMs\":1794467289123}",
+     "o": "{\"id\":\"o\",\"digest\":\"d1\",\"capability\":\"ui.node\",\"phase\":\"QUEUED\",\"createdAtMs\":2000,\"ttlMs\":5000,\"mayHaveDispatched\":false,\"cancelRequested\":false,\"updatedAtWallMs\":1794467289123}"
+    }
+   },
+   {
+    "op": "purge",
+    "now": 602000,
+    "t": 602000,
+    "records": {
+     "a": {
+      "id": "a",
+      "digest": "d1",
+      "capability": "ui.node",
+      "phase": "SUCCEEDED",
+      "createdAtMs": 1000,
+      "admittedAtMs": 1100,
+      "ttlMs": 5000,
+      "mayHaveDispatched": true,
+      "terminalAtMs": 1500,
+      "resultJson": "{\"v\":1,\"id\":\"a\",\"ok\":true}",
+      "cancelRequested": true,
+      "updatedAtWallMs": 1794467289123
+     },
+     "b": {
+      "id": "b",
+      "digest": "d1",
+      "capability": "screen.capture",
+      "phase": "UNKNOWN",
+      "createdAtMs": 2000,
+      "ttlMs": 9000,
+      "mayHaveDispatched": true,
+      "terminalAtMs": 602000,
+      "cancelRequested": false,
+      "updatedAtWallMs": 1794467289123
+     },
+     "o": {
+      "id": "o",
+      "digest": "d1",
+      "capability": "ui.node",
+      "phase": "INTERRUPTED_BEFORE_EXECUTION",
+      "createdAtMs": 2000,
+      "ttlMs": 5000,
+      "mayHaveDispatched": false,
+      "terminalAtMs": 602000,
+      "cancelRequested": false,
+      "updatedAtWallMs": 1794467289123
+     }
+    },
+    "recordTexts": {
+     "a": "{\"id\":\"a\",\"digest\":\"d1\",\"capability\":\"ui.node\",\"phase\":\"SUCCEEDED\",\"createdAtMs\":1000,\"admittedAtMs\":1100,\"ttlMs\":5000,\"mayHaveDispatched\":true,\"terminalAtMs\":1500,\"resultJson\":\"{\\\"v\\\":1,\\\"id\\\":\\\"a\\\",\\\"ok\\\":true}\",\"cancelRequested\":true,\"updatedAtWallMs\":1794467289123}",
+     "b": "{\"id\":\"b\",\"digest\":\"d1\",\"capability\":\"screen.capture\",\"phase\":\"UNKNOWN\",\"createdAtMs\":2000,\"ttlMs\":9000,\"mayHaveDispatched\":true,\"terminalAtMs\":602000,\"cancelRequested\":false,\"updatedAtWallMs\":1794467289123}",
+     "o": "{\"id\":\"o\",\"digest\":\"d1\",\"capability\":\"ui.node\",\"phase\":\"INTERRUPTED_BEFORE_EXECUTION\",\"createdAtMs\":2000,\"ttlMs\":5000,\"mayHaveDispatched\":false,\"terminalAtMs\":602000,\"cancelRequested\":false,\"updatedAtWallMs\":1794467289123}"
+    }
+   },
+   {
+    "op": "purge",
+    "now": 1801500,
+    "t": 1801500,
+    "records": {
+     "a": {
+      "id": "a",
+      "digest": "d1",
+      "capability": "ui.node",
+      "phase": "EXPIRED",
+      "createdAtMs": 1000,
+      "admittedAtMs": 1100,
+      "ttlMs": 5000,
+      "mayHaveDispatched": true,
+      "terminalAtMs": 1500,
+      "cancelRequested": true,
+      "updatedAtWallMs": 1794467289123
+     },
+     "b": {
+      "id": "b",
+      "digest": "d1",
+      "capability": "screen.capture",
+      "phase": "UNKNOWN",
+      "createdAtMs": 2000,
+      "ttlMs": 9000,
+      "mayHaveDispatched": true,
+      "terminalAtMs": 602000,
+      "cancelRequested": false,
+      "updatedAtWallMs": 1794467289123
+     },
+     "o": {
+      "id": "o",
+      "digest": "d1",
+      "capability": "ui.node",
+      "phase": "INTERRUPTED_BEFORE_EXECUTION",
+      "createdAtMs": 2000,
+      "ttlMs": 5000,
+      "mayHaveDispatched": false,
+      "terminalAtMs": 602000,
+      "cancelRequested": false,
+      "updatedAtWallMs": 1794467289123
+     }
+    },
+    "recordTexts": {
+     "a": "{\"id\":\"a\",\"digest\":\"d1\",\"capability\":\"ui.node\",\"phase\":\"EXPIRED\",\"createdAtMs\":1000,\"admittedAtMs\":1100,\"ttlMs\":5000,\"mayHaveDispatched\":true,\"terminalAtMs\":1500,\"cancelRequested\":true,\"updatedAtWallMs\":1794467289123}",
+     "b": "{\"id\":\"b\",\"digest\":\"d1\",\"capability\":\"screen.capture\",\"phase\":\"UNKNOWN\",\"createdAtMs\":2000,\"ttlMs\":9000,\"mayHaveDispatched\":true,\"terminalAtMs\":602000,\"cancelRequested\":false,\"updatedAtWallMs\":1794467289123}",
+     "o": "{\"id\":\"o\",\"digest\":\"d1\",\"capability\":\"ui.node\",\"phase\":\"INTERRUPTED_BEFORE_EXECUTION\",\"createdAtMs\":2000,\"ttlMs\":5000,\"mayHaveDispatched\":false,\"terminalAtMs\":602000,\"cancelRequested\":false,\"updatedAtWallMs\":1794467289123}"
+    }
+   },
+   {
+    "op": "purge",
+    "now": 86401500,
+    "t": 86401500,
+    "records": {
+     "a": null,
+     "b": {
+      "id": "b",
+      "digest": "d1",
+      "capability": "screen.capture",
+      "phase": "EXPIRED",
+      "createdAtMs": 2000,
+      "ttlMs": 9000,
+      "mayHaveDispatched": true,
+      "terminalAtMs": 602000,
+      "cancelRequested": false,
+      "updatedAtWallMs": 1794467289123
+     },
+     "o": {
+      "id": "o",
+      "digest": "d1",
+      "capability": "ui.node",
+      "phase": "EXPIRED",
+      "createdAtMs": 2000,
+      "ttlMs": 5000,
+      "mayHaveDispatched": false,
+      "terminalAtMs": 602000,
+      "cancelRequested": false,
+      "updatedAtWallMs": 1794467289123
+     }
+    },
+    "recordTexts": {
+     "a": null,
+     "b": "{\"id\":\"b\",\"digest\":\"d1\",\"capability\":\"screen.capture\",\"phase\":\"EXPIRED\",\"createdAtMs\":2000,\"ttlMs\":9000,\"mayHaveDispatched\":true,\"terminalAtMs\":602000,\"cancelRequested\":false,\"updatedAtWallMs\":1794467289123}",
+     "o": "{\"id\":\"o\",\"digest\":\"d1\",\"capability\":\"ui.node\",\"phase\":\"EXPIRED\",\"createdAtMs\":2000,\"ttlMs\":5000,\"mayHaveDispatched\":false,\"terminalAtMs\":602000,\"cancelRequested\":false,\"updatedAtWallMs\":1794467289123}"
+    }
+   },
+   {
+    "op": "create",
+    "id": "q",
+    "digest": "d1",
+    "cap": "ui.node",
+    "ttl": 5000,
+    "t": 3000,
+    "outcome": "Created",
+    "record": {
+     "id": "q",
+     "digest": "d1",
+     "capability": "ui.node",
+     "phase": "QUEUED",
+     "createdAtMs": 3000,
+     "ttlMs": 5000,
+     "mayHaveDispatched": false,
+     "cancelRequested": false,
+     "updatedAtWallMs": 1794467289123
+    },
+    "recordText": "{\"id\":\"q\",\"digest\":\"d1\",\"capability\":\"ui.node\",\"phase\":\"QUEUED\",\"createdAtMs\":3000,\"ttlMs\":5000,\"mayHaveDispatched\":false,\"cancelRequested\":false,\"updatedAtWallMs\":1794467289123}"
+   },
+   {
+    "op": "create",
+    "id": "e",
+    "digest": "d1",
+    "cap": "ui.node",
+    "ttl": 5000,
+    "t": 3000,
+    "outcome": "Created",
+    "record": {
+     "id": "e",
+     "digest": "d1",
+     "capability": "ui.node",
+     "phase": "QUEUED",
+     "createdAtMs": 3000,
+     "ttlMs": 5000,
+     "mayHaveDispatched": false,
+     "cancelRequested": false,
+     "updatedAtWallMs": 1794467289123
+    },
+    "recordText": "{\"id\":\"e\",\"digest\":\"d1\",\"capability\":\"ui.node\",\"phase\":\"QUEUED\",\"createdAtMs\":3000,\"ttlMs\":5000,\"mayHaveDispatched\":false,\"cancelRequested\":false,\"updatedAtWallMs\":1794467289123}"
+   },
+   {
+    "op": "guard",
+    "id": "e",
+    "t": 3001,
+    "outcome": "Armed",
+    "record": {
+     "id": "e",
+     "digest": "d1",
+     "capability": "ui.node",
+     "phase": "EXECUTING",
+     "createdAtMs": 3000,
+     "ttlMs": 5000,
+     "mayHaveDispatched": true,
+     "cancelRequested": false,
+     "updatedAtWallMs": 1794467289123
+    },
+    "recordText": "{\"id\":\"e\",\"digest\":\"d1\",\"capability\":\"ui.node\",\"phase\":\"EXECUTING\",\"createdAtMs\":3000,\"ttlMs\":5000,\"mayHaveDispatched\":true,\"cancelRequested\":false,\"updatedAtWallMs\":1794467289123}"
+   },
+   {
+    "op": "recover",
+    "t": 4000,
+    "recovered": [
+     [
+      "e",
+      "UNKNOWN"
+     ],
+     [
+      "q",
+      "INTERRUPTED_BEFORE_EXECUTION"
+     ]
+    ],
+    "records": {
+     "q": {
+      "id": "q",
+      "digest": "d1",
+      "capability": "ui.node",
+      "phase": "INTERRUPTED_BEFORE_EXECUTION",
+      "createdAtMs": 3000,
+      "ttlMs": 5000,
+      "mayHaveDispatched": false,
+      "terminalAtMs": 4000,
+      "cancelRequested": false,
+      "updatedAtWallMs": 1794467289123
+     },
+     "e": {
+      "id": "e",
+      "digest": "d1",
+      "capability": "ui.node",
+      "phase": "UNKNOWN",
+      "createdAtMs": 3000,
+      "ttlMs": 5000,
+      "mayHaveDispatched": true,
+      "terminalAtMs": 4000,
+      "cancelRequested": false,
+      "updatedAtWallMs": 1794467289123
+     }
+    },
+    "recordTexts": {
+     "q": "{\"id\":\"q\",\"digest\":\"d1\",\"capability\":\"ui.node\",\"phase\":\"INTERRUPTED_BEFORE_EXECUTION\",\"createdAtMs\":3000,\"ttlMs\":5000,\"mayHaveDispatched\":false,\"terminalAtMs\":4000,\"cancelRequested\":false,\"updatedAtWallMs\":1794467289123}",
+     "e": "{\"id\":\"e\",\"digest\":\"d1\",\"capability\":\"ui.node\",\"phase\":\"UNKNOWN\",\"createdAtMs\":3000,\"ttlMs\":5000,\"mayHaveDispatched\":true,\"terminalAtMs\":4000,\"cancelRequested\":false,\"updatedAtWallMs\":1794467289123}"
+    }
+   }
+  ]
+ },
+ "stateJsonOrder": {
+  "id": "x",
+  "digest": "d1",
+  "capability": "ui.node",
+  "phase": "SUCCEEDED",
+  "createdAtMs": 7,
+  "admittedAtMs": 8,
+  "ttlMs": 5000,
+  "mayHaveDispatched": true,
+  "terminalAtMs": 9,
+  "resultJson": "{\"a\":\"/\"}",
+  "cancelRequested": true,
+  "updatedAtWallMs": 1794467289123
+ },
+ "stateJsonOrderText": "{\"id\":\"x\",\"digest\":\"d1\",\"capability\":\"ui.node\",\"phase\":\"SUCCEEDED\",\"createdAtMs\":7,\"admittedAtMs\":8,\"ttlMs\":5000,\"mayHaveDispatched\":true,\"terminalAtMs\":9,\"resultJson\":\"{\\\"a\\\":\\\"\\/\\\"}\",\"cancelRequested\":true,\"updatedAtWallMs\":1794467289123}",
+ "scenarios": [
+  {
+   "name": "basic",
+   "files": [
+    {
+     "name": "a.json",
+     "text": "{\"v\":1,\"id\":\"a\",\"capability\":\"ui.snapshot\",\"args\":{\"k\":\"v/1\"}}"
+    },
+    {
+     "name": "b.json",
+     "text": "{\"v\":1,\"id\":\"b\",\"capability\":\"ui.node\",\"args\":{\"nodeId\":0}}"
+    },
+    {
+     "name": "c.json",
+     "text": "not json"
+    },
+    {
+     "name": "d.json",
+     "text": "{\"v\":1,\"id\":\"zz\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "e.json",
+     "text": "{\"v\":1,\"id\":\"e\",\"capability\":\"ui.bogus\",\"args\":{}}"
+    },
+    {
+     "name": "v.json",
+     "text": "{\"v\":2,\"id\":\"v\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "big.json",
+     "padId": "big",
+     "padChars": 262144
+    },
+    {
+     "name": "bad name!.json",
+     "text": "{}"
+    },
+    {
+     "name": "中.json",
+     "text": "{}"
+    },
+    {
+     "name": ".pending.json.part",
+     "text": "{"
+    },
+    {
+     "name": "x.json.tmp",
+     "text": "{"
+    }
+   ],
+   "outbox": {
+    "a.json": {
+     "v": 1,
+     "id": "a",
+     "ok": true,
+     "data": {
+      "cap": "ui.snapshot",
+      "args": {
+       "k": "v/1"
+      }
+     }
+    },
+    "b.json": {
+     "v": 1,
+     "id": "b",
+     "ok": false,
+     "reason": "ScriptedFailure",
+     "error": {
+      "code": "E_INTERNAL"
+     }
+    },
+    "c.json": {
+     "v": 1,
+     "id": "c",
+     "ok": false,
+     "error": {
+      "code": "E_TRANSPORT_MALFORMED"
+     }
+    },
+    "d.json": {
+     "v": 1,
+     "id": "d",
+     "ok": false,
+     "error": {
+      "code": "E_TRANSPORT_MALFORMED"
+     }
+    },
+    "e.json": {
+     "v": 1,
+     "id": "e",
+     "ok": false,
+     "error": {
+      "code": "E_NOT_IMPLEMENTED"
+     }
+    },
+    "v.json": {
+     "v": 1,
+     "id": "v",
+     "ok": false,
+     "error": {
+      "code": "E_TRANSPORT_MALFORMED"
+     }
+    },
+    "big.json": {
+     "v": 1,
+     "id": "big",
+     "ok": false,
+     "error": {
+      "code": "E_REQUEST_TOO_LARGE"
+     }
+    },
+    "bad name!.json": {
+     "v": 1,
+     "id": "bad_name_",
+     "ok": false,
+     "error": {
+      "code": "E_TRANSPORT_MALFORMED"
+     }
+    },
+    "中.json": {
+     "v": 1,
+     "id": "_",
+     "ok": false,
+     "error": {
+      "code": "E_TRANSPORT_MALFORMED"
+     }
+    }
+   },
+   "controlOutbox": {},
+   "inboxLeft": [
+    ".pending.json.part",
+    "x.json.tmp"
+   ],
+   "logContains": [
+    "request accepted id=a",
+    "response published id=a bytes=",
+    "request rejected oversized bytes=",
+    "request dropped file=c.json cause=not an object",
+    "request dropped file=d.json cause=id mismatch"
+   ]
+  },
+  {
+   "name": "timeouts-and-oversize",
+   "files": [
+    {
+     "name": "t.json",
+     "text": "{\"v\":1,\"id\":\"t\",\"capability\":\"ui.tap\",\"args\":{},\"ttlMs\":1000}"
+    },
+    {
+     "name": "g.json",
+     "text": "{\"v\":1,\"id\":\"g\",\"capability\":\"ui.swipe\",\"args\":{},\"ttlMs\":4000}"
+    },
+    {
+     "name": "h.json",
+     "text": "{\"v\":1,\"id\":\"h\",\"capability\":\"screen.observe\",\"args\":{},\"ttlMs\":4000}"
+    }
+   ],
+   "outbox": {
+    "t.json": {
+     "v": 1,
+     "id": "t",
+     "ok": false,
+     "error": {
+      "code": "E_TRANSPORT_TIMEOUT"
+     }
+    },
+    "g.json": {
+     "v": 1,
+     "id": "g",
+     "ok": true,
+     "data": {
+      "cap": "ui.swipe",
+      "args": {}
+     }
+    },
+    "h.json": {
+     "v": 1,
+     "id": "h",
+     "ok": false,
+     "reason": "response exceeds 512000 chars",
+     "error": {
+      "code": "E_REQUEST_TOO_LARGE"
+     }
+    }
+   },
+   "controlOutbox": {},
+   "inboxLeft": [],
+   "budgets": {
+    "t": [
+     250,
+     750
+    ],
+    "g": [
+     2000,
+     3000
+    ],
+    "h": [
+     2000,
+     3000
+    ]
+   },
+   "logContains": [
+    "response exceeded size cap id=h"
+   ]
+  },
+  {
+   "name": "stateful",
+   "preStart": [
+    {
+     "op": "create",
+     "id": "r1",
+     "cap": "ui.node"
+    },
+    {
+     "op": "guard",
+     "id": "r1"
+    },
+    {
+     "op": "create",
+     "id": "r2",
+     "cap": "ui.node"
+    }
+   ],
+   "postStart": [
+    {
+     "op": "create",
+     "id": "s1",
+     "cap": "ui.snapshot"
+    },
+    {
+     "op": "create",
+     "id": "s2",
+     "cap": "ui.snapshot"
+    },
+    {
+     "op": "admit",
+     "id": "s2"
+    },
+    {
+     "op": "create",
+     "id": "s3",
+     "cap": "ui.node"
+    }
+   ],
+   "files": [
+    {
+     "name": "s1.json",
+     "text": "{\"v\":1,\"id\":\"s1\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "s2.json",
+     "text": "{\"v\":1,\"id\":\"s2\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "s3.json",
+     "text": "{\"v\":1,\"id\":\"s3\",\"capability\":\"ui.node\",\"args\":{}}"
+    },
+    {
+     "name": "s4.json",
+     "text": "{\"v\":1,\"id\":\"s4\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    }
+   ],
+   "outbox": {
+    "s1.json": {
+     "v": 1,
+     "id": "s1",
+     "ok": true,
+     "data": {
+      "cap": "ui.snapshot",
+      "args": {}
+     }
+    },
+    "s2.json": {
+     "v": 1,
+     "id": "s2",
+     "ok": false,
+     "reason": "a request with this id is already in flight; wait for it to settle and resubmit to get the recorded outcome, or use a fresh id",
+     "error": {
+      "code": "E_INTERNAL"
+     }
+    },
+    "s3.json": {
+     "v": 1,
+     "id": "s3",
+     "ok": false,
+     "reason": "ScriptedFailure",
+     "error": {
+      "code": "E_INTERNAL"
+     }
+    },
+    "s4.json": {
+     "v": 1,
+     "id": "s4",
+     "ok": true,
+     "data": {
+      "cap": "ui.snapshot",
+      "args": {}
+     }
+    }
+   },
+   "controlOutbox": {
+    "s1.json": {
+     "v": 2,
+     "id": "s1",
+     "op": "submit",
+     "ok": true,
+     "state": "SUCCEEDED",
+     "targetId": "s1",
+     "result": {
+      "v": 1,
+      "id": "s1",
+      "ok": true,
+      "data": {
+       "cap": "ui.snapshot",
+       "args": {}
+      }
+     }
+    },
+    "s3.json": {
+     "v": 2,
+     "id": "s3",
+     "op": "submit",
+     "ok": false,
+     "state": "FAILED",
+     "targetId": "s3",
+     "result": {
+      "v": 1,
+      "id": "s3",
+      "ok": false,
+      "reason": "ScriptedFailure",
+      "error": {
+       "code": "E_INTERNAL"
+      }
+     }
+    }
+   },
+   "phases": {
+    "r1": "UNKNOWN",
+    "r2": "INTERRUPTED_BEFORE_EXECUTION",
+    "s1": "SUCCEEDED",
+    "s2": "ADMITTED",
+    "s3": "FAILED"
+   },
+   "inboxLeft": [],
+   "logContains": [
+    "request recovered id=r1 phase=UNKNOWN",
+    "request recovered id=r2 phase=INTERRUPTED_BEFORE_EXECUTION",
+    "request dropped file=s2.json cause=duplicate id still in flight",
+    "request completed id=s1 state=SUCCEEDED ms=",
+    "request admitted id=s1"
+   ]
+  },
+  {
+   "name": "parked",
+   "postStart": [
+    {
+     "op": "create",
+     "id": "p",
+     "cap": "ui.click"
+    },
+    {
+     "op": "create",
+     "id": "l",
+     "cap": "ui.longClick"
+    }
+   ],
+   "files": [
+    {
+     "name": "p.json",
+     "text": "{\"v\":1,\"id\":\"p\",\"capability\":\"ui.click\",\"args\":{},\"ttlMs\":20000}"
+    },
+    {
+     "name": "l.json",
+     "text": "{\"v\":1,\"id\":\"l\",\"capability\":\"ui.longClick\",\"args\":{},\"ttlMs\":20000}"
+    },
+    {
+     "name": "n.json",
+     "text": "{\"v\":1,\"id\":\"n\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    }
+   ],
+   "resume": [
+    "p"
+   ],
+   "waitingPhases": {
+    "p": "WAITING_RELAY_USER"
+   },
+   "outbox": {
+    "p.json": {
+     "v": 1,
+     "id": "p",
+     "ok": true,
+     "data": {
+      "resumed": "ui.click"
+     }
+    },
+    "l.json": {
+     "v": 1,
+     "id": "l",
+     "ok": false,
+     "error": {
+      "code": "E_GATE_CANCELLED"
+     }
+    },
+    "n.json": {
+     "v": 1,
+     "id": "n",
+     "ok": true,
+     "data": {
+      "cap": "ui.snapshot",
+      "args": {}
+     }
+    }
+   },
+   "controlOutbox": {
+    "p.json": {
+     "v": 2,
+     "id": "p",
+     "op": "submit",
+     "ok": true,
+     "state": "SUCCEEDED",
+     "targetId": "p",
+     "result": {
+      "v": 1,
+      "id": "p",
+      "ok": true,
+      "data": {
+       "resumed": "ui.click"
+      }
+     }
+    },
+    "l.json": {
+     "v": 2,
+     "id": "l",
+     "op": "submit",
+     "ok": false,
+     "state": "CANCELLED",
+     "targetId": "l",
+     "result": {
+      "v": 1,
+      "id": "l",
+      "ok": false,
+      "error": {
+       "code": "E_GATE_CANCELLED"
+      }
+     }
+    }
+   },
+   "phases": {
+    "p": "SUCCEEDED",
+    "l": "CANCELLED"
+   },
+   "inboxLeft": [],
+   "logContains": [
+    "call deferred id=p cause=awaiting_approval",
+    "request waiting for user id=p kind=relay"
+   ]
+  },
+  {
+   "name": "eviction",
+   "preStartFiles": true,
+   "files": [
+    {
+     "name": "q000.json",
+     "text": "{\"v\":1,\"id\":\"q000\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q001.json",
+     "text": "{\"v\":1,\"id\":\"q001\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q002.json",
+     "text": "{\"v\":1,\"id\":\"q002\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q003.json",
+     "text": "{\"v\":1,\"id\":\"q003\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q004.json",
+     "text": "{\"v\":1,\"id\":\"q004\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q005.json",
+     "text": "{\"v\":1,\"id\":\"q005\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q006.json",
+     "text": "{\"v\":1,\"id\":\"q006\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q007.json",
+     "text": "{\"v\":1,\"id\":\"q007\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q008.json",
+     "text": "{\"v\":1,\"id\":\"q008\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q009.json",
+     "text": "{\"v\":1,\"id\":\"q009\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q010.json",
+     "text": "{\"v\":1,\"id\":\"q010\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q011.json",
+     "text": "{\"v\":1,\"id\":\"q011\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q012.json",
+     "text": "{\"v\":1,\"id\":\"q012\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q013.json",
+     "text": "{\"v\":1,\"id\":\"q013\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q014.json",
+     "text": "{\"v\":1,\"id\":\"q014\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q015.json",
+     "text": "{\"v\":1,\"id\":\"q015\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q016.json",
+     "text": "{\"v\":1,\"id\":\"q016\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q017.json",
+     "text": "{\"v\":1,\"id\":\"q017\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q018.json",
+     "text": "{\"v\":1,\"id\":\"q018\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q019.json",
+     "text": "{\"v\":1,\"id\":\"q019\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q020.json",
+     "text": "{\"v\":1,\"id\":\"q020\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q021.json",
+     "text": "{\"v\":1,\"id\":\"q021\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q022.json",
+     "text": "{\"v\":1,\"id\":\"q022\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q023.json",
+     "text": "{\"v\":1,\"id\":\"q023\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q024.json",
+     "text": "{\"v\":1,\"id\":\"q024\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q025.json",
+     "text": "{\"v\":1,\"id\":\"q025\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q026.json",
+     "text": "{\"v\":1,\"id\":\"q026\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q027.json",
+     "text": "{\"v\":1,\"id\":\"q027\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q028.json",
+     "text": "{\"v\":1,\"id\":\"q028\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q029.json",
+     "text": "{\"v\":1,\"id\":\"q029\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q030.json",
+     "text": "{\"v\":1,\"id\":\"q030\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q031.json",
+     "text": "{\"v\":1,\"id\":\"q031\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q032.json",
+     "text": "{\"v\":1,\"id\":\"q032\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q033.json",
+     "text": "{\"v\":1,\"id\":\"q033\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q034.json",
+     "text": "{\"v\":1,\"id\":\"q034\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q035.json",
+     "text": "{\"v\":1,\"id\":\"q035\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q036.json",
+     "text": "{\"v\":1,\"id\":\"q036\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q037.json",
+     "text": "{\"v\":1,\"id\":\"q037\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q038.json",
+     "text": "{\"v\":1,\"id\":\"q038\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q039.json",
+     "text": "{\"v\":1,\"id\":\"q039\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q040.json",
+     "text": "{\"v\":1,\"id\":\"q040\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q041.json",
+     "text": "{\"v\":1,\"id\":\"q041\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q042.json",
+     "text": "{\"v\":1,\"id\":\"q042\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q043.json",
+     "text": "{\"v\":1,\"id\":\"q043\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q044.json",
+     "text": "{\"v\":1,\"id\":\"q044\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q045.json",
+     "text": "{\"v\":1,\"id\":\"q045\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q046.json",
+     "text": "{\"v\":1,\"id\":\"q046\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q047.json",
+     "text": "{\"v\":1,\"id\":\"q047\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q048.json",
+     "text": "{\"v\":1,\"id\":\"q048\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q049.json",
+     "text": "{\"v\":1,\"id\":\"q049\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q050.json",
+     "text": "{\"v\":1,\"id\":\"q050\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q051.json",
+     "text": "{\"v\":1,\"id\":\"q051\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q052.json",
+     "text": "{\"v\":1,\"id\":\"q052\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q053.json",
+     "text": "{\"v\":1,\"id\":\"q053\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q054.json",
+     "text": "{\"v\":1,\"id\":\"q054\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q055.json",
+     "text": "{\"v\":1,\"id\":\"q055\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q056.json",
+     "text": "{\"v\":1,\"id\":\"q056\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q057.json",
+     "text": "{\"v\":1,\"id\":\"q057\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q058.json",
+     "text": "{\"v\":1,\"id\":\"q058\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q059.json",
+     "text": "{\"v\":1,\"id\":\"q059\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q060.json",
+     "text": "{\"v\":1,\"id\":\"q060\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q061.json",
+     "text": "{\"v\":1,\"id\":\"q061\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q062.json",
+     "text": "{\"v\":1,\"id\":\"q062\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q063.json",
+     "text": "{\"v\":1,\"id\":\"q063\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q064.json",
+     "text": "{\"v\":1,\"id\":\"q064\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q065.json",
+     "text": "{\"v\":1,\"id\":\"q065\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q066.json",
+     "text": "{\"v\":1,\"id\":\"q066\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q067.json",
+     "text": "{\"v\":1,\"id\":\"q067\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q068.json",
+     "text": "{\"v\":1,\"id\":\"q068\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q069.json",
+     "text": "{\"v\":1,\"id\":\"q069\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q070.json",
+     "text": "{\"v\":1,\"id\":\"q070\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q071.json",
+     "text": "{\"v\":1,\"id\":\"q071\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q072.json",
+     "text": "{\"v\":1,\"id\":\"q072\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q073.json",
+     "text": "{\"v\":1,\"id\":\"q073\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q074.json",
+     "text": "{\"v\":1,\"id\":\"q074\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q075.json",
+     "text": "{\"v\":1,\"id\":\"q075\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q076.json",
+     "text": "{\"v\":1,\"id\":\"q076\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q077.json",
+     "text": "{\"v\":1,\"id\":\"q077\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q078.json",
+     "text": "{\"v\":1,\"id\":\"q078\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q079.json",
+     "text": "{\"v\":1,\"id\":\"q079\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q080.json",
+     "text": "{\"v\":1,\"id\":\"q080\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q081.json",
+     "text": "{\"v\":1,\"id\":\"q081\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q082.json",
+     "text": "{\"v\":1,\"id\":\"q082\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q083.json",
+     "text": "{\"v\":1,\"id\":\"q083\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q084.json",
+     "text": "{\"v\":1,\"id\":\"q084\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q085.json",
+     "text": "{\"v\":1,\"id\":\"q085\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q086.json",
+     "text": "{\"v\":1,\"id\":\"q086\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q087.json",
+     "text": "{\"v\":1,\"id\":\"q087\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q088.json",
+     "text": "{\"v\":1,\"id\":\"q088\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q089.json",
+     "text": "{\"v\":1,\"id\":\"q089\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q090.json",
+     "text": "{\"v\":1,\"id\":\"q090\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q091.json",
+     "text": "{\"v\":1,\"id\":\"q091\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q092.json",
+     "text": "{\"v\":1,\"id\":\"q092\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q093.json",
+     "text": "{\"v\":1,\"id\":\"q093\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q094.json",
+     "text": "{\"v\":1,\"id\":\"q094\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q095.json",
+     "text": "{\"v\":1,\"id\":\"q095\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q096.json",
+     "text": "{\"v\":1,\"id\":\"q096\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q097.json",
+     "text": "{\"v\":1,\"id\":\"q097\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q098.json",
+     "text": "{\"v\":1,\"id\":\"q098\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q099.json",
+     "text": "{\"v\":1,\"id\":\"q099\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q100.json",
+     "text": "{\"v\":1,\"id\":\"q100\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q101.json",
+     "text": "{\"v\":1,\"id\":\"q101\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q102.json",
+     "text": "{\"v\":1,\"id\":\"q102\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q103.json",
+     "text": "{\"v\":1,\"id\":\"q103\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q104.json",
+     "text": "{\"v\":1,\"id\":\"q104\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q105.json",
+     "text": "{\"v\":1,\"id\":\"q105\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q106.json",
+     "text": "{\"v\":1,\"id\":\"q106\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q107.json",
+     "text": "{\"v\":1,\"id\":\"q107\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q108.json",
+     "text": "{\"v\":1,\"id\":\"q108\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q109.json",
+     "text": "{\"v\":1,\"id\":\"q109\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q110.json",
+     "text": "{\"v\":1,\"id\":\"q110\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q111.json",
+     "text": "{\"v\":1,\"id\":\"q111\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q112.json",
+     "text": "{\"v\":1,\"id\":\"q112\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q113.json",
+     "text": "{\"v\":1,\"id\":\"q113\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q114.json",
+     "text": "{\"v\":1,\"id\":\"q114\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q115.json",
+     "text": "{\"v\":1,\"id\":\"q115\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q116.json",
+     "text": "{\"v\":1,\"id\":\"q116\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q117.json",
+     "text": "{\"v\":1,\"id\":\"q117\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q118.json",
+     "text": "{\"v\":1,\"id\":\"q118\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q119.json",
+     "text": "{\"v\":1,\"id\":\"q119\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q120.json",
+     "text": "{\"v\":1,\"id\":\"q120\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q121.json",
+     "text": "{\"v\":1,\"id\":\"q121\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q122.json",
+     "text": "{\"v\":1,\"id\":\"q122\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q123.json",
+     "text": "{\"v\":1,\"id\":\"q123\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q124.json",
+     "text": "{\"v\":1,\"id\":\"q124\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q125.json",
+     "text": "{\"v\":1,\"id\":\"q125\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q126.json",
+     "text": "{\"v\":1,\"id\":\"q126\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q127.json",
+     "text": "{\"v\":1,\"id\":\"q127\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q128.json",
+     "text": "{\"v\":1,\"id\":\"q128\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q129.json",
+     "text": "{\"v\":1,\"id\":\"q129\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q130.json",
+     "text": "{\"v\":1,\"id\":\"q130\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q131.json",
+     "text": "{\"v\":1,\"id\":\"q131\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q132.json",
+     "text": "{\"v\":1,\"id\":\"q132\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q133.json",
+     "text": "{\"v\":1,\"id\":\"q133\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q134.json",
+     "text": "{\"v\":1,\"id\":\"q134\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q135.json",
+     "text": "{\"v\":1,\"id\":\"q135\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q136.json",
+     "text": "{\"v\":1,\"id\":\"q136\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q137.json",
+     "text": "{\"v\":1,\"id\":\"q137\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q138.json",
+     "text": "{\"v\":1,\"id\":\"q138\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q139.json",
+     "text": "{\"v\":1,\"id\":\"q139\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q140.json",
+     "text": "{\"v\":1,\"id\":\"q140\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q141.json",
+     "text": "{\"v\":1,\"id\":\"q141\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q142.json",
+     "text": "{\"v\":1,\"id\":\"q142\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q143.json",
+     "text": "{\"v\":1,\"id\":\"q143\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q144.json",
+     "text": "{\"v\":1,\"id\":\"q144\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q145.json",
+     "text": "{\"v\":1,\"id\":\"q145\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q146.json",
+     "text": "{\"v\":1,\"id\":\"q146\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q147.json",
+     "text": "{\"v\":1,\"id\":\"q147\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q148.json",
+     "text": "{\"v\":1,\"id\":\"q148\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q149.json",
+     "text": "{\"v\":1,\"id\":\"q149\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q150.json",
+     "text": "{\"v\":1,\"id\":\"q150\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q151.json",
+     "text": "{\"v\":1,\"id\":\"q151\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q152.json",
+     "text": "{\"v\":1,\"id\":\"q152\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q153.json",
+     "text": "{\"v\":1,\"id\":\"q153\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q154.json",
+     "text": "{\"v\":1,\"id\":\"q154\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q155.json",
+     "text": "{\"v\":1,\"id\":\"q155\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q156.json",
+     "text": "{\"v\":1,\"id\":\"q156\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q157.json",
+     "text": "{\"v\":1,\"id\":\"q157\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q158.json",
+     "text": "{\"v\":1,\"id\":\"q158\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q159.json",
+     "text": "{\"v\":1,\"id\":\"q159\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q160.json",
+     "text": "{\"v\":1,\"id\":\"q160\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q161.json",
+     "text": "{\"v\":1,\"id\":\"q161\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q162.json",
+     "text": "{\"v\":1,\"id\":\"q162\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q163.json",
+     "text": "{\"v\":1,\"id\":\"q163\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q164.json",
+     "text": "{\"v\":1,\"id\":\"q164\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q165.json",
+     "text": "{\"v\":1,\"id\":\"q165\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q166.json",
+     "text": "{\"v\":1,\"id\":\"q166\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q167.json",
+     "text": "{\"v\":1,\"id\":\"q167\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q168.json",
+     "text": "{\"v\":1,\"id\":\"q168\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q169.json",
+     "text": "{\"v\":1,\"id\":\"q169\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q170.json",
+     "text": "{\"v\":1,\"id\":\"q170\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q171.json",
+     "text": "{\"v\":1,\"id\":\"q171\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q172.json",
+     "text": "{\"v\":1,\"id\":\"q172\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q173.json",
+     "text": "{\"v\":1,\"id\":\"q173\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q174.json",
+     "text": "{\"v\":1,\"id\":\"q174\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q175.json",
+     "text": "{\"v\":1,\"id\":\"q175\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q176.json",
+     "text": "{\"v\":1,\"id\":\"q176\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q177.json",
+     "text": "{\"v\":1,\"id\":\"q177\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q178.json",
+     "text": "{\"v\":1,\"id\":\"q178\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q179.json",
+     "text": "{\"v\":1,\"id\":\"q179\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q180.json",
+     "text": "{\"v\":1,\"id\":\"q180\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q181.json",
+     "text": "{\"v\":1,\"id\":\"q181\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q182.json",
+     "text": "{\"v\":1,\"id\":\"q182\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q183.json",
+     "text": "{\"v\":1,\"id\":\"q183\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q184.json",
+     "text": "{\"v\":1,\"id\":\"q184\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q185.json",
+     "text": "{\"v\":1,\"id\":\"q185\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q186.json",
+     "text": "{\"v\":1,\"id\":\"q186\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q187.json",
+     "text": "{\"v\":1,\"id\":\"q187\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q188.json",
+     "text": "{\"v\":1,\"id\":\"q188\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q189.json",
+     "text": "{\"v\":1,\"id\":\"q189\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q190.json",
+     "text": "{\"v\":1,\"id\":\"q190\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q191.json",
+     "text": "{\"v\":1,\"id\":\"q191\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q192.json",
+     "text": "{\"v\":1,\"id\":\"q192\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q193.json",
+     "text": "{\"v\":1,\"id\":\"q193\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q194.json",
+     "text": "{\"v\":1,\"id\":\"q194\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q195.json",
+     "text": "{\"v\":1,\"id\":\"q195\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q196.json",
+     "text": "{\"v\":1,\"id\":\"q196\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q197.json",
+     "text": "{\"v\":1,\"id\":\"q197\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q198.json",
+     "text": "{\"v\":1,\"id\":\"q198\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q199.json",
+     "text": "{\"v\":1,\"id\":\"q199\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q200.json",
+     "text": "{\"v\":1,\"id\":\"q200\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q201.json",
+     "text": "{\"v\":1,\"id\":\"q201\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q202.json",
+     "text": "{\"v\":1,\"id\":\"q202\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q203.json",
+     "text": "{\"v\":1,\"id\":\"q203\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q204.json",
+     "text": "{\"v\":1,\"id\":\"q204\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q205.json",
+     "text": "{\"v\":1,\"id\":\"q205\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q206.json",
+     "text": "{\"v\":1,\"id\":\"q206\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q207.json",
+     "text": "{\"v\":1,\"id\":\"q207\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q208.json",
+     "text": "{\"v\":1,\"id\":\"q208\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q209.json",
+     "text": "{\"v\":1,\"id\":\"q209\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q210.json",
+     "text": "{\"v\":1,\"id\":\"q210\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q211.json",
+     "text": "{\"v\":1,\"id\":\"q211\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q212.json",
+     "text": "{\"v\":1,\"id\":\"q212\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q213.json",
+     "text": "{\"v\":1,\"id\":\"q213\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q214.json",
+     "text": "{\"v\":1,\"id\":\"q214\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q215.json",
+     "text": "{\"v\":1,\"id\":\"q215\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q216.json",
+     "text": "{\"v\":1,\"id\":\"q216\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q217.json",
+     "text": "{\"v\":1,\"id\":\"q217\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q218.json",
+     "text": "{\"v\":1,\"id\":\"q218\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q219.json",
+     "text": "{\"v\":1,\"id\":\"q219\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q220.json",
+     "text": "{\"v\":1,\"id\":\"q220\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q221.json",
+     "text": "{\"v\":1,\"id\":\"q221\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q222.json",
+     "text": "{\"v\":1,\"id\":\"q222\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q223.json",
+     "text": "{\"v\":1,\"id\":\"q223\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q224.json",
+     "text": "{\"v\":1,\"id\":\"q224\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q225.json",
+     "text": "{\"v\":1,\"id\":\"q225\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q226.json",
+     "text": "{\"v\":1,\"id\":\"q226\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q227.json",
+     "text": "{\"v\":1,\"id\":\"q227\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q228.json",
+     "text": "{\"v\":1,\"id\":\"q228\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q229.json",
+     "text": "{\"v\":1,\"id\":\"q229\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q230.json",
+     "text": "{\"v\":1,\"id\":\"q230\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q231.json",
+     "text": "{\"v\":1,\"id\":\"q231\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q232.json",
+     "text": "{\"v\":1,\"id\":\"q232\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q233.json",
+     "text": "{\"v\":1,\"id\":\"q233\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q234.json",
+     "text": "{\"v\":1,\"id\":\"q234\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q235.json",
+     "text": "{\"v\":1,\"id\":\"q235\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q236.json",
+     "text": "{\"v\":1,\"id\":\"q236\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q237.json",
+     "text": "{\"v\":1,\"id\":\"q237\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q238.json",
+     "text": "{\"v\":1,\"id\":\"q238\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q239.json",
+     "text": "{\"v\":1,\"id\":\"q239\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q240.json",
+     "text": "{\"v\":1,\"id\":\"q240\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q241.json",
+     "text": "{\"v\":1,\"id\":\"q241\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q242.json",
+     "text": "{\"v\":1,\"id\":\"q242\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q243.json",
+     "text": "{\"v\":1,\"id\":\"q243\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q244.json",
+     "text": "{\"v\":1,\"id\":\"q244\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q245.json",
+     "text": "{\"v\":1,\"id\":\"q245\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q246.json",
+     "text": "{\"v\":1,\"id\":\"q246\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q247.json",
+     "text": "{\"v\":1,\"id\":\"q247\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q248.json",
+     "text": "{\"v\":1,\"id\":\"q248\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q249.json",
+     "text": "{\"v\":1,\"id\":\"q249\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q250.json",
+     "text": "{\"v\":1,\"id\":\"q250\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q251.json",
+     "text": "{\"v\":1,\"id\":\"q251\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q252.json",
+     "text": "{\"v\":1,\"id\":\"q252\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q253.json",
+     "text": "{\"v\":1,\"id\":\"q253\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q254.json",
+     "text": "{\"v\":1,\"id\":\"q254\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q255.json",
+     "text": "{\"v\":1,\"id\":\"q255\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q256.json",
+     "text": "{\"v\":1,\"id\":\"q256\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q257.json",
+     "text": "{\"v\":1,\"id\":\"q257\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q258.json",
+     "text": "{\"v\":1,\"id\":\"q258\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    },
+    {
+     "name": "q259.json",
+     "text": "{\"v\":1,\"id\":\"q259\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+    }
+   ],
+   "outbox": {},
+   "outboxTally": {
+    "ok": 256,
+    "E_QUEUE_FULL": 4
+   },
+   "tallyReasons": {
+    "E_QUEUE_FULL": "@retryAfterMs=1000 queueDepth=260 oldestAgeMs="
+   },
+   "_note": "victims are the 4 latest by (first seen, name); first-seen order follows directory listing order, so only the tally is shared",
+   "controlOutbox": {},
+   "inboxLeft": [],
+   "logContains": [
+    "mailbox backpressure pending=260 evicted=4 queueDepth=260 oldestAgeMs="
+   ]
+  }
+ ]
+}

@@ -22,11 +22,14 @@ public static class RelayAdmissionProbe
     public const string Slice = "automation.relay-admission";
     public const long ProbeTtlMs = 5_000;
 
-    /// <summary>(file stem, capability, args JSON); <c>{self}</c> is replaced by this app's package.</summary>
+    /// <summary>
+    /// (file stem, capability, args JSON); <c>{self}</c> is replaced by this app's package. Since ADR-0008 every
+    /// capability is registered, so each template is rejected by its arguments (unknown key, wrong shape, self target).
+    /// </summary>
     public static IReadOnlyList<(string Id, string Capability, string Args)> Templates { get; } =
     [
-        ("pa-tap", "ui.tap", """{"x":1,"y":2}"""),
-        ("pa-shell", "sys.shell", """{"verb":"id"}"""),
+        ("pa-tap", "ui.tap", """{"x":1,"y":2,"bogus":3}"""),
+        ("pa-shell", "sys.shell", """{"verb":"id","bogus":1}"""),
         ("pa-unknown", "ui.snapshot", """{"foo":1}"""),
         ("pa-display", "ui.snapshot", """{"display":0}"""),
         ("pa-takes", "ui.node", """{"bogus":true}"""),
@@ -43,7 +46,8 @@ public static class RelayAdmissionProbe
         $$"""{"v":1,"id":"{{id}}","capability":"{{capability}}","args":{{args}},"ttlMs":{{ProbeTtlMs}}}""";
 
     public static async Task<ShadowReport> RunAsync(string pilotEntryDir, string selfPackage, IEnumerable<string> registered,
-        TimeProvider time, TimeSpan timeout, CancellationToken ct)
+        TimeProvider time, TimeSpan timeout, CancellationToken ct,
+        IReadOnlyList<(string Id, string Capability, string Args)>? templates = null)
     {
         ArgumentNullException.ThrowIfNull(selfPackage);
         ArgumentNullException.ThrowIfNull(time);
@@ -54,7 +58,7 @@ public static class RelayAdmissionProbe
         // A fresh limiter: the probe's own requests never reach the C# entry limit; Relay's counter is its own.
         var admission = new RelayAdmission(registered, selfPackage, new RelayRateLimiter(() => 0, RelayRateLimiter.EntryLimit));
         var expected = new Dictionary<RelayProbeRequest, (string Want, RelayResponse Rejection)>();
-        foreach (var (id, capability, args) in Templates)
+        foreach (var (id, capability, args) in templates ?? Templates)
         {
             var text = RequestText(id, capability, args.Replace("{self}", selfPackage, StringComparison.Ordinal));
             if (RelayEnvelope.DecodeRequest(text, id + RelayEnvelope.JsonSuffix) is not RelayDecodeResult.Valid valid)

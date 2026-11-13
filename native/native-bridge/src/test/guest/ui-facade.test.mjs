@@ -60,9 +60,25 @@ test('derives roles from Android classes', () => {
   assert.equal(roleOf({ class: 'com.example.Weird' }), 'unknown');
 });
 
-test('tool list is read-only and matches the contract names', () => {
-  assert.deepEqual(TOOLS.map((t) => t.name).sort(), ['ui_find', 'ui_get_element', 'ui_list_devices', 'ui_snapshot']);
-  for (const t of TOOLS) assert.equal(t.annotations.readOnlyHint, true);
+const WRITE_TOOLS = ['ui_click', 'ui_press_key', 'ui_scroll', 'ui_set_text'];
+
+test('tool list matches the contract names; writes are marked, no approval tool exists', () => {
+  assert.deepEqual(TOOLS.map((t) => t.name).sort(), [
+    'ui_click', 'ui_find', 'ui_get_element', 'ui_list_devices', 'ui_press_key', 'ui_screenshot', 'ui_scroll',
+    'ui_set_text', 'ui_snapshot', 'ui_wait_for',
+  ]);
+  for (const t of TOOLS) assert.equal(t.annotations.readOnlyHint, !WRITE_TOOLS.includes(t.name), t.name);
+  for (const t of TOOLS) assert.equal('approvalTicket' in (t.inputSchema.properties ?? {}), false, t.name);
+  assert.equal(TOOLS.some((t) => t.name === 'ui_confirm_approval'), false);
+});
+
+test('maps the write-path Relay codes', () => {
+  assert.equal(mapRelayCode('E_NODE_NOT_ACTIONABLE'), 'ACTION_UNSUPPORTED');
+  assert.equal(mapRelayCode('E_NODE_NO_IME_ACTION'), 'ACTION_UNSUPPORTED');
+  assert.equal(mapRelayCode('E_ACTION_REJECTED'), 'ACTION_FAILED');
+  assert.equal(mapRelayCode('E_NODE_SYSTEM_CONSENT_TARGET'), 'POLICY_DENIED');
+  assert.equal(mapRelayCode('E_SURFACE_SYSTEM_CONSENT_REQUIRED'), 'POLICY_DENIED');
+  assert.equal(mapRelayCode('E_TASK_SUSPENDED_BY_HOST'), 'PROVIDER_UNAVAILABLE');
 });
 
 // ---------------------------------------------------------------- facade over the fake CLI
@@ -200,8 +216,139 @@ test('bad arguments are INVALID_ARGUMENT / TARGET_NOT_FOUND without calling Rela
   assert.equal(body(await callTool(f, 'ui_snapshot', { maxNodes: 0 })).error.code, 'INVALID_ARGUMENT');
   assert.equal(body(await callTool(f, 'ui_snapshot', { mode: 'tree' })).error.code, 'INVALID_ARGUMENT');
   assert.equal(body(await callTool(f, 'ui_snapshot', { deviceId: 'emulator-5554' })).error.code, 'TARGET_NOT_FOUND');
-  assert.equal(body(await callTool(f, 'ui_click', {})).error.code, 'ACTION_UNSUPPORTED');
+  assert.equal(body(await callTool(f, 'ui_click', {})).error.code, 'INVALID_ARGUMENT');
+  assert.equal(body(await callTool(f, 'ui_set_text', { snapshotId: 's1', refId: 'e20' })).error.code, 'INVALID_ARGUMENT');
+  assert.equal(body(await callTool(f, 'ui_press_key', { key: 'enter' })).error.code, 'ACTION_UNSUPPORTED');
+  assert.equal(body(await callTool(f, 'ui_scroll', { direction: 'sideways' })).error.code, 'INVALID_ARGUMENT');
+  assert.equal(body(await callTool(f, 'ui_scroll', { amount: 21 })).error.code, 'INVALID_ARGUMENT');
+  assert.equal(body(await callTool(f, 'ui_wait_for', {})).error.code, 'INVALID_ARGUMENT');
+  assert.equal(body(await callTool(f, 'ui_wait_for', { name: 'x', timeoutMs: 60001 })).error.code, 'INVALID_ARGUMENT');
+  assert.equal(body(await callTool(f, 'ui_click', { snapshotId: 's1', refId: 'e9' })).error.code, 'STALE_ELEMENT');
+  assert.equal(body(await callTool(f, 'nope', {})).error.code, 'ACTION_UNSUPPORTED');
   assert.equal(calls().length, 0);
+});
+
+// ---------------------------------------------------------------- write tools
+
+test('click re-reads the ref, then clicks by node id, then retires the refs', async () => {
+  const f = facade();
+  await callTool(f, 'ui_snapshot', {});
+  const r = body(await callTool(f, 'ui_click', { snapshotId: 's1', refId: 'e9', expectedRole: 'button', expectedName: '收起' }));
+  assert.equal(r.action, 'click');
+  assert.equal(r.verified, false, 'a dispatched click is not a verified effect');
+  assert.deepEqual(calls().map((c) => [c.capability, c.args]), [['ui.snapshot', {}], ['ui.node', { nodeId: 9 }], ['ui.click', { nodeId: 9 }]]);
+  const again = body(await callTool(f, 'ui_click', { snapshotId: 's1', refId: 'e9' }));
+  assert.equal(again.error.code, 'STALE_ELEMENT');
+  assert.equal(calls().length, 3, 'a retired ref never reaches Relay');
+});
+
+test('click on a changed control or a wrong expectation does nothing', async () => {
+  const f = facade();
+  await callTool(f, 'ui_snapshot', {});
+  assert.equal(body(await callTool(f, 'ui_click', { snapshotId: 's1', refId: 'e9', expectedName: '展开' })).error.code, 'STALE_ELEMENT');
+  assert.equal(body(await callTool(f, 'ui_click', { snapshotId: 's1', refId: 'e9', expectedRole: 'textbox' })).error.code, 'STALE_ELEMENT');
+  process.env.FAKE_RELAY_MODE = 'changed';
+  assert.equal(body(await callTool(f, 'ui_click', { snapshotId: 's1', refId: 'e9' })).error.code, 'STALE_ELEMENT');
+  assert.equal(calls().filter((c) => c.capability === 'ui.click').length, 0);
+});
+
+test('set_text sends ui.setValue and reports the read-back without judging it', async () => {
+  const f = facade();
+  await callTool(f, 'ui_snapshot', {});
+  const r = body(await callTool(f, 'ui_set_text', { snapshotId: 's1', refId: 'e20', text: 'hello' }));
+  assert.equal(r.readBack, 'HELLO');
+  assert.equal('matches' in r, false);
+  assert.deepEqual(calls().at(-1), { command: 'call', capability: 'ui.setValue', args: { nodeId: 20, text: 'hello' } });
+});
+
+test('press_key maps back/home/recents to ui.key', async () => {
+  const f = facade();
+  for (const key of ['back', 'HOME', 'recents']) assert.equal(body(await callTool(f, 'ui_press_key', { key })).key, key.toLowerCase());
+  assert.deepEqual(calls().map((c) => c.args.key), ['back', 'home', 'recents']);
+});
+
+test('scroll picks the largest scrollable container and maps the direction', async () => {
+  process.env.FAKE_RELAY_MODE = 'with-list';
+  const f = facade();
+  await callTool(f, 'ui_snapshot', {});
+  const r = body(await callTool(f, 'ui_scroll', { direction: 'down', amount: 2 }));
+  assert.equal(r.refId, 'e30');
+  assert.deepEqual(calls().at(-1).args, { nodeId: 30, direction: 'forward', times: 2 });
+  await callTool(f, 'ui_snapshot', {});
+  await callTool(f, 'ui_scroll', { direction: 'up' });
+  assert.deepEqual(calls().at(-1).args, { nodeId: 30, direction: 'backward', times: 3 });
+});
+
+test('scroll without a scrollable container is ELEMENT_NOT_FOUND, not a guess', async () => {
+  const f = facade();
+  await callTool(f, 'ui_snapshot', {});
+  assert.equal(body(await callTool(f, 'ui_scroll', {})).error.code, 'ELEMENT_NOT_FOUND');
+  assert.equal(body(await callTool(f, 'ui_scroll', { snapshotId: 's1', refId: 'e9' })).error.code, 'ACTION_UNSUPPORTED');
+  assert.equal(calls().filter((c) => c.capability === 'ui.scroll').length, 0);
+});
+
+test('a write while DSH Mobile is on screen is PROVIDER_UNAVAILABLE and still retires refs', async () => {
+  const f = facade();
+  await callTool(f, 'ui_snapshot', {});
+  process.env.FAKE_RELAY_MODE = 'suspended';
+  const r = body(await callTool(f, 'ui_press_key', { key: 'back' }));
+  assert.equal(r.error.code, 'PROVIDER_UNAVAILABLE');
+  assert.equal(r.error.relay.code, 'E_TASK_SUSPENDED_BY_HOST');
+  process.env.FAKE_RELAY_MODE = 'ok';
+  assert.equal(body(await callTool(f, 'ui_click', { snapshotId: 's1', refId: 'e9' })).error.code, 'STALE_ELEMENT');
+});
+
+test('a timed-out write is OPERATION_TIMEOUT and is never repeated', async () => {
+  const f = facade();
+  await callTool(f, 'ui_snapshot', {});
+  process.env.FAKE_RELAY_MODE = 'write-timeout';
+  const r = body(await callTool(f, 'ui_press_key', { key: 'home' }));
+  assert.equal(r.error.code, 'OPERATION_TIMEOUT');
+  assert.match(r.error.hint, /effect is unknown/);
+  assert.equal(calls().filter((c) => c.capability === 'ui.key').length, 1);
+});
+
+test('a write waiting for approval is retried as the identical call until answered', async () => {
+  const f = facade();
+  process.env.FAKE_RELAY_MODE = 'consent-then-ok';
+  const r = await callTool(f, 'ui_press_key', { key: 'back' });
+  assert.equal(r.isError, undefined);
+  assert.deepEqual(calls().map((c) => [c.capability, c.args]), [['ui.key', { key: 'back' }], ['ui.key', { key: 'back' }]]);
+});
+
+test('not actionable is ACTION_UNSUPPORTED', async () => {
+  const f = facade();
+  await callTool(f, 'ui_snapshot', {});
+  process.env.FAKE_RELAY_MODE = 'not-actionable';
+  assert.equal(body(await callTool(f, 'ui_press_key', { key: 'back' })).error.code, 'ACTION_UNSUPPORTED');
+});
+
+test('wait_for polls snapshots until the element appears or times out', async () => {
+  let t = 0;
+  const f = facade({ pollMs: 1, now: () => (t += 1) }); // every clock read advances 1 ms
+  const hit = body(await callTool(f, 'ui_wait_for', { name: '收起', role: 'button' }));
+  assert.equal(hit.satisfied, true);
+  assert.equal(hit.element.ref, 'e9');
+  assert.equal(hit.polls, 1);
+  const before = calls().length;
+  const gone = body(await callTool(f, 'ui_wait_for', { name: '收起', absent: true, timeoutMs: 3 }));
+  assert.equal(gone.error.code, 'OPERATION_TIMEOUT');
+  assert.ok(calls().length - before >= 1 && calls().length - before <= 3, 'bounded number of snapshots');
+  // the found element's ref is usable: wait_for leaves a live snapshot behind
+  const f2 = facade({ pollMs: 1, now: () => (t += 1) });
+  const w = body(await callTool(f2, 'ui_wait_for', { name: 'DSH Mobile' }));
+  assert.equal(body(await callTool(f2, 'ui_get_element', { snapshotId: w.snapshotId, refId: w.element.ref })).element.ref, 'e6');
+});
+
+test('screenshot returns the PNG as image content plus metadata', async () => {
+  const r = await callTool(facade(), 'ui_screenshot', {});
+  assert.equal(r.isError, undefined);
+  assert.equal(r.content[1].type, 'image');
+  assert.equal(r.content[1].mimeType, 'image/png');
+  assert.equal(Buffer.from(r.content[1].data, 'base64')[1], 0x50);
+  assert.equal(r.structuredContent.bytes, 8);
+  process.env.FAKE_RELAY_MODE = 'secure';
+  assert.equal(body(await callTool(facade(), 'ui_screenshot', {})).error.code, 'SECURE_CONTENT');
 });
 
 test('list_devices reports online/offline from relay doctor', async () => {
@@ -210,6 +357,7 @@ test('list_devices reports online/offline from relay doctor', async () => {
   const d = body(await callTool(facade(), 'ui_list_devices', {})).devices[0];
   assert.equal(d.status, 'offline');
   assert.equal(d.deviceId, DEVICE_ID);
+  assert.equal(d.readOnly, false);
 });
 
 // ---------------------------------------------------------------- guest self-check (relay.selftest)
@@ -263,7 +411,7 @@ test('speaks MCP over stdio: discover falls back, initialize, list, call', async
     const unknownVersion = await rpc('initialize', { protocolVersion: '1999-01-01', capabilities: {} });
     assert.equal(unknownVersion.result.protocolVersion, '2025-06-18');
     const list = await rpc('tools/list', {});
-    assert.equal(list.result.tools.length, 4);
+    assert.equal(list.result.tools.length, 10);
     const snap = await rpc('tools/call', { name: 'ui_snapshot', arguments: {} });
     assert.equal(snap.result.isError, undefined);
     assert.equal(snap.result.structuredContent.snapshotId, 's1');

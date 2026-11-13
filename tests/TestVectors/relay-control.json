@@ -1,0 +1,784 @@
+{
+ "_comment": "PR-07 segment 8 (control channel). Shared by LegacyRelayControlParityTest (Kotlin, real upstream ControlChannelServer / ControlChannelLogic / PromptCodes) and RelayControlParityTests (C#). Replies are compared structurally; *Text fields are the libcore bytes the C# side also checks. Inbox envelopes drop the wall-clock ts.",
+ "upstream": "pilot/interlock-relay-core @ 7c9d33c1f29dd2c42dde6c7e2fcdf38814f491c4 (GPL-3.0)",
+ "submitEnvelope": [
+  {
+   "submit": {
+    "id": "s1",
+    "capability": "ui.snapshot",
+    "args": {
+     "p": "a/b",
+     "n": 2
+    },
+    "hostTtlMs": 5000,
+    "digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+   },
+   "ts": 1794467289123,
+   "envelope": {
+    "v": 1,
+    "id": "s1",
+    "ts": 1794467289123,
+    "capability": "ui.snapshot",
+    "args": {
+     "p": "a/b",
+     "n": 2
+    },
+    "ttlMs": 5000
+   },
+   "text": "{\"v\":1,\"id\":\"s1\",\"ts\":1794467289123,\"capability\":\"ui.snapshot\",\"args\":{\"p\":\"a\\/b\",\"n\":2},\"ttlMs\":5000}"
+  }
+ ],
+ "statusPayload": [
+  {
+   "state": null,
+   "target": "t",
+   "payload": {
+    "targetId": "t",
+    "found": false
+   }
+  },
+  {
+   "state": {
+    "id": "t",
+    "digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "capability": "ui.node",
+    "phase": "QUEUED",
+    "createdAtMs": 1,
+    "ttlMs": 5000
+   },
+   "target": "t",
+   "payload": {
+    "targetId": "t",
+    "found": true,
+    "state": "QUEUED",
+    "result": null,
+    "mayHaveDispatched": false,
+    "cancelRequested": false
+   }
+  },
+  {
+   "state": {
+    "id": "t",
+    "digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "capability": "ui.node",
+    "phase": "SUCCEEDED",
+    "createdAtMs": 1,
+    "ttlMs": 5000,
+    "resultJson": "{\"ok\":true}",
+    "mayHaveDispatched": true,
+    "cancelRequested": true
+   },
+   "target": "t",
+   "payload": {
+    "targetId": "t",
+    "found": true,
+    "state": "SUCCEEDED",
+    "result": {
+     "ok": true
+    },
+    "mayHaveDispatched": true,
+    "cancelRequested": true
+   }
+  },
+  {
+   "state": {
+    "id": "t",
+    "digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "capability": "ui.node",
+    "phase": "FAILED",
+    "createdAtMs": 1,
+    "ttlMs": 5000,
+    "resultJson": "nope"
+   },
+   "target": "t",
+   "payload": {
+    "targetId": "t",
+    "found": true,
+    "state": "FAILED",
+    "result": null,
+    "mayHaveDispatched": false,
+    "cancelRequested": false
+   }
+  }
+ ],
+ "healthPayload": [
+  {
+   "args": [
+    true,
+    0,
+    null,
+    0,
+    false
+   ],
+   "payload": {
+    "channelLive": true,
+    "queueDepth": 0,
+    "oldestQueuedAgeMs": null,
+    "inboxDepth": 0,
+    "stalled": false
+   }
+  },
+  {
+   "args": [
+    false,
+    9,
+    31000,
+    4,
+    true
+   ],
+   "payload": {
+    "channelLive": false,
+    "queueDepth": 9,
+    "oldestQueuedAgeMs": 31000,
+    "inboxDepth": 4,
+    "stalled": true
+   }
+  }
+ ],
+ "cancelPlan": [
+  [
+   null,
+   false,
+   "NotFound"
+  ],
+  [
+   null,
+   true,
+   "NotFound"
+  ],
+  [
+   "SUCCEEDED",
+   true,
+   "AlreadySettled:SUCCEEDED"
+  ],
+  [
+   "EXPIRED",
+   false,
+   "AlreadySettled:EXPIRED"
+  ],
+  [
+   "QUEUED",
+   true,
+   "RemoveUnclaimed"
+  ],
+  [
+   "QUEUED",
+   false,
+   "MarkRequested"
+  ],
+  [
+   "EXECUTING",
+   true,
+   "RemoveUnclaimed"
+  ],
+  [
+   "WAITING_RELAY_USER",
+   false,
+   "MarkRequested"
+  ]
+ ],
+ "askStale": [
+  [
+   0,
+   5000,
+   100000,
+   0
+  ],
+  [
+   -5,
+   5000,
+   100000,
+   0
+  ],
+  [
+   100000,
+   5000,
+   117000,
+   0
+  ],
+  [
+   100000,
+   5000,
+   117001,
+   17001
+  ],
+  [
+   200000,
+   5000,
+   100000,
+   0
+  ],
+  [
+   1,
+   120000,
+   132002,
+   132001
+  ]
+ ],
+ "promptCodes": [
+  [
+   "E_ASK_TIMEOUT/no answer within the window",
+   "E_ASK_TIMEOUT",
+   3,
+   true
+  ],
+  [
+   "E_ASK_BUSY/an approval card is on screen",
+   "E_ASK_BUSY",
+   5,
+   true
+  ],
+  [
+   "E_ASK_NO_SURFACE/hidden-by-platform",
+   "E_ASK_NO_SURFACE",
+   4,
+   true
+  ],
+  [
+   "E_INTERNAL/x",
+   "E_INTERNAL",
+   6,
+   false
+  ],
+  [
+   "E_OTHER/x",
+   "E_INTERNAL",
+   6,
+   false
+  ],
+  [
+   "E_ASK_TIMEOUT",
+   "E_ASK_TIMEOUT",
+   3,
+   true
+  ],
+  [
+   "",
+   "E_INTERNAL",
+   6,
+   false
+  ]
+ ],
+ "promptConstants": {
+  "NO_SURFACE_BLIND": "E_ASK_NO_SURFACE/background mode hides floating cards",
+  "NO_SURFACE_NOT_GRANTED": "E_ASK_NO_SURFACE/overlay permission is not granted",
+  "NO_SURFACE_HIDDEN": "E_ASK_NO_SURFACE/hidden-by-platform",
+  "BUSY_ANOTHER_QUESTION": "E_ASK_BUSY/another question is already waiting on screen",
+  "BUSY_APPROVAL_CARD": "E_ASK_BUSY/an approval card is on screen",
+  "BUSY_CHANNEL_STOPPED": "E_ASK_BUSY/the channel stopped while the card was up",
+  "INTERNAL_NO_CHANNEL": "E_INTERNAL/this host has no ask channel wired",
+  "INTERNAL_DUPLICATE": "E_INTERNAL/an ask with this id is already in flight",
+  "TIMEOUT_NO_ANSWER": "E_ASK_TIMEOUT/no answer within the window",
+  "TIMEOUT_COVERED": "E_ASK_TIMEOUT/the card lost window focus while waiting (likely hidden)",
+  "TIMEOUT_EXPIRED": "E_ASK_TIMEOUT/the request sat in the inbox past its own window"
+ },
+ "askPayloads": {
+  "chosen": {
+   "args": [
+    2,
+    "Ship it/now"
+   ],
+   "payload": {
+    "choice": {
+     "kind": "option",
+     "index": 2,
+     "label": "Ship it/now"
+    }
+   },
+   "text": "{\"choice\":{\"kind\":\"option\",\"index\":2,\"label\":\"Ship it\\/now\"}}"
+  },
+  "rejectAll": {
+   "payload": {
+    "choice": {
+     "kind": "reject_all"
+    }
+   }
+  },
+  "reask": {
+   "payload": {
+    "choice": {
+     "kind": "reask"
+    }
+   }
+  },
+  "failure": {
+   "cause": "E_ASK_BUSY/x",
+   "payload": {
+    "cause": "E_ASK_BUSY/x",
+    "error": {
+     "code": "E_ASK_BUSY",
+     "retryable": true,
+     "exitCode": 5
+    }
+   }
+  }
+ },
+ "health": {
+  "channelLive": true,
+  "queueDepth": 3,
+  "oldestQueuedAgeMs": 1234,
+  "inboxDepth": 1,
+  "stalled": false
+ },
+ "scenarios": [
+  {
+   "name": "ops",
+   "presenter": true,
+   "preState": [
+    {
+     "op": "create",
+     "id": "done1",
+     "digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    {
+     "op": "terminal",
+     "id": "done1",
+     "phase": "SUCCEEDED",
+     "result": "{\"v\":1,\"id\":\"done1\",\"ok\":true}"
+    },
+    {
+     "op": "create",
+     "id": "conf1",
+     "digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    {
+     "op": "create",
+     "id": "run1",
+     "digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    {
+     "op": "admit",
+     "id": "run1"
+    },
+    {
+     "op": "create",
+     "id": "g1",
+     "digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    {
+     "op": "guard",
+     "id": "g1"
+    },
+    {
+     "op": "create",
+     "id": "q1",
+     "digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    }
+   ],
+   "inboxFiles": {
+    "q1.json": "{\"v\":1,\"id\":\"q1\",\"capability\":\"ui.snapshot\",\"args\":{}}"
+   },
+   "files": [
+    {
+     "name": "sub1.json",
+     "text": "{\"v\":2,\"id\":\"sub1\",\"op\":\"submit\",\"capability\":\"ui.snapshot\",\"args\":{\"k\":1},\"hostTtlMs\":5000,\"payloadDigest\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"}"
+    },
+    {
+     "name": "done1.json",
+     "text": "{\"v\":2,\"id\":\"done1\",\"op\":\"submit\",\"capability\":\"ui.node\",\"args\":{},\"payloadDigest\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"}"
+    },
+    {
+     "name": "conf1.json",
+     "text": "{\"v\":2,\"id\":\"conf1\",\"op\":\"submit\",\"capability\":\"ui.node\",\"args\":{},\"payloadDigest\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\"}"
+    },
+    {
+     "name": "st1.json",
+     "text": "{\"v\":2,\"id\":\"st1\",\"op\":\"status\",\"targetId\":\"done1\"}"
+    },
+    {
+     "name": "st2.json",
+     "text": "{\"v\":2,\"id\":\"st2\",\"op\":\"status\",\"targetId\":\"nope\"}"
+    },
+    {
+     "name": "c1.json",
+     "text": "{\"v\":2,\"id\":\"c1\",\"op\":\"cancel\",\"targetId\":\"q1\"}"
+    },
+    {
+     "name": "c2.json",
+     "text": "{\"v\":2,\"id\":\"c2\",\"op\":\"cancel\",\"targetId\":\"run1\"}"
+    },
+    {
+     "name": "c3.json",
+     "text": "{\"v\":2,\"id\":\"c3\",\"op\":\"cancel\",\"targetId\":\"g1\"}"
+    },
+    {
+     "name": "c4.json",
+     "text": "{\"v\":2,\"id\":\"c4\",\"op\":\"cancel\",\"targetId\":\"done1\"}"
+    },
+    {
+     "name": "c5.json",
+     "text": "{\"v\":2,\"id\":\"c5\",\"op\":\"cancel\",\"targetId\":\"missing\"}"
+    },
+    {
+     "name": "h1.json",
+     "text": "{\"v\":2,\"id\":\"h1\",\"op\":\"health\"}"
+    },
+    {
+     "name": "bad1.json",
+     "text": "{\"v\":2,\"id\":\"bad1\",\"op\":\"frobnicate\"}"
+    },
+    {
+     "name": "bad2.json",
+     "text": "{\"v\":2,\"id\":\"zz\",\"op\":\"health\"}"
+    },
+    {
+     "name": "bad name.json",
+     "text": "{}"
+    },
+    {
+     "name": ".x.json.part",
+     "text": "{"
+    },
+    {
+     "name": "k1.json",
+     "text": "{\"v\":2,\"id\":\"k1\",\"op\":\"ask\",\"question\":\"pick\",\"options\":[\"A\",\"B\"],\"timeoutMs\":5000}"
+    },
+    {
+     "name": "k2.json",
+     "text": "{\"v\":2,\"id\":\"k2\",\"op\":\"ask\",\"question\":\"none\",\"options\":[\"A\",\"B\"],\"timeoutMs\":5000}"
+    },
+    {
+     "name": "k3.json",
+     "text": "{\"v\":2,\"id\":\"k3\",\"op\":\"ask\",\"question\":\"again\",\"options\":[\"A\",\"B\"],\"timeoutMs\":5000}"
+    },
+    {
+     "name": "k4.json",
+     "text": "{\"v\":2,\"id\":\"k4\",\"op\":\"ask\",\"question\":\"slow\",\"options\":[\"A\",\"B\"],\"timeoutMs\":5000}"
+    },
+    {
+     "name": "k5.json",
+     "text": "{\"v\":2,\"id\":\"k5\",\"op\":\"ask\",\"question\":\"nope\",\"options\":[\"A\",\"B\"],\"timeoutMs\":5000}"
+    },
+    {
+     "name": "k6.json",
+     "text": "{\"v\":2,\"id\":\"k6\",\"op\":\"ask\",\"question\":\"boom\",\"options\":[\"A\",\"B\"],\"timeoutMs\":5000}"
+    },
+    {
+     "name": "k7.json",
+     "text": "{\"v\":2,\"id\":\"k7\",\"op\":\"ask\",\"question\":\"pick\",\"options\":[\"A\",\"B\"],\"timeoutMs\":5000}",
+     "ageMs": 60000
+    }
+   ],
+   "controlOutbox": {
+    "sub1.json": {
+     "v": 2,
+     "id": "sub1",
+     "op": "submit",
+     "ok": true,
+     "state": "QUEUED",
+     "targetId": "sub1",
+     "digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    "done1.json": {
+     "v": 2,
+     "id": "done1",
+     "op": "submit",
+     "ok": true,
+     "state": "SUCCEEDED",
+     "targetId": "done1",
+     "digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+     "result": {
+      "v": 1,
+      "id": "done1",
+      "ok": true
+     }
+    },
+    "conf1.json": {
+     "v": 2,
+     "id": "conf1",
+     "op": "submit",
+     "ok": false,
+     "cause": "digest conflict"
+    },
+    "st1.json": {
+     "v": 2,
+     "id": "st1",
+     "op": "status",
+     "ok": true,
+     "targetId": "done1",
+     "found": true,
+     "state": "SUCCEEDED",
+     "result": {
+      "v": 1,
+      "id": "done1",
+      "ok": true
+     },
+     "mayHaveDispatched": false,
+     "cancelRequested": false
+    },
+    "st2.json": {
+     "v": 2,
+     "id": "st2",
+     "op": "status",
+     "ok": true,
+     "targetId": "nope",
+     "found": false
+    },
+    "c1.json": {
+     "v": 2,
+     "id": "c1",
+     "op": "cancel",
+     "ok": true,
+     "targetId": "q1",
+     "outcome": "CANCELLED"
+    },
+    "c2.json": {
+     "v": 2,
+     "id": "c2",
+     "op": "cancel",
+     "ok": true,
+     "targetId": "run1",
+     "outcome": "CANCEL_REQUESTED",
+     "provablyUndispatched": true
+    },
+    "c3.json": {
+     "v": 2,
+     "id": "c3",
+     "op": "cancel",
+     "ok": true,
+     "targetId": "g1",
+     "outcome": "CANCEL_REQUESTED",
+     "provablyUndispatched": false
+    },
+    "c4.json": {
+     "v": 2,
+     "id": "c4",
+     "op": "cancel",
+     "ok": true,
+     "targetId": "done1",
+     "outcome": "COMPLETED",
+     "state": "SUCCEEDED"
+    },
+    "c5.json": {
+     "v": 2,
+     "id": "c5",
+     "op": "cancel",
+     "ok": true,
+     "targetId": "missing",
+     "outcome": "NOT_FOUND",
+     "state": null
+    },
+    "h1.json": {
+     "v": 2,
+     "id": "h1",
+     "op": "health",
+     "ok": true,
+     "channelLive": true,
+     "queueDepth": 3,
+     "oldestQueuedAgeMs": 1234,
+     "inboxDepth": 1,
+     "stalled": false
+    },
+    "bad1.json": {
+     "v": 2,
+     "id": "bad1",
+     "op": "unknown",
+     "ok": false,
+     "cause": "E_TRANSPORT_MALFORMED/op"
+    },
+    "bad2.json": {
+     "v": 2,
+     "id": "bad2",
+     "op": "unknown",
+     "ok": false,
+     "cause": "E_TRANSPORT_MALFORMED/id mismatch"
+    },
+    "bad name.json": {
+     "v": 2,
+     "id": "bad_name",
+     "op": "unknown",
+     "ok": false,
+     "cause": "malformed request file name bad name.json"
+    },
+    "bad_name.json": {
+     "v": 2,
+     "id": "bad_name",
+     "op": "unknown",
+     "ok": false,
+     "cause": "malformed request file name bad name.json"
+    },
+    "k1.json": {
+     "v": 2,
+     "id": "k1",
+     "op": "ask",
+     "ok": true,
+     "choice": {
+      "kind": "option",
+      "index": 1,
+      "label": "B"
+     }
+    },
+    "k2.json": {
+     "v": 2,
+     "id": "k2",
+     "op": "ask",
+     "ok": true,
+     "choice": {
+      "kind": "reject_all"
+     }
+    },
+    "k3.json": {
+     "v": 2,
+     "id": "k3",
+     "op": "ask",
+     "ok": true,
+     "choice": {
+      "kind": "reask"
+     }
+    },
+    "k4.json": {
+     "v": 2,
+     "id": "k4",
+     "op": "ask",
+     "ok": false,
+     "cause": "E_ASK_TIMEOUT/the card lost window focus while waiting (likely hidden)",
+     "error": {
+      "code": "E_ASK_TIMEOUT",
+      "retryable": true,
+      "exitCode": 3
+     }
+    },
+    "k5.json": {
+     "v": 2,
+     "id": "k5",
+     "op": "ask",
+     "ok": false,
+     "cause": "E_ASK_NO_SURFACE/hidden-by-platform",
+     "error": {
+      "code": "E_ASK_NO_SURFACE",
+      "retryable": true,
+      "exitCode": 4
+     }
+    },
+    "k6.json": {
+     "v": 2,
+     "id": "k6",
+     "op": "ask",
+     "ok": false,
+     "cause": "E_INTERNAL/presenter threw ScriptedFailure",
+     "error": {
+      "code": "E_INTERNAL",
+      "retryable": false,
+      "exitCode": 6
+     }
+    },
+    "k7.json": {
+     "v": 2,
+     "id": "k7",
+     "op": "ask",
+     "ok": false,
+     "cause": "E_ASK_TIMEOUT/the request sat in the inbox past its own window",
+     "error": {
+      "code": "E_ASK_TIMEOUT",
+      "retryable": true,
+      "exitCode": 3
+     }
+    }
+   },
+   "inbox": {
+    "sub1.json": {
+     "v": 1,
+     "id": "sub1",
+     "capability": "ui.snapshot",
+     "args": {
+      "k": 1
+     },
+     "ttlMs": 5000
+    }
+   },
+   "controlInboxLeft": [
+    ".x.json.part"
+   ],
+   "phases": {
+    "sub1": "QUEUED",
+    "done1": "SUCCEEDED",
+    "conf1": "QUEUED",
+    "run1": "ADMITTED",
+    "g1": "EXECUTING",
+    "q1": "CANCELLED"
+   },
+   "cancelRequested": {
+    "run1": true,
+    "g1": true,
+    "q1": false
+   },
+   "logContains": [
+    "control op=submit result=ok ms=",
+    "control op=submit result=rejected ms=",
+    "control op=cancel result=cancelled ms=",
+    "control op=cancel result=cancel_requested ms=",
+    "control op=cancel result=already_settled ms=",
+    "control op=cancel result=not_found ms=",
+    "control op=ask result=accepted ms=",
+    "control op=ask result=failed ms=",
+    "control op=unknown result=rejected ms=",
+    "request cancelled id=q1",
+    "request cancel requested id=run1",
+    "ask answered id=k1 choice=option[1] ms=",
+    "ask answered id=k2 choice=reject_all ms="
+   ]
+  },
+  {
+   "name": "no-presenter",
+   "presenter": false,
+   "files": [
+    {
+     "name": "k8.json",
+     "text": "{\"v\":2,\"id\":\"k8\",\"op\":\"ask\",\"question\":\"pick\",\"options\":[\"A\",\"B\"],\"timeoutMs\":5000}"
+    }
+   ],
+   "controlOutbox": {
+    "k8.json": {
+     "v": 2,
+     "id": "k8",
+     "op": "ask",
+     "ok": false,
+     "cause": "E_INTERNAL/this host has no ask channel wired",
+     "error": {
+      "code": "E_INTERNAL",
+      "retryable": false,
+      "exitCode": 6
+     }
+    }
+   },
+   "inbox": {},
+   "controlInboxLeft": [],
+   "logContains": [
+    "control op=ask result=failed ms="
+   ]
+  },
+  {
+   "name": "duplicate-ask",
+   "presenter": true,
+   "files": [
+    {
+     "name": "d1.json",
+     "text": "{\"v\":2,\"id\":\"d1\",\"op\":\"ask\",\"question\":\"hold\",\"options\":[\"A\",\"B\"],\"timeoutMs\":5000}"
+    }
+   ],
+   "redeliver": {
+    "name": "d1.json",
+    "text": "{\"v\":2,\"id\":\"d1\",\"op\":\"ask\",\"question\":\"hold\",\"options\":[\"A\",\"B\"],\"timeoutMs\":5000}"
+   },
+   "duplicateLog": "ask unavailable id=d1 cause=E_INTERNAL/an ask with this id is already in flight",
+   "controlOutbox": {
+    "d1.json": {
+     "v": 2,
+     "id": "d1",
+     "op": "ask",
+     "ok": true,
+     "choice": {
+      "kind": "option",
+      "index": 0,
+      "label": "X"
+     }
+    }
+   },
+   "inbox": {},
+   "controlInboxLeft": [],
+   "logContains": [
+    "ask answered id=d1 choice=option[0] ms="
+   ]
+  }
+ ]
+}

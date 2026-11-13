@@ -4,9 +4,6 @@ import android.content.ComponentName
 import android.content.Context
 import android.provider.Settings
 import com.dshbox.app.common.Constants
-import interlock.relay.core.protocol.CapabilityDescriptor
-import interlock.relay.core.protocol.CapabilityId
-import interlock.relay.core.protocol.CapabilityRegistry
 import interlock.relay.core.runtime.RelayConfig
 import interlock.relay.core.runtime.RelayRuntime
 import interlock.relay.core.spi.RelayCapabilities
@@ -22,18 +19,16 @@ import java.io.File
  */
 internal object MobileAutomation {
     /**
-     * V1 allowlist: read-only UI capabilities only. Anything not listed is never registered, so the sandbox
-     * cannot call it (calendar, contacts, location, media, audio, clipboard, notifications, install, shell,
-     * Shizuku, virtual displays, screen recording …). Write actions arrive once a consent surface exists.
+     * ADR-0008 (supersedes ADR-0004 #2): the full upstream capability table. Every call still goes through the
+     * unmodified Relay gate — tier ceilings, per-call approval (one-time-token notification + in-app confirmation
+     * page, RelayApproval.kt), host-gesture suspension while our own window is visible, and the backends' own
+     * availability checks (accessibility service enabled by the user, Shizuku granted by the user, runtime
+     * permissions granted by the user). Nothing here pre-approves or enables anything.
      */
-    val ALLOWED_WIRE = setOf("ui.snapshot", "ui.node")
+    private val capabilities = RelayCapabilities.BuiltIn
 
-    private val capabilities = object : RelayCapabilities {
-        override fun all(): List<CapabilityDescriptor> =
-            CapabilityRegistry.allDescriptors.filter { it.id.wire in ALLOWED_WIRE }
-
-        override fun isUsable(id: CapabilityId): Boolean = id.wire in ALLOWED_WIRE
-    }
+    /** What `relay.status` reports as registered: the whole table, by wire name. */
+    val ALLOWED_WIRE: Set<String> get() = capabilities.all().mapTo(sortedSetOf()) { it.id.wire }
 
     /**
      * Same deployment paths DSHBox uses, because DSHBox's sandbox-manager already binds `files/pilot` at guest
@@ -66,7 +61,7 @@ internal object MobileAutomation {
             .put("channelRunning", RelayRuntime.isChannelRunning())
             .put("degradedReason", RelayRuntime.degradedReason(app) ?: JSONObject.NULL)
             .put("accessibilityEnabled", isAccessibilityEnabled(app))
-            .put("allowed", JSONArray(ALLOWED_WIRE.sorted()))
+            .put("allowed", JSONArray(ALLOWED_WIRE.toList()))
             .put("guestCli", "${Paths.guestEntry}/bin/${Paths.cliName}")
     }
 
@@ -103,7 +98,7 @@ internal object UiToolsRegistration {
     /** The whole layer: one top-level YAML sequence (a second top-level node would make DSH drop the layer). */
     fun render(): String = buildString {
         append(MARKER).append('\n')
-        append("# Written by DSH Mobile while 手机操控 is on; deleted when it is turned off. Read-only ui_* tools.\n")
+        append("# Written by DSH Mobile while 手机操控 is on; deleted when it is turned off. ui_* tools (every write goes through Relay approval).\n")
         append("- insert:\n")
         append("    - id: dshmobile-ui\n")
         append("      name: '@deepseek-ai/dsh-mcp-client'\n")

@@ -6,7 +6,7 @@
 
 - 不提交密钥、Keystore、Token、测试私钥（`.gitignore` 已排除 `*.keystore` / `*.jks` / `*.p12`）。
 - 日志不得记录密码、Token、Cookie、SSH 私钥、完整屏幕内容；Bridge 日志只记录 `method` / `code` / 耗时，不记录 payload 原文中的敏感字段。
-- 新增 Bridge 方法必须登记到 [PROVIDER_CONTRACTS.md](PROVIDER_CONTRACTS.md) 并说明权限等级（R0–R4；TASK-010 只读阶段只用到「每次 / 本会话」通知栏审批，完整分级随手机操控写操作一起定义，见 ADR-0004 第 8 条）。
+- 新增 Bridge 方法必须登记到 [PROVIDER_CONTRACTS.md](PROVIDER_CONTRACTS.md) 并说明权限等级（R0–R4；手机操控用 Relay 自己的档位 / 上限 / 逐次与本会话审批，见 ADR-0008）。
 - 不向 WebView 暴露任意 Native 调用或 shell 接口。
 - Root / ADB 只在 `optional.developer` 中存在，默认关闭，Agent 默认无权使用。
 
@@ -38,11 +38,14 @@
 | 插件：安装前用户确认，明确告知为第三方代码、在沙箱内以 DSH 权限运行、PRoot 非安全隔离；结果显示真实退出码与输出，不伪造成功 | `PluginsActivity` |
 | 插件：pnpm 版本钉在随包 11.1.2（离线、可复现），导入方式 copy；不注入 registry | `GuestToolchain.kt` |
 | 手机操控默认关闭；只在用户点「开启中继」后运行，「关闭中继」/ 停止沙箱时停止并注销 `ui_*` 工具 | `RuntimeController`（`relay.*` / `sandbox.stop`）、`UiToolsRegistration` |
-| Relay 能力白名单只含只读 `ui.snapshot` / `ui.node`；未注册的能力沙箱内不可调用 | `MobileAutomation.ALLOWED_WIRE` |
-| Relay 库清单带来的权限与组件（日历、联系人、定位、媒体、录音、闹钟、电池优化豁免、通知监听、录屏、Shizuku）在 App 清单中移除，合并结果以 `aapt2 dump` 核对 | `src/DshMobile.Android/AndroidManifest.xml` |
+| Relay 注册上游全部 39 项能力（ADR-0008），每次调用仍过未修改的闸门：档位上限、逐次 / 本会话审批、系统态、执行配额；`sys.shell` 上限 ASK_ONLY、默认 DENIED，改系统的动词还需逐条开关（本 App 不提供该界面） | `MobileAutomation`（`RelayCapabilities.BuiltIn`） |
+| Relay 库清单的权限与组件原样合并；每一项（运行时权限、通知监听、录屏、Shizuku）都由用户在系统 / Shizuku 界面授予，App 不代为授予；合并结果以 `aapt2 dump` 核对 | `src/DshMobile.Android/AndroidManifest.xml` |
+| Shizuku 只由用户在 Shizuku 自己的授权框里允许；App 只发起请求（请求码 41），不启动 Shizuku、不重复弹框、被永久拒绝时如实提示 | `ShizukuClient` / `ShizukuConnection` |
 | 无障碍服务只由用户在系统设置中开启，App 只提供跳转 | `AutomationActivity` |
-| 每次 Relay 调用经通知栏审批（允许一次 / 本次会话允许 / 拒绝）；receiver 不导出、PendingIntent 不可变；通知被关时失败关闭（`E_GATE_NO_FOREGROUND`），无自动放行 | `RelayApproval.kt` |
-| `ui_*` 门面只读、无写工具；旧快照的 ref 本地即返回 `STALE_ELEMENT`，不发底层请求；同一 ref 回读时校验类名 / 标签 / 位置，不符即 `STALE_ELEMENT` | `guest-assets/dshmobile/ui-facade.mjs` |
+| 每次 Relay 调用经通知栏审批（允许一次 / 本次会话允许 / 拒绝）；receiver 不导出、PendingIntent 不可变；通知被关时失败关闭（`E_GATE_NO_FOREGROUND`），无自动放行 | `RelayApproval.kt`、`RelayApprovalNotifications` |
+| 审批回答只认卡片自己的 128 位一次性令牌（guest 与 App 同 UID，能 `am broadcast`）：常数时间比较、用一次作废、取消即吊销 | `ApprovalTokens`（Kotlin / C#，`RelayApprovalParityTests`） |
+| 「允许」只能在本 App 的确认页上按下（`RelayApprovalConfirmActivity`：不导出、`FLAG_SECURE`、过滤被遮挡的触摸）；确认页在前台时 Relay 拒绝一切写操作（`selfWindowVisible` → `E_TASK_SUSPENDED_BY_HOST`），Agent 点不到；卡片与确认页显示目标与参数 | ADR-0008 |
+| `ui_*` 写工具动作前用 `ui.node` 实时回读并校验身份；旧快照的 ref 本地即返回 `STALE_ELEMENT`，不发底层请求；任何写操作之后当前快照的 ref 作废；写操作只在「尚未作答」时重发，超时不重发；无 `ui_confirm_approval` | `guest-assets/dshmobile/ui-facade.mjs` |
 | `ui_*` 错误保守映射：未知 Relay 码一律 `OBSERVATION_INCOMPLETE` 并附原码，从不把失败报成成功；拒绝后不重试 | 同上（`ui-facade.test.mjs` 覆盖） |
 | 注册 `ui_*` 只写宿主专属 `--patch` 层且带标记，不碰用户 profile；不覆盖、不删除他人内容 | `UiToolsRegistration`（`UiToolsRegistrationTest`） |
 | 浏览器运行在独立 `:browser` 进程，WebView 数据目录后缀 `browser`：Cookie / 存储与 DSH WebUI（主进程）分离 | `DshMobileApplication`、ADR-0005 |
@@ -71,8 +74,8 @@
 - M2：Runtime 层**签名**清单校验（当前仅固定哈希）、回滚 UI；PRoot 不是安全隔离，guest 内代码按不可信处理。
 - M3：WebUI 已落实 loopback-only / token 轮换 / origin 校验（见上）；待做：DSHBox 完整导航鉴权状态机、下载与上传审批（TASK-007）。
 - M5：R0–R4 审批、审计日志、单写者设备租约。
-- 手机操控写操作开放前（ADR-0004 第 8 条）：`ui.snapshot` 会读到焦点窗口的全部可见文本——真机快照包含展开的通知栏，
-  其中有本 App 自己的审批按钮。必须先证明 Agent 无法点中本 App 的审批 UI，再开放 click / text / scroll / key。
+- 手机操控写操作（ADR-0008）：确认页的保护依赖无障碍后端的 `selfWindowVisible`；C# 接管执行层时必须原样保留，并把
+  「确认页在前台时写操作被拒」「伪造广播被丢弃」列入真机验收。批准 shell 类能力等于交出 shell 身份的能力，卡片须显示命令。
 - 隐私：`ui_snapshot` 结果（屏幕文本）会进入模型上下文；文档与界面需提示用户在敏感页面（密码、支付、聊天）不要批准读取。
 - M8：SBOM、密钥扫描、品牌资源扫描进入 Release CI。
 

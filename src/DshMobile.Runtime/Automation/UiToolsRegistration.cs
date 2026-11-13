@@ -40,7 +40,7 @@ public static class UiToolsRegistration
     /// <summary>The whole layer: one top-level YAML sequence (a second top-level node would make DSH drop the layer).</summary>
     public static string Render() => new StringBuilder()
         .Append(Marker).Append('\n')
-        .Append("# Written by DSH Mobile while 手机操控 is on; deleted when it is turned off. Read-only ui_* tools.\n")
+        .Append("# Written by DSH Mobile while 手机操控 is on; deleted when it is turned off. ui_* tools (every write goes through Relay approval).\n")
         .Append("- insert:\n")
         .Append("    - id: dshmobile-ui\n")
         .Append("      name: '@deepseek-ai/dsh-mcp-client'\n")

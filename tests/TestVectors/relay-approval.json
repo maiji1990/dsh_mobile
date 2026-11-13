@@ -1,0 +1,2706 @@
+{
+  "comment": "PR-07 step 4: DSHBox interlock-relay-core InterlockTargets / ConsentSurfaces / InterlockQueue / ParkedAnswerMailbox @7c9d33c1 (GPL-3.0). charCount(n) renders as n+'c'. Queue request ids start at 1 (the id seed is pinned to 0). routing entries are [requestId|null, via, waitingCount, sorted deadEnds]; every step checks routing/revoked/withdrawn emitted during that step, and reason (lastDeadEndReason) when the key is present. csharpOnly cases follow Android libcore org.json (a JSON null reads 'null' in optString, '/' is escaped in toString); the JVM test's Maven org.json differs there.",
+  "targets": [
+    {
+      "name": "shell verb+args",
+      "capability": "sys.shell",
+      "args": {
+        "verb": "pm",
+        "args": [
+          "list",
+          "packages",
+          3,
+          true
+        ]
+      },
+      "target": "pm",
+      "detail": "pm list packages 3 true"
+    },
+    {
+      "name": "shell null arg",
+      "capability": "sys.shell",
+      "args": {
+        "verb": "pm",
+        "args": [
+          "a",
+          null
+        ]
+      },
+      "target": "pm",
+      "detail": "pm a null",
+      "csharpOnly": true
+    },
+    {
+      "name": "shell empty",
+      "capability": "sys.shell",
+      "args": {},
+      "target": null,
+      "detail": ""
+    },
+    {
+      "name": "shell long",
+      "capability": "sys.shell",
+      "args": {
+        "verb": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+      },
+      "target": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+      "detail": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+    },
+    {
+      "name": "shell args only",
+      "capability": "sys.shell",
+      "args": {
+        "args": [
+          "a"
+        ]
+      },
+      "target": null,
+      "detail": " a"
+    },
+    {
+      "name": "shell nested arg",
+      "capability": "sys.shell",
+      "args": {
+        "verb": "v",
+        "args": [
+          {
+            "k": "a/b"
+          }
+        ]
+      },
+      "target": "v",
+      "detail": "v {\"k\":\"a\\/b\"}",
+      "csharpOnly": true
+    },
+    {
+      "name": "shell nested arg plain",
+      "capability": "sys.shell",
+      "args": {
+        "verb": "v",
+        "args": [
+          {
+            "k": 1
+          }
+        ]
+      },
+      "target": "v",
+      "detail": "v {\"k\":1}"
+    },
+    {
+      "name": "alarm",
+      "capability": "sys.intent",
+      "args": {
+        "template": "alarm.set",
+        "hour": 7,
+        "minute": 5
+      },
+      "target": "alarm.set",
+      "detail": "07:05"
+    },
+    {
+      "name": "alarm absent",
+      "capability": "sys.intent",
+      "args": {
+        "template": "alarm.set"
+      },
+      "target": "alarm.set",
+      "detail": "-1:-1"
+    },
+    {
+      "name": "alarm coerced",
+      "capability": "sys.intent",
+      "args": {
+        "template": "alarm.set",
+        "hour": "9",
+        "minute": 30.7
+      },
+      "target": "alarm.set",
+      "detail": "09:30"
+    },
+    {
+      "name": "alarm bool",
+      "capability": "sys.intent",
+      "args": {
+        "template": "alarm.set",
+        "hour": true,
+        "minute": 12
+      },
+      "target": "alarm.set",
+      "detail": "-1:12"
+    },
+    {
+      "name": "timer",
+      "capability": "sys.intent",
+      "args": {
+        "template": "timer.set",
+        "length": 90
+      },
+      "target": "timer.set",
+      "detail": "length=90s"
+    },
+    {
+      "name": "timer absent",
+      "capability": "sys.intent",
+      "args": {
+        "template": "timer.set"
+      },
+      "target": "timer.set",
+      "detail": "length=nulls"
+    },
+    {
+      "name": "timer double",
+      "capability": "sys.intent",
+      "args": {
+        "template": "timer.set",
+        "length": 1.5
+      },
+      "target": "timer.set",
+      "detail": "length=1.5s"
+    },
+    {
+      "name": "settings.open",
+      "capability": "sys.intent",
+      "args": {
+        "template": "settings.open",
+        "page": "wifi"
+      },
+      "target": "settings.open",
+      "detail": "wifi"
+    },
+    {
+      "name": "app.info",
+      "capability": "sys.intent",
+      "args": {
+        "template": "app.info",
+        "package": "com.a"
+      },
+      "target": "app.info",
+      "detail": "com.a"
+    },
+    {
+      "name": "dial",
+      "capability": "sys.intent",
+      "args": {
+        "template": "dial",
+        "number": "10086"
+      },
+      "target": "dial",
+      "detail": "10086"
+    },
+    {
+      "name": "web.open",
+      "capability": "sys.intent",
+      "args": {
+        "template": "web.open",
+        "url": "https://e.x/pppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppp"
+      },
+      "target": "web.open",
+      "detail": "https://e.x/pppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppp"
+    },
+    {
+      "name": "unknown template",
+      "capability": "sys.intent",
+      "args": {
+        "template": "x"
+      },
+      "target": "x",
+      "detail": ""
+    },
+    {
+      "name": "no template",
+      "capability": "sys.intent",
+      "args": {},
+      "target": null,
+      "detail": ""
+    },
+    {
+      "name": "settings secure",
+      "capability": "sys.settings.write",
+      "args": {
+        "key": "adb_enabled",
+        "value": "1"
+      },
+      "target": "secure/adb_enabled",
+      "detail": "1"
+    },
+    {
+      "name": "settings global",
+      "capability": "sys.settings.write",
+      "args": {
+        "key": "k",
+        "value": 2,
+        "namespace": "global"
+      },
+      "target": "global/k",
+      "detail": "2"
+    },
+    {
+      "name": "settings blank ns",
+      "capability": "sys.settings.write",
+      "args": {
+        "key": "k",
+        "namespace": "  "
+      },
+      "target": "secure/k",
+      "detail": ""
+    },
+    {
+      "name": "settings null ns",
+      "capability": "sys.settings.write",
+      "args": {
+        "key": "k",
+        "namespace": null
+      },
+      "target": "null/k",
+      "detail": "",
+      "csharpOnly": true
+    },
+    {
+      "name": "settings no key",
+      "capability": "sys.settings.write",
+      "args": {
+        "value": "v"
+      },
+      "target": null,
+      "detail": "v"
+    },
+    {
+      "name": "appops",
+      "capability": "appops.set",
+      "args": {
+        "package": "com.a",
+        "op": "CAMERA",
+        "mode": "allow"
+      },
+      "target": "com.a",
+      "detail": "CAMERA -> allow"
+    },
+    {
+      "name": "appops empty",
+      "capability": "appops.set",
+      "args": {},
+      "target": null,
+      "detail": " -> "
+    },
+    {
+      "name": "app.stop",
+      "capability": "app.stop",
+      "args": {
+        "package": "com.b"
+      },
+      "target": "com.b",
+      "detail": null
+    },
+    {
+      "name": "pkg.query",
+      "capability": "pkg.query",
+      "args": {},
+      "target": null,
+      "detail": null
+    },
+    {
+      "name": "app.launch",
+      "capability": "app.launch",
+      "args": {
+        "package": "pppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppp"
+      },
+      "target": "pppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppp",
+      "detail": null
+    },
+    {
+      "name": "surface",
+      "capability": "surface.virtual",
+      "args": {
+        "action": "create",
+        "width": 1080,
+        "height": "2400"
+      },
+      "target": "create",
+      "detail": "1080x2400"
+    },
+    {
+      "name": "surface empty",
+      "capability": "surface.virtual",
+      "args": {},
+      "target": null,
+      "detail": "0x0"
+    },
+    {
+      "name": "clip.write",
+      "capability": "clip.write",
+      "args": {
+        "text": "hello"
+      },
+      "target": null,
+      "detail": "5c"
+    },
+    {
+      "name": "clip.write empty",
+      "capability": "clip.write",
+      "args": {},
+      "target": null,
+      "detail": "0c"
+    },
+    {
+      "name": "ui.text emoji",
+      "capability": "ui.text",
+      "args": {
+        "text": "中文😀"
+      },
+      "target": null,
+      "detail": "4c"
+    },
+    {
+      "name": "contact.write",
+      "capability": "contact.write",
+      "args": {
+        "name": "Ann",
+        "number": "123"
+      },
+      "target": "Ann",
+      "detail": "123"
+    },
+    {
+      "name": "cal.write",
+      "capability": "cal.write",
+      "args": {
+        "title": "Meet"
+      },
+      "target": null,
+      "detail": "Meet"
+    },
+    {
+      "name": "notify.post",
+      "capability": "notify.post",
+      "args": {
+        "package": "com.c",
+        "title": "T"
+      },
+      "target": "com.c",
+      "detail": "T"
+    },
+    {
+      "name": "media.write",
+      "capability": "media.write",
+      "args": {
+        "file": "a.png"
+      },
+      "target": "a.png",
+      "detail": "image"
+    },
+    {
+      "name": "media.write null kind",
+      "capability": "media.write",
+      "args": {
+        "kind": null
+      },
+      "target": null,
+      "detail": "null",
+      "csharpOnly": true
+    },
+    {
+      "name": "media.write empty kind",
+      "capability": "media.write",
+      "args": {
+        "kind": ""
+      },
+      "target": null,
+      "detail": null
+    },
+    {
+      "name": "app.install",
+      "capability": "app.install",
+      "args": {
+        "upload": "x.apk"
+      },
+      "target": "x.apk",
+      "detail": null
+    },
+    {
+      "name": "click nodeId",
+      "capability": "ui.click",
+      "args": {
+        "nodeId": 12
+      },
+      "target": "nodeId=12",
+      "detail": null
+    },
+    {
+      "name": "click nodeId+selector",
+      "capability": "ui.click",
+      "args": {
+        "nodeId": "n7",
+        "selector": {
+          "text": "OK"
+        }
+      },
+      "target": "nodeId=n7",
+      "detail": null
+    },
+    {
+      "name": "click selector order",
+      "capability": "ui.click",
+      "args": {
+        "selector": {
+          "text": "OK",
+          "package": "com.x",
+          "index": 2,
+          "desc": null
+        }
+      },
+      "target": "package=com.x desc=null text=OK index=2",
+      "detail": null
+    },
+    {
+      "name": "longClick selector extra keys",
+      "capability": "ui.longClick",
+      "args": {
+        "selector": {
+          "foo": "bar",
+          "class": "android.widget.Button"
+        }
+      },
+      "target": "class=android.widget.Button",
+      "detail": null
+    },
+    {
+      "name": "setValue long id",
+      "capability": "ui.setValue",
+      "args": {
+        "selector": {
+          "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        "text": "abc"
+      },
+      "target": "id=aaaaaaaaaaaaaaaaaaaaaaaa",
+      "detail": "3c"
+    },
+    {
+      "name": "setValue cap 80",
+      "capability": "ui.setValue",
+      "args": {
+        "selector": {
+          "package": "vvvvvvvvvvvvvvvvvvvvvvvvvvvvvv",
+          "class": "vvvvvvvvvvvvvvvvvvvvvvvvvvvvvv",
+          "id": "vvvvvvvvvvvvvvvvvvvvvvvvvvvvvv",
+          "desc": "vvvvvvvvvvvvvvvvvvvvvvvvvvvvvv"
+        }
+      },
+      "target": "package=vvvvvvvvvvvvvvvvvvvvvvvv class=vvvvvvvvvvvvvvvvvvvvvvvv id=vvvvvvvvvvvvv",
+      "detail": "0c"
+    },
+    {
+      "name": "setProgress value",
+      "capability": "ui.setProgress",
+      "args": {
+        "nodeId": "n1",
+        "value": 5
+      },
+      "target": "nodeId=n1",
+      "detail": "value=5"
+    },
+    {
+      "name": "setProgress percent",
+      "capability": "ui.setProgress",
+      "args": {
+        "percent": 50.5
+      },
+      "target": null,
+      "detail": "percent=50.5%"
+    },
+    {
+      "name": "setProgress both",
+      "capability": "ui.setProgress",
+      "args": {
+        "value": "x",
+        "percent": 1
+      },
+      "target": null,
+      "detail": "value=x"
+    },
+    {
+      "name": "setProgress none",
+      "capability": "ui.setProgress",
+      "args": {},
+      "target": null,
+      "detail": null
+    },
+    {
+      "name": "node empty selector",
+      "capability": "ui.node",
+      "args": {
+        "selector": {}
+      },
+      "target": null,
+      "detail": null
+    },
+    {
+      "name": "node selector not object",
+      "capability": "ui.node",
+      "args": {
+        "selector": "text=OK"
+      },
+      "target": null,
+      "detail": null
+    },
+    {
+      "name": "scroll",
+      "capability": "ui.scroll",
+      "args": {},
+      "target": null,
+      "detail": null
+    },
+    {
+      "name": "imeAction nested",
+      "capability": "ui.imeAction",
+      "args": {
+        "selector": {
+          "text": {
+            "a": 1
+          }
+        }
+      },
+      "target": "text={\"a\":1}",
+      "detail": null
+    },
+    {
+      "name": "default package",
+      "capability": "notify.read",
+      "args": {
+        "package": "com.c"
+      },
+      "target": "com.c",
+      "detail": null
+    },
+    {
+      "name": "default none",
+      "capability": "screen.capture",
+      "args": {},
+      "target": null,
+      "detail": null
+    },
+    {
+      "name": "default tap",
+      "capability": "ui.tap",
+      "args": {
+        "x": 1,
+        "y": 2,
+        "package": ""
+      },
+      "target": null,
+      "detail": null
+    }
+  ],
+  "volatile": [
+    {
+      "capability": "contact.read",
+      "args": {},
+      "expect": true
+    },
+    {
+      "capability": "contact.write",
+      "args": {},
+      "expect": false
+    },
+    {
+      "capability": "contact.write",
+      "args": {
+        "nodeId": 1
+      },
+      "expect": true
+    },
+    {
+      "capability": "clip.write",
+      "args": {
+        "selector": {}
+      },
+      "expect": true
+    },
+    {
+      "capability": "sys.shell",
+      "args": {
+        "verb": "ls"
+      },
+      "expect": false
+    },
+    {
+      "capability": "app.install",
+      "args": {},
+      "expect": true
+    },
+    {
+      "capability": "app.launch",
+      "args": {
+        "package": "com.a"
+      },
+      "expect": false
+    },
+    {
+      "capability": "screen.record",
+      "args": {},
+      "expect": true
+    },
+    {
+      "capability": "ui.key",
+      "args": {},
+      "expect": true
+    },
+    {
+      "capability": "notify.post",
+      "args": {},
+      "expect": false
+    },
+    {
+      "capability": "surface.virtual",
+      "args": {},
+      "expect": false
+    }
+  ],
+  "volatileFor": [
+    {
+      "capability": "audio.capture",
+      "hasTarget": false,
+      "expect": true
+    },
+    {
+      "capability": "audio.capture",
+      "hasTarget": true,
+      "expect": true
+    },
+    {
+      "capability": "cal.read",
+      "hasTarget": false,
+      "expect": true
+    },
+    {
+      "capability": "cal.read",
+      "hasTarget": true,
+      "expect": true
+    },
+    {
+      "capability": "clip.read",
+      "hasTarget": false,
+      "expect": true
+    },
+    {
+      "capability": "clip.read",
+      "hasTarget": true,
+      "expect": true
+    },
+    {
+      "capability": "contact.read",
+      "hasTarget": false,
+      "expect": true
+    },
+    {
+      "capability": "contact.read",
+      "hasTarget": true,
+      "expect": true
+    },
+    {
+      "capability": "loc.read",
+      "hasTarget": false,
+      "expect": true
+    },
+    {
+      "capability": "loc.read",
+      "hasTarget": true,
+      "expect": true
+    },
+    {
+      "capability": "media.read",
+      "hasTarget": false,
+      "expect": true
+    },
+    {
+      "capability": "media.read",
+      "hasTarget": true,
+      "expect": true
+    },
+    {
+      "capability": "media.write",
+      "hasTarget": false,
+      "expect": true
+    },
+    {
+      "capability": "media.write",
+      "hasTarget": true,
+      "expect": true
+    },
+    {
+      "capability": "notify.read",
+      "hasTarget": false,
+      "expect": true
+    },
+    {
+      "capability": "notify.read",
+      "hasTarget": true,
+      "expect": true
+    },
+    {
+      "capability": "app.install",
+      "hasTarget": false,
+      "expect": true
+    },
+    {
+      "capability": "app.install",
+      "hasTarget": true,
+      "expect": true
+    },
+    {
+      "capability": "pkg.query",
+      "hasTarget": false,
+      "expect": true
+    },
+    {
+      "capability": "pkg.query",
+      "hasTarget": true,
+      "expect": true
+    },
+    {
+      "capability": "ui.node",
+      "hasTarget": false,
+      "expect": true
+    },
+    {
+      "capability": "ui.node",
+      "hasTarget": true,
+      "expect": true
+    },
+    {
+      "capability": "ui.click",
+      "hasTarget": false,
+      "expect": true
+    },
+    {
+      "capability": "ui.click",
+      "hasTarget": true,
+      "expect": true
+    },
+    {
+      "capability": "ui.longClick",
+      "hasTarget": false,
+      "expect": true
+    },
+    {
+      "capability": "ui.longClick",
+      "hasTarget": true,
+      "expect": true
+    },
+    {
+      "capability": "ui.select",
+      "hasTarget": false,
+      "expect": true
+    },
+    {
+      "capability": "ui.select",
+      "hasTarget": true,
+      "expect": true
+    },
+    {
+      "capability": "ui.dismiss",
+      "hasTarget": false,
+      "expect": true
+    },
+    {
+      "capability": "ui.dismiss",
+      "hasTarget": true,
+      "expect": true
+    },
+    {
+      "capability": "ui.scroll",
+      "hasTarget": false,
+      "expect": true
+    },
+    {
+      "capability": "ui.scroll",
+      "hasTarget": true,
+      "expect": true
+    },
+    {
+      "capability": "ui.setValue",
+      "hasTarget": false,
+      "expect": true
+    },
+    {
+      "capability": "ui.setValue",
+      "hasTarget": true,
+      "expect": true
+    },
+    {
+      "capability": "ui.setProgress",
+      "hasTarget": false,
+      "expect": true
+    },
+    {
+      "capability": "ui.setProgress",
+      "hasTarget": true,
+      "expect": true
+    },
+    {
+      "capability": "ui.imeAction",
+      "hasTarget": false,
+      "expect": true
+    },
+    {
+      "capability": "ui.imeAction",
+      "hasTarget": true,
+      "expect": true
+    },
+    {
+      "capability": "ui.waitFor",
+      "hasTarget": false,
+      "expect": true
+    },
+    {
+      "capability": "ui.waitFor",
+      "hasTarget": true,
+      "expect": true
+    },
+    {
+      "capability": "ui.tap",
+      "hasTarget": false,
+      "expect": true
+    },
+    {
+      "capability": "ui.tap",
+      "hasTarget": true,
+      "expect": true
+    },
+    {
+      "capability": "ui.swipe",
+      "hasTarget": false,
+      "expect": true
+    },
+    {
+      "capability": "ui.swipe",
+      "hasTarget": true,
+      "expect": true
+    },
+    {
+      "capability": "ui.text",
+      "hasTarget": false,
+      "expect": true
+    },
+    {
+      "capability": "ui.text",
+      "hasTarget": true,
+      "expect": true
+    },
+    {
+      "capability": "ui.key",
+      "hasTarget": false,
+      "expect": true
+    },
+    {
+      "capability": "ui.key",
+      "hasTarget": true,
+      "expect": true
+    },
+    {
+      "capability": "ui.snapshot",
+      "hasTarget": false,
+      "expect": true
+    },
+    {
+      "capability": "ui.snapshot",
+      "hasTarget": true,
+      "expect": true
+    },
+    {
+      "capability": "screen.capture",
+      "hasTarget": false,
+      "expect": true
+    },
+    {
+      "capability": "screen.capture",
+      "hasTarget": true,
+      "expect": true
+    },
+    {
+      "capability": "screen.observe",
+      "hasTarget": false,
+      "expect": true
+    },
+    {
+      "capability": "screen.observe",
+      "hasTarget": true,
+      "expect": true
+    },
+    {
+      "capability": "screen.record",
+      "hasTarget": false,
+      "expect": true
+    },
+    {
+      "capability": "screen.record",
+      "hasTarget": true,
+      "expect": true
+    },
+    {
+      "capability": "app.launch",
+      "hasTarget": false,
+      "expect": false
+    },
+    {
+      "capability": "app.launch",
+      "hasTarget": true,
+      "expect": true
+    },
+    {
+      "capability": "app.stop",
+      "hasTarget": false,
+      "expect": false
+    },
+    {
+      "capability": "app.stop",
+      "hasTarget": true,
+      "expect": true
+    },
+    {
+      "capability": "surface.virtual",
+      "hasTarget": false,
+      "expect": false
+    },
+    {
+      "capability": "surface.virtual",
+      "hasTarget": true,
+      "expect": true
+    },
+    {
+      "capability": "clip.write",
+      "hasTarget": false,
+      "expect": false
+    },
+    {
+      "capability": "clip.write",
+      "hasTarget": true,
+      "expect": true
+    },
+    {
+      "capability": "contact.write",
+      "hasTarget": false,
+      "expect": false
+    },
+    {
+      "capability": "contact.write",
+      "hasTarget": true,
+      "expect": true
+    },
+    {
+      "capability": "cal.write",
+      "hasTarget": false,
+      "expect": false
+    },
+    {
+      "capability": "cal.write",
+      "hasTarget": true,
+      "expect": true
+    },
+    {
+      "capability": "sys.settings.write",
+      "hasTarget": false,
+      "expect": false
+    },
+    {
+      "capability": "sys.settings.write",
+      "hasTarget": true,
+      "expect": true
+    },
+    {
+      "capability": "appops.set",
+      "hasTarget": false,
+      "expect": false
+    },
+    {
+      "capability": "appops.set",
+      "hasTarget": true,
+      "expect": true
+    },
+    {
+      "capability": "sys.intent",
+      "hasTarget": false,
+      "expect": false
+    },
+    {
+      "capability": "sys.intent",
+      "hasTarget": true,
+      "expect": true
+    },
+    {
+      "capability": "sys.shell",
+      "hasTarget": false,
+      "expect": false
+    },
+    {
+      "capability": "sys.shell",
+      "hasTarget": true,
+      "expect": true
+    },
+    {
+      "capability": "notify.post",
+      "hasTarget": false,
+      "expect": false
+    },
+    {
+      "capability": "notify.post",
+      "hasTarget": true,
+      "expect": true
+    }
+  ],
+  "consent": {
+    "uids": {
+      "com.vendor.sys": 1000,
+      "com.app": 10123
+    },
+    "throwingUid": "com.boom",
+    "systemOwned": [
+      {
+        "pkg": null,
+        "expect": false
+      },
+      {
+        "pkg": "  ",
+        "expect": false
+      },
+      {
+        "pkg": "com.vendor.sys",
+        "expect": true
+      },
+      {
+        "pkg": " com.vendor.sys ",
+        "expect": true
+      },
+      {
+        "pkg": "com.app",
+        "expect": false
+      },
+      {
+        "pkg": "com.boom",
+        "expect": false
+      },
+      {
+        "pkg": "COM.VENDOR.SYS",
+        "expect": false
+      },
+      {
+        "pkg": "unknown",
+        "expect": false
+      }
+    ],
+    "consentPackage": [
+      {
+        "pkg": "com.android.permissioncontroller",
+        "expect": true
+      },
+      {
+        "pkg": "COM.ANDROID.SYSTEMUI",
+        "expect": true
+      },
+      {
+        "pkg": " com.android.intentresolver ",
+        "expect": true
+      },
+      {
+        "pkg": "com.miui.securitycore.x",
+        "expect": true
+      },
+      {
+        "pkg": "com.iqoo.secure",
+        "expect": true
+      },
+      {
+        "pkg": "COM.VENDOR.SYS",
+        "expect": true
+      },
+      {
+        "pkg": "com.app",
+        "expect": false
+      },
+      {
+        "pkg": "com.boom",
+        "expect": false
+      },
+      {
+        "pkg": null,
+        "expect": false
+      },
+      {
+        "pkg": "",
+        "expect": false
+      },
+      {
+        "pkg": "com.android.systemui2",
+        "expect": false
+      },
+      {
+        "pkg": "com.android",
+        "expect": false
+      }
+    ],
+    "control": [
+      {
+        "pkg": "com.android.packageinstaller",
+        "viewId": null,
+        "expect": true
+      },
+      {
+        "pkg": "com.vendor.sys",
+        "viewId": null,
+        "expect": false
+      },
+      {
+        "pkg": "com.app",
+        "viewId": "com.app:id/PERMISSION_ALLOW_BUTTON",
+        "expect": true
+      },
+      {
+        "pkg": null,
+        "viewId": "x:id/button_allow_always",
+        "expect": true
+      },
+      {
+        "pkg": "com.app",
+        "viewId": "com.app:id/ok",
+        "expect": false
+      },
+      {
+        "pkg": null,
+        "viewId": null,
+        "expect": false
+      },
+      {
+        "pkg": "  ",
+        "viewId": "permission_deny",
+        "expect": true
+      },
+      {
+        "pkg": "com.oplus.safecenter.ui",
+        "viewId": "a",
+        "expect": true
+      }
+    ],
+    "fromArgs": [
+      {
+        "args": {
+          "relative": {}
+        },
+        "expect": true
+      },
+      {
+        "args": {
+          "relative": null
+        },
+        "expect": true
+      },
+      {
+        "args": {
+          "selector": {
+            "package": "com.android.systemui"
+          }
+        },
+        "expect": true
+      },
+      {
+        "args": {
+          "selector": {
+            "text": "x"
+          },
+          "package": "com.android.systemui"
+        },
+        "expect": false
+      },
+      {
+        "args": {
+          "package": "com.android.systemui"
+        },
+        "expect": true
+      },
+      {
+        "args": {
+          "selector": "s",
+          "package": "com.vendor.sys"
+        },
+        "expect": true
+      },
+      {
+        "args": {
+          "package": "com.app"
+        },
+        "expect": false
+      },
+      {
+        "args": {
+          "package": null
+        },
+        "expect": false
+      },
+      {
+        "args": {},
+        "expect": false
+      }
+    ],
+    "node": [
+      {
+        "pkg": "com.vendor.sys",
+        "viewId": null,
+        "expect": true
+      },
+      {
+        "pkg": "com.app",
+        "viewId": "a:id/permission_button_x",
+        "expect": true
+      },
+      {
+        "pkg": "com.app",
+        "viewId": null,
+        "expect": false
+      },
+      {
+        "pkg": null,
+        "viewId": "a:id/ok",
+        "expect": false
+      }
+    ]
+  },
+  "choices": [
+    {
+      "choice": "ALLOW_ONCE",
+      "isAnswer": true,
+      "downgradedNoSession": "ALLOW_ONCE",
+      "downgradedSession": "ALLOW_ONCE"
+    },
+    {
+      "choice": "ALLOW_SESSION",
+      "isAnswer": true,
+      "downgradedNoSession": "ALLOW_ONCE",
+      "downgradedSession": "ALLOW_SESSION"
+    },
+    {
+      "choice": "DENY",
+      "isAnswer": true,
+      "downgradedNoSession": "DENY",
+      "downgradedSession": "DENY"
+    },
+    {
+      "choice": "UNABLE_TO_SHOW",
+      "isAnswer": false,
+      "downgradedNoSession": "UNABLE_TO_SHOW",
+      "downgradedSession": "UNABLE_TO_SHOW"
+    },
+    {
+      "choice": "EXPIRED",
+      "isAnswer": false,
+      "downgradedNoSession": "EXPIRED",
+      "downgradedSession": "EXPIRED"
+    },
+    {
+      "choice": "AWAITING",
+      "isAnswer": false,
+      "downgradedNoSession": "AWAITING",
+      "downgradedSession": "AWAITING"
+    },
+    {
+      "choice": "WAITING_TURN",
+      "isAnswer": false,
+      "downgradedNoSession": "WAITING_TURN",
+      "downgradedSession": "WAITING_TURN"
+    }
+  ],
+  "sameQuestion": [
+    {
+      "a": {
+        "cap": "contact.read",
+        "args": "a",
+        "volatile": false,
+        "session": true,
+        "deadline": 1000
+      },
+      "b": {
+        "cap": "contact.read",
+        "args": "a",
+        "volatile": false,
+        "session": true,
+        "deadline": 1000
+      },
+      "expect": true
+    },
+    {
+      "a": {
+        "cap": "contact.read",
+        "args": "a",
+        "volatile": false,
+        "session": true,
+        "deadline": 1000
+      },
+      "b": {
+        "cap": "contact.read",
+        "args": "a",
+        "volatile": true,
+        "session": true,
+        "deadline": 99,
+        "label": "other"
+      },
+      "expect": true
+    },
+    {
+      "a": {
+        "cap": "contact.read",
+        "args": "a",
+        "volatile": false,
+        "session": true,
+        "deadline": 1000
+      },
+      "b": {
+        "cap": "contact.write",
+        "args": "a",
+        "volatile": false,
+        "session": true,
+        "deadline": 1000
+      },
+      "expect": false
+    },
+    {
+      "a": {
+        "cap": "contact.read",
+        "args": "a",
+        "volatile": false,
+        "session": true,
+        "deadline": 1000
+      },
+      "b": {
+        "cap": "contact.read",
+        "args": "b",
+        "volatile": false,
+        "session": true,
+        "deadline": 1000
+      },
+      "expect": false
+    },
+    {
+      "a": {
+        "cap": "contact.read",
+        "args": "a",
+        "volatile": false,
+        "session": true,
+        "deadline": 1000
+      },
+      "b": {
+        "cap": "contact.read",
+        "args": "a",
+        "volatile": false,
+        "session": false,
+        "deadline": 1000
+      },
+      "expect": false
+    }
+  ],
+  "terminates": [
+    {
+      "volatile": false,
+      "session": false,
+      "expect": false
+    },
+    {
+      "volatile": false,
+      "session": true,
+      "expect": false
+    },
+    {
+      "volatile": true,
+      "session": false,
+      "expect": true
+    },
+    {
+      "volatile": true,
+      "session": true,
+      "expect": false
+    }
+  ],
+  "reasons": [
+    {
+      "deadEnds": [],
+      "reason": "no_surface; no presenter is available right now"
+    },
+    {
+      "deadEnds": [
+        "NOTIFICATIONS_BLOCKED"
+      ],
+      "reason": "no_surface; turn on notifications for this app in system settings"
+    },
+    {
+      "deadEnds": [
+        "BACKGROUND_OVERLAY_SKIPPED"
+      ],
+      "reason": "no_surface; end background mode or open the assistant page to answer"
+    },
+    {
+      "deadEnds": [
+        "QUESTION_CARD_ON_SCREEN"
+      ],
+      "reason": "no_surface; a question card is on screen - answer it first and this can be asked again"
+    },
+    {
+      "deadEnds": [
+        "NOTIFICATIONS_BLOCKED",
+        "BACKGROUND_OVERLAY_SKIPPED"
+      ],
+      "reason": "no_surface; turn on notifications for this app in system settings; end background mode or open the assistant page to answer"
+    },
+    {
+      "deadEnds": [
+        "NOTIFICATIONS_BLOCKED",
+        "QUESTION_CARD_ON_SCREEN"
+      ],
+      "reason": "no_surface; turn on notifications for this app in system settings; a question card is on screen - answer it first and this can be asked again"
+    },
+    {
+      "deadEnds": [
+        "BACKGROUND_OVERLAY_SKIPPED",
+        "QUESTION_CARD_ON_SCREEN"
+      ],
+      "reason": "no_surface; end background mode or open the assistant page to answer; a question card is on screen - answer it first and this can be asked again"
+    },
+    {
+      "deadEnds": [
+        "NOTIFICATIONS_BLOCKED",
+        "BACKGROUND_OVERLAY_SKIPPED",
+        "QUESTION_CARD_ON_SCREEN"
+      ],
+      "reason": "no_surface; turn on notifications for this app in system settings; end background mode or open the assistant page to answer; a question card is on screen - answer it first and this can be asked again"
+    }
+  ],
+  "queue": [
+    {
+      "name": "notification-retry-loop",
+      "inlineWaitMs": 0,
+      "clock": 1000,
+      "env": {
+        "foreground": false,
+        "canNotify": true,
+        "overlay": false
+      },
+      "prompts": {
+        "A": {
+          "cap": "contact.read",
+          "args": "a1",
+          "volatile": false,
+          "session": true,
+          "deadline": 100000
+        },
+        "B": {
+          "cap": "sys.shell",
+          "args": "b1",
+          "volatile": false,
+          "session": false,
+          "deadline": 100000
+        }
+      },
+      "steps": [
+        {
+          "op": "present",
+          "q": "A",
+          "result": "AWAITING",
+          "routing": [
+            [
+              1,
+              "notification",
+              0,
+              []
+            ]
+          ],
+          "reason": null,
+          "revoked": [],
+          "withdrawn": 0
+        },
+        {
+          "op": "present",
+          "q": "A",
+          "result": "AWAITING",
+          "routing": [],
+          "revoked": [],
+          "withdrawn": 0
+        },
+        {
+          "op": "present",
+          "q": "B",
+          "result": "AWAITING",
+          "routing": [],
+          "revoked": [],
+          "withdrawn": 0
+        },
+        {
+          "op": "snapshot",
+          "snapshot": {
+            "displayed": 1,
+            "waiting": 1
+          },
+          "routing": [
+            [
+              1,
+              "notification",
+              1,
+              []
+            ]
+          ],
+          "revoked": [],
+          "withdrawn": 0
+        },
+        {
+          "op": "resolve",
+          "choice": "ALLOW_SESSION",
+          "id": 1,
+          "result": true,
+          "revoked": [
+            1
+          ],
+          "routing": [
+            [
+              2,
+              "notification",
+              0,
+              []
+            ]
+          ],
+          "withdrawn": 0
+        },
+        {
+          "op": "present",
+          "q": "A",
+          "result": "AWAITING",
+          "routing": [],
+          "revoked": [],
+          "withdrawn": 0
+        },
+        {
+          "op": "resolve",
+          "choice": "DENY",
+          "id": 1,
+          "result": false,
+          "routing": [],
+          "revoked": [],
+          "withdrawn": 0
+        },
+        {
+          "op": "resolve",
+          "choice": "ALLOW_ONCE",
+          "id": null,
+          "result": true,
+          "revoked": [
+            2
+          ],
+          "routing": [
+            [
+              3,
+              "notification",
+              0,
+              []
+            ]
+          ],
+          "withdrawn": 0
+        },
+        {
+          "op": "present",
+          "q": "A",
+          "result": "AWAITING",
+          "routing": [],
+          "revoked": [],
+          "withdrawn": 0
+        },
+        {
+          "op": "snapshot",
+          "snapshot": {
+            "displayed": 3,
+            "waiting": 0
+          },
+          "routing": [],
+          "revoked": [],
+          "withdrawn": 0
+        }
+      ]
+    },
+    {
+      "name": "late-answers",
+      "inlineWaitMs": 0,
+      "clock": 1000,
+      "env": {
+        "foreground": false,
+        "canNotify": true,
+        "overlay": true,
+        "overlayCanShow": false
+      },
+      "prompts": {
+        "D": {
+          "cap": "app.launch",
+          "args": "d1",
+          "volatile": false,
+          "session": true,
+          "deadline": 100000
+        },
+        "F": {
+          "cap": "sys.shell",
+          "args": "f1",
+          "volatile": false,
+          "session": false,
+          "deadline": 50000
+        },
+        "C": {
+          "cap": "ui.click",
+          "args": "c1",
+          "volatile": true,
+          "session": true,
+          "deadline": 100000
+        },
+        "G": {
+          "cap": "ui.tap",
+          "args": "g1",
+          "volatile": true,
+          "session": false,
+          "deadline": 100000
+        },
+        "K": {
+          "cap": "contact.read",
+          "args": "k1",
+          "volatile": false,
+          "session": true,
+          "deadline": 100000
+        }
+      },
+      "steps": [
+        {
+          "op": "present",
+          "q": "D",
+          "result": "AWAITING",
+          "routing": [
+            [
+              1,
+              "notification",
+              0,
+              []
+            ]
+          ],
+          "revoked": [],
+          "withdrawn": 0
+        },
+        {
+          "op": "parked",
+          "q": "D",
+          "choice": "ALLOW_SESSION",
+          "routing": [],
+          "revoked": [],
+          "withdrawn": 0
+        },
+        {
+          "op": "present",
+          "q": "D",
+          "result": "ALLOW_SESSION",
+          "routing": [],
+          "revoked": [],
+          "withdrawn": 0
+        },
+        {
+          "op": "snapshot",
+          "snapshot": {
+            "displayed": 1,
+            "waiting": 0
+          },
+          "routing": [],
+          "revoked": [],
+          "withdrawn": 0
+        },
+        {
+          "op": "parked",
+          "q": "F",
+          "choice": "ALLOW_SESSION",
+          "routing": [],
+          "revoked": [],
+          "withdrawn": 0
+        },
+        {
+          "op": "present",
+          "q": "F",
+          "result": "ALLOW_ONCE",
+          "routing": [],
+          "revoked": [],
+          "withdrawn": 0
+        },
+        {
+          "op": "parked",
+          "q": "C",
+          "choice": "ALLOW_ONCE",
+          "routing": [],
+          "revoked": [],
+          "withdrawn": 0
+        },
+        {
+          "op": "present",
+          "q": "C",
+          "result": "AWAITING",
+          "routing": [],
+          "revoked": [],
+          "withdrawn": 0
+        },
+        {
+          "op": "parked",
+          "q": "G",
+          "choice": "DENY",
+          "routing": [],
+          "revoked": [],
+          "withdrawn": 0
+        },
+        {
+          "op": "present",
+          "q": "G",
+          "result": "EXPIRED",
+          "routing": [],
+          "revoked": [],
+          "withdrawn": 0
+        },
+        {
+          "op": "parked",
+          "q": "F",
+          "choice": "DENY",
+          "routing": [],
+          "revoked": [],
+          "withdrawn": 0
+        },
+        {
+          "op": "present",
+          "q": "K",
+          "result": "AWAITING",
+          "routing": [],
+          "revoked": [],
+          "withdrawn": 0
+        },
+        {
+          "op": "present",
+          "q": "F",
+          "result": "DENY",
+          "routing": [],
+          "revoked": [],
+          "withdrawn": 0
+        },
+        {
+          "op": "parked",
+          "q": "F",
+          "choice": "ALLOW_ONCE",
+          "routing": [],
+          "revoked": [],
+          "withdrawn": 0
+        },
+        {
+          "op": "parked",
+          "q": "F",
+          "choice": "UNABLE_TO_SHOW",
+          "routing": [],
+          "revoked": [],
+          "withdrawn": 0
+        },
+        {
+          "op": "clock",
+          "advance": 50000,
+          "routing": [],
+          "revoked": [],
+          "withdrawn": 0
+        },
+        {
+          "op": "present",
+          "q": "F",
+          "result": "WAITING_TURN",
+          "routing": [],
+          "revoked": [],
+          "withdrawn": 0
+        },
+        {
+          "op": "snapshot",
+          "snapshot": {
+            "displayed": 1,
+            "waiting": 2
+          },
+          "routing": [
+            [
+              1,
+              "notification",
+              2,
+              []
+            ]
+          ],
+          "revoked": [],
+          "withdrawn": 0
+        },
+        {
+          "op": "clock",
+          "advance": 49000,
+          "routing": [],
+          "revoked": [],
+          "withdrawn": 0
+        },
+        {
+          "op": "snapshot",
+          "snapshot": {
+            "displayed": null,
+            "waiting": 0
+          },
+          "revoked": [
+            1
+          ],
+          "routing": [
+            [
+              null,
+              "none",
+              0,
+              []
+            ]
+          ],
+          "withdrawn": 0
+        },
+        {
+          "op": "resolve",
+          "choice": "ALLOW_ONCE",
+          "id": null,
+          "result": false,
+          "routing": [],
+          "revoked": [],
+          "withdrawn": 0
+        },
+        {
+          "op": "expire",
+          "id": 1,
+          "result": false,
+          "routing": [],
+          "revoked": [],
+          "withdrawn": 0
+        }
+      ]
+    },
+    {
+      "name": "inline-answers",
+      "inlineWaitMs": 60000,
+      "clock": 1000,
+      "env": {
+        "foreground": true,
+        "canNotify": false,
+        "overlay": true,
+        "overlayCanShow": false
+      },
+      "prompts": {
+        "A": {
+          "cap": "contact.read",
+          "args": "a",
+          "volatile": false,
+          "session": true,
+          "deadline": 100000
+        },
+        "B": {
+          "cap": "sys.shell",
+          "args": "b",
+          "volatile": false,
+          "session": false,
+          "deadline": 100000
+        },
+        "C": {
+          "cap": "clip.write",
+          "args": "c",
+          "volatile": false,
+          "session": true,
+          "deadline": 100000
+        },
+        "E": {
+          "cap": "app.stop",
+          "args": "e",
+          "volatile": false,
+          "session": true,
+          "deadline": 100000
+        }
+      },
+      "steps": [
+        {
+          "op": "start",
+          "q": "A",
+          "slot": "t1",
+          "routing": [
+            [
+              1,
+              "page",
+              0,
+              []
+            ]
+          ],
+          "revoked": [],
+          "withdrawn": 0
+        },
+        {
+          "op": "start",
+          "q": "B",
+          "slot": "t2",
+          "routing": [],
+          "revoked": [],
+          "withdrawn": 0
+        },
+        {
+          "op": "start",
+          "q": "C",
+          "slot": "t3",
+          "routing": [],
+          "revoked": [],
+          "withdrawn": 0
+        },
+        {
+          "op": "present",
+          "q": "E",
+          "result": "WAITING_TURN",
+          "routing": [],
+          "revoked": [],
+          "withdrawn": 0
+        },
+        {
+          "op": "resolve",
+          "choice": "ALLOW_SESSION",
+          "id": 2,
+          "result": false,
+          "routing": [],
+          "revoked": [],
+          "withdrawn": 0
+        },
+        {
+          "op": "resolve",
+          "choice": "ALLOW_SESSION",
+          "id": null,
+          "result": true,
+          "revoked": [
+            1
+          ],
+          "routing": [
+            [
+              2,
+              "page",
+              1,
+              []
+            ]
+          ],
+          "withdrawn": 0
+        },
+        {
+          "op": "await",
+          "slot": "t1",
+          "result": "ALLOW_SESSION",
+          "routing": [],
+          "revoked": [],
+          "withdrawn": 0
+        },
+        {
+          "op": "resolve",
+          "choice": "ALLOW_SESSION",
+          "id": null,
+          "result": true,
+          "revoked": [
+            2
+          ],
+          "routing": [
+            [
+              3,
+              "page",
+              0,
+              []
+            ]
+          ],
+          "withdrawn": 0
+        },
+        {
+          "op": "await",
+          "slot": "t2",
+          "result": "ALLOW_ONCE",
+          "routing": [],
+          "revoked": [],
+          "withdrawn": 0
+        },
+        {
+          "op": "parked",
+          "q": "C",
+          "choice": "DENY",
+          "revoked": [
+            3
+          ],
+          "routing": [
+            [
+              null,
+              "none",
+              0,
+              [
+                "NOTIFICATIONS_BLOCKED"
+              ]
+            ]
+          ],
+          "reason": null,
+          "withdrawn": 0
+        },
+        {
+          "op": "await",
+          "slot": "t3",
+          "result": "DENY",
+          "routing": [],
+          "revoked": [],
+          "withdrawn": 0
+        },
+        {
+          "op": "start",
+          "q": "A",
+          "slot": "t5",
+          "routing": [
+            [
+              5,
+              "page",
+              0,
+              []
+            ]
+          ],
+          "revoked": [],
+          "withdrawn": 0
+        },
+        {
+          "op": "start",
+          "q": "A",
+          "slot": "t6",
+          "routing": [],
+          "revoked": [],
+          "withdrawn": 0
+        },
+        {
+          "op": "cancelAll",
+          "revoked": [
+            5
+          ],
+          "routing": [
+            [
+              null,
+              "none",
+              0,
+              [
+                "NOTIFICATIONS_BLOCKED"
+              ]
+            ]
+          ],
+          "withdrawn": 0
+        },
+        {
+          "op": "await",
+          "slot": "t5",
+          "result": "DENY",
+          "routing": [],
+          "revoked": [],
+          "withdrawn": 0
+        },
+        {
+          "op": "await",
+          "slot": "t6",
+          "result": "DENY",
+          "routing": [],
+          "revoked": [],
+          "withdrawn": 0
+        },
+        {
+          "op": "start",
+          "q": "B",
+          "slot": "t7",
+          "routing": [
+            [
+              6,
+              "page",
+              0,
+              []
+            ]
+          ],
+          "revoked": [],
+          "withdrawn": 0
+        },
+        {
+          "op": "env",
+          "set": {
+            "foreground": false
+          },
+          "routing": [],
+          "revoked": [],
+          "withdrawn": 0
+        },
+        {
+          "op": "reroute",
+          "routing": [
+            [
+              6,
+              "none",
+              0,
+              [
+                "NOTIFICATIONS_BLOCKED"
+              ]
+            ]
+          ],
+          "reason": "no_surface; turn on notifications for this app in system settings",
+          "revoked": [],
+          "withdrawn": 0
+        },
+        {
+          "op": "reroute",
+          "routing": [],
+          "revoked": [],
+          "withdrawn": 0
+        },
+        {
+          "op": "expire",
+          "id": 6,
+          "result": true,
+          "revoked": [
+            6
+          ],
+          "routing": [
+            [
+              null,
+              "none",
+              0,
+              [
+                "NOTIFICATIONS_BLOCKED"
+              ]
+            ]
+          ],
+          "reason": null,
+          "withdrawn": 0
+        },
+        {
+          "op": "await",
+          "slot": "t7",
+          "result": "EXPIRED",
+          "routing": [],
+          "revoked": [],
+          "withdrawn": 0
+        },
+        {
+          "op": "present",
+          "q": "C",
+          "result": "UNABLE_TO_SHOW",
+          "reason": "no_surface; turn on notifications for this app in system settings",
+          "routing": [],
+          "revoked": [],
+          "withdrawn": 0
+        }
+      ]
+    },
+    {
+      "name": "overlay-routing",
+      "inlineWaitMs": 0,
+      "clock": 1000,
+      "env": {
+        "foreground": false,
+        "canNotify": true,
+        "overlay": true,
+        "overlayCanShow": true
+      },
+      "prompts": {
+        "A": {
+          "cap": "contact.read",
+          "args": "a",
+          "volatile": false,
+          "session": true,
+          "deadline": 100000
+        },
+        "B": {
+          "cap": "sys.shell",
+          "args": "b",
+          "volatile": false,
+          "session": false,
+          "deadline": 100000
+        }
+      },
+      "steps": [
+        {
+          "op": "overlayScript",
+          "results": [
+            "UNABLE_TO_SHOW"
+          ],
+          "routing": [],
+          "revoked": [],
+          "withdrawn": 0
+        },
+        {
+          "op": "present",
+          "q": "A",
+          "result": "AWAITING",
+          "routing": [
+            [
+              1,
+              "overlay",
+              0,
+              []
+            ],
+            [
+              1,
+              "notification",
+              0,
+              []
+            ]
+          ],
+          "withdrawn": 1,
+          "revoked": []
+        },
+        {
+          "op": "present",
+          "q": "A",
+          "result": "AWAITING",
+          "routing": [],
+          "revoked": [],
+          "withdrawn": 0
+        },
+        {
+          "op": "resolve",
+          "choice": "DENY",
+          "id": null,
+          "result": true,
+          "revoked": [
+            1
+          ],
+          "routing": [
+            [
+              null,
+              "none",
+              0,
+              []
+            ]
+          ],
+          "withdrawn": 0
+        },
+        {
+          "op": "overlayScript",
+          "results": [
+            "AWAITING",
+            "AWAITING"
+          ],
+          "routing": [],
+          "revoked": [],
+          "withdrawn": 0
+        },
+        {
+          "op": "present",
+          "q": "B",
+          "result": "AWAITING",
+          "routing": [
+            [
+              2,
+              "overlay",
+              0,
+              []
+            ]
+          ],
+          "revoked": [],
+          "withdrawn": 0
+        },
+        {
+          "op": "present",
+          "q": "B",
+          "result": "AWAITING",
+          "routing": [],
+          "revoked": [],
+          "withdrawn": 0
+        },
+        {
+          "op": "hidden",
+          "routing": [
+            [
+              2,
+              "notification",
+              0,
+              []
+            ]
+          ],
+          "withdrawn": 2,
+          "revoked": []
+        },
+        {
+          "op": "parked",
+          "q": "B",
+          "choice": "ALLOW_SESSION",
+          "routing": [],
+          "revoked": [],
+          "withdrawn": 0
+        },
+        {
+          "op": "present",
+          "q": "B",
+          "result": "ALLOW_ONCE",
+          "routing": [],
+          "revoked": [],
+          "withdrawn": 0
+        },
+        {
+          "op": "env",
+          "set": {
+            "overlayBlind": true,
+            "canNotify": false
+          },
+          "routing": [],
+          "revoked": [],
+          "withdrawn": 0
+        },
+        {
+          "op": "reroute",
+          "routing": [
+            [
+              2,
+              "none",
+              0,
+              [
+                "BACKGROUND_OVERLAY_SKIPPED",
+                "NOTIFICATIONS_BLOCKED"
+              ]
+            ]
+          ],
+          "reason": "no_surface; turn on notifications for this app in system settings; end background mode or open the assistant page to answer",
+          "revoked": [],
+          "withdrawn": 0
+        },
+        {
+          "op": "present",
+          "q": "A",
+          "result": "UNABLE_TO_SHOW",
+          "reason": "no_surface; turn on notifications for this app in system settings; end background mode or open the assistant page to answer",
+          "routing": [],
+          "revoked": [],
+          "withdrawn": 0
+        },
+        {
+          "op": "env",
+          "set": {
+            "overlayBlind": false,
+            "otherCard": true
+          },
+          "routing": [],
+          "revoked": [],
+          "withdrawn": 0
+        },
+        {
+          "op": "present",
+          "q": "A",
+          "result": "UNABLE_TO_SHOW",
+          "reason": "no_surface; turn on notifications for this app in system settings; a question card is on screen - answer it first and this can be asked again",
+          "routing": [],
+          "revoked": [],
+          "withdrawn": 0
+        },
+        {
+          "op": "resolve",
+          "choice": "ALLOW_ONCE",
+          "id": 2,
+          "result": true,
+          "revoked": [
+            2
+          ],
+          "routing": [
+            [
+              null,
+              "none",
+              0,
+              [
+                "NOTIFICATIONS_BLOCKED",
+                "QUESTION_CARD_ON_SCREEN"
+              ]
+            ]
+          ],
+          "reason": null,
+          "withdrawn": 0
+        },
+        {
+          "op": "env",
+          "set": {
+            "otherCard": false
+          },
+          "routing": [],
+          "revoked": [],
+          "withdrawn": 0
+        },
+        {
+          "op": "overlayScript",
+          "results": [
+            "UNABLE_TO_SHOW"
+          ],
+          "routing": [],
+          "revoked": [],
+          "withdrawn": 0
+        },
+        {
+          "op": "present",
+          "q": "A",
+          "result": "UNABLE_TO_SHOW",
+          "revoked": [
+            3
+          ],
+          "withdrawn": 1,
+          "routing": [
+            [
+              3,
+              "overlay",
+              0,
+              []
+            ],
+            [
+              3,
+              "none",
+              0,
+              [
+                "NOTIFICATIONS_BLOCKED"
+              ]
+            ],
+            [
+              null,
+              "none",
+              0,
+              [
+                "NOTIFICATIONS_BLOCKED"
+              ]
+            ]
+          ],
+          "reason": null
+        },
+        {
+          "op": "env",
+          "set": {
+            "canNotify": true
+          },
+          "routing": [],
+          "revoked": [],
+          "withdrawn": 0
+        },
+        {
+          "op": "overlayScript",
+          "results": [
+            "ALLOW_SESSION"
+          ],
+          "routing": [],
+          "revoked": [],
+          "withdrawn": 0
+        },
+        {
+          "op": "present",
+          "q": "B",
+          "result": "ALLOW_SESSION",
+          "revoked": [
+            4
+          ],
+          "withdrawn": 1,
+          "routing": [
+            [
+              4,
+              "overlay",
+              0,
+              []
+            ],
+            [
+              null,
+              "none",
+              0,
+              []
+            ]
+          ]
+        },
+        {
+          "op": "parked",
+          "q": "A",
+          "choice": "EXPIRED",
+          "routing": [],
+          "revoked": [],
+          "withdrawn": 0
+        },
+        {
+          "op": "snapshot",
+          "snapshot": {
+            "displayed": null,
+            "waiting": 0
+          },
+          "routing": [],
+          "revoked": [],
+          "withdrawn": 0
+        }
+      ]
+    },
+    {
+      "name": "expiry-and-promotion",
+      "inlineWaitMs": 0,
+      "clock": 1000,
+      "env": {
+        "foreground": true,
+        "canNotify": false,
+        "overlay": false
+      },
+      "prompts": {
+        "A": {
+          "cap": "contact.read",
+          "args": "a",
+          "volatile": false,
+          "session": true,
+          "deadline": 5000
+        },
+        "B": {
+          "cap": "contact.read",
+          "args": "b",
+          "volatile": false,
+          "session": true,
+          "deadline": 3000
+        },
+        "C": {
+          "cap": "contact.read",
+          "args": "c",
+          "volatile": false,
+          "session": true,
+          "deadline": 100000
+        },
+        "D": {
+          "cap": "contact.read",
+          "args": "d",
+          "volatile": false,
+          "session": true,
+          "deadline": 100000
+        }
+      },
+      "steps": [
+        {
+          "op": "present",
+          "q": "A",
+          "result": "AWAITING",
+          "routing": [
+            [
+              1,
+              "page",
+              0,
+              []
+            ]
+          ],
+          "revoked": [],
+          "withdrawn": 0
+        },
+        {
+          "op": "present",
+          "q": "B",
+          "result": "AWAITING",
+          "routing": [],
+          "revoked": [],
+          "withdrawn": 0
+        },
+        {
+          "op": "present",
+          "q": "C",
+          "result": "AWAITING",
+          "routing": [],
+          "revoked": [],
+          "withdrawn": 0
+        },
+        {
+          "op": "clock",
+          "advance": 2500,
+          "routing": [],
+          "revoked": [],
+          "withdrawn": 0
+        },
+        {
+          "op": "snapshot",
+          "snapshot": {
+            "displayed": 1,
+            "waiting": 1
+          },
+          "routing": [
+            [
+              1,
+              "page",
+              1,
+              []
+            ]
+          ],
+          "revoked": [],
+          "withdrawn": 0
+        },
+        {
+          "op": "clock",
+          "advance": 1500,
+          "routing": [],
+          "revoked": [],
+          "withdrawn": 0
+        },
+        {
+          "op": "present",
+          "q": "D",
+          "result": "AWAITING",
+          "revoked": [
+            1
+          ],
+          "routing": [
+            [
+              3,
+              "page",
+              1,
+              []
+            ]
+          ],
+          "withdrawn": 0
+        },
+        {
+          "op": "snapshot",
+          "snapshot": {
+            "displayed": 3,
+            "waiting": 1
+          },
+          "routing": [],
+          "revoked": [],
+          "withdrawn": 0
+        },
+        {
+          "op": "present",
+          "q": "A",
+          "result": "AWAITING",
+          "routing": [],
+          "revoked": [],
+          "withdrawn": 0
+        },
+        {
+          "op": "snapshot",
+          "snapshot": {
+            "displayed": 3,
+            "waiting": 1
+          },
+          "routing": [],
+          "revoked": [],
+          "withdrawn": 0
+        },
+        {
+          "op": "expire",
+          "id": 4,
+          "result": false,
+          "routing": [],
+          "revoked": [],
+          "withdrawn": 0
+        },
+        {
+          "op": "expire",
+          "id": 3,
+          "result": true,
+          "revoked": [
+            3
+          ],
+          "routing": [
+            [
+              4,
+              "page",
+              0,
+              []
+            ]
+          ],
+          "withdrawn": 0
+        },
+        {
+          "op": "snapshot",
+          "snapshot": {
+            "displayed": 4,
+            "waiting": 0
+          },
+          "routing": [],
+          "revoked": [],
+          "withdrawn": 0
+        }
+      ]
+    }
+  ]
+}
