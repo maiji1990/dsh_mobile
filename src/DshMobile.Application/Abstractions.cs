@@ -88,6 +88,13 @@ public sealed class MigrationOptions
     /// </summary>
     public SliceMode RelayGate { get; set; } = SliceMode.LegacyWithShadow;
 
+    /// <summary>
+    /// PR-07 segment 7 (accessibility read path: ui.snapshot / ui.node): a developer-run shadow sends read calls through
+    /// the normal approval and compares the legacy Relay's data with the C# reader on the same live tree. Reading,
+    /// every write and the service stay legacy.
+    /// </summary>
+    public SliceMode RelayA11yRead { get; set; } = SliceMode.LegacyWithShadow;
+
     /// <summary>Host-path probe for the extractor; null = the real filesystem (the right choice on a device).</summary>
     public Func<string, bool>? HostPathExists { get; set; }
 }

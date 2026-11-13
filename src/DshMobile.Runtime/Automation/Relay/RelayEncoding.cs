@@ -78,7 +78,17 @@ public static class RelayEncoding
     }
 
     /// <summary>
-    /// Upstream <c>EnvelopeCodec.encodeControl</c>: <c>{"v":2,"id":…,"op":…,"ok":…,…payload}</c>; payload values are
+    /// A backend's <c>data</c> object as libcore's <c>JSONObject.toString()</c> writes it inside the response
+    /// (insertion order, <c>\/</c> escaping, Java number formatting).
+    /// </summary>
+    public static string EncodeData(System.Text.Json.Nodes.JsonObject data)
+    {
+        ArgumentNullException.ThrowIfNull(data);
+        return LibcoreJson.Serialize(System.Text.Json.JsonSerializer.SerializeToElement(data));
+    }
+
+    /// <summary>
+    /// Upstream <c>EnvelopeCodec.encodeControl</c>:<c>{"v":2,"id":…,"op":…,"ok":…,…payload}</c>; payload values are
     /// strings, booleans, integers or raw JSON elements, in the order given.
     /// </summary>
     public static string EncodeControl(string id, string op, bool ok, IEnumerable<KeyValuePair<string, object?>>? payload = null)

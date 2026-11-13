@@ -140,8 +140,16 @@ public sealed class RelayGateShadowTests : IDisposable
                 {
                     continue;
                 }
-                var text = File.ReadAllText(f);
-                File.Delete(f);
+                string text;
+                try
+                {
+                    text = File.ReadAllText(f);
+                    File.Delete(f);
+                }
+                catch (IOException)
+                {
+                    continue; // briefly locked (e.g. being scanned): picked up on the next poll
+                }
                 var request = Assert.IsType<RelayDecodeResult.Valid>(RelayEnvelope.DecodeRequest(text, name)).Request;
                 Assert.Equal(RelayGateShadowCheck.ProbeTtlMs, request.TimeoutMs);
                 if (answer(request) is { } reply)

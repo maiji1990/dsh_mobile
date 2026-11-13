@@ -554,6 +554,34 @@ public sealed class RuntimeCoordinator : IDisposable
         return report;
     }
 
+    /// <summary>
+    /// PR-07 segment 7 shadow (developer action, needs a running relay and the user's approval of each read capability):
+    /// legacy <c>ui.snapshot</c> / <c>ui.node</c> answers against the C# reader on the same live tree, byte for byte.
+    /// <paramref name="hostTree"/> reads the foreground tree in this process (null when the service is not connected).
+    /// Null when not in shadow mode.
+    /// </summary>
+    public async Task<ShadowReport?> ShadowRelayA11yReadAsync(Func<DshMobile.Runtime.Automation.Relay.A11y.A11yTree?> hostTree, TimeSpan timeout,
+        CancellationToken ct)
+    {
+        if (_options.RelayA11yRead != SliceMode.LegacyWithShadow || _layout is null)
+        {
+            return null;
+        }
+        ShadowReport report;
+        try
+        {
+            report = await RelayA11yReadShadowCheck.RunAsync(_layout.PilotEntryDir, hostTree, _time, timeout, ct).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            report = new ShadowReport(RelayA11yReadShadowCheck.Slice, _time.GetUtcNow(), ShadowVerdict.Inconclusive, false, null, true,
+                ex.GetType().Name, $"check could not use the mailbox: {ex.Message}", 0);
+        }
+        _shadow.Report(report);
+        _log.Note($"shadow {report.Slice}: {report.Verdict} ({report.Detail})");
+        return report;
+    }
+
     private string? ReadCapabilities()
     {
         var path = Path.Combine(_layout!.PilotEntryDir, "capabilities.json");
