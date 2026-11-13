@@ -55,6 +55,9 @@ public sealed class AutomationActivity : Activity
         // PR-07 segment 2 shadow, developer action: only always-rejected requests, never anything that reaches approval.
         var probe = Make(Resource.String.automation_envelope_probe, () => _ = EnvelopeProbeAsync());
         root.AddView(probe);
+        // PR-07 segment 7 shadow, developer action: only ui.snapshot / ui.node, each through the normal approval.
+        var a11yRead = Make(Resource.String.automation_a11y_read_probe, () => _ = A11yReadProbeAsync());
+        root.AddView(a11yRead);
         // PR-07 segment 4, developer action: Relay's own stored surface preference (the setting upstream's UI writes),
         // so the fallback path of the surface shadow can be checked. It never grants anything: without Shizuku and a
         // trusted display, "background preferred" falls back to the foreground and Relay says so.
@@ -63,7 +66,7 @@ public sealed class AutomationActivity : Activity
         _surfacePref.Click += (_, _) => ToggleSurfacePreference();
         ShowSurfacePreference();
         root.AddView(_surfacePref);
-        _buttons = [start, stop, selftest, shizuku, probe, _surfacePref];
+        _buttons = [start, stop, selftest, shizuku, probe, a11yRead, _surfacePref];
 
         _output = new TextView(this) { TextSize = 11 };
         _output.SetTextIsSelectable(true);
@@ -277,11 +280,43 @@ public sealed class AutomationActivity : Activity
             : string.Join("\n\n", reports.OfType<ShadowReport>().Select(r => $"{r.Slice}: {r.Verdict}\n{r.Detail}"));
     }
 
+    private async Task A11yReadProbeAsync()
+    {
+        // The user leaves this page to answer the cards; coming back refreshes the status, which must not re-enable
+        // the buttons (a second tap would start an overlapping check) until this one has finished.
+        _longProbe = true;
+        Enable(false);
+        _output.Text = GetString(Resource.String.automation_a11y_read_probe_running);
+        var runtime = _bridge.Runtime;
+        var context = ApplicationContext!;
+        try
+        {
+            var report = await Task.Run(() => runtime.ShadowRelayA11yReadAsync(() => RelayA11yTreeSource.HostTree(context),
+                TimeSpan.FromMinutes(3), CancellationToken.None));
+            _output.Text = report is null
+                ? GetString(Resource.String.automation_envelope_probe_off)
+                : $"{report.Slice}: {report.Verdict}\n{report.Detail}";
+        }
+        catch (Exception ex)
+        {
+            // Never leave the page stuck with every button disabled: say what failed.
+            Android.Util.Log.Error("DshMobile", $"a11y read probe failed: {ex}");
+            _output.Text = $"automation.relay-a11y-read: {ex.GetType().Name}: {ex.Message}";
+        }
+        finally
+        {
+            _longProbe = false;
+            Enable(true);
+        }
+    }
+
+    private bool _longProbe;
+
     private void Enable(bool on)
     {
         foreach (var b in _buttons)
         {
-            b.Enabled = on;
+            b.Enabled = on && !_longProbe;
         }
     }
 }

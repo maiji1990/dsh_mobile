@@ -41,8 +41,16 @@ public sealed class RelayAdmissionProbeTests : IDisposable
                 {
                     continue;
                 }
-                var text = File.ReadAllText(f);
-                File.Delete(f);
+                string text;
+                try
+                {
+                    text = File.ReadAllText(f);
+                    File.Delete(f);
+                }
+                catch (IOException)
+                {
+                    continue; // briefly locked (e.g. being scanned): picked up on the next poll
+                }
                 var request = Assert.IsType<RelayDecodeResult.Valid>(RelayEnvelope.DecodeRequest(text, name)).Request;
                 if (answer(request.Id, request) is { } reply)
                 {
