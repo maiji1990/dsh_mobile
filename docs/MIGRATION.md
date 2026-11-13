@@ -64,7 +64,7 @@ MainActivity ─▶ BridgeHost ─▶ RuntimeCoordinator (C#, 状态机 + journa
 | PR-01 | ADR-0007、AGENTS.md、`DshMobile.Native/Runtime/Application` 接口 + DI + 单测 | 已合并（#1）；Release（full trim）真机运行通过 |
 | PR-02 | Runtime：Versions/Constants → RuntimeManifest/层校验 → 层解包（均为影子） | 校验段已合并（#1），解包段已合并（#3）；两段真机影子均 `Agree`；换层 / 回滚未开始 |
 | PR-06 | 终端：C# PTY 后端（`libdshmobile_native` + `ProotPtySession`）+ 终端 argv 影子 | 第一段 maiji1990/dsh_mobile#13（含 CI 修复，CI 通过）：真机 PTY 自检 PASS ×3、终端 argv 影子 Agree。第二段 maiji1990/dsh_mobile#14（C# 多会话终端界面，开发者可选）：真机主要路径通过 |
-| PR-07 | 手机操控：`ui_*` 工具注册与状态（第一段）→ Relay 信封解码（第二段）→ 审批前准入 + 回包编码（第三段）→ 执行面裁决 + 执行配额（第四段）→ 审批闸门判定（第五段）→ 确认框 + 写操作开放（第六段，ADR-0008）→ 无障碍读取路径（第七段）→ 执行层其余 | 第一至五段已合并（maiji1990/dsh_mobile#16、maiji1990/dsh_mobile#17；第三、四段随 maiji1990/dsh_mobile#19 进入 main；第五段 maiji1990/dsh_mobile#20）；第六段 maiji1990/dsh_mobile#21 待合并，真机已验防自批、允许 → 执行与影子：确认框 / 无障碍纯逻辑 / 存储 / 信箱 / 控制通道的 C# 移植（向量新旧双绿），审批一次性令牌 + 应用内确认页（安全修复），能力表全开、清单不裁剪、`ui_*` 写工具、连接 Shizuku；第七段本地完成、真机 5/5 逐字节一致：`ui.snapshot` / `ui.node` 读取路径的 C# 移植与活体影子；无障碍写路径、其余后端、协调器 / 容器未开始 |
+| PR-07 | 手机操控：`ui_*` 工具注册与状态（第一段）→ Relay 信封解码（第二段）→ 审批前准入 + 回包编码（第三段）→ 执行面裁决 + 执行配额（第四段）→ 审批闸门判定（第五段）→ 确认框 + 写操作开放（第六段，ADR-0008）→ 无障碍读取路径（第七段）→ 执行层其余 | 第一至六段已合并（maiji1990/dsh_mobile#16、maiji1990/dsh_mobile#17；第三、四段随 maiji1990/dsh_mobile#19 进入 main；第五段 maiji1990/dsh_mobile#20；第六段 maiji1990/dsh_mobile#21），第六段真机已验防自批、允许 → 执行与影子：确认框 / 无障碍纯逻辑 / 存储 / 信箱 / 控制通道的 C# 移植（向量新旧双绿），审批一次性令牌 + 应用内确认页（安全修复），能力表全开、清单不裁剪、`ui_*` 写工具、连接 Shizuku；第七段本地完成、真机 5/5 逐字节一致：`ui.snapshot` / `ui.node` 读取路径的 C# 移植与活体影子；无障碍写路径、其余后端、协调器 / 容器未开始 |
 | PR-03 … PR-11（其余） | 见迁移方案第 6 节与切片总表 | 见各切片行 |
 
 ## 4. 已修复的现有缺陷（迁移方案第 7 节）
