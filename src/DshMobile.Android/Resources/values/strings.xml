@@ -25,7 +25,7 @@
     <string name="action_plugins">插件</string>
     <string name="action_automation">手机操控（实验）</string>
     <string name="automation_title">手机操控（实验）</string>
-    <string name="automation_explain">让沙箱内的 DSH 通过 ui_* 工具读取手机界面。当前只开放只读能力（ui.snapshot / ui.node），不会点击或输入。需要你在系统「无障碍」设置中手动开启 DSH Mobile 的服务；App 不会替你开启。默认关闭，停止沙箱时自动关闭。</string>
+    <string name="automation_explain">让沙箱内的 DSH 通过 ui_* 工具读取和操作手机界面（点击、输入、滑动、按键、截图）。每一次写操作都要你在通知里点“允许”，并在随后打开的 DSH Mobile 确认页上再按一次；确认页显示期间 Agent 的点击会被暂停。无障碍服务和 Shizuku 授权都需要你本人在系统 / Shizuku 里开启，App 不会替你开启。默认关闭，停止沙箱时自动关闭。</string>
     <string name="automation_start">开启中继</string>
     <string name="automation_stop">关闭中继</string>
     <string name="automation_a11y_settings">打开无障碍设置</string>
@@ -143,4 +143,18 @@
     <string name="files_exported">已导出</string>
     <string name="fgs_channel">运行环境</string>
     <string name="fgs_text">Linux 沙箱与 DSH 正在运行</string>
+    <string name="relay_approval_channel">手机操控审批</string>
+    <string name="relay_approval_allow_once">允许一次</string>
+    <string name="relay_approval_allow_session">本次会话允许</string>
+    <string name="relay_approval_deny">拒绝</string>
+    <string name="relay_approval_confirm_title">确认手机操控请求</string>
+    <string name="relay_approval_confirm_hint">此页面显示期间，Agent 的点击、滑动与按键会被暂停，只有你本人能按下允许。</string>
+    <string name="relay_approval_cancel">取消</string>
+    <string name="automation_shizuku_connect">连接 Shizuku</string>
+    <string name="automation_shizuku_requested">已请求 Shizuku 授权：请在 Shizuku 弹出的对话框里确认（由你本人决定）。返回本页后状态会刷新。</string>
+    <string name="automation_shizuku_granted">Shizuku：已授权（v%1$s，以 %2$s 身份运行）</string>
+    <string name="automation_shizuku_not_granted">Shizuku：运行中，未授权（点“连接 Shizuku”）</string>
+    <string name="automation_shizuku_denied">Shizuku：已被永久拒绝，系统不会再弹窗；请在 Shizuku 应用的授权列表里手动允许 DSH Mobile</string>
+    <string name="automation_shizuku_unsupported">Shizuku：服务端版本过旧（v11 以前），不支持</string>
+    <string name="automation_shizuku_not_running">Shizuku：未运行或未安装（本应用不会替你启动它）</string>
 </resources>

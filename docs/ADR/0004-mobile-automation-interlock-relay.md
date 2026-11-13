@@ -2,6 +2,7 @@
 
 - 状态：已接受（2026-11-10，用户选择「复用 Interlock Relay」）
 - 修订（2026-11-10）：其中“复用 DSHBox / Kotlin 实现”的部分按 [ADR-0007](0007-source-ownership-csharp-first.md) 降级为过渡实现，将逐切片替换为 C#；本 ADR 的安全与契约约束（审批、单一 `ui_*` / `browser_*` 契约、主机指纹固定、不可导出私钥）继续有效，替换实现必须同样满足。
+- 修订（2026-11-12）：第 2 条（只读白名单）、第 3 条（清单裁剪）由 [ADR-0008](0008-open-mobile-automation-writes.md) 取代；第 8 条的前置条件由 ADR-0008 的一次性令牌 + 应用内确认页满足，写操作已开放。
 - 来源：方案第 9 节；`maiji1990/ui_mcp` 的 `docs/p2-phone-facade-design.md`
 - 关联任务：TASK-010
 

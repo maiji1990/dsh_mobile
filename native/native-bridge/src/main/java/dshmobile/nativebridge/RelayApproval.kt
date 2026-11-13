@@ -5,9 +5,13 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.BroadcastReceiver
+import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.util.Log
+import java.security.MessageDigest
+import java.security.SecureRandom
+import java.util.concurrent.ConcurrentHashMap
 import interlock.relay.core.interlock.InterlockChoice
 import interlock.relay.core.interlock.InterlockQueue
 import interlock.relay.core.interlock.OverlayApprovalChannel
@@ -71,48 +75,110 @@ private class ApprovalNotifications(private val context: Context) : RelayApprova
         val open = context.packageManager.getLaunchIntentForPackage(context.packageName)?.let {
             PendingIntent.getActivity(context, request.id, it, PendingIntent.FLAG_IMMUTABLE)
         }
-        val text = "DSH 请求执行 $capability" + if (waitingCount > 0) "（另有 $waitingCount 个请求排队）" else ""
+        val headline = "DSH 请求执行 $capability" + if (waitingCount > 0) "（另有 $waitingCount 个请求排队）" else ""
+        // Security fix (ADR-0008): say what is being approved, not only which capability (upstream already
+        // truncates both lines for display). Without it a sys.shell card does not show the command.
+        val text = listOfNotNull(
+            headline,
+            request.prompt.targetLabel?.takeIf { it.isNotBlank() }?.let { "目标：$it" },
+            request.prompt.paramDetail?.takeIf { it.isNotBlank() }?.let { "参数：$it" },
+        ).joinToString(separator = "\n")
+        val token = ApprovalTokens.issue(request.id)
         val notification = Notification.Builder(context, CHANNEL)
             .setSmallIcon(android.R.drawable.ic_dialog_alert)
             .setContentTitle(title)
-            .setContentText(text)
+            .setContentText(headline)
             .setStyle(Notification.BigTextStyle().bigText(text))
             .setCategory(Notification.CATEGORY_CALL)
             .setOngoing(true)
             .setAutoCancel(false)
             .setContentIntent(open)
-            .addAction(Notification.Action.Builder(null, "允许一次", action(request.id, InterlockChoice.ALLOW_ONCE)).build())
-            .addAction(Notification.Action.Builder(null, "本次会话允许", action(request.id, InterlockChoice.ALLOW_SESSION)).build())
-            .addAction(Notification.Action.Builder(null, "拒绝", action(request.id, InterlockChoice.DENY)).build())
+            .addAction(Notification.Action.Builder(null, "允许一次", confirm(request.id, InterlockChoice.ALLOW_ONCE, token, title, text)).build())
+            .addAction(Notification.Action.Builder(null, "本次会话允许", confirm(request.id, InterlockChoice.ALLOW_SESSION, token, title, text)).build())
+            .addAction(Notification.Action.Builder(null, "拒绝", deny(request.id, token)).build())
             .build()
         state = runCatching { nm.notify(TAG, request.id, notification); "POSTED_UNVERIFIED" }.getOrElse { "POST_FAILED" }
     }
 
     override fun cancel() {
         state = "CANCELLED"
+        ApprovalTokens.clear()
         manager?.activeNotifications?.filter { it.tag == TAG }?.forEach { manager.cancel(TAG, it.id) }
     }
 
     override fun cancelFor(requestId: Int) {
+        ApprovalTokens.revoke(requestId)
         manager?.cancel(TAG, requestId)
     }
 
-    private fun action(requestId: Int, choice: InterlockChoice): PendingIntent {
+    /**
+     * Security fix (ADR-0008): an allow opens the host app's in-app confirmation page
+     * (dshmobile.app.RelayApprovalConfirmActivity). The final press happens in our own window, where Relay suspends
+     * host gestures (A11yBackend selfWindowVisible → E_GATE_SUSPENDED_BY_HOST), so the agent cannot tap its own
+     * approval in the notification shade. The page forwards the card's token back to [RelayApprovalReceiver].
+     */
+    private fun confirm(requestId: Int, choice: InterlockChoice, token: String, title: String, text: String): PendingIntent {
+        val intent = Intent()
+            .setComponent(ComponentName(context.packageName, CONFIRM_ACTIVITY))
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            .putExtra(RelayApprovalReceiver.EXTRA_ID, requestId)
+            .putExtra(RelayApprovalReceiver.EXTRA_CHOICE, choice.name)
+            .putExtra(RelayApprovalReceiver.EXTRA_TOKEN, token)
+            .putExtra("title", title)
+            .putExtra("text", text)
+            .putExtra("receiver", "legacy")
+        return PendingIntent.getActivity(context, requestId * 8 + choice.ordinal, intent, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
+    }
+
+    private fun deny(requestId: Int, token: String): PendingIntent {
         val intent = Intent(context, RelayApprovalReceiver::class.java)
             .setAction(RelayApprovalReceiver.ACTION)
             .putExtra(RelayApprovalReceiver.EXTRA_ID, requestId)
-            .putExtra(RelayApprovalReceiver.EXTRA_CHOICE, choice.name)
+            .putExtra(RelayApprovalReceiver.EXTRA_CHOICE, InterlockChoice.DENY.name)
+            .putExtra(RelayApprovalReceiver.EXTRA_TOKEN, token)
         // Distinct request code per (id, choice) so the three PendingIntents don't collapse into one.
-        return PendingIntent.getBroadcast(context, requestId * 8 + choice.ordinal, intent, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
+        return PendingIntent.getBroadcast(context, requestId * 8 + InterlockChoice.DENY.ordinal, intent, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
     }
 }
 
-/** Receives the notification button presses (not exported: only our own PendingIntents can reach it). */
+private const val CONFIRM_ACTIVITY = "dshmobile.app.RelayApprovalConfirmActivity"
+
+/**
+ * Security fix (ADR-0008): one-time 128-bit answer tokens. Guest processes run under this app's UID and can run
+ * /system/bin/am, so "not exported" alone does not keep a forged broadcast out of [RelayApprovalReceiver]; an answer
+ * counts only with the token placed in the card's own PendingIntents, and each token answers once.
+ */
+internal object ApprovalTokens {
+    private val tokens = ConcurrentHashMap<Int, String>()
+    private val random = SecureRandom()
+
+    fun issue(requestId: Int): String = tokens.computeIfAbsent(requestId) {
+        ByteArray(16).also(random::nextBytes).joinToString("") { b -> "%02x".format(b) }
+    }
+
+    fun consume(requestId: Int, token: String?): Boolean {
+        val expected = tokens[requestId] ?: return false
+        if (token == null || !MessageDigest.isEqual(expected.toByteArray(), token.toByteArray())) return false
+        return tokens.remove(requestId, expected)
+    }
+
+    fun revoke(requestId: Int) {
+        tokens.remove(requestId)
+    }
+
+    fun clear() = tokens.clear()
+}
+
+/**
+ * Receives the card's answers (deny directly, allow via the confirmation page). Not exported — but guest processes
+ * share our UID, so an answer also needs the card's one-time token ([ApprovalTokens]).
+ */
 class RelayApprovalReceiver : BroadcastReceiver() {
     companion object {
         const val ACTION = "dshmobile.nativebridge.RELAY_APPROVAL"
         const val EXTRA_ID = "requestId"
         const val EXTRA_CHOICE = "choice"
+        const val EXTRA_TOKEN = "token"
         private val ACCEPTED = setOf(InterlockChoice.ALLOW_ONCE, InterlockChoice.ALLOW_SESSION, InterlockChoice.DENY)
     }
 
@@ -121,6 +187,10 @@ class RelayApprovalReceiver : BroadcastReceiver() {
         val id = intent.getIntExtra(EXTRA_ID, -1)
         val choice = runCatching { InterlockChoice.valueOf(intent.getStringExtra(EXTRA_CHOICE) ?: "") }.getOrNull()
         if (id < 0 || choice == null || choice !in ACCEPTED) return
+        if (!ApprovalTokens.consume(id, intent.getStringExtra(EXTRA_TOKEN))) {
+            Log.w("DshRelayApproval", "request $id: answer without a valid token dropped")
+            return
+        }
         val delivered = RelayRuntime.resolveApproval(choice, id)
         RelayRuntime.dismissApprovalNotification(id)
         context.getSystemService(NotificationManager::class.java)?.cancel("relay-approval", id)

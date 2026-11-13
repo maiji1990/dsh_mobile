@@ -129,14 +129,16 @@ C# `BridgeClient` 在 `deadlineMs + 2s` 内未收到响应时，本地合成 `DE
 ## 2. `ui_*` 统一自动化契约
 
 沿用 `maiji1990/ui_mcp`（契约参考 `e098f91`）。实现：guest MCP stdio 服务
-`native/native-bridge/src/main/guest-assets/dshmobile/ui-facade.mjs`（serverInfo `dshmobile-ui 0.1.0`），
-DSH 中 `serverName: ui`，模型侧工具名 `mcp__ui__<tool>`。设计与取舍见 ADR-0004。
+`native/native-bridge/src/main/guest-assets/dshmobile/ui-facade.mjs`（serverInfo `dshmobile-ui 0.2.0`），
+DSH 中 `serverName: ui`，模型侧工具名 `mcp__ui__<tool>`。设计与取舍见 ADR-0004、ADR-0008。
 
 ### 2.1 约定
 
 - `deviceId` 固定 `android-local`（省略即此设备；其它值 → `TARGET_NOT_FOUND`）；`provider` 为 `android-relay`；`transport` 为 `local-a11y`。
-- V1 只读：只有下表 4 个工具；写工具（`ui_click` / `ui_set_text` / `ui_scroll` / `ui_press_key` …）不列出，调用返回 `ACTION_UNSUPPORTED`。
-- 底层：Relay guest CLI `/opt/pilot/bin/relay call ui.snapshot|ui.node`；每次调用需用户在通知栏审批。
+- 0.2.0（ADR-0008）：下表 10 个工具；契约中的 `ui_list_targets` / `ui_get_capabilities` / `ui_press_element_key` / `ui_focus` 未实现（调用返回 `ACTION_UNSUPPORTED`）；**不提供** `approvalTicket` / `ui_confirm_approval`——审批只能由人在手机上完成。
+- 底层：Relay guest CLI `/opt/pilot/bin/relay call <cap>`；每次调用需用户在通知栏审批，「允许」须在随后打开的 DSH Mobile 确认页上再按一次。
+- 写操作：动作前用 `ui.node` 回读并校验身份（同 §2.3，另可带 `expectedRole` / `expectedName`）；无论成败，之后当前快照的 ref 全部作废（`STALE_ELEMENT`，须重新 `ui_snapshot`）；只在 `E_AWAITING_CONSENT` / `E_GATE_WAITING_TURN`（尚未执行）时重发同一调用；`OPERATION_TIMEOUT` 表示效果未知，不重发。
+- 本 App 窗口在前台（含确认页）时 Relay 拒绝所有写操作：`E_TASK_SUSPENDED_BY_HOST` → `PROVIDER_UNAVAILABLE`。
 - 结果：`content[0].text` 为 JSON，成功时同时给 `structuredContent`；失败为 `isError: true`，正文 `{"error":{code, message, hint, relay?{code, exitCode, retryable}}}`。
 
 ### 2.2 工具
@@ -147,6 +149,12 @@ DSH 中 `serverName: ui`，模型侧工具名 `mcp__ui__<tool>`。设计与取�
 | `ui_snapshot` | `deviceId?`, `mode?: compact\|full`（默认 compact，去掉无文本且不可交互的布局节点）, `maxNodes?: 1..600`（默认 200） | `{snapshotId:"sN", sessionId, target{deviceId, applicationId, windowId:null}, provider, revision, capturedAt, truncated, screen{width,height,densityDpi,display}, totalNodes, elements[]}` |
 | `ui_find` | `snapshotId?`（须为最新）, `role?`, `name?`, `text?`, `clickable?`, `exact?`, `limit?: 1..200` | `{snapshotId, count, matches[]}`；只在内存中过滤，不调 Relay |
 | `ui_get_element` | `snapshotId`, `refId` | `{snapshotId, element}`；经 `ui.node` 实时回读，补 `nativeId` / `enabled` / 原生动作 |
+| `ui_click` | `snapshotId`, `refId`, `expectedRole?`, `expectedName?` | `{snapshotId, refId, action:"click", dispatched:true, verified:false, relay}`；`ui.node` 校验后 `ui.click {nodeId}` |
+| `ui_set_text` | `snapshotId`, `refId`, `text`, `expectedRole?`, `expectedName?` | `{…, action:"set_text", readBack, readBackUnavailable}`；`ui.setValue`；回读不判等（掩码 / 联想会改写） |
+| `ui_press_key` | `key: back\|home\|recents` | `{action:"press_key", key, dispatched:true, relay}`；`ui.key`；其它键 → `ACTION_UNSUPPORTED` |
+| `ui_scroll` | `direction?: up\|down\|left\|right`（默认 down）, `amount?: 1..20`（默认 3）, `snapshotId?`, `refId?` | `{action:"scroll", direction, amount, refId, relay}`；默认取最新快照中面积最大的可滚动容器；down / right → `forward`，up / left → `backward` |
+| `ui_wait_for` | `role?`, `name?`（至少一个）, `absent?`, `timeoutMs?: 0..60000`（默认 10000） | `{snapshotId, absent, satisfied:true, polls, element}`；每秒一次 `ui.snapshot`（每次都过审批，除非本会话允许）；超时 → `OPERATION_TIMEOUT` |
+| `ui_screenshot` | — | `content[0]` 元数据 `{path, bytes, mimeType:"image/png", screen}`，`content[1]` 为 `image`（≤ 8 MiB 时内联）；`screen.capture`；安全窗口 → `SECURE_CONTENT` |
 
 元素：`{ref:"e<nodeId>", provider, role, name(desc ?? text), text, nativeId, bounds{x,y,width,height}|null, visible, actions[], extra{class, nodeId, …}}`。
 快照不含 `enabled`（Relay 快照无此字段，不编造），由 `ui_get_element` 给出。`role` ∈ button / textbox / text / image / checkbox / switch / radio / list / slider / document / group / unknown。
@@ -162,7 +170,9 @@ DSH 中 `serverName: ui`，模型侧工具名 `mcp__ui__<tool>`。设计与取�
 | Relay | ui_* |
 |---|---|
 | `E_AWAITING_CONSENT`、`E_GATE_WAITING_TURN`（门面先重试最长 90 s） | `APPROVAL_REQUIRED` |
-| `E_GATE_HOST_DENIED`、`E_GATE_APPROVAL_TIMEOUT`、`E_GATE_CANCELLED` | `POLICY_DENIED`（不重试） |
+| `E_GATE_HOST_DENIED`、`E_GATE_APPROVAL_TIMEOUT`、`E_GATE_CANCELLED`、`E_NODE_SYSTEM_CONSENT_TARGET`、`E_SURFACE_SYSTEM_CONSENT_REQUIRED` | `POLICY_DENIED`（不重试） |
+| `E_NODE_NOT_ACTIONABLE`、`E_NODE_NO_IME_ACTION` | `ACTION_UNSUPPORTED` |
+| `E_ACTION_REJECTED` | `ACTION_FAILED` |
 | `E_GATE_SYSTEM_MISSING`、`E_GATE_NO_FOREGROUND`、`E_CAPABILITY_UNAVAILABLE_ON_DEVICE`、`E_BACKEND_UNAVAILABLE`、`E_SURFACE_UNAVAILABLE`、`E_TASK_SUSPENDED_BY_HOST`、`E_QUEUE_FULL`、`E_RATE_LIMITED`；CLI 不存在 | `PROVIDER_UNAVAILABLE` |
 | `E_SURFACE_SECURE_WINDOW` | `SECURE_CONTENT` |
 | `E_NODE_NOT_FOUND` | `ELEMENT_NOT_FOUND`（`ui_get_element` 中为 `STALE_ELEMENT`） |

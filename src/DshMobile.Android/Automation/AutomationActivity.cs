@@ -4,6 +4,7 @@ using DshMobile.App.Bridge;
 using DshMobile.Application.Shadow;
 using DshMobile.Core.Bridge;
 using DshMobile.Runtime.Automation.Relay;
+using DshMobile.Runtime.Automation.Relay.Shizuku;
 
 namespace DshMobile.App.Automation;
 
@@ -48,6 +49,9 @@ public sealed class AutomationActivity : Activity
         row2.AddView(settings, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WrapContent, 1f));
         row2.AddView(selftest, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WrapContent, 1f));
         root.AddView(row2);
+        // ADR-0008: asks Shizuku to show its own grant dialog (the user answers it in Shizuku); never starts Shizuku.
+        var shizuku = Make(Resource.String.automation_shizuku_connect, ConnectShizuku);
+        root.AddView(shizuku);
         // PR-07 segment 2 shadow, developer action: only always-rejected requests, never anything that reaches approval.
         var probe = Make(Resource.String.automation_envelope_probe, () => _ = EnvelopeProbeAsync());
         root.AddView(probe);
@@ -59,7 +63,7 @@ public sealed class AutomationActivity : Activity
         _surfacePref.Click += (_, _) => ToggleSurfacePreference();
         ShowSurfacePreference();
         root.AddView(_surfacePref);
-        _buttons = [start, stop, selftest, probe, _surfacePref];
+        _buttons = [start, stop, selftest, shizuku, probe, _surfacePref];
 
         _output = new TextView(this) { TextSize = 11 };
         _output.SetTextIsSelectable(true);
@@ -102,6 +106,7 @@ public sealed class AutomationActivity : Activity
             GetString(s.AccessibilityEnabled ? Resource.String.automation_a11y_on : Resource.String.automation_a11y_off),
             $"允许的能力：{string.Join(", ", s.Allowed)}",
             $"guest CLI：{s.GuestCli}",
+            ShizukuLine(ShizukuClient.Probe()),
             UiToolsLine(s.UiTools));
         _bridge.Note($"{method}: phase={s.Phase} channel={s.ChannelRunning} a11y={s.AccessibilityEnabled}");
         if (s.UiTools is { } tools)
@@ -191,6 +196,23 @@ public sealed class AutomationActivity : Activity
         ShowSurfacePreference();
         _output.Text = GetString(Resource.String.automation_surface_pref_changed, new Java.Lang.String(SurfacePreferenceLabel(next)));
         _bridge.Note($"relay surface preference -> {next.Name()} (developer)");
+    }
+
+    private string ShizukuLine(ShizukuProbe p) => ShizukuConnection.Decide(p) switch
+    {
+        ShizukuConnectState.Granted => GetString(Resource.String.automation_shizuku_granted, new Java.Lang.String(
+            p.Version.ToString(System.Globalization.CultureInfo.InvariantCulture)), new Java.Lang.String(p.Uid == 0 ? "root" : p.Uid == 2000 ? "shell" : p.Uid.ToString(System.Globalization.CultureInfo.InvariantCulture))),
+        ShizukuConnectState.CanRequest => GetString(Resource.String.automation_shizuku_not_granted),
+        ShizukuConnectState.PermanentlyDenied => GetString(Resource.String.automation_shizuku_denied),
+        ShizukuConnectState.Unsupported => GetString(Resource.String.automation_shizuku_unsupported),
+        _ => GetString(Resource.String.automation_shizuku_not_running),
+    };
+
+    private void ConnectShizuku()
+    {
+        var state = ShizukuClient.RequestIfNeeded(out var probe);
+        _output.Text = state == ShizukuConnectState.CanRequest ? GetString(Resource.String.automation_shizuku_requested) : ShizukuLine(probe);
+        _bridge.Note($"shizuku connect: {state} (v{probe.Version}, uid {probe.Uid})");
     }
 
     /// <summary>Says plainly whether DSH has the ui_* tools now; never implies they are live when DSH has not reloaded.</summary>

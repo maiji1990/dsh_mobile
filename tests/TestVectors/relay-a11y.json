@@ -1,0 +1,2691 @@
+{
+ "comment": "PR-07 step 5: DSHBox interlock-relay-core exec/a11y NodeSelector / RelativeGeometry / TrustedNodeTree / staleNodeIdReason and A11yBackend argsError / badArgShape / badCoordinate @7c9d33c1 (GPL-3.0). Trees: k is the node's label, t/d/id/cls/pkg its text / contentDescription / viewId / className / packageName; siblingIndex is the position in children. find expectations are [nodeId, depth, mode]. csharpOnly cases follow Android libcore org.json (key order, JSON null in optString); bounds have no JVM run because android.graphics.Rect is a stub there. generatedTrees: deep = a chain d0..d(n-1) (each node k=t=dI, single child), wide = root wroot with n children k=t=wI; pkg com.app, no other fields.",
+ "trees": {
+  "main": {
+   "k": "root",
+   "pkg": "com.app",
+   "cls": "android.widget.FrameLayout",
+   "children": [
+    {
+     "k": "title",
+     "pkg": "com.app",
+     "t": "Settings",
+     "id": "com.app:id/title",
+     "cls": "android.widget.TextView",
+     "children": []
+    },
+    {
+     "k": "list",
+     "pkg": "com.app",
+     "id": "com.app:id/list",
+     "cls": "androidx.recyclerview.widget.RecyclerView",
+     "children": [
+      {
+       "k": "row0",
+       "pkg": "com.app",
+       "t": "Wi-Fi",
+       "d": "Wi-Fi settings",
+       "cls": "android.widget.LinearLayout",
+       "children": [
+        {
+         "k": "row0text",
+         "pkg": "com.app",
+         "t": "Wi-Fi",
+         "id": "com.app:id/label",
+         "cls": "android.widget.TextView",
+         "children": []
+        }
+       ]
+      },
+      {
+       "k": "row1",
+       "pkg": "com.app",
+       "t": "Bluetooth",
+       "cls": "android.widget.LinearLayout",
+       "children": [
+        {
+         "k": "row1text",
+         "pkg": "com.app",
+         "t": "Bluetooth",
+         "id": "com.app:id/label",
+         "cls": "android.widget.TextView",
+         "children": []
+        }
+       ]
+      },
+      {
+       "k": "row2",
+       "pkg": "com.app",
+       "t": "wi-fi calling",
+       "cls": "android.widget.LinearLayout",
+       "children": []
+      }
+     ]
+    },
+    {
+     "k": "ok",
+     "pkg": "com.other",
+     "t": "OK",
+     "id": "android:id/button1",
+     "cls": "android.widget.Button",
+     "children": []
+    },
+    {
+     "k": "cancel",
+     "pkg": "com.app",
+     "t": "Cancel",
+     "id": "cancel",
+     "cls": "Button",
+     "children": []
+    }
+   ]
+  }
+ },
+ "generatedTrees": {
+  "deep": 46,
+  "wide": 700
+ },
+ "parse": [
+  {
+   "args": {},
+   "expect": {
+    "kind": "invalid",
+    "reason": "no selector given: expected a \"selector\" object or a \"nodeId\" number, accepted keys: selector, nodeId"
+   }
+  },
+  {
+   "args": {
+    "foo": 1
+   },
+   "expect": {
+    "kind": "invalid",
+    "reason": "unknown key: foo, accepted keys: selector, nodeId"
+   }
+  },
+  {
+   "args": {
+    "nodeId": 3,
+    "foo": 1
+   },
+   "expect": {
+    "kind": "invalid",
+    "reason": "unknown key: foo, accepted keys: selector, nodeId"
+   }
+  },
+  {
+   "args": {
+    "nodeId": 3
+   },
+   "expect": {
+    "kind": "node",
+    "nodeId": 3
+   }
+  },
+  {
+   "args": {
+    "nodeId": 3.0
+   },
+   "expect": {
+    "kind": "node",
+    "nodeId": 3
+   }
+  },
+  {
+   "args": {
+    "nodeId": 100.0
+   },
+   "expect": {
+    "kind": "node",
+    "nodeId": 100
+   }
+  },
+  {
+   "args": {
+    "nodeId": 599
+   },
+   "expect": {
+    "kind": "node",
+    "nodeId": 599
+   }
+  },
+  {
+   "args": {
+    "nodeId": 0
+   },
+   "expect": {
+    "kind": "node",
+    "nodeId": 0
+   }
+  },
+  {
+   "args": {
+    "nodeId": -1
+   },
+   "expect": {
+    "kind": "invalid",
+    "reason": "nodeId must be a whole number in [0,600) taken from ui.snapshot"
+   }
+  },
+  {
+   "args": {
+    "nodeId": 600
+   },
+   "expect": {
+    "kind": "invalid",
+    "reason": "nodeId must be a whole number in [0,600) taken from ui.snapshot"
+   }
+  },
+  {
+   "args": {
+    "nodeId": 1.5
+   },
+   "expect": {
+    "kind": "invalid",
+    "reason": "nodeId must be a whole number in [0,600) taken from ui.snapshot"
+   }
+  },
+  {
+   "args": {
+    "nodeId": "3"
+   },
+   "expect": {
+    "kind": "invalid",
+    "reason": "nodeId must be a whole number in [0,600) taken from ui.snapshot"
+   }
+  },
+  {
+   "args": {
+    "nodeId": null
+   },
+   "expect": {
+    "kind": "invalid",
+    "reason": "nodeId must be a whole number in [0,600) taken from ui.snapshot"
+   }
+  },
+  {
+   "args": {
+    "nodeId": true
+   },
+   "expect": {
+    "kind": "invalid",
+    "reason": "nodeId must be a whole number in [0,600) taken from ui.snapshot"
+   }
+  },
+  {
+   "args": {
+    "nodeId": 4294967296
+   },
+   "expect": {
+    "kind": "invalid",
+    "reason": "nodeId must be a whole number in [0,600) taken from ui.snapshot"
+   }
+  },
+  {
+   "args": {
+    "nodeId": 1,
+    "selector": {}
+   },
+   "expect": {
+    "kind": "invalid",
+    "reason": "nodeId and selector are mutually exclusive: send one shape"
+   }
+  },
+  {
+   "args": {
+    "selector": "x"
+   },
+   "expect": {
+    "kind": "invalid",
+    "reason": "selector must be an object holding any of text, desc, id, class, index, package"
+   }
+  },
+  {
+   "args": {
+    "selector": null
+   },
+   "expect": {
+    "kind": "invalid",
+    "reason": "selector must be an object holding any of text, desc, id, class, index, package"
+   }
+  },
+  {
+   "args": {
+    "selector": {}
+   },
+   "expect": {
+    "kind": "invalid",
+    "reason": "empty selector: give at least one of text, desc, id, class, index, package"
+   }
+  },
+  {
+   "args": {
+    "selector": {
+     "foo": 1
+    }
+   },
+   "expect": {
+    "kind": "invalid",
+    "reason": "unknown key in selector: foo, accepted keys: text, desc, id, class, index, package"
+   }
+  },
+  {
+   "args": {
+    "selector": {
+     "text": "",
+     "foo": 1
+    }
+   },
+   "expect": {
+    "kind": "invalid",
+    "reason": "unknown key in selector: foo, accepted keys: text, desc, id, class, index, package"
+   }
+  },
+  {
+   "args": {
+    "selector": {
+     "text": "A"
+    },
+    "x": 1
+   },
+   "expect": {
+    "kind": "invalid",
+    "reason": "unknown key: x, accepted keys: selector, nodeId"
+   }
+  },
+  {
+   "args": {
+    "selector": {
+     "text": ""
+    }
+   },
+   "expect": {
+    "kind": "invalid",
+    "reason": "selector.text must be a non-empty string"
+   }
+  },
+  {
+   "args": {
+    "selector": {
+     "text": "  \t"
+    }
+   },
+   "expect": {
+    "kind": "invalid",
+    "reason": "selector.text must be a non-empty string"
+   }
+  },
+  {
+   "args": {
+    "selector": {
+     "text": 1
+    }
+   },
+   "expect": {
+    "kind": "invalid",
+    "reason": "selector.text must be a non-empty string"
+   }
+  },
+  {
+   "args": {
+    "selector": {
+     "text": null
+    }
+   },
+   "expect": {
+    "kind": "invalid",
+    "reason": "selector.text must be a non-empty string"
+   }
+  },
+  {
+   "args": {
+    "selector": {
+     "desc": ""
+    }
+   },
+   "expect": {
+    "kind": "invalid",
+    "reason": "selector.desc must be a non-empty string"
+   }
+  },
+  {
+   "args": {
+    "selector": {
+     "desc": "  \t"
+    }
+   },
+   "expect": {
+    "kind": "invalid",
+    "reason": "selector.desc must be a non-empty string"
+   }
+  },
+  {
+   "args": {
+    "selector": {
+     "desc": 1
+    }
+   },
+   "expect": {
+    "kind": "invalid",
+    "reason": "selector.desc must be a non-empty string"
+   }
+  },
+  {
+   "args": {
+    "selector": {
+     "desc": null
+    }
+   },
+   "expect": {
+    "kind": "invalid",
+    "reason": "selector.desc must be a non-empty string"
+   }
+  },
+  {
+   "args": {
+    "selector": {
+     "id": ""
+    }
+   },
+   "expect": {
+    "kind": "invalid",
+    "reason": "selector.id must be a non-empty string"
+   }
+  },
+  {
+   "args": {
+    "selector": {
+     "id": "  \t"
+    }
+   },
+   "expect": {
+    "kind": "invalid",
+    "reason": "selector.id must be a non-empty string"
+   }
+  },
+  {
+   "args": {
+    "selector": {
+     "id": 1
+    }
+   },
+   "expect": {
+    "kind": "invalid",
+    "reason": "selector.id must be a non-empty string"
+   }
+  },
+  {
+   "args": {
+    "selector": {
+     "id": null
+    }
+   },
+   "expect": {
+    "kind": "invalid",
+    "reason": "selector.id must be a non-empty string"
+   }
+  },
+  {
+   "args": {
+    "selector": {
+     "class": ""
+    }
+   },
+   "expect": {
+    "kind": "invalid",
+    "reason": "selector.class must be a non-empty string"
+   }
+  },
+  {
+   "args": {
+    "selector": {
+     "class": "  \t"
+    }
+   },
+   "expect": {
+    "kind": "invalid",
+    "reason": "selector.class must be a non-empty string"
+   }
+  },
+  {
+   "args": {
+    "selector": {
+     "class": 1
+    }
+   },
+   "expect": {
+    "kind": "invalid",
+    "reason": "selector.class must be a non-empty string"
+   }
+  },
+  {
+   "args": {
+    "selector": {
+     "class": null
+    }
+   },
+   "expect": {
+    "kind": "invalid",
+    "reason": "selector.class must be a non-empty string"
+   }
+  },
+  {
+   "args": {
+    "selector": {
+     "package": ""
+    }
+   },
+   "expect": {
+    "kind": "invalid",
+    "reason": "selector.package must be a non-empty string"
+   }
+  },
+  {
+   "args": {
+    "selector": {
+     "package": "  \t"
+    }
+   },
+   "expect": {
+    "kind": "invalid",
+    "reason": "selector.package must be a non-empty string"
+   }
+  },
+  {
+   "args": {
+    "selector": {
+     "package": 1
+    }
+   },
+   "expect": {
+    "kind": "invalid",
+    "reason": "selector.package must be a non-empty string"
+   }
+  },
+  {
+   "args": {
+    "selector": {
+     "package": null
+    }
+   },
+   "expect": {
+    "kind": "invalid",
+    "reason": "selector.package must be a non-empty string"
+   }
+  },
+  {
+   "args": {
+    "selector": {
+     "index": -1
+    }
+   },
+   "expect": {
+    "kind": "invalid",
+    "reason": "selector.index must be a whole number in [0,600)"
+   }
+  },
+  {
+   "args": {
+    "selector": {
+     "index": 600
+    }
+   },
+   "expect": {
+    "kind": "invalid",
+    "reason": "selector.index must be a whole number in [0,600)"
+   }
+  },
+  {
+   "args": {
+    "selector": {
+     "index": 0.5
+    }
+   },
+   "expect": {
+    "kind": "invalid",
+    "reason": "selector.index must be a whole number in [0,600)"
+   }
+  },
+  {
+   "args": {
+    "selector": {
+     "index": "1"
+    }
+   },
+   "expect": {
+    "kind": "invalid",
+    "reason": "selector.index must be a whole number in [0,600)"
+   }
+  },
+  {
+   "args": {
+    "selector": {
+     "index": null
+    }
+   },
+   "expect": {
+    "kind": "invalid",
+    "reason": "selector.index must be a whole number in [0,600)"
+   }
+  },
+  {
+   "args": {
+    "selector": {
+     "text": "OK",
+     "index": 2,
+     "package": "p",
+     "class": "c",
+     "id": "i",
+     "desc": "d"
+    }
+   },
+   "expect": {
+    "kind": "parsed",
+    "selector": {
+     "text": "OK",
+     "desc": "d",
+     "id": "i",
+     "index": 2,
+     "package": "p",
+     "class": "c"
+    }
+   }
+  },
+  {
+   "args": {
+    "selector": {
+     "index": 0
+    }
+   },
+   "expect": {
+    "kind": "parsed",
+    "selector": {
+     "index": 0
+    }
+   }
+  },
+  {
+   "args": {
+    "selector": {
+     "text": " x "
+    }
+   },
+   "expect": {
+    "kind": "parsed",
+    "selector": {
+     "text": " x "
+    }
+   }
+  },
+  {
+   "args": {
+    "selector": {
+     "text": "",
+     "desc": ""
+    }
+   },
+   "expect": {
+    "kind": "invalid",
+    "reason": "selector.text must be a non-empty string"
+   },
+   "csharpOnly": true
+  }
+ ],
+ "find": [
+  {
+   "tree": "main",
+   "selector": {
+    "text": "Wi-Fi"
+   },
+   "allowContains": false,
+   "expect": [
+    [
+     3,
+     2,
+     "EXACT"
+    ],
+    [
+     4,
+     3,
+     "EXACT"
+    ]
+   ]
+  },
+  {
+   "tree": "main",
+   "selector": {
+    "text": "wi-fi"
+   },
+   "allowContains": false,
+   "expect": []
+  },
+  {
+   "tree": "main",
+   "selector": {
+    "text": "wi-fi"
+   },
+   "allowContains": true,
+   "expect": [
+    [
+     3,
+     2,
+     "CONTAINS"
+    ],
+    [
+     4,
+     3,
+     "CONTAINS"
+    ],
+    [
+     7,
+     2,
+     "CONTAINS"
+    ]
+   ]
+  },
+  {
+   "tree": "main",
+   "selector": {
+    "text": "wi-fi calling"
+   },
+   "allowContains": true,
+   "expect": [
+    [
+     7,
+     2,
+     "EXACT"
+    ]
+   ]
+  },
+  {
+   "tree": "main",
+   "selector": {
+    "class": "TextView"
+   },
+   "allowContains": false,
+   "expect": [
+    [
+     1,
+     1,
+     "EXACT"
+    ],
+    [
+     4,
+     3,
+     "EXACT"
+    ],
+    [
+     6,
+     3,
+     "EXACT"
+    ]
+   ]
+  },
+  {
+   "tree": "main",
+   "selector": {
+    "class": "widget.TextView"
+   },
+   "allowContains": false,
+   "expect": []
+  },
+  {
+   "tree": "main",
+   "selector": {
+    "class": "Button"
+   },
+   "allowContains": false,
+   "expect": [
+    [
+     8,
+     1,
+     "EXACT"
+    ],
+    [
+     9,
+     1,
+     "EXACT"
+    ]
+   ]
+  },
+  {
+   "tree": "main",
+   "selector": {
+    "id": "label"
+   },
+   "allowContains": false,
+   "expect": [
+    [
+     4,
+     3,
+     "EXACT"
+    ],
+    [
+     6,
+     3,
+     "EXACT"
+    ]
+   ]
+  },
+  {
+   "tree": "main",
+   "selector": {
+    "id": "id/label"
+   },
+   "allowContains": false,
+   "expect": [
+    [
+     4,
+     3,
+     "EXACT"
+    ],
+    [
+     6,
+     3,
+     "EXACT"
+    ]
+   ]
+  },
+  {
+   "tree": "main",
+   "selector": {
+    "id": "button1",
+    "package": "com.app"
+   },
+   "allowContains": false,
+   "expect": []
+  },
+  {
+   "tree": "main",
+   "selector": {
+    "id": "button1"
+   },
+   "allowContains": false,
+   "expect": [
+    [
+     8,
+     1,
+     "EXACT"
+    ]
+   ]
+  },
+  {
+   "tree": "main",
+   "selector": {
+    "id": "cancel"
+   },
+   "allowContains": false,
+   "expect": [
+    [
+     9,
+     1,
+     "EXACT"
+    ]
+   ]
+  },
+  {
+   "tree": "main",
+   "selector": {
+    "index": 0
+   },
+   "allowContains": false,
+   "expect": [
+    [
+     0,
+     0,
+     "EXACT"
+    ],
+    [
+     1,
+     1,
+     "EXACT"
+    ],
+    [
+     3,
+     2,
+     "EXACT"
+    ],
+    [
+     4,
+     3,
+     "EXACT"
+    ],
+    [
+     6,
+     3,
+     "EXACT"
+    ]
+   ]
+  },
+  {
+   "tree": "main",
+   "selector": {
+    "index": 0
+   },
+   "allowContains": false,
+   "expect": [
+    [
+     0,
+     0,
+     "EXACT"
+    ],
+    [
+     1,
+     1,
+     "EXACT"
+    ],
+    [
+     3,
+     2,
+     "EXACT"
+    ]
+   ],
+   "limit": 3
+  },
+  {
+   "tree": "main",
+   "selector": {
+    "index": 1,
+    "class": "LinearLayout"
+   },
+   "allowContains": false,
+   "expect": [
+    [
+     5,
+     2,
+     "EXACT"
+    ]
+   ]
+  },
+  {
+   "tree": "main",
+   "selector": {
+    "desc": "settings"
+   },
+   "allowContains": false,
+   "expect": []
+  },
+  {
+   "tree": "main",
+   "selector": {
+    "desc": "SETTINGS"
+   },
+   "allowContains": true,
+   "expect": [
+    [
+     3,
+     2,
+     "CONTAINS"
+    ]
+   ]
+  },
+  {
+   "tree": "main",
+   "selector": {
+    "text": "Wi-Fi",
+    "desc": "Wi-Fi settings"
+   },
+   "allowContains": true,
+   "expect": [
+    [
+     3,
+     2,
+     "EXACT"
+    ]
+   ]
+  },
+  {
+   "tree": "main",
+   "selector": {
+    "package": "com.other"
+   },
+   "allowContains": false,
+   "expect": [
+    [
+     8,
+     1,
+     "EXACT"
+    ]
+   ]
+  },
+  {
+   "tree": "main",
+   "selector": {
+    "text": "nothing"
+   },
+   "allowContains": true,
+   "expect": []
+  },
+  {
+   "tree": "deep",
+   "selector": {
+    "text": "d40"
+   },
+   "allowContains": false,
+   "expect": [
+    [
+     40,
+     40,
+     "EXACT"
+    ]
+   ]
+  },
+  {
+   "tree": "deep",
+   "selector": {
+    "text": "d41"
+   },
+   "allowContains": false,
+   "expect": []
+  },
+  {
+   "tree": "wide",
+   "selector": {
+    "text": "w598"
+   },
+   "allowContains": false,
+   "expect": [
+    [
+     599,
+     1,
+     "EXACT"
+    ]
+   ]
+  },
+  {
+   "tree": "wide",
+   "selector": {
+    "text": "w599"
+   },
+   "allowContains": false,
+   "expect": []
+  },
+  {
+   "tree": "wide",
+   "selector": {
+    "index": 5
+   },
+   "allowContains": false,
+   "expect": [
+    [
+     6,
+     1,
+     "EXACT"
+    ]
+   ]
+  }
+ ],
+ "findById": [
+  {
+   "tree": "main",
+   "nodeId": 0,
+   "expect": "root"
+  },
+  {
+   "tree": "main",
+   "nodeId": 4,
+   "expect": "row0text"
+  },
+  {
+   "tree": "main",
+   "nodeId": 9,
+   "expect": "cancel"
+  },
+  {
+   "tree": "main",
+   "nodeId": 10,
+   "expect": null
+  },
+  {
+   "tree": "main",
+   "nodeId": -1,
+   "expect": null
+  },
+  {
+   "tree": "deep",
+   "nodeId": 40,
+   "expect": "d40"
+  },
+  {
+   "tree": "deep",
+   "nodeId": 41,
+   "expect": null
+  },
+  {
+   "tree": "wide",
+   "nodeId": 599,
+   "expect": "w598"
+  },
+  {
+   "tree": "wide",
+   "nodeId": 600,
+   "expect": null
+  }
+ ],
+ "geometry": [
+  {
+   "anchor": [
+    0,
+    100,
+    100,
+    200,
+    150,
+    "TextView"
+   ],
+   "candidates": [
+    [
+     0,
+     100,
+     100,
+     200,
+     150,
+     "TextView"
+    ],
+    [
+     1,
+     220,
+     100,
+     300,
+     150,
+     "EditText"
+    ],
+    [
+     2,
+     210,
+     300,
+     260,
+     340,
+     "EditText"
+    ],
+    [
+     3,
+     100,
+     170,
+     200,
+     200,
+     "TextView"
+    ],
+    [
+     4,
+     240,
+     105,
+     320,
+     145,
+     "TextView"
+    ]
+   ],
+   "side": "RIGHT",
+   "nth": 1,
+   "sameClass": false,
+   "expect": {
+    "kind": "pick",
+    "ref": 1,
+    "gap": 20
+   }
+  },
+  {
+   "anchor": [
+    0,
+    100,
+    100,
+    200,
+    150,
+    "TextView"
+   ],
+   "candidates": [
+    [
+     0,
+     100,
+     100,
+     200,
+     150,
+     "TextView"
+    ],
+    [
+     1,
+     220,
+     100,
+     300,
+     150,
+     "EditText"
+    ],
+    [
+     2,
+     210,
+     300,
+     260,
+     340,
+     "EditText"
+    ],
+    [
+     3,
+     100,
+     170,
+     200,
+     200,
+     "TextView"
+    ],
+    [
+     4,
+     240,
+     105,
+     320,
+     145,
+     "TextView"
+    ]
+   ],
+   "side": "RIGHT",
+   "nth": 2,
+   "sameClass": false,
+   "expect": {
+    "kind": "pick",
+    "ref": 4,
+    "gap": 40
+   }
+  },
+  {
+   "anchor": [
+    0,
+    100,
+    100,
+    200,
+    150,
+    "TextView"
+   ],
+   "candidates": [
+    [
+     0,
+     100,
+     100,
+     200,
+     150,
+     "TextView"
+    ],
+    [
+     1,
+     220,
+     100,
+     300,
+     150,
+     "EditText"
+    ],
+    [
+     2,
+     210,
+     300,
+     260,
+     340,
+     "EditText"
+    ],
+    [
+     3,
+     100,
+     170,
+     200,
+     200,
+     "TextView"
+    ],
+    [
+     4,
+     240,
+     105,
+     320,
+     145,
+     "TextView"
+    ]
+   ],
+   "side": "RIGHT",
+   "nth": 3,
+   "sameClass": false,
+   "expect": {
+    "kind": "none"
+   }
+  },
+  {
+   "anchor": [
+    0,
+    100,
+    100,
+    200,
+    150,
+    "TextView"
+   ],
+   "candidates": [
+    [
+     0,
+     100,
+     100,
+     200,
+     150,
+     "TextView"
+    ],
+    [
+     1,
+     220,
+     100,
+     300,
+     150,
+     "EditText"
+    ],
+    [
+     2,
+     210,
+     300,
+     260,
+     340,
+     "EditText"
+    ],
+    [
+     3,
+     100,
+     170,
+     200,
+     200,
+     "TextView"
+    ],
+    [
+     4,
+     240,
+     105,
+     320,
+     145,
+     "TextView"
+    ]
+   ],
+   "side": "RIGHT",
+   "nth": 0,
+   "sameClass": false,
+   "expect": {
+    "kind": "none"
+   }
+  },
+  {
+   "anchor": [
+    0,
+    100,
+    100,
+    200,
+    150,
+    "TextView"
+   ],
+   "candidates": [
+    [
+     0,
+     100,
+     100,
+     200,
+     150,
+     "TextView"
+    ],
+    [
+     1,
+     220,
+     100,
+     300,
+     150,
+     "EditText"
+    ],
+    [
+     2,
+     210,
+     300,
+     260,
+     340,
+     "EditText"
+    ],
+    [
+     3,
+     100,
+     170,
+     200,
+     200,
+     "TextView"
+    ],
+    [
+     4,
+     240,
+     105,
+     320,
+     145,
+     "TextView"
+    ]
+   ],
+   "side": "RIGHT",
+   "nth": 1,
+   "sameClass": true,
+   "expect": {
+    "kind": "pick",
+    "ref": 4,
+    "gap": 40
+   }
+  },
+  {
+   "anchor": [
+    0,
+    100,
+    100,
+    200,
+    150,
+    "TextView"
+   ],
+   "candidates": [
+    [
+     0,
+     100,
+     100,
+     200,
+     150,
+     "TextView"
+    ],
+    [
+     1,
+     220,
+     100,
+     300,
+     150,
+     "EditText"
+    ],
+    [
+     2,
+     210,
+     300,
+     260,
+     340,
+     "EditText"
+    ],
+    [
+     3,
+     100,
+     170,
+     200,
+     200,
+     "TextView"
+    ],
+    [
+     4,
+     240,
+     105,
+     320,
+     145,
+     "TextView"
+    ]
+   ],
+   "side": "BELOW",
+   "nth": 1,
+   "sameClass": false,
+   "expect": {
+    "kind": "pick",
+    "ref": 3,
+    "gap": 20
+   }
+  },
+  {
+   "anchor": [
+    0,
+    100,
+    100,
+    200,
+    150,
+    "TextView"
+   ],
+   "candidates": [
+    [
+     0,
+     100,
+     100,
+     200,
+     150,
+     "TextView"
+    ],
+    [
+     1,
+     220,
+     100,
+     300,
+     150,
+     "EditText"
+    ],
+    [
+     2,
+     210,
+     300,
+     260,
+     340,
+     "EditText"
+    ],
+    [
+     3,
+     100,
+     170,
+     200,
+     200,
+     "TextView"
+    ],
+    [
+     4,
+     240,
+     105,
+     320,
+     145,
+     "TextView"
+    ]
+   ],
+   "side": "LEFT",
+   "nth": 1,
+   "sameClass": false,
+   "expect": {
+    "kind": "none"
+   }
+  },
+  {
+   "anchor": [
+    0,
+    100,
+    100,
+    200,
+    150,
+    "TextView"
+   ],
+   "candidates": [
+    [
+     0,
+     100,
+     100,
+     200,
+     150,
+     "TextView"
+    ],
+    [
+     1,
+     220,
+     100,
+     300,
+     150,
+     "EditText"
+    ],
+    [
+     2,
+     210,
+     300,
+     260,
+     340,
+     "EditText"
+    ],
+    [
+     3,
+     100,
+     170,
+     200,
+     200,
+     "TextView"
+    ],
+    [
+     4,
+     240,
+     105,
+     320,
+     145,
+     "TextView"
+    ]
+   ],
+   "side": "ABOVE",
+   "nth": 1,
+   "sameClass": false,
+   "expect": {
+    "kind": "none"
+   }
+  },
+  {
+   "anchor": [
+    0,
+    100,
+    100,
+    200,
+    150,
+    "TextView"
+   ],
+   "candidates": [
+    [
+     0,
+     100,
+     100,
+     200,
+     150,
+     "TextView"
+    ],
+    [
+     1,
+     220,
+     100,
+     300,
+     150,
+     "EditText"
+    ],
+    [
+     2,
+     210,
+     300,
+     260,
+     340,
+     "EditText"
+    ],
+    [
+     3,
+     100,
+     170,
+     200,
+     200,
+     "TextView"
+    ],
+    [
+     4,
+     240,
+     105,
+     320,
+     145,
+     "TextView"
+    ],
+    [
+     5,
+     222,
+     102,
+     302,
+     152,
+     "EditText"
+    ]
+   ],
+   "side": "RIGHT",
+   "nth": 1,
+   "sameClass": false,
+   "expect": {
+    "kind": "ambiguous",
+    "refs": [
+     1,
+     5
+    ],
+    "gap": 20
+   }
+  },
+  {
+   "anchor": [
+    0,
+    100,
+    100,
+    200,
+    150,
+    "TextView"
+   ],
+   "candidates": [
+    [
+     0,
+     100,
+     100,
+     200,
+     150,
+     "TextView"
+    ],
+    [
+     1,
+     220,
+     100,
+     300,
+     150,
+     "EditText"
+    ],
+    [
+     2,
+     210,
+     300,
+     260,
+     340,
+     "EditText"
+    ],
+    [
+     3,
+     100,
+     170,
+     200,
+     200,
+     "TextView"
+    ],
+    [
+     4,
+     240,
+     105,
+     320,
+     145,
+     "TextView"
+    ],
+    [
+     5,
+     222,
+     102,
+     302,
+     152,
+     "EditText"
+    ]
+   ],
+   "side": "RIGHT",
+   "nth": 3,
+   "sameClass": false,
+   "expect": {
+    "kind": "pick",
+    "ref": 4,
+    "gap": 40
+   }
+  },
+  {
+   "anchor": [
+    0,
+    100,
+    100,
+    200,
+    150,
+    "TextView"
+   ],
+   "candidates": [
+    [
+     0,
+     100,
+     100,
+     200,
+     150,
+     "TextView"
+    ],
+    [
+     2,
+     210,
+     300,
+     260,
+     340,
+     "EditText"
+    ]
+   ],
+   "side": "RIGHT",
+   "nth": 1,
+   "sameClass": false,
+   "expect": {
+    "kind": "pick",
+    "ref": 2,
+    "gap": 10
+   }
+  },
+  {
+   "anchor": [
+    3,
+    100,
+    170,
+    200,
+    200,
+    "TextView"
+   ],
+   "candidates": [
+    [
+     0,
+     100,
+     100,
+     200,
+     150,
+     "TextView"
+    ],
+    [
+     1,
+     220,
+     100,
+     300,
+     150,
+     "EditText"
+    ],
+    [
+     2,
+     210,
+     300,
+     260,
+     340,
+     "EditText"
+    ],
+    [
+     3,
+     100,
+     170,
+     200,
+     200,
+     "TextView"
+    ],
+    [
+     4,
+     240,
+     105,
+     320,
+     145,
+     "TextView"
+    ],
+    [
+     6,
+     0,
+     0,
+     50,
+     50,
+     null
+    ]
+   ],
+   "side": "ABOVE",
+   "nth": 1,
+   "sameClass": false,
+   "expect": {
+    "kind": "pick",
+    "ref": 0,
+    "gap": 20
+   }
+  },
+  {
+   "anchor": [
+    3,
+    100,
+    170,
+    200,
+    200,
+    "TextView"
+   ],
+   "candidates": [
+    [
+     0,
+     100,
+     100,
+     200,
+     150,
+     "TextView"
+    ],
+    [
+     1,
+     220,
+     100,
+     300,
+     150,
+     "EditText"
+    ],
+    [
+     2,
+     210,
+     300,
+     260,
+     340,
+     "EditText"
+    ],
+    [
+     3,
+     100,
+     170,
+     200,
+     200,
+     "TextView"
+    ],
+    [
+     4,
+     240,
+     105,
+     320,
+     145,
+     "TextView"
+    ],
+    [
+     6,
+     0,
+     0,
+     50,
+     50,
+     null
+    ]
+   ],
+   "side": "ABOVE",
+   "nth": 2,
+   "sameClass": false,
+   "expect": {
+    "kind": "none"
+   }
+  },
+  {
+   "anchor": [
+    3,
+    100,
+    170,
+    200,
+    200,
+    "TextView"
+   ],
+   "candidates": [
+    [
+     3,
+     100,
+     170,
+     200,
+     200,
+     "TextView"
+    ],
+    [
+     6,
+     0,
+     0,
+     50,
+     50,
+     null
+    ]
+   ],
+   "side": "ABOVE",
+   "nth": 1,
+   "sameClass": false,
+   "expect": {
+    "kind": "pick",
+    "ref": 6,
+    "gap": 120
+   }
+  },
+  {
+   "anchor": [
+    1,
+    220,
+    100,
+    300,
+    150,
+    "EditText"
+   ],
+   "candidates": [
+    [
+     0,
+     100,
+     100,
+     200,
+     150,
+     "TextView"
+    ],
+    [
+     1,
+     220,
+     100,
+     300,
+     150,
+     "EditText"
+    ],
+    [
+     2,
+     210,
+     300,
+     260,
+     340,
+     "EditText"
+    ],
+    [
+     3,
+     100,
+     170,
+     200,
+     200,
+     "TextView"
+    ],
+    [
+     4,
+     240,
+     105,
+     320,
+     145,
+     "TextView"
+    ]
+   ],
+   "side": "LEFT",
+   "nth": 1,
+   "sameClass": false,
+   "expect": {
+    "kind": "pick",
+    "ref": 0,
+    "gap": 20
+   }
+  },
+  {
+   "anchor": [
+    1,
+    220,
+    100,
+    300,
+    150,
+    "EditText"
+   ],
+   "candidates": [
+    [
+     0,
+     100,
+     100,
+     200,
+     150,
+     "TextView"
+    ],
+    [
+     1,
+     220,
+     100,
+     300,
+     150,
+     "EditText"
+    ],
+    [
+     2,
+     210,
+     300,
+     260,
+     340,
+     "EditText"
+    ],
+    [
+     3,
+     100,
+     170,
+     200,
+     200,
+     "TextView"
+    ],
+    [
+     4,
+     240,
+     105,
+     320,
+     145,
+     "TextView"
+    ]
+   ],
+   "side": "LEFT",
+   "nth": 1,
+   "sameClass": true,
+   "expect": {
+    "kind": "none"
+   }
+  }
+ ],
+ "sideOf": [
+  [
+   "right",
+   "RIGHT"
+  ],
+  [
+   "RIGHT",
+   "RIGHT"
+  ],
+  [
+   "left",
+   "LEFT"
+  ],
+  [
+   "above",
+   "ABOVE"
+  ],
+  [
+   "up",
+   "ABOVE"
+  ],
+  [
+   "Up",
+   "ABOVE"
+  ],
+  [
+   "below",
+   "BELOW"
+  ],
+  [
+   "down",
+   "BELOW"
+  ],
+  [
+   "north",
+   null
+  ],
+  [
+   "",
+   null
+  ]
+ ],
+ "trusted": [
+  {
+   "op": "state",
+   "alive": 5,
+   "expect": "untested"
+  },
+  {
+   "op": "observe",
+   "displayId": 5,
+   "found": true
+  },
+  {
+   "op": "state",
+   "alive": 5,
+   "expect": "last-seen"
+  },
+  {
+   "op": "state",
+   "alive": 6,
+   "expect": "untested"
+  },
+  {
+   "op": "observe",
+   "displayId": 6,
+   "found": false
+  },
+  {
+   "op": "state",
+   "alive": 6,
+   "expect": "last-empty"
+  },
+  {
+   "op": "state",
+   "alive": -1,
+   "expect": "untested"
+  },
+  {
+   "op": "state",
+   "alive": 6,
+   "expect": "untested"
+  }
+ ],
+ "stale": [
+  {
+   "askedByNodeId": false,
+   "visible": false,
+   "area": false,
+   "displayId": 0,
+   "expect": null
+  },
+  {
+   "askedByNodeId": false,
+   "visible": false,
+   "area": false,
+   "displayId": 43,
+   "expect": null
+  },
+  {
+   "askedByNodeId": false,
+   "visible": false,
+   "area": true,
+   "displayId": 0,
+   "expect": null
+  },
+  {
+   "askedByNodeId": false,
+   "visible": false,
+   "area": true,
+   "displayId": 43,
+   "expect": null
+  },
+  {
+   "askedByNodeId": false,
+   "visible": true,
+   "area": false,
+   "displayId": 0,
+   "expect": null
+  },
+  {
+   "askedByNodeId": false,
+   "visible": true,
+   "area": false,
+   "displayId": 43,
+   "expect": null
+  },
+  {
+   "askedByNodeId": false,
+   "visible": true,
+   "area": true,
+   "displayId": 0,
+   "expect": null
+  },
+  {
+   "askedByNodeId": false,
+   "visible": true,
+   "area": true,
+   "displayId": 43,
+   "expect": null
+  },
+  {
+   "askedByNodeId": true,
+   "visible": false,
+   "area": false,
+   "displayId": 0,
+   "expect": "resolved by nodeId, but this node is not visible on display 0: this id is a position in the tree this call just read, so if it came from an earlier snapshot the page may have scrolled or refreshed and this position now holds a different node (an id taken from another display always means a different tree). Take a fresh ui.snapshot on the display you mean to act on and use the nodeId from it - do not act on this result as if it were the intended node."
+  },
+  {
+   "askedByNodeId": true,
+   "visible": false,
+   "area": false,
+   "displayId": 43,
+   "expect": "resolved by nodeId, but this node is not visible on display 43: this id is a position in the tree this call just read, so if it came from an earlier snapshot the page may have scrolled or refreshed and this position now holds a different node (an id taken from another display always means a different tree). Take a fresh ui.snapshot on the display you mean to act on and use the nodeId from it - do not act on this result as if it were the intended node."
+  },
+  {
+   "askedByNodeId": true,
+   "visible": false,
+   "area": true,
+   "displayId": 0,
+   "expect": "resolved by nodeId, but this node is not visible on display 0: this id is a position in the tree this call just read, so if it came from an earlier snapshot the page may have scrolled or refreshed and this position now holds a different node (an id taken from another display always means a different tree). Take a fresh ui.snapshot on the display you mean to act on and use the nodeId from it - do not act on this result as if it were the intended node."
+  },
+  {
+   "askedByNodeId": true,
+   "visible": false,
+   "area": true,
+   "displayId": 43,
+   "expect": "resolved by nodeId, but this node is not visible on display 43: this id is a position in the tree this call just read, so if it came from an earlier snapshot the page may have scrolled or refreshed and this position now holds a different node (an id taken from another display always means a different tree). Take a fresh ui.snapshot on the display you mean to act on and use the nodeId from it - do not act on this result as if it were the intended node."
+  },
+  {
+   "askedByNodeId": true,
+   "visible": true,
+   "area": false,
+   "displayId": 0,
+   "expect": "resolved by nodeId, but this node is not visible on display 0: this id is a position in the tree this call just read, so if it came from an earlier snapshot the page may have scrolled or refreshed and this position now holds a different node (an id taken from another display always means a different tree). Take a fresh ui.snapshot on the display you mean to act on and use the nodeId from it - do not act on this result as if it were the intended node."
+  },
+  {
+   "askedByNodeId": true,
+   "visible": true,
+   "area": false,
+   "displayId": 43,
+   "expect": "resolved by nodeId, but this node is not visible on display 43: this id is a position in the tree this call just read, so if it came from an earlier snapshot the page may have scrolled or refreshed and this position now holds a different node (an id taken from another display always means a different tree). Take a fresh ui.snapshot on the display you mean to act on and use the nodeId from it - do not act on this result as if it were the intended node."
+  },
+  {
+   "askedByNodeId": true,
+   "visible": true,
+   "area": true,
+   "displayId": 0,
+   "expect": null
+  },
+  {
+   "askedByNodeId": true,
+   "visible": true,
+   "area": true,
+   "displayId": 43,
+   "expect": null
+  }
+ ],
+ "argsError": [
+  {
+   "capability": "ui.snapshot",
+   "args": {},
+   "expect": null
+  },
+  {
+   "capability": "ui.snapshot",
+   "args": {
+    "x": 1
+   },
+   "expect": "unknown arg: x"
+  },
+  {
+   "capability": "ui.tap",
+   "args": {
+    "x": 1,
+    "y": 2
+   },
+   "expect": null
+  },
+  {
+   "capability": "ui.tap",
+   "args": {
+    "x": 1
+   },
+   "expect": "missing arg: y"
+  },
+  {
+   "capability": "ui.tap",
+   "args": {
+    "x": 1,
+    "y": ""
+   },
+   "expect": "missing arg: y"
+  },
+  {
+   "capability": "ui.tap",
+   "args": {
+    "x": 1,
+    "y": 2,
+    "z": 3
+   },
+   "expect": "unknown arg: z — this call takes: x, y"
+  },
+  {
+   "capability": "ui.click",
+   "args": {
+    "display": 1
+   },
+   "expect": "unknown arg: display — which display a call runs on is decided by the user's surface preference, not by the caller. Read capabilities.json backend.shizuku.trustedDisplay {alive,displayId} to see whether a virtual display exists, and each response's surface/degraded fields to see where it actually ran."
+  },
+  {
+   "capability": "ui.scroll",
+   "args": {
+    "selector": {}
+   },
+   "expect": "missing arg: direction"
+  },
+  {
+   "capability": "ui.scroll",
+   "args": {
+    "selector": {},
+    "direction": "forward"
+   },
+   "expect": null
+  },
+  {
+   "capability": "ui.scroll",
+   "args": {
+    "direction": " "
+   },
+   "expect": "missing arg: direction"
+  },
+  {
+   "capability": "ui.key",
+   "args": {
+    "key": "back"
+   },
+   "expect": null
+  },
+  {
+   "capability": "ui.swipe",
+   "args": {
+    "fromX": 1
+   },
+   "expect": "missing arg: fromY"
+  },
+  {
+   "capability": "ui.setValue",
+   "args": {
+    "nodeId": 1
+   },
+   "expect": "missing arg: text"
+  },
+  {
+   "capability": "sys.shell",
+   "args": {
+    "anything": 1
+   },
+   "expect": null
+  },
+  {
+   "capability": "ui.waitFor",
+   "args": {
+    "foo": 1
+   },
+   "expect": "unknown arg: foo — this call takes: absent, checked, nodeId, relative, selector, text, timeoutMs"
+  },
+  {
+   "capability": "ui.text",
+   "args": {
+    "text": null
+   },
+   "expect": null,
+   "csharpOnly": true
+  }
+ ],
+ "badArgShape": [
+  {
+   "args": {
+    "x": 1
+   },
+   "required": [
+    "x",
+    "y"
+   ],
+   "allowed": [
+    "x",
+    "y"
+   ],
+   "expect": "missing arg: y"
+  },
+  {
+   "args": {
+    "x": 1,
+    "y": 2,
+    "q": 0
+   },
+   "required": [
+    "x",
+    "y"
+   ],
+   "allowed": [
+    "x",
+    "y"
+   ],
+   "expect": "unknown arg: q — this call takes: x, y"
+  },
+  {
+   "args": {
+    "x": null,
+    "y": 2
+   },
+   "required": [
+    "x",
+    "y"
+   ],
+   "allowed": [
+    "x",
+    "y"
+   ],
+   "expect": null
+  },
+  {
+   "args": {
+    "fromX": 0,
+    "fromY": 0,
+    "toX": 1,
+    "toY": 1,
+    "durationMs": 100
+   },
+   "required": [
+    "fromX",
+    "fromY",
+    "toX",
+    "toY"
+   ],
+   "allowed": [
+    "fromX",
+    "fromY",
+    "toX",
+    "toY",
+    "durationMs"
+   ],
+   "expect": null
+  },
+  {
+   "args": {
+    "fromX": 0,
+    "fromY": 0,
+    "toX": 1
+   },
+   "required": [
+    "fromX",
+    "fromY",
+    "toX",
+    "toY"
+   ],
+   "allowed": [
+    "fromX",
+    "fromY",
+    "toX",
+    "toY",
+    "durationMs"
+   ],
+   "expect": "missing arg: toY"
+  }
+ ],
+ "badCoordinate": [
+  {
+   "args": {
+    "x": 5,
+    "y": 10
+   },
+   "limits": [
+    [
+     "x",
+     1080
+    ],
+    [
+     "y",
+     2400
+    ]
+   ],
+   "expect": null
+  },
+  {
+   "args": {
+    "x": 10.5,
+    "y": 2399.9
+   },
+   "limits": [
+    [
+     "x",
+     1080
+    ],
+    [
+     "y",
+     2400
+    ]
+   ],
+   "expect": null
+  },
+  {
+   "args": {
+    "x": 1080,
+    "y": 0
+   },
+   "limits": [
+    [
+     "x",
+     1080
+    ],
+    [
+     "y",
+     2400
+    ]
+   ],
+   "expect": "x out of screen [0,1080): 1080.0"
+  },
+  {
+   "args": {
+    "x": -1,
+    "y": 0
+   },
+   "limits": [
+    [
+     "x",
+     1080
+    ],
+    [
+     "y",
+     2400
+    ]
+   ],
+   "expect": "x out of screen [0,1080): -1.0"
+  },
+  {
+   "args": {
+    "x": 0,
+    "y": 2400.5
+   },
+   "limits": [
+    [
+     "x",
+     1080
+    ],
+    [
+     "y",
+     2400
+    ]
+   ],
+   "expect": "y out of screen [0,2400): 2400.5"
+  },
+  {
+   "args": {
+    "x": "5",
+    "y": 1
+   },
+   "limits": [
+    [
+     "x",
+     1080
+    ],
+    [
+     "y",
+     2400
+    ]
+   ],
+   "expect": "x must be a number, got \"5\" (string)"
+  },
+  {
+   "args": {
+    "y": 1
+   },
+   "limits": [
+    [
+     "x",
+     1080
+    ],
+    [
+     "y",
+     2400
+    ]
+   ],
+   "expect": "x must be a number, got nothing"
+  },
+  {
+   "args": {
+    "x": null,
+    "y": 1
+   },
+   "limits": [
+    [
+     "x",
+     1080
+    ],
+    [
+     "y",
+     2400
+    ]
+   ],
+   "expect": "x must be a number, got nothing"
+  },
+  {
+   "args": {
+    "x": true,
+    "y": 1
+   },
+   "limits": [
+    [
+     "x",
+     1080
+    ],
+    [
+     "y",
+     2400
+    ]
+   ],
+   "expect": "x must be a number, got true (Boolean)"
+  },
+  {
+   "args": {
+    "x": 1,
+    "y": 1
+   },
+   "limits": [
+    [
+     "y",
+     0
+    ],
+    [
+     "x",
+     1
+    ]
+   ],
+   "expect": "y out of screen [0,0): 1.0"
+  }
+ ],
+ "bounds": [
+  {
+   "raw": [
+    10,
+    20,
+    110,
+    220
+   ],
+   "screen": [
+    0,
+    0,
+    1080,
+    2400
+   ],
+   "expect": [
+    10,
+    20,
+    110,
+    220
+   ]
+  },
+  {
+   "raw": [
+    110,
+    220,
+    10,
+    20
+   ],
+   "screen": [
+    0,
+    0,
+    1080,
+    2400
+   ],
+   "expect": [
+    10,
+    20,
+    110,
+    220
+   ]
+  },
+  {
+   "raw": [
+    -50,
+    -50,
+    -10,
+    -10
+   ],
+   "screen": [
+    0,
+    0,
+    1080,
+    2400
+   ],
+   "expect": null
+  },
+  {
+   "raw": [
+    1000,
+    2300,
+    1200,
+    2500
+   ],
+   "screen": [
+    0,
+    0,
+    1080,
+    2400
+   ],
+   "expect": [
+    1000,
+    2300,
+    1080,
+    2400
+   ]
+  },
+  {
+   "raw": [
+    5,
+    5,
+    5,
+    50
+   ],
+   "screen": [
+    0,
+    0,
+    1080,
+    2400
+   ],
+   "expect": null
+  },
+  {
+   "raw": [
+    -20,
+    10,
+    30,
+    40
+   ],
+   "screen": [
+    0,
+    0,
+    1080,
+    2400
+   ],
+   "expect": [
+    0,
+    10,
+    30,
+    40
+   ]
+  }
+ ]
+}

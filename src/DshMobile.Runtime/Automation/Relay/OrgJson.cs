@@ -47,7 +47,7 @@ internal static class OrgJson
         JsonValueKind.False => "false",
         JsonValueKind.Null => "null",
         JsonValueKind.Number => NumberText(v.GetRawText()),
-        _ => v.GetRawText(), // object / array: their JSON text (key order and escaping may differ from libcore's toString)
+        _ => LibcoreJson.Serialize(v), // object / array: libcore toString (compact, "/" escaped)
     };
 
     /// <summary>A number literal as libcore types it (Integer / Long when integral, else Double), then <c>toString</c>.</summary>

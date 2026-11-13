@@ -142,10 +142,12 @@ public sealed class RelayAdmissionProbeTests : IDisposable
     public async Task IfCSharpWouldAdmitAProbe_NothingIsWritten()
     {
         MakeMailbox();
-        // With ui.tap registered, pa-tap would pass admission and could reach the gate: refuse the whole run.
-        var report = await ProbeWith(null, TimeSpan.FromSeconds(1), registered: ["ui.snapshot", "ui.node", "ui.tap"]);
+        // A template C# would admit could reach the gate: refuse the whole run, even when the others are fine.
+        var templates = RelayAdmissionProbe.Templates.Append(("pa-ok", "ui.tap", """{"x":1,"y":2}""")).ToList();
+        var report = await RelayAdmissionProbe.RunAsync(_pilot, Self, UiToolsShadowCheck.AllowedWire, TimeProvider.System,
+            TimeSpan.FromSeconds(1), CancellationToken.None, templates);
         Assert.Equal(ShadowVerdict.Inconclusive, report.Verdict);
-        Assert.Contains("C# admits probe pa-tap", report.Detail, StringComparison.Ordinal);
+        Assert.Contains("C# admits probe pa-ok", report.Detail, StringComparison.Ordinal);
         AssertNothingLeft();
     }
 

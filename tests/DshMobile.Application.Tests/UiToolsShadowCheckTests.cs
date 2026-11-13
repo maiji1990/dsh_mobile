@@ -15,7 +15,7 @@ public sealed class UiToolsShadowCheckTests : IDisposable
 
     private static UiToolsLegacyView Legacy(string method = "relay.status", bool registered = false, bool conflict = false, bool a11y = false,
         string[]? allowed = null, string guestCli = "/opt/pilot/bin/relay", string server = "ui") =>
-        new(method, registered, conflict, a11y, allowed ?? ["ui.snapshot", "ui.node"], guestCli, server);
+        new(method, registered, conflict, a11y, allowed ?? [.. UiToolsShadowCheck.AllowedWire.Reverse()], guestCli, server);
 
     private ShadowReport Compare(UiToolsLegacyView legacy, string? setting = null) =>
         UiToolsShadowCheck.Compare(legacy, _userData, setting, Pkg, 0, DateTimeOffset.UnixEpoch);
@@ -66,7 +66,7 @@ public sealed class UiToolsShadowCheckTests : IDisposable
         var r = Compare(Legacy("relay.stop", registered: true, a11y: true, allowed: ["ui.snapshot", "ui.node", "ui.tap"], guestCli: "/x/relay", server: "ux"));
         Assert.Equal(ShadowVerdict.Diverge, r.Verdict);
         foreach (var name in new[] { "registered legacy=True csharp=False", "layerBytes legacy=render csharp=-", "accessibility legacy=True csharp=False",
-                     "allowed legacy=ui.node,ui.snapshot,ui.tap csharp=ui.node,ui.snapshot", "guestCli legacy=/x/relay", "serverName legacy=ux csharp=ui" })
+                     "allowed legacy=ui.node,ui.snapshot,ui.tap csharp=app.install,app.launch,", "guestCli legacy=/x/relay", "serverName legacy=ux csharp=ui" })
         {
             Assert.Contains(name, r.Detail, StringComparison.Ordinal);
         }

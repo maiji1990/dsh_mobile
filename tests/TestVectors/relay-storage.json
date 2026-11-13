@@ -1,0 +1,1021 @@
+{
+ "_comment": "PR-07 segment 6 (storage + logs). Shared by LegacyRelayStorageParityTest (Kotlin, real upstream classes) and RelayStorageParityTests (C#). Host paths are relative to filesDir.",
+ "upstream": "pilot/interlock-relay-core @ 7c9d33c1f29dd2c42dde6c7e2fcdf38814f491c4 (GPL-3.0)",
+ "paths": {
+  "policy": {
+   "guestEntry": "/opt/pilot",
+   "hostDirName": "pilot",
+   "cliName": "relay",
+   "artifactPrefix": "relay-",
+   "assetClient": "relay/relay-client.cjs",
+   "mediaAlbumDir": "DSH Mobile"
+  },
+  "host": {
+   "entryDir": "pilot",
+   "binDir": "pilot/bin",
+   "capabilitiesFile": "pilot/capabilities.json",
+   "usageFile": "pilot/USAGE.md",
+   "clientScript": "pilot/bin/relay",
+   "versionMarkerFile": "pilot/version.json",
+   "runDir": "pilot/run",
+   "inboxDir": "pilot/run/inbox",
+   "processingDir": "pilot/run/processing",
+   "outboxDir": "pilot/run/outbox",
+   "artifactsDir": "pilot/run/artifacts",
+   "controlInboxDir": "pilot/run/control-inbox",
+   "controlOutboxDir": "pilot/run/control-outbox",
+   "uploadsDir": "pilot/run/uploads",
+   "outDir": "pilot/out",
+   "outShotDir": "pilot/out/shot",
+   "outVideoDir": "pilot/out/video",
+   "outAudioDir": "pilot/out/audio",
+   "outFileDir": "pilot/out/file",
+   "privateDir": "pilot-state",
+   "requestStateDir": "pilot-state/requests",
+   "stagingDir": "pilot-stage",
+   "quotaFile": "pilot-state/quota.properties",
+   "auditDir": "pilot-audit",
+   "logsDir": "logs"
+  },
+  "guest": {
+   "guestEntry": "/opt/pilot",
+   "guestRun": "/opt/pilot/run",
+   "guestInbox": "/opt/pilot/run/inbox",
+   "guestOutbox": "/opt/pilot/run/outbox",
+   "guestArtifacts": "/opt/pilot/run/artifacts",
+   "guestUploads": "/opt/pilot/run/uploads",
+   "guestControlInbox": "/opt/pilot/run/control-inbox",
+   "guestControlOutbox": "/opt/pilot/run/control-outbox",
+   "guestOut": "/opt/pilot/out",
+   "guestScript": "/opt/pilot/bin/relay",
+   "guestCapabilities": "/opt/pilot/capabilities.json"
+  }
+ },
+ "uploadNames": [
+  {
+   "name": "a",
+   "ok": true
+  },
+  {
+   "name": "photo.png",
+   "ok": true
+  },
+  {
+   "name": "A_b-c.9",
+   "ok": true
+  },
+  {
+   "name": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+   "ok": true
+  },
+  {
+   "name": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+   "ok": false
+  },
+  {
+   "name": "",
+   "ok": false
+  },
+  {
+   "name": ".hidden",
+   "ok": false
+  },
+  {
+   "name": "-dash",
+   "ok": false
+  },
+  {
+   "name": "a/b",
+   "ok": false
+  },
+  {
+   "name": "a\\b",
+   "ok": false
+  },
+  {
+   "name": "a..b",
+   "ok": true
+  },
+  {
+   "name": "..",
+   "ok": false
+  },
+  {
+   "name": "a b",
+   "ok": false
+  },
+  {
+   "name": "中文",
+   "ok": false
+  },
+  {
+   "name": "_x",
+   "ok": false
+  },
+  {
+   "name": "9",
+   "ok": true
+  }
+ ],
+ "resolveRejectsDotDot": [
+  "a..b"
+ ],
+ "subdirFor": {
+  "screen.capture": "shot",
+  "screen.record": "video",
+  "audio.capture": "audio",
+  "ui.snapshot": "file",
+  "media.write": "file"
+ },
+ "charged": [
+  {
+   "bytes": 0,
+   "charged": 0
+  },
+  {
+   "bytes": -5,
+   "charged": 0
+  },
+  {
+   "bytes": 1,
+   "charged": 4096
+  },
+  {
+   "bytes": 4095,
+   "charged": 4096
+  },
+  {
+   "bytes": 4096,
+   "charged": 4096
+  },
+  {
+   "bytes": 4097,
+   "charged": 8192
+  },
+  {
+   "bytes": 8192,
+   "charged": 8192
+  },
+  {
+   "bytes": 1000000,
+   "charged": 1003520
+  }
+ ],
+ "quota": {
+  "maxBytes": 16384,
+  "steps": [
+   {
+    "op": "reserve",
+    "bytes": 5000,
+    "expect": true,
+    "usable": 8192,
+    "total": 0,
+    "count": 0
+   },
+   {
+    "op": "reserve",
+    "bytes": 9000,
+    "expect": false,
+    "usable": 8192,
+    "total": 0,
+    "count": 0
+   },
+   {
+    "op": "reserve",
+    "bytes": 8000,
+    "expect": true,
+    "usable": 0,
+    "total": 0,
+    "count": 0
+   },
+   {
+    "op": "commit",
+    "which": 0,
+    "actual": 100,
+    "usable": 4096,
+    "total": 4096,
+    "count": 1
+   },
+   {
+    "op": "commit",
+    "which": 0,
+    "actual": 100,
+    "usable": 4096,
+    "total": 4096,
+    "count": 1
+   },
+   {
+    "op": "release",
+    "which": 2,
+    "usable": 12288,
+    "total": 4096,
+    "count": 1
+   },
+   {
+    "op": "written",
+    "bytes": 12289,
+    "usable": 0,
+    "total": 20480,
+    "count": 2,
+    "over": true
+   },
+   {
+    "op": "freed",
+    "bytes": 20480,
+    "usable": 16384,
+    "total": 0,
+    "count": 1,
+    "over": false
+   },
+   {
+    "op": "freed",
+    "bytes": 1,
+    "usable": 16384,
+    "total": 0,
+    "count": 0
+   }
+  ]
+ },
+ "quotaLoad": [
+  {
+   "text": "totalBytes=8192\nartifactCount=2\nupdatedAtWallClock=1\n",
+   "ok": true,
+   "total": 8192,
+   "count": 2
+  },
+  {
+   "text": "totalBytes=-1\nartifactCount=2\n",
+   "ok": false
+  },
+  {
+   "text": "artifactCount=2\n",
+   "ok": false
+  },
+  {
+   "text": "totalBytes=x\nartifactCount=2\n",
+   "ok": false
+  },
+  {
+   "text": "totalBytes=+12\nartifactCount=+3\n",
+   "ok": true,
+   "total": 12,
+   "count": 3
+  },
+  {
+   "text": "=1\ntotalBytes=1\nartifactCount=0",
+   "ok": true,
+   "total": 1,
+   "count": 0
+  }
+ ],
+ "runLog": [
+  {
+   "event": "SWEEP_DONE",
+   "sub": "STORAGE",
+   "fields": [
+    [
+     "requests",
+     "1"
+    ],
+    [
+     "responses",
+     "2"
+    ],
+    [
+     "artifacts",
+     "3"
+    ],
+    [
+     "freed",
+     "4096"
+    ]
+   ],
+   "text": "sweep done requests=1 responses=2 artifacts=3 freed=4096",
+   "line": "relay I/storage sweep done requests=1 responses=2 artifacts=3 freed=4096"
+  },
+  {
+   "event": "REQUEST_DROPPED",
+   "sub": "TRANSPORT",
+   "fields": [
+    [
+     "file",
+     "a\nb\tcde.json"
+    ],
+    [
+     "cause",
+     "stale target"
+    ]
+   ],
+   "text": "request dropped file=abcde.json cause=stale target",
+   "line": "relay W/transport request dropped file=abcde.json cause=stale target"
+  },
+  {
+   "event": "CALL_FAILED",
+   "sub": "TRANSPORT",
+   "fields": [
+    [
+     "id",
+     "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+    ],
+    [
+     "type",
+     "  "
+    ]
+   ],
+   "text": "call failed id=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx type=-",
+   "line": "relay E/transport call failed id=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx type=-"
+  },
+  {
+   "event": "CALL_DONE",
+   "sub": "BACKEND",
+   "fields": [
+    [
+     "cap",
+     "ui.node"
+    ]
+   ],
+   "text": "call done cap=ui.node result=%{result} ms=%{ms} bytes=%{bytes} unresolved=result",
+   "line": "relay I/backend call done cap=ui.node result=%{result} ms=%{ms} bytes=%{bytes} unresolved=result"
+  },
+  {
+   "event": "CALL_ACCEPTED",
+   "sub": "TRANSPORT",
+   "fields": [
+    [
+     "id",
+     ""
+    ],
+    [
+     "extra",
+     "1"
+    ]
+   ],
+   "text": "request accepted id=-",
+   "line": "relay I/transport request accepted id=-"
+  },
+  {
+   "event": "DIRS_UNAVAILABLE",
+   "sub": "STORAGE",
+   "fields": [],
+   "text": "working directories unavailable",
+   "line": "relay E/storage working directories unavailable"
+  },
+  {
+   "event": "LEDGER_CORRUPTED",
+   "sub": "STORAGE",
+   "fields": [
+    [
+     "detail",
+     "%{x}"
+    ]
+   ],
+   "text": "quota ledger corrupted %{x} unresolved=x",
+   "line": "relay W/storage quota ledger corrupted %{x} unresolved=x"
+  }
+ ],
+ "audit": {
+  "salt": "salt-1",
+  "wallMs": 1794467289123,
+  "zone": "UTC",
+  "entries": [
+   {
+    "requestId": "r-1",
+    "safe": "r-1",
+    "cap": "ui.node",
+    "target": null,
+    "sys": "GRANTED",
+    "tier": "ASK",
+    "decision": "approved_once",
+    "source": "prompt",
+    "uid": "self",
+    "outcome": "ok",
+    "surface": "foreground",
+    "from": null,
+    "reason": null,
+    "ms": 12,
+    "bytes": 0,
+    "args": "{\"nodeId\":0}",
+    "line": "{\"ts\":\"2026-11-12T07:08:09.123Z\",\"req\":\"r-1\",\"cap\":\"ui.node\",\"target\":\"null\",\"sys\":\"GRANTED\",\"tier\":\"ASK\",\"decision\":\"approved_once\",\"source\":\"prompt\",\"uid\":\"self\",\"result\":\"ok\",\"surface\":\"foreground\",\"from\":\"null\",\"reason\":\"null\",\"ms\":12,\"bytes\":0,\"argsDigest\":\"0502df6d2edab622\"}"
+   },
+   {
+    "requestId": "r/2 é\n",
+    "safe": "r2é",
+    "cap": "ui.snapshot",
+    "target": "com.x \"q\"",
+    "sys": "MANUAL_ONLY",
+    "tier": "ASK",
+    "decision": "system_missing",
+    "source": "none",
+    "uid": "self",
+    "outcome": "E_GATE_SYSTEM_MISSING",
+    "surface": "foreground",
+    "from": "trusted-display",
+    "reason": "a\tb\\c\u0001",
+    "ms": 0,
+    "bytes": 7,
+    "args": null,
+    "line": "{\"ts\":\"2026-11-12T07:08:09.123Z\",\"req\":\"r2é\",\"cap\":\"ui.snapshot\",\"target\":\"com.x \\\"q\\\"\",\"sys\":\"MANUAL_ONLY\",\"tier\":\"ASK\",\"decision\":\"system_missing\",\"source\":\"none\",\"uid\":\"self\",\"result\":\"E_GATE_SYSTEM_MISSING\",\"surface\":\"foreground\",\"from\":\"trusted-display\",\"reason\":\"a\\tb\\\\c\\u0001\",\"ms\":0,\"bytes\":7,\"argsDigest\":\"null\"}"
+   }
+  ],
+  "segments": [
+   [
+    "20261112",
+    1,
+    "audit-20261112.jsonl"
+   ],
+   [
+    "20261112",
+    2,
+    "audit-20261112.2.jsonl"
+   ],
+   [
+    "20260101",
+    20,
+    "audit-20260101.20.jsonl"
+   ]
+  ]
+ },
+ "artifactStem": [
+  [
+   "req-1",
+   "req-1"
+  ],
+  [
+   "a/b.c",
+   "abc"
+  ],
+  [
+   "",
+   "artifact"
+  ],
+  [
+   "//",
+   "artifact"
+  ],
+  [
+   "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+   "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+  ]
+ ],
+ "pinOwner": [
+  [
+   "req-1",
+   "req-1"
+  ],
+  [
+   "",
+   "unknown"
+  ],
+  [
+   "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+   "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+  ]
+ ],
+ "outSweep": {
+  "nowWallMs": 8640000000,
+  "files": [
+   {
+    "kind": "shot",
+    "name": "s00.png",
+    "ageMs": 1200000,
+    "bytes": 10
+   },
+   {
+    "kind": "shot",
+    "name": "s01.png",
+    "ageMs": 1260000,
+    "bytes": 10
+   },
+   {
+    "kind": "shot",
+    "name": "s02.png",
+    "ageMs": 1320000,
+    "bytes": 10
+   },
+   {
+    "kind": "shot",
+    "name": "s03.png",
+    "ageMs": 1380000,
+    "bytes": 10
+   },
+   {
+    "kind": "shot",
+    "name": "s04.png",
+    "ageMs": 1440000,
+    "bytes": 10
+   },
+   {
+    "kind": "shot",
+    "name": "s05.png",
+    "ageMs": 1500000,
+    "bytes": 10
+   },
+   {
+    "kind": "shot",
+    "name": "s06.png",
+    "ageMs": 1560000,
+    "bytes": 10
+   },
+   {
+    "kind": "shot",
+    "name": "s07.png",
+    "ageMs": 1620000,
+    "bytes": 10
+   },
+   {
+    "kind": "shot",
+    "name": "s08.png",
+    "ageMs": 1680000,
+    "bytes": 10
+   },
+   {
+    "kind": "shot",
+    "name": "s09.png",
+    "ageMs": 1740000,
+    "bytes": 10
+   },
+   {
+    "kind": "shot",
+    "name": "s10.png",
+    "ageMs": 1800000,
+    "bytes": 10
+   },
+   {
+    "kind": "shot",
+    "name": "s11.png",
+    "ageMs": 1860000,
+    "bytes": 10
+   },
+   {
+    "kind": "shot",
+    "name": "s12.png",
+    "ageMs": 1920000,
+    "bytes": 10
+   },
+   {
+    "kind": "shot",
+    "name": "s13.png",
+    "ageMs": 1980000,
+    "bytes": 10
+   },
+   {
+    "kind": "shot",
+    "name": "s14.png",
+    "ageMs": 2040000,
+    "bytes": 10
+   },
+   {
+    "kind": "shot",
+    "name": "s15.png",
+    "ageMs": 2100000,
+    "bytes": 10
+   },
+   {
+    "kind": "shot",
+    "name": "s16.png",
+    "ageMs": 2160000,
+    "bytes": 10
+   },
+   {
+    "kind": "shot",
+    "name": "s17.png",
+    "ageMs": 2220000,
+    "bytes": 10
+   },
+   {
+    "kind": "shot",
+    "name": "s18.png",
+    "ageMs": 2280000,
+    "bytes": 10
+   },
+   {
+    "kind": "shot",
+    "name": "s19.png",
+    "ageMs": 2340000,
+    "bytes": 10
+   },
+   {
+    "kind": "shot",
+    "name": "s20.png",
+    "ageMs": 2400000,
+    "bytes": 10
+   },
+   {
+    "kind": "shot",
+    "name": "s21.png",
+    "ageMs": 2460000,
+    "bytes": 10
+   },
+   {
+    "kind": "shot",
+    "name": "recent.png",
+    "ageMs": 300000,
+    "bytes": 10
+   },
+   {
+    "kind": "video",
+    "name": "old.mp4",
+    "ageMs": 691200000,
+    "bytes": 10
+   },
+   {
+    "kind": "video",
+    "name": "ok.mp4",
+    "ageMs": 172800000,
+    "bytes": 10
+   },
+   {
+    "kind": "audio",
+    "name": "big1.m4a",
+    "ageMs": 259200000,
+    "bytes": 157286400
+   },
+   {
+    "kind": "audio",
+    "name": "big2.m4a",
+    "ageMs": 172860000,
+    "bytes": 157286400
+   },
+   {
+    "kind": "file",
+    "name": "note.txt",
+    "ageMs": 86400000,
+    "bytes": 10
+   }
+  ],
+  "deleted": [
+   "s19.png",
+   "s20.png",
+   "s21.png",
+   "old.mp4",
+   "big1.m4a"
+  ]
+ },
+ "logEvents": [
+  [
+   "CHANNEL_STARTED",
+   "INFO",
+   "channel started"
+  ],
+  [
+   "CHANNEL_STOPPED",
+   "INFO",
+   "channel stopped"
+  ],
+  [
+   "CHANNEL_DEGRADED",
+   "WARN",
+   "channel degraded dirsAvailable=%{dirs}"
+  ],
+  [
+   "RUNTIME_STARTING",
+   "INFO",
+   "runtime starting"
+  ],
+  [
+   "RUNTIME_RUNNING",
+   "INFO",
+   "runtime running"
+  ],
+  [
+   "RUNTIME_DEGRADED",
+   "WARN",
+   "runtime degraded step=%{step} cause=%{cause}"
+  ],
+  [
+   "RUNTIME_STOPPED",
+   "INFO",
+   "runtime stopped"
+  ],
+  [
+   "REQUEST_DROPPED",
+   "WARN",
+   "request dropped file=%{file} cause=%{cause}"
+  ],
+  [
+   "REQUEST_TOO_LARGE",
+   "ERROR",
+   "request rejected oversized bytes=%{bytes}"
+  ],
+  [
+   "RESPONSE_WRITE_FAILED",
+   "ERROR",
+   "response write failed id=%{id}"
+  ],
+  [
+   "RESPONSE_OVERWRITTEN",
+   "WARN",
+   "pre-existing response replaced id=%{id}"
+  ],
+  [
+   "RESPONSE_TOO_LARGE",
+   "WARN",
+   "response exceeded size cap id=%{id}"
+  ],
+  [
+   "MAILBOX_BACKPRESSURE",
+   "WARN",
+   "mailbox backpressure pending=%{pending} evicted=%{evicted} queueDepth=%{queueDepth} oldestAgeMs=%{oldestAgeMs}"
+  ],
+  [
+   "CONTROL_STARTED",
+   "INFO",
+   "control channel started"
+  ],
+  [
+   "CONTROL_STOPPED",
+   "INFO",
+   "control channel stopped"
+  ],
+  [
+   "CONTROL_REQUEST_REJECTED",
+   "WARN",
+   "control request rejected op=%{op} cause=%{cause}"
+  ],
+  [
+   "REQUEST_CANCELLED",
+   "INFO",
+   "request cancelled id=%{id}"
+  ],
+  [
+   "REQUEST_CANCEL_REQUESTED",
+   "INFO",
+   "request cancel requested id=%{id}"
+  ],
+  [
+   "UNSAFE_PATH_REJECTED",
+   "ERROR",
+   "unsafe path rejected name=%{name}"
+  ],
+  [
+   "APPROVAL_DENIED",
+   "INFO",
+   "denied cap=%{cap} code=%{code}"
+  ],
+  [
+   "APPROVAL_RESULT",
+   "INFO",
+   "approval result cap=%{cap} choice=%{choice}"
+  ],
+  [
+   "APPROVAL_TIMEOUT",
+   "WARN",
+   "approval timeout cap=%{cap}"
+  ],
+  [
+   "OVERLAY_UNAVAILABLE",
+   "WARN",
+   "overlay approval unavailable cap=%{cap} cause=%{cause} at=%{at}"
+  ],
+  [
+   "NOTIFY_UNAVAILABLE",
+   "WARN",
+   "approval notification unavailable cap=%{cap} cause=%{cause}"
+  ],
+  [
+   "APPROVAL_ROUTED",
+   "INFO",
+   "approval routed cap=%{cap} postState=%{postState}"
+  ],
+  [
+   "SHIZUKU_STATE",
+   "INFO",
+   "shizuku state binder=%{binder} granted=%{granted}"
+  ],
+  [
+   "SHIZUKU_PROBE_FAILED",
+   "WARN",
+   "shizuku probe failed where=%{where} cause=%{cause}"
+  ],
+  [
+   "SHIZUKU_BIND_FAILED",
+   "WARN",
+   "shizuku user service bind failed cause=%{cause}"
+  ],
+  [
+   "SHIZUKU_SERVICE_CONNECTED",
+   "INFO",
+   "shizuku user service connected"
+  ],
+  [
+   "SHIZUKU_SERVICE_DEAD",
+   "WARN",
+   "shizuku user service disconnected"
+  ],
+  [
+   "PROJECTION_CONSENT_GRANTED",
+   "INFO",
+   "screen capture consent granted"
+  ],
+  [
+   "PROJECTION_CONSENT_DENIED",
+   "INFO",
+   "screen capture consent denied"
+  ],
+  [
+   "PROJECTION_CONSENT_TIMEOUT",
+   "WARN",
+   "screen capture consent timed out"
+  ],
+  [
+   "PROJECTION_CONSENT_PENDING",
+   "INFO",
+   "screen capture consent awaiting user"
+  ],
+  [
+   "PROJECTION_TOKEN_FAILED",
+   "WARN",
+   "media projection token unavailable"
+  ],
+  [
+   "PROJECTION_REVOKED",
+   "INFO",
+   "screen capture stopped by user"
+  ],
+  [
+   "PROJECTION_FRAME_FAILED",
+   "WARN",
+   "projection frame failed cause=%{cause}"
+  ],
+  [
+   "PROJECTION_NO_UI",
+   "WARN",
+   "screen capture needs the assistant page in front"
+  ],
+  [
+   "SWEEP_DONE",
+   "INFO",
+   "sweep done requests=%{requests} responses=%{responses} artifacts=%{artifacts} freed=%{freed}"
+  ],
+  [
+   "QUOTA_EXHAUSTED",
+   "ERROR",
+   "quota exhausted want=%{want}"
+  ],
+  [
+   "MANUAL_CLEAR",
+   "INFO",
+   "manual clear freed=%{freed}"
+  ],
+  [
+   "ATOMIC_WRITE_FAILED",
+   "WARN",
+   "atomic write failed file=%{file}"
+  ],
+  [
+   "DIRS_UNAVAILABLE",
+   "ERROR",
+   "working directories unavailable"
+  ],
+  [
+   "LEDGER_CORRUPTED",
+   "WARN",
+   "quota ledger corrupted %{detail}"
+  ],
+  [
+   "BACKEND_FAILURE",
+   "WARN",
+   "backend failure cap=%{cap} code=%{code}"
+  ],
+  [
+   "REMOTE_RESULT_DROPPED",
+   "WARN",
+   "remote result dropped kind=%{kind} waitedMs=%{waitedMs}"
+  ],
+  [
+   "CALL_DONE",
+   "INFO",
+   "call done cap=%{cap} result=%{result} ms=%{ms} bytes=%{bytes}"
+  ],
+  [
+   "CALL_ARGS",
+   "INFO",
+   "call args cap=%{cap} digest=%{digest}"
+  ],
+  [
+   "CALL_FAILED",
+   "ERROR",
+   "call failed id=%{id} type=%{type}"
+  ],
+  [
+   "CALL_DEFERRED",
+   "WARN",
+   "call deferred id=%{id} cause=%{cause}"
+  ],
+  [
+   "CALL_ACCEPTED",
+   "INFO",
+   "request accepted id=%{id}"
+  ],
+  [
+   "CALL_SETTLED",
+   "INFO",
+   "request settled ms=%{ms}"
+  ],
+  [
+   "ARTIFACT_CREATE_FAILED",
+   "ERROR",
+   "artifact create failed cap=%{cap}"
+  ],
+  [
+   "AUDIT_WRITE_FAILED",
+   "WARN",
+   "audit write failed %{detail}"
+  ],
+  [
+   "AUDIT_PURGED",
+   "INFO",
+   "audit purged files=%{files}"
+  ],
+  [
+   "REQUEST_STATE_CREATED",
+   "INFO",
+   "request state created id=%{id} cap=%{cap}"
+  ],
+  [
+   "REQUEST_STATE_TERMINAL",
+   "INFO",
+   "request state terminal id=%{id} phase=%{phase}"
+  ],
+  [
+   "REQUEST_RECOVERED",
+   "WARN",
+   "request recovered id=%{id} phase=%{phase}"
+  ],
+  [
+   "REQUEST_DISPATCH_GUARD_FAILED",
+   "ERROR",
+   "dispatch guard failed id=%{id}"
+  ],
+  [
+   "REQUEST_DISPATCH_NOT_EXECUTABLE",
+   "WARN",
+   "dispatch refused not executable id=%{id} phase=%{phase}"
+  ],
+  [
+   "REQUEST_ADMITTED",
+   "INFO",
+   "request admitted id=%{id}"
+  ],
+  [
+   "REQUEST_WAITING_USER",
+   "INFO",
+   "request waiting for user id=%{id} kind=%{kind}"
+  ],
+  [
+   "REQUEST_APPROVAL_DECIDED",
+   "INFO",
+   "approval decided id=%{id} verdict=%{verdict}"
+  ],
+  [
+   "REQUEST_DISPATCH_ARMED",
+   "INFO",
+   "dispatch armed id=%{id}"
+  ],
+  [
+   "REQUEST_COMPLETED",
+   "INFO",
+   "request completed id=%{id} state=%{state} ms=%{ms}"
+  ],
+  [
+   "RESPONSE_PUBLISHED",
+   "INFO",
+   "response published id=%{id} bytes=%{bytes}"
+  ],
+  [
+   "APPROVAL_PRESENTER",
+   "INFO",
+   "approval presented via=%{via} waiting=%{waiting}"
+  ],
+  [
+   "CONTROL_OP",
+   "INFO",
+   "control op=%{op} result=%{result} ms=%{ms}"
+  ],
+  [
+   "ASK_ANSWERED",
+   "INFO",
+   "ask answered id=%{id} choice=%{choice} ms=%{ms}"
+  ],
+  [
+   "ASK_UNAVAILABLE",
+   "WARN",
+   "ask unavailable id=%{id} cause=%{cause} ms=%{ms}"
+  ],
+  [
+   "BACKEND_CALL",
+   "INFO",
+   "backend call cap=%{cap} backend=%{backend} result=%{result} ms=%{ms}"
+  ],
+  [
+   "REMOTE_SUBMITTED",
+   "INFO",
+   "remote submitted cap=%{cap} waitMs=%{waitMs}"
+  ],
+  [
+   "REMOTE_GIVE_UP",
+   "WARN",
+   "remote gave up cap=%{cap} submittedAgoMs=%{ago}"
+  ]
+ ]
+}

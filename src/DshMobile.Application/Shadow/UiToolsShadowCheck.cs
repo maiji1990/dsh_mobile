@@ -1,4 +1,5 @@
 using DshMobile.Runtime.Automation;
+using DshMobile.Runtime.Automation.Relay;
 
 namespace DshMobile.Application.Shadow;
 
@@ -16,15 +17,18 @@ public sealed record UiToolsLegacyView(
 /// PR-07 first segment, read-only shadow of the <c>ui_*</c> registration and status: after each legacy
 /// <c>relay.start / stop / status</c>, the C# port reads the same patch layer and accessibility setting and must reach
 /// the same conclusions. Registered additionally requires the file to be byte-identical to the C# <c>Render()</c>, so
-/// a drift in the rendered layer shows up even when both sides see the marker. Static facts (read-only capability
-/// allowlist, guest CLI path, MCP server name) are compared too.
+/// a drift in the rendered layer shows up even when both sides see the marker. Static facts (capability
+/// table, guest CLI path, MCP server name) are compared too.
 /// </summary>
 public static class UiToolsShadowCheck
 {
     public const string Slice = "automation.ui-tools";
 
-    /// <summary>V1 allowlist of the legacy Relay (read-only UI capabilities only).</summary>
-    public static readonly IReadOnlyList<string> AllowedWire = ["ui.node", "ui.snapshot"];
+    /// <summary>
+    /// What the legacy Relay registers (ADR-0008: upstream's full table, <c>RelayCapabilities.BuiltIn</c>), sorted
+    /// ordinally the way <c>relay.status</c> reports it.
+    /// </summary>
+    public static readonly IReadOnlyList<string> AllowedWire = [.. RelayProtocol.Capabilities.Order(StringComparer.Ordinal)];
 
     public const string GuestCli = "/opt/pilot/bin/relay";
 
