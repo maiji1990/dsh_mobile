@@ -35,7 +35,7 @@
     <string name="automation_envelope_probe_running">正在向中继信箱写入两组故意写错的请求：16 条在解析阶段被拒，12 条在审批之前的准入检查被拒（未开放的能力、参数不合规、参数指向本 App），不会弹审批、不会读取或操作手机；逐字节比对中继的回包与 C#；再只读比对中继发布的执行面裁决（capabilities.json）… 需要先「开启中继」。</string>
     <string name="automation_envelope_probe_off">信封比对未启用（切片不在影子模式）</string>
     <string name="automation_a11y_read_probe">无障碍读取比对（开发者）</string>
-    <string name="automation_a11y_read_probe_running">正在比对无障碍读取（只发 ui.snapshot 与 ui.node 两种读取请求）。两种请求第一次各会弹一张审批卡：选「本次会话允许」，并在确认页上确认。比对期间请停留在本页，最长 3 分钟。</string>
+    <string name="automation_a11y_read_probe_running">正在比对无障碍读取（只发 ui.snapshot、ui.node 与 ui.waitFor 三种读取请求）。三种请求第一次各会弹一张审批卡：选「本次会话允许」，并在确认页上确认。比对期间请停留在本页，最长 5 分钟。</string>
     <string name="automation_surface_pref">执行面偏好（开发者）：%1$s</string>
     <string name="automation_surface_pref_fg">前台</string>
     <string name="automation_surface_pref_bg">优先后台</string>

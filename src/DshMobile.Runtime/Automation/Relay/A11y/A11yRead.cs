@@ -227,7 +227,7 @@ public static class A11ySnapshot
 }
 
 /// <summary>Upstream <c>NodeActions</c>, read side: target resolution, <c>ui.node</c> and <c>ownerOf</c>.</summary>
-public sealed class NodeReader(A11yTree tree)
+public sealed partial class NodeReader(A11yTree tree)
 {
     private const int MaxRelativeNth = 20;
     private const int MaxCandidates = 8;

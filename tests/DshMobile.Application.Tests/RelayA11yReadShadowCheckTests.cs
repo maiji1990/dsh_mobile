@@ -241,6 +241,64 @@ public sealed class RelayA11yReadShadowCheckTests : IDisposable
     }
 
     [Fact]
+    public void PickWaitForCalls_AllAnswerAtTheFirstPoll()
+    {
+        var calls = RelayA11yReadShadowCheck.PickWaitForCalls(Tree("Title")).Select(c => c.Args).ToList();
+        Assert.Equal(
+        [
+            """{"nodeId":0,"timeoutMs":0}""",
+            """{"selector":{"text":"dshm-shadow: no such text"},"absent":true,"timeoutMs":0}""",
+            """{"selector":{"text":"dshm-shadow: no such text"},"timeoutMs":0}""",
+            """{"nodeId":0,"relative":{"side":"above"},"absent":true,"timeoutMs":0}""",
+            """{"nodeId":0,"timeoutMs":15001}""",
+            """{"selector":{"text":"Title"}}""",
+            """{"selector":{"text":"Title"},"absent":true,"timeoutMs":0}""",
+            """{"nodeId":2,"text":"dshm-shadow: no such text","timeoutMs":0}""",
+            """{"nodeId":2,"checked":true,"timeoutMs":0}""",
+        ], calls);
+        // Each is answered without a single poll delay on a still screen.
+        foreach (var call in RelayA11yReadShadowCheck.PickWaitForCalls(Tree("Title")))
+        {
+            if (call.Answer(Tree("Title")) is BackendResult.Ok ok)
+            {
+                Assert.Equal(1, (int)ok.Data["polls"]!);
+            }
+        }
+    }
+
+    [Fact]
+    public async Task WaitFor_LegacyWaitedLonger_StillAgrees_ButOtherPollsDiverge()
+    {
+        MakeMailbox();
+        var tree = Tree("Title");
+        var agree = await RunWaitFor(() => tree, (id, cap, args) =>
+            Reply(id, CSharp(tree, cap, args)).Replace("\"waitedMs\":0", "\"waitedMs\":7", StringComparison.Ordinal));
+        Assert.Equal(ShadowVerdict.Agree, agree.Verdict);
+        Assert.StartsWith("9/9 byte-identical", agree.Detail, StringComparison.Ordinal);
+        Assert.Contains("E_WAIT_TIMEOUT", agree.Detail, StringComparison.Ordinal);
+
+        var differ = await RunWaitFor(() => tree, (id, cap, args) =>
+            Reply(id, CSharp(tree, cap, args)).Replace("\"polls\":1", "\"polls\":2", StringComparison.Ordinal));
+        Assert.Equal(ShadowVerdict.Diverge, differ.Verdict);
+        Assert.Equal(RelayA11yReadShadowCheck.WaitForSlice, differ.Slice);
+    }
+
+    private async Task<ShadowReport> RunWaitFor(Func<A11yTree?> host, Func<string, string, JsonElement, string?> answer)
+    {
+        using var cts = new CancellationTokenSource();
+        var relay = Task.Run(() => FakeRelay(answer, cts.Token));
+        try
+        {
+            return await RelayA11yReadShadowCheck.RunWaitForAsync(_pilot, host, TimeProvider.System, TimeSpan.FromSeconds(30), CancellationToken.None);
+        }
+        finally
+        {
+            await cts.CancelAsync();
+            await relay;
+        }
+    }
+
+    [Fact]
     public async Task ServiceGoneAroundOneCall_IsRetried_NotADifference()
     {
         // Seen on a device: `uiautomator dump` unbinds every accessibility service for ~2 s. Both sides then lack a

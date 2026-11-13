@@ -567,14 +567,36 @@ public sealed class RuntimeCoordinator : IDisposable
         {
             return null;
         }
+        return await ShadowA11yCheckAsync(RelayA11yReadShadowCheck.Slice, RelayA11yReadShadowCheck.RunAsync, hostTree, timeout, ct).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// PR-07 segment 8 shadow (same developer action, one more approval card): legacy <c>ui.waitFor</c> answers against
+    /// the C# port on the same live tree, byte for byte except <c>waitedMs</c>. Null when not in shadow mode.
+    /// </summary>
+    public async Task<ShadowReport?> ShadowRelayA11yWaitForAsync(Func<DshMobile.Runtime.Automation.Relay.A11y.A11yTree?> hostTree, TimeSpan timeout,
+        CancellationToken ct)
+    {
+        if (_options.RelayA11yWaitFor != SliceMode.LegacyWithShadow || _layout is null)
+        {
+            return null;
+        }
+        return await ShadowA11yCheckAsync(RelayA11yReadShadowCheck.WaitForSlice, RelayA11yReadShadowCheck.RunWaitForAsync, hostTree, timeout, ct)
+            .ConfigureAwait(false);
+    }
+
+    private async Task<ShadowReport> ShadowA11yCheckAsync(string slice,
+        Func<string, Func<DshMobile.Runtime.Automation.Relay.A11y.A11yTree?>, TimeProvider, TimeSpan, CancellationToken, Task<ShadowReport>> run,
+        Func<DshMobile.Runtime.Automation.Relay.A11y.A11yTree?> hostTree, TimeSpan timeout, CancellationToken ct)
+    {
         ShadowReport report;
         try
         {
-            report = await RelayA11yReadShadowCheck.RunAsync(_layout.PilotEntryDir, hostTree, _time, timeout, ct).ConfigureAwait(false);
+            report = await run(_layout!.PilotEntryDir, hostTree, _time, timeout, ct).ConfigureAwait(false);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            report = new ShadowReport(RelayA11yReadShadowCheck.Slice, _time.GetUtcNow(), ShadowVerdict.Inconclusive, false, null, true,
+            report = new ShadowReport(slice, _time.GetUtcNow(), ShadowVerdict.Inconclusive, false, null, true,
                 ex.GetType().Name, $"check could not use the mailbox: {ex.Message}", 0);
         }
         _shadow.Report(report);
