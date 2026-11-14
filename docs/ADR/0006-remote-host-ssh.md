@@ -2,6 +2,7 @@
 
 - 状态：已接受（2026-11-10；用户选择：测试主机为本机 Windows PC，认证用手机内生成的密钥）
 - 修订（2026-11-10）：其中“复用 DSHBox / Kotlin 实现”的部分按 [ADR-0007](0007-source-ownership-csharp-first.md) 降级为过渡实现，将逐切片替换为 C#；本 ADR 的安全与契约约束（审批、单一 `ui_*` / `browser_*` 契约、主机指纹固定、不可导出私钥）继续有效，替换实现必须同样满足。
+- 修订（2026-11-14）：决策 1、2 的 JSch 部分由 [ADR-0012](0012-csharp-ssh-client-sshnet.md) 的 C# 实现（SSH.NET + Keystore 自定义 `HostAlgorithm`）逐段替换；决策 4、5、7 的 C# 实现与影子做法见 [ADR-0013](0013-remote-dsh-start-stop-shadow.md)；其余决策不变。
 - 来源：方案第 11 节、12.2「Remote」、M7；TASK-012（验收：远程会话隔离）
 - 关联：ADR-0004 / ADR-0005（本机手机操控与浏览器能力不对远端开放）
 

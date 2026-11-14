@@ -112,6 +112,10 @@
     <string name="remote_stopped">远端 DSH 已不再响应</string>
     <string name="remote_key_changed">主机密钥与已固定的不同，已拒绝连接。若确属主机重装，请删除该主机后重新添加并核对指纹。</string>
     <string name="remote_auth_hint">远端未接受本机公钥：把上方公钥加入远端 authorized_keys（Windows 管理员账户为 C:\\ProgramData\\ssh\\administrators_authorized_keys）。</string>
+    <string name="remote_cs_connecting">正在用 C#（SSH.NET）连接…（长按「连接」= C# 连接；短按仍是旧实现）</string>
+    <string name="remote_cs_marker">连接实现：C#（SSH.NET，迁移中）</string>
+    <string name="remote_cs_unknown_hint">C# 连接看到未确认的主机密钥并已拒绝。固定指纹仍由旧实现负责：请短按「连接」，在弹出的对话框里核对并确认。</string>
+    <string name="remote_cs_failed">C# 连接出错：%1$s</string>
     <string name="dm_browser_title">浏览器（实验）</string>
     <string name="dm_browser_explain">网页自动化：DSH 通过 browser_* 工具读取与操作 App 内置浏览器（独立进程，Cookie / 存储与 DSH 界面分离）。AI 只有在你于浏览器内批准「控制请求」后才能点击、输入或导航；读取页面也需要你先打开浏览器并开启其中的 AI 开关。browser_* 工具默认不安装。</string>
     <string name="dm_browser_open">打开浏览器</string>

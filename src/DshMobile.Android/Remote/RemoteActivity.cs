@@ -4,7 +4,9 @@ using Android.Content;
 using Android.Text;
 using Android.Views;
 using DshMobile.App.Bridge;
+using DshMobile.Application.Shadow;
 using DshMobile.Core.Bridge;
+using DshMobile.Runtime.Remote;
 
 namespace DshMobile.App.Remote;
 
@@ -48,9 +50,15 @@ public sealed class RemoteActivity : Activity
 
         var save = Make(Resource.String.remote_save, () => _ = SaveAsync());
         var connect = Make(Resource.String.remote_connect, () => _ = ConnectAsync());
-        var start = Make(Resource.String.remote_start, () => _ = Status(BridgeMethods.RemoteStart, null, TimeSpan.FromMinutes(3)));
-        var stop = Make(Resource.String.remote_stop, () => _ = Status(BridgeMethods.RemoteStop, null, TimeSpan.FromMinutes(1)));
-        var disconnect = Make(Resource.String.remote_disconnect, () => _ = Status(BridgeMethods.RemoteDisconnect, null, TimeSpan.FromSeconds(30)));
+        // PR-09 second segment (ADR-0012): long-press = opt-in C# (SSH.NET) connect; short press stays legacy.
+        connect.LongClick += (_, _) => _ = CsConnectAsync();
+        var start = Make(Resource.String.remote_start, StartDsh);
+        var stop = Make(Resource.String.remote_stop, StopDsh);
+        var disconnect = Make(Resource.String.remote_disconnect, () =>
+        {
+            CsRemoteConnection.Clear();
+            _ = Status(BridgeMethods.RemoteDisconnect, null, TimeSpan.FromSeconds(30));
+        });
         var remove = Make(Resource.String.remote_remove, ConfirmRemove);
         root.AddView(Row(copy, save));
         root.AddView(Row(connect, disconnect));
@@ -82,13 +90,24 @@ public sealed class RemoteActivity : Activity
         {
             var hw = id.HardwareBacked switch { true => GetString(Resource.String.remote_key_hw), false => GetString(Resource.String.remote_key_sw), null => "?" };
             _identity.Text = $"{GetString(Resource.String.remote_key_heading)}（{hw}）\n{id.PublicKey}\n{id.Fingerprint}";
+            // PR-09 shadow (read-only): C# reads the same Keystore key and signs one labelled challenge inside Keystore.
+            var shadow = _bridge.RemoteShadow;
+            _ = Task.Run(() => shadow.Identity(id, () => SshIdentity.Probe(new AndroidSshKeySource())));
         }
         var list = await Call(BridgeMethods.RemoteHostsList, null, BridgeJsonContext.Default.RemoteHostList, TimeSpan.FromSeconds(10));
+        if (list is not null)
+        {
+            Shadow(s => s.Listed(list.Hosts, StoredHosts()));
+        }
         if (list is { Hosts.Length: > 0 })
         {
             Select(list.Hosts[^1]);
         }
         await Status(BridgeMethods.RemoteStatus, null, TimeSpan.FromSeconds(10));
+        if (CsRemoteConnection.Status() is { } cs)
+        {
+            ShowCs(cs);
+        }
     }
 
     private void Select(RemoteHost h)
@@ -109,8 +128,14 @@ public sealed class RemoteActivity : Activity
             return;
         }
         var req = new RemoteHostRequest(_selected?.Id, _label.Text ?? "", (_host.Text ?? "").Trim(), port, (_user.Text ?? "").Trim(), dshPort);
-        var saved = await Call(BridgeMethods.RemoteHostsSave, BridgeCodec.ToPayload(req, BridgeJsonContext.Default.RemoteHostRequest),
-            BridgeJsonContext.Default.RemoteHost, TimeSpan.FromSeconds(10));
+        var payload = BridgeCodec.ToPayload(req, BridgeJsonContext.Default.RemoteHostRequest);
+        var before = StoredHosts();
+        var (resp, saved) = await CallRaw(BridgeMethods.RemoteHostsSave, payload, BridgeJsonContext.Default.RemoteHost, TimeSpan.FromSeconds(10));
+        if (resp is not null)
+        {
+            var after = StoredHosts();
+            Shadow(s => s.Saved(payload, before, new RemoteLegacyOutcome<RemoteHost>(resp.Ok, resp.Code, resp.Message, saved), after));
+        }
         if (saved is not null)
         {
             Select(saved);
@@ -125,11 +150,145 @@ public sealed class RemoteActivity : Activity
             _status.Text = GetString(Resource.String.remote_save_first);
             return;
         }
-        var s = await Status(BridgeMethods.RemoteConnect, HostId(_selected.Id), TimeSpan.FromMinutes(3));
+        CsRemoteConnection.Clear();
+        var hostId = _selected.Id;
+        // The profile (and its pin) the legacy connect is about to use: the C# shadow connection uses the same one.
+        var profile = RemoteHostProfile.ParseStored(StoredHosts()).FirstOrDefault(p => p.Id == hostId);
+        var s = await Status(BridgeMethods.RemoteConnect, HostId(hostId), TimeSpan.FromMinutes(3));
+        if (s is not null)
+        {
+            var shadow = _bridge.RemoteShadow;
+            if (shadow.ConnectEnabled)
+            {
+                var connector = CsRemoteConnection.Connector();
+                _ = Task.Run(() => shadow.ConnectedAsync(s, profile, (p, ct) => connector.ConnectAsync(p, ct)));
+            }
+        }
         if (s is { Code: RemoteCodes.HostKeyUnknown, Fingerprint: { } fp })
         {
             ConfirmFingerprint(_selected, fp, s.KeyType);
         }
+    }
+
+    /// <summary>
+    /// Opt-in C# connect (ADR-0012): the legacy connection is closed first (one remote at a time), then SSH.NET connects
+    /// to the stored profile with the same pin and Keystore key and runs the same probe. C# never pins: an unknown key is
+    /// only shown, and confirming it stays with the legacy flow (short press).
+    /// </summary>
+    private async Task CsConnectAsync()
+    {
+        if (_selected is null)
+        {
+            _status.Text = GetString(Resource.String.remote_save_first);
+            return;
+        }
+        var hostId = _selected.Id;
+        await Call(BridgeMethods.RemoteDisconnect, null, BridgeJsonContext.Default.RemoteStatusInfo, TimeSpan.FromSeconds(30));
+        CsRemoteConnection.Clear();
+        var profile = RemoteHostProfile.ParseStored(StoredHosts()).FirstOrDefault(p => p.Id == hostId);
+        if (profile is null)
+        {
+            _status.Text = GetString(Resource.String.remote_save_first);
+            return;
+        }
+        _status.Text = GetString(Resource.String.remote_cs_connecting);
+        Enable(false);
+        try
+        {
+            var connector = CsRemoteConnection.Connector();
+            var attempt = await Task.Run(() => connector.ConnectAsync(profile));
+            CsRemoteConnection.Set(profile, attempt);
+            _bridge.Note($"remote C# connect: state={attempt.State} code={attempt.Code}");
+            if (CsRemoteConnection.Status() is { } st)
+            {
+                ShowCs(st);
+            }
+        }
+        catch (Exception e)
+        {
+            _status.Text = Fmt(Resource.String.remote_cs_failed, $"{e.GetType().Name}: {e.Message}");
+        }
+        finally
+        {
+            Enable(true);
+        }
+    }
+
+    /// <summary>Start of the remote DSH: on the C# session when one is open (ADR-0013), otherwise legacy + shadow check.</summary>
+    private void StartDsh()
+    {
+        if (CsRemoteConnection.Session is { } cs)
+        {
+            _ = CsDshAsync(cs, start: true);
+            return;
+        }
+        _ = LegacyDshAsync(BridgeMethods.RemoteStart, TimeSpan.FromMinutes(3));
+    }
+
+    private void StopDsh()
+    {
+        if (CsRemoteConnection.Session is { } cs)
+        {
+            _ = CsDshAsync(cs, start: false);
+            return;
+        }
+        _ = LegacyDshAsync(BridgeMethods.RemoteStop, TimeSpan.FromMinutes(1));
+    }
+
+    private async Task CsDshAsync(RemoteSshSession session, bool start)
+    {
+        Enable(false);
+        try
+        {
+            var d = await Task.Run(() => start ? session.StartDshAsync() : session.StopDshAsync());
+            _bridge.Note($"remote C# {(start ? "start" : "stop")}: state={d.State} code={d.Code} http={d.HttpUnauthenticated?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "-"} still={d.RemoteDshStillRunning?.ToString() ?? "-"} token={d.HasLaunchToken}");
+            if (CsRemoteConnection.Status(d) is { } st)
+            {
+                ShowCs(st);
+            }
+        }
+        catch (Exception e)
+        {
+            _status.Text = Fmt(Resource.String.remote_cs_failed, $"{e.GetType().Name}: {e.Message}");
+        }
+        finally
+        {
+            Enable(true);
+        }
+    }
+
+    /// <summary>
+    /// Legacy start / stop; then the PR-09 shadow (ADR-0013) checks the verdict through its own C# connection and forward
+    /// to the same remote port — read-only, it never starts or stops a remote process.
+    /// </summary>
+    private async Task LegacyDshAsync(string method, TimeSpan deadline)
+    {
+        var hostId = _selected?.Id;
+        var profile = hostId is null ? null : RemoteHostProfile.ParseStored(StoredHosts()).FirstOrDefault(p => p.Id == hostId);
+        var s = await Status(method, null, deadline);
+        var shadow = _bridge.RemoteShadow;
+        if (s is null || !shadow.DshEnabled)
+        {
+            return;
+        }
+        var connector = CsRemoteConnection.Connector();
+        _ = Task.Run(() => shadow.DshObservedAsync(method, s, profile, async (p, ct) =>
+        {
+            var a = await connector.ConnectSessionAsync(p, ct);
+            using var session = a.Session ?? throw new InvalidOperationException($"C# connect {a.Code}: {a.Message}");
+            return await session.ProbeHttpAsync(p.DshPort, ct);
+        }));
+    }
+
+    private void ShowCs(RemoteStatusInfo s)
+    {
+        Show(s);
+        var extra = GetString(Resource.String.remote_cs_marker);
+        if (s.Code == RemoteCodes.HostKeyUnknown && s.Fingerprint is { } fp)
+        {
+            extra += $"\n{s.KeyType ?? "?"} {fp}\n{GetString(Resource.String.remote_cs_unknown_hint)}";
+        }
+        _status.Text = extra + "\n" + _status.Text;
     }
 
     /// <summary>The user compares the fingerprint with the server's own (ssh-keygen -lf) before trusting it.</summary>
@@ -140,9 +299,15 @@ public sealed class RemoteActivity : Activity
             .SetMessage(Fmt(Resource.String.remote_trust_message, $"{host.User}@{host.Host}:{host.Port}", keyType ?? "?", fingerprint))!
             .SetPositiveButton(Resource.String.remote_trust_yes, async (_, _) =>
             {
-                var trusted = await Call(BridgeMethods.RemoteTrust,
+                var before = StoredHosts();
+                var (resp, trusted) = await CallRaw(BridgeMethods.RemoteTrust,
                     BridgeCodec.ToPayload(new RemoteTrustRequest(host.Id, fingerprint), BridgeJsonContext.Default.RemoteTrustRequest),
                     BridgeJsonContext.Default.RemoteHostList, TimeSpan.FromSeconds(10));
+                if (resp is not null)
+                {
+                    var after = StoredHosts();
+                    Shadow(s => s.Trusted(host.Id, fingerprint, before, new RemoteLegacyOutcome<RemoteHostList>(resp.Ok, resp.Code, resp.Message, trusted), after));
+                }
                 if (trusted?.Hosts.FirstOrDefault(h => h.Id == host.Id) is { } h)
                 {
                     Select(h);
@@ -163,7 +328,14 @@ public sealed class RemoteActivity : Activity
             .SetMessage(Fmt(Resource.String.remote_remove_confirm, h.Label))!
             .SetPositiveButton(Resource.String.remote_remove, async (_, _) =>
             {
-                await Call(BridgeMethods.RemoteHostsRemove, HostId(h.Id), BridgeJsonContext.Default.RemoteHostList, TimeSpan.FromSeconds(30));
+                CsRemoteConnection.Clear(); // legacy remove also disconnects the removed host
+                var before = StoredHosts();
+                var (resp, left) = await CallRaw(BridgeMethods.RemoteHostsRemove, HostId(h.Id), BridgeJsonContext.Default.RemoteHostList, TimeSpan.FromSeconds(30));
+                if (resp is not null)
+                {
+                    var after = StoredHosts();
+                    Shadow(s => s.Removed(h.Id, before, new RemoteLegacyOutcome<RemoteHostList>(resp.Ok, resp.Code, resp.Message, left), after));
+                }
                 _selected = null;
                 _status.Text = GetString(Resource.String.remote_removed);
             })!
@@ -193,8 +365,21 @@ public sealed class RemoteActivity : Activity
         {
             Show(s);
             _bridge.Note($"{method}: state={s.State} code={s.Code}");
+            var stored = StoredHosts();
+            Shadow(sh => sh.StatusObserved(method, s, stored));
         }
         return s;
+    }
+
+    /// <summary>The profile list exactly as the legacy RemoteHosts stores it (same SharedPreferences instance).</summary>
+    private string? StoredHosts() =>
+        GetSharedPreferences(RemoteHostProfile.PreferencesName, FileCreationMode.Private)!.GetString(RemoteHostProfile.PreferencesKey, null);
+
+    /// <summary>PR-09 shadow comparisons run off the UI thread; inputs are captured by the caller.</summary>
+    private void Shadow(Action<RemoteHostsShadow> compare)
+    {
+        var shadow = _bridge.RemoteShadow;
+        _ = Task.Run(() => compare(shadow));
     }
 
     private void Show(RemoteStatusInfo s)
@@ -233,7 +418,11 @@ public sealed class RemoteActivity : Activity
         _status.Text = string.Join('\n', lines);
     }
 
-    private async Task<T?> Call<T>(string method, JsonElement? payload, JsonTypeInfo<T> type, TimeSpan deadline) where T : class
+    private async Task<T?> Call<T>(string method, JsonElement? payload, JsonTypeInfo<T> type, TimeSpan deadline) where T : class =>
+        (await CallRaw(method, payload, type, deadline)).Value;
+
+    /// <summary>The bridge response (for the shadow, failures included) and its payload when it succeeded.</summary>
+    private async Task<(BridgeResponse? Response, T? Value)> CallRaw<T>(string method, JsonElement? payload, JsonTypeInfo<T> type, TimeSpan deadline) where T : class
     {
         Enable(false);
         try
@@ -242,9 +431,9 @@ public sealed class RemoteActivity : Activity
             if (!resp.Ok)
             {
                 _status.Text = $"{method} FAILED {resp.Code}: {resp.Message}";
-                return null;
+                return (resp, null);
             }
-            return BridgeCodec.ReadPayload(resp, type);
+            return (resp, BridgeCodec.ReadPayload(resp, type));
         }
         finally
         {
