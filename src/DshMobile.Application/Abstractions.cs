@@ -108,6 +108,27 @@ public sealed class MigrationOptions
     /// </summary>
     public SliceMode RelayHost { get; set; } = SliceMode.LegacyWithShadow;
 
+    /// <summary>
+    /// PR-09 first segment (remote host profiles, host-key pin, SSH identity): after each legacy <c>remote.*</c> call of
+    /// the remote page, the C# port reads the same SharedPreferences list and Keystore key and is compared. SSH stays
+    /// legacy (JSch); C# never writes the list or creates the key.
+    /// </summary>
+    public SliceMode RemoteHosts { get; set; } = SliceMode.LegacyWithShadow;
+
+    /// <summary>
+    /// PR-09 second segment (SSH connection, ADR-0012): after each legacy <c>remote.connect</c>, C# opens its own SSH.NET
+    /// connection to the same stored profile (same pin, same Keystore key), runs the same probe, disconnects and is
+    /// compared. Read-only: never pins, never starts the remote DSH. Long-press "connect" is the opt-in C# connect.
+    /// </summary>
+    public SliceMode RemoteConnect { get; set; } = SliceMode.LegacyWithShadow;
+
+    /// <summary>
+    /// PR-09 third segment (remote dsh web start / stop, ADR-0013): after each legacy <c>remote.start</c> /
+    /// <c>remote.stop</c>, C# checks through its own SSH.NET connection and forward what the remote DSH port answers
+    /// without the token and must reach the legacy verdict. It never starts or stops a remote process.
+    /// </summary>
+    public SliceMode RemoteDsh { get; set; } = SliceMode.LegacyWithShadow;
+
     /// <summary>Host-path probe for the extractor; null = the real filesystem (the right choice on a device).</summary>
     public Func<string, bool>? HostPathExists { get; set; }
 }

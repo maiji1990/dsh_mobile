@@ -48,6 +48,7 @@ public sealed class BridgeHost : IDisposable, IDiagnosticsLog
             .AddDshMobileApplication(Layout, Client)
             .BuildServiceProvider();
         Runtime = _services.GetRequiredService<RuntimeCoordinator>();
+        RemoteShadow = _services.GetRequiredService<DshMobile.Application.Shadow.RemoteHostsShadow>();
         // ADR-0010: the guest-facing C# Relay stops with the sandbox, as the legacy sandbox.stop stops its Relay and
         // removes the ui_* layer.
         Runtime.SandboxStopping += () =>
@@ -69,6 +70,9 @@ public sealed class BridgeHost : IDisposable, IDiagnosticsLog
     public RuntimeLayout Layout { get; }
 
     public RuntimeCoordinator Runtime { get; }
+
+    /// <summary>PR-09 shadow of the remote host slice (read-only; SSH stays legacy).</summary>
+    public DshMobile.Application.Shadow.RemoteHostsShadow RemoteShadow { get; }
 
     public bool IsBusy => Volatile.Read(ref _busy) != 0;
 

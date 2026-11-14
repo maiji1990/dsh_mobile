@@ -57,7 +57,9 @@
 | 读 DSH 日志只回传点名 `@local/browser-use` 的行（≤5 行，每行 ≤300 字符），不回传其余日志 | `BrowserTools.adapterLogLines` |
 | 远程主机：SSH 私钥为 Android Keystore 中不可导出的 EC P-256 密钥，经自定义 JSch `Identity` 签名，私钥从不进入进程内存或文件；不支持密码登录 | `SshKeys.kt` |
 | 远程主机：主机指纹只能由用户确认固定，且只能固定本次连接刚出示的那一个；未确认不建立会话，指纹变化一律拒绝（`HOST_KEY_CHANGED`） | `RemoteHosts.trust`、`PinnedHostKeys`（`RemoteHostsTest`） |
+| 远程主机（C# 连接，ADR-0012）：同一把 Keystore 密钥经自定义 SSH.NET `HostAlgorithm` 在 Keystore 内签名，C# 不导出、不创建密钥；`HostKeyReceived` 只在指纹与固定值相同时放行，未知 / 不符在密钥交换阶段（认证之前）断开；C# 连接与影子连接从不写入固定指纹；主机密钥算法列表与 JSch 相同（不含 SHA-1 `ssh-rsa`） | `RemoteSshConnector`、`KeystoreHostAlgorithm`（`RemoteSshParityTests`、`RemoteSshOpenSshTests`） |
 | 远程主机：只建立本地转发（手机 → 远端回环），不建立远程转发；远端 DSH 无法访问手机的 `ui_*` / `browser_*` | `RemoteHosts.startDsh` |
+| 远程主机（C# 启停，ADR-0013）：远端命令固定为 `dsh --profile web --port <已校验端口>`；launch token 只在 `RemoteSshSession` 私有字段，不进状态 / 日志（日志尾经 `token=***` 脱敏）；转发只绑 `127.0.0.1`；影子核查只发不带 token 的 `GET /`，不启停远端进程 | `RemoteSshSession`、`RemoteDshRules`（`RemoteSshParityTests`、`RemoteSshOpenSshTests`） |
 | 远程主机：远端 launch token 只在原生内存，控制面只暴露 `hasLaunchToken`；断线 / 停止即作废；错误信息中的 token 被替换为 `***` | `RemoteHosts.tokenFrom` / `redact`（真机日志核查 0 泄漏） |
 | 远程主机：主机名 / 用户名白名单校验（拒绝选项与 shell 语法），远端只执行固定命令 | `RemoteHostProfile.fromRequest` |
 | 运行层下载按固定 SHA-256 校验；android-side 再与随包 sidecar 交叉校验 | `runtime-bundle/fetch-runtime.ps1` |

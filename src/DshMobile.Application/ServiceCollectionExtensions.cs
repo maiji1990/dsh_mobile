@@ -37,6 +37,11 @@ public static class ServiceCollectionExtensions
             sp.GetRequiredService<MigrationOptions>(),
             sp.GetRequiredService<TimeProvider>(),
             sp.GetRequiredService<RuntimeLayout>()));
+        services.AddSingleton(sp => new RemoteHostsShadow(
+            sp.GetRequiredService<IShadowReportSink>(),
+            sp.GetRequiredService<IDiagnosticsLog>(),
+            sp.GetRequiredService<MigrationOptions>(),
+            sp.GetRequiredService<TimeProvider>()));
         return services;
     }
 }
