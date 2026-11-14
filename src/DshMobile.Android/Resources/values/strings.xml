@@ -39,6 +39,12 @@
     <string name="automation_surface_pref">执行面偏好（开发者）：%1$s</string>
     <string name="automation_surface_pref_fg">前台</string>
     <string name="automation_surface_pref_bg">优先后台</string>
+    <string name="automation_cs_relay_start">启动 C# 中继（实验，独立信箱）</string>
+    <string name="automation_cs_relay_stop">停止 C# 中继</string>
+    <string name="automation_cs_relay_phase">C# 中继：%1$s</string>
+    <string name="automation_host_probe">双中继比对（开发者，需测试目标应用）</string>
+    <string name="automation_host_probe_running">正在向旧中继与 C# 中继发送同一组请求。每项能力两边各弹一张审批卡（旧中继的卡、C# 中继的通知卡），请逐一作答；只作用于测试目标应用。</string>
+    <string name="automation_host_probe_needs_cs">请先启动 C# 中继。</string>
     <string name="automation_surface_pref_changed">已改为「%1$s」。中继在下次开启时重新发布执行面裁决：请先「关闭中继」再「开启中继」，然后运行比对。没有 Shizuku 与可信虚拟屏时，优先后台会如实退回前台并注明原因。</string>
     <string name="automation_a11y_on">无障碍服务：已开启</string>
     <string name="automation_a11y_off">无障碍服务：未开启（读取界面需要先开启）</string>
@@ -159,4 +165,13 @@
     <string name="automation_shizuku_denied">Shizuku：已被永久拒绝，系统不会再弹窗；请在 Shizuku 应用的授权列表里手动允许 DSH Mobile</string>
     <string name="automation_shizuku_unsupported">Shizuku：服务端版本过旧（v11 以前），不支持</string>
     <string name="automation_shizuku_not_running">Shizuku：未运行或未安装（本应用不会替你启动它）</string>
+    <string name="relay_cs_a11y_label">DSH Mobile 手机操控（C#）</string>
+    <string name="relay_cs_a11y_description">让 DSH Mobile 的 C# 手机操控通道读取屏幕控件并执行点击、滑动与按键。每一次写操作仍须你在审批卡上亲自允许；不开启也不影响现有通道。</string>
+    <string name="relay_cs_listener_label">DSH Mobile 通知读取（C#）</string>
+    <string name="relay_cs_notify_channel">助手消息</string>
+    <string name="relay_cs_projection_channel">屏幕采集</string>
+    <string name="relay_cs_projection_ongoing">正在为手机操控请求采集屏幕</string>
+    <string name="relay_cs_channel_name">手机操控通道（C#）</string>
+    <string name="relay_cs_channel_text">C# 手机操控通道正在接收请求</string>
+    <string name="relay_cs_char_count">%1$d 个字符</string>
 </resources>

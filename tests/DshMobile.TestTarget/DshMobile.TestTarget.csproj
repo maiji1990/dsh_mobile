@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    PR-07 debug test target: a separate app (different package) with Material 3 controls that the relay host shadow
+    (DshMobile.Application RelayHostShadowCheck) acts on, so legacy and C# write paths can be compared on the device
+    without touching any real app or setting. Never shipped; carries no DSHBox code or brand asset.
+  -->
+  <PropertyGroup>
+    <TargetFramework>net11.0-android</TargetFramework>
+    <SupportedOSPlatformVersion>29</SupportedOSPlatformVersion>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>DshMobile.TestTarget</RootNamespace>
+    <ApplicationId>org.example.dshmobile.testtarget</ApplicationId>
+    <ApplicationTitle>DSH Mobile test target</ApplicationTitle>
+    <ApplicationVersion>1</ApplicationVersion>
+    <ApplicationDisplayVersion>0.1.0</ApplicationDisplayVersion>
+    <RuntimeIdentifiers>android-arm64;android-x64</RuntimeIdentifiers>
+    <AndroidPackageFormats>apk</AndroidPackageFormats>
+    <PublishAot>false</PublishAot>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Same pinned Material version as the app (AGENTS.md rules 10, 12). -->
+    <PackageReference Include="Xamarin.Google.Android.Material" Version="1.14.0.6" />
+  </ItemGroup>
+</Project>

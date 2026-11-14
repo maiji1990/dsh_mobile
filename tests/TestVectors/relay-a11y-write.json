@@ -1,0 +1,1478 @@
+{
+ "comment": "PR-07: the node-level write path of the accessibility backend (ui.click / longClick / select / dismiss / scroll / setValue / setProgress / imeAction). Expectations come from an independent reading of upstream NodeActions; C#-only like the read vectors. World model: each root read is a fresh copy; performAction returns true for ids in \"accepts\" and then applies the node's \"on\" ops (rangeAdd by/dropAtEnd, rangeSet step [rounds the requested value], setText maxLen, toggle, setId, remove), each visible once the clock reaches dispatch + lagMs. The clock only moves in the delays the code asks for; endMs is where it ends. hostAtMs: from then on the root's package is the host's own. Consent controls are nodes of com.android.permissioncontroller. Range floats are float32; javaFloat locks Float.toString.",
+ "self": "org.example.dshmobile",
+ "tree": {
+  "cls": "android.widget.FrameLayout",
+  "b": [
+   0,
+   0,
+   1080,
+   2400
+  ],
+  "pkg": "com.example",
+  "flags": [
+   "visible",
+   "enabled"
+  ],
+  "actions": [],
+  "kids": [
+   {
+    "cls": "android.widget.Button",
+    "b": [
+     40,
+     100,
+     520,
+     200
+    ],
+    "pkg": "com.example",
+    "flags": [
+     "visible",
+     "enabled",
+     "clickable"
+    ],
+    "actions": [
+     16,
+     32
+    ],
+    "kids": [],
+    "text": "Save",
+    "id": "com.example:id/save",
+    "accepts": [
+     16,
+     32
+    ]
+   },
+   {
+    "cls": "android.widget.Switch",
+    "b": [
+     600,
+     100,
+     1000,
+     200
+    ],
+    "pkg": "com.example",
+    "flags": [
+     "visible",
+     "enabled",
+     "checkable",
+     "clickable"
+    ],
+    "actions": [
+     16
+    ],
+    "kids": [],
+    "text": "Dark",
+    "accepts": [
+     16
+    ],
+    "on": {
+     "16": [
+      {
+       "op": "toggle"
+      }
+     ]
+    }
+   },
+   {
+    "cls": "android.widget.EditText",
+    "b": [
+     40,
+     300,
+     1040,
+     400
+    ],
+    "pkg": "com.example",
+    "flags": [
+     "visible",
+     "enabled",
+     "editable"
+    ],
+    "actions": [
+     16,
+     2097152
+    ],
+    "kids": [],
+    "text": "Ann",
+    "accepts": [
+     2097152
+    ],
+    "on": {
+     "2097152": [
+      {
+       "op": "setText",
+       "maxLen": 5
+      }
+     ]
+    }
+   },
+   {
+    "cls": "com.google.android.material.textfield.TextInputEditText",
+    "b": [
+     40,
+     420,
+     1040,
+     520
+    ],
+    "pkg": "com.example",
+    "flags": [
+     "visible",
+     "enabled",
+     "editable"
+    ],
+    "actions": [
+     2097152
+    ],
+    "kids": [],
+    "text": "",
+    "accepts": [
+     2097152,
+     16908372
+    ]
+   },
+   {
+    "cls": "android.widget.TextView",
+    "b": [
+     40,
+     540,
+     1040,
+     600
+    ],
+    "pkg": "com.example",
+    "flags": [
+     "visible",
+     "enabled"
+    ],
+    "actions": [
+     16
+    ],
+    "kids": [],
+    "text": "Label",
+    "accepts": []
+   },
+   {
+    "cls": "android.widget.SeekBar",
+    "b": [
+     40,
+     640,
+     1040,
+     700
+    ],
+    "pkg": "com.example",
+    "flags": [
+     "visible",
+     "enabled"
+    ],
+    "actions": [
+     16908349,
+     4096,
+     8192
+    ],
+    "kids": [],
+    "desc": "Volume",
+    "range": {
+     "type": 1,
+     "min": 0.0,
+     "max": 10.0,
+     "current": 2.0
+    },
+    "accepts": [
+     16908349,
+     4096,
+     8192
+    ],
+    "on": {
+     "16908349": [
+      {
+       "op": "rangeSet",
+       "step": 1.0,
+       "lagMs": 300
+      }
+     ],
+     "4096": [
+      {
+       "op": "rangeAdd",
+       "by": 1.0,
+       "dropAtEnd": true
+      }
+     ],
+     "8192": [
+      {
+       "op": "rangeAdd",
+       "by": -1.0,
+       "dropAtEnd": true
+      }
+     ]
+    }
+   },
+   {
+    "cls": "android.widget.NumberPicker",
+    "b": [
+     40,
+     720,
+     520,
+     900
+    ],
+    "pkg": "com.example",
+    "flags": [
+     "visible",
+     "enabled"
+    ],
+    "actions": [
+     4096,
+     8192
+    ],
+    "kids": [],
+    "desc": "hour",
+    "range": {
+     "type": 0,
+     "min": 0.0,
+     "max": 23.0,
+     "current": 21.0
+    },
+    "accepts": [
+     4096,
+     8192
+    ],
+    "on": {
+     "4096": [
+      {
+       "op": "rangeAdd",
+       "by": 1.0,
+       "lagMs": 100
+      }
+     ]
+    }
+   },
+   {
+    "cls": "androidx.recyclerview.widget.RecyclerView",
+    "b": [
+     0,
+     920,
+     1080,
+     1300
+    ],
+    "pkg": "com.example",
+    "flags": [
+     "visible",
+     "enabled",
+     "scrollable"
+    ],
+    "actions": [
+     4096,
+     8192
+    ],
+    "kids": [],
+    "id": "com.example:id/feed",
+    "accepts": [
+     4096
+    ],
+    "on": {
+     "4096": [
+      {
+       "op": "setId",
+       "id": "com.example:id/feed2"
+      }
+     ]
+    }
+   },
+   {
+    "cls": "android.widget.Button",
+    "b": [
+     100,
+     1320,
+     980,
+     1400
+    ],
+    "pkg": "com.android.permissioncontroller",
+    "flags": [
+     "visible",
+     "enabled",
+     "clickable"
+    ],
+    "actions": [
+     16,
+     4096
+    ],
+    "kids": [],
+    "text": "Allow",
+    "id": "com.android.permissioncontroller:id/permission_allow_button",
+    "accepts": [
+     16,
+     4096
+    ]
+   },
+   {
+    "cls": "android.widget.ProgressBar",
+    "b": [
+     40,
+     1420,
+     1040,
+     1460
+    ],
+    "pkg": "com.example",
+    "flags": [
+     "visible",
+     "enabled"
+    ],
+    "actions": [],
+    "kids": [],
+    "range": {
+     "type": 0,
+     "min": 0.0,
+     "max": 100.0,
+     "current": 50.0
+    },
+    "accepts": []
+   },
+   {
+    "cls": "android.widget.ListView",
+    "b": [
+     0,
+     1480,
+     1080,
+     1800
+    ],
+    "pkg": "com.example",
+    "flags": [
+     "visible",
+     "enabled",
+     "scrollable"
+    ],
+    "actions": [
+     4096
+    ],
+    "kids": [],
+    "accepts": [
+     4096
+    ]
+   },
+   {
+    "cls": "com.google.android.material.slider.Slider",
+    "b": [
+     40,
+     1820,
+     1040,
+     1880
+    ],
+    "pkg": "com.example",
+    "flags": [
+     "visible",
+     "enabled"
+    ],
+    "actions": [
+     4096,
+     16908349
+    ],
+    "kids": [],
+    "desc": "stuck",
+    "range": {
+     "type": 1,
+     "min": 0.0,
+     "max": 1.0,
+     "current": 0.5
+    },
+    "accepts": [
+     4096,
+     16908349
+    ]
+   },
+   {
+    "cls": "com.google.android.material.slider.Slider",
+    "b": [
+     40,
+     1900,
+     1040,
+     1960
+    ],
+    "pkg": "com.example",
+    "flags": [
+     "visible",
+     "enabled"
+    ],
+    "actions": [
+     16908349
+    ],
+    "kids": [],
+    "desc": "Pan",
+    "range": {
+     "type": 1,
+     "min": -1.0,
+     "max": 1.0,
+     "current": 0.0
+    },
+    "accepts": [
+     16908349
+    ],
+    "on": {
+     "16908349": [
+      {
+       "op": "setId",
+       "id": "com.example:id/other"
+      }
+     ]
+    }
+   },
+   {
+    "cls": "android.widget.SeekBar",
+    "b": [
+     40,
+     1980,
+     1040,
+     2040
+    ],
+    "pkg": "com.example",
+    "flags": [
+     "visible",
+     "enabled"
+    ],
+    "actions": [
+     16908349
+    ],
+    "kids": [],
+    "desc": "Brightness",
+    "range": {
+     "type": 0,
+     "min": 0.0,
+     "max": 255.0,
+     "current": 100.0
+    },
+    "accepts": [
+     16908349
+    ],
+    "on": {
+     "16908349": [
+      {
+       "op": "rangeSet",
+       "step": 1.0
+      }
+     ]
+    }
+   },
+   {
+    "cls": "android.widget.EditText",
+    "b": [
+     40,
+     2060,
+     1040,
+     2160
+    ],
+    "pkg": "com.example",
+    "flags": [
+     "visible",
+     "enabled",
+     "editable"
+    ],
+    "actions": [
+     2097152
+    ],
+    "kids": [],
+    "text": "Temp",
+    "accepts": [
+     2097152
+    ],
+    "on": {
+     "2097152": [
+      {
+       "op": "remove"
+      }
+     ]
+    }
+   }
+  ],
+  "accepts": []
+ },
+ "frame": {
+  "screen": [
+   0,
+   0,
+   1080,
+   2400
+  ],
+  "dpi": 480,
+  "display": 0
+ },
+ "cases": [
+  {
+   "capability": "ui.click",
+   "args": "{\"nodeId\": 1}",
+   "budgetMs": 15000,
+   "sdk": 37,
+   "tree": "form",
+   "expect": {
+    "ok": true,
+    "data": "{\"dispatched\":true,\"effectVerified\":false,\"nodeId\":1,\"node\":{\"display\":0,\"class\":\"android.widget.Button\",\"text\":\"Save\",\"id\":\"com.example:id\\/save\",\"package\":\"com.example\",\"enabled\":true,\"checkable\":false,\"checked\":false,\"clickable\":true,\"longClickable\":true,\"scrollable\":false,\"selected\":false,\"visible\":true,\"focused\":false,\"editable\":false,\"actions\":[\"click\",\"longClick\"],\"left\":40,\"top\":100,\"right\":520,\"bottom\":200},\"note\":\"dispatched means the node accepted the action, not that the UI changed; re-read with ui.node or ui.waitFor to confirm the effect\"}"
+   },
+   "endMs": 0,
+   "dispatches": [
+    "click"
+   ]
+  },
+  {
+   "capability": "ui.click",
+   "args": "{\"nodeId\": 2}",
+   "budgetMs": 15000,
+   "sdk": 37,
+   "tree": "form",
+   "expect": {
+    "ok": true,
+    "data": "{\"dispatched\":true,\"effectVerified\":false,\"nodeId\":2,\"node\":{\"display\":0,\"class\":\"android.widget.Switch\",\"text\":\"Dark\",\"package\":\"com.example\",\"enabled\":true,\"checkable\":true,\"checked\":true,\"clickable\":true,\"longClickable\":false,\"scrollable\":false,\"selected\":false,\"visible\":true,\"focused\":false,\"editable\":false,\"actions\":[\"click\"],\"left\":600,\"top\":100,\"right\":1000,\"bottom\":200},\"note\":\"dispatched means the node accepted the action, not that the UI changed; re-read with ui.node or ui.waitFor to confirm the effect\"}"
+   },
+   "endMs": 0,
+   "dispatches": [
+    "click"
+   ]
+  },
+  {
+   "capability": "ui.click",
+   "args": "{\"nodeId\": 5}",
+   "budgetMs": 15000,
+   "sdk": 37,
+   "tree": "form",
+   "expect": {
+    "ok": false,
+    "code": "E_ACTION_REJECTED",
+    "reason": "click was refused by the app"
+   },
+   "endMs": 0,
+   "dispatches": [
+    "click"
+   ]
+  },
+  {
+   "capability": "ui.click",
+   "args": "{\"nodeId\": 0}",
+   "budgetMs": 15000,
+   "sdk": 37,
+   "tree": "form",
+   "expect": {
+    "ok": false,
+    "code": "E_NODE_NOT_ACTIONABLE",
+    "reason": "node does not support click"
+   },
+   "endMs": 0,
+   "dispatches": []
+  },
+  {
+   "capability": "ui.click",
+   "args": "{\"nodeId\": 9}",
+   "budgetMs": 15000,
+   "sdk": 37,
+   "tree": "form",
+   "expect": {
+    "ok": false,
+    "code": "E_NODE_SYSTEM_CONSENT_TARGET",
+    "reason": "the resolved target is a system consent control: the user has to answer that dialog. Refused at execution time - naming the target by nodeId, by view id, or by leaving the package out of the selector does not bypass this check."
+   },
+   "endMs": 0,
+   "dispatches": []
+  },
+  {
+   "capability": "ui.click",
+   "args": "{\"nodeId\": 99}",
+   "budgetMs": 15000,
+   "sdk": 37,
+   "tree": "form",
+   "expect": {
+    "ok": false,
+    "code": "E_NODE_NOT_FOUND",
+    "reason": "no node with nodeId=99 in the current tree: node ids come from ui.snapshot and shift when the screen changes"
+   },
+   "endMs": 0,
+   "dispatches": []
+  },
+  {
+   "capability": "ui.click",
+   "args": "{\"nodeId\": 1}",
+   "budgetMs": 15000,
+   "sdk": 37,
+   "tree": null,
+   "expect": {
+    "ok": false,
+    "code": "E_BACKEND_UNAVAILABLE",
+    "reason": "no window tree to read on display 0 after a second read: no window holds focus there - retry once one does"
+   },
+   "endMs": 0,
+   "dispatches": []
+  },
+  {
+   "capability": "ui.longClick",
+   "args": "{\"nodeId\": 1}",
+   "budgetMs": 15000,
+   "sdk": 37,
+   "tree": "form",
+   "expect": {
+    "ok": true,
+    "data": "{\"dispatched\":true,\"effectVerified\":false,\"nodeId\":1,\"node\":{\"display\":0,\"class\":\"android.widget.Button\",\"text\":\"Save\",\"id\":\"com.example:id\\/save\",\"package\":\"com.example\",\"enabled\":true,\"checkable\":false,\"checked\":false,\"clickable\":true,\"longClickable\":true,\"scrollable\":false,\"selected\":false,\"visible\":true,\"focused\":false,\"editable\":false,\"actions\":[\"click\",\"longClick\"],\"left\":40,\"top\":100,\"right\":520,\"bottom\":200},\"note\":\"dispatched means the node accepted the action, not that the UI changed; re-read with ui.node or ui.waitFor to confirm the effect\"}"
+   },
+   "endMs": 0,
+   "dispatches": [
+    "longClick"
+   ]
+  },
+  {
+   "capability": "ui.longClick",
+   "args": "{\"nodeId\": 2}",
+   "budgetMs": 15000,
+   "sdk": 37,
+   "tree": "form",
+   "expect": {
+    "ok": false,
+    "code": "E_NODE_NOT_ACTIONABLE",
+    "reason": "node does not support longClick"
+   },
+   "endMs": 0,
+   "dispatches": []
+  },
+  {
+   "capability": "ui.select",
+   "args": "{\"nodeId\": 1}",
+   "budgetMs": 15000,
+   "sdk": 37,
+   "tree": "form",
+   "expect": {
+    "ok": false,
+    "code": "E_NODE_NOT_ACTIONABLE",
+    "reason": "node does not support select"
+   },
+   "endMs": 0,
+   "dispatches": []
+  },
+  {
+   "capability": "ui.dismiss",
+   "args": "{\"nodeId\": 1}",
+   "budgetMs": 15000,
+   "sdk": 37,
+   "tree": "form",
+   "expect": {
+    "ok": false,
+    "code": "E_NODE_NOT_ACTIONABLE",
+    "reason": "node does not support dismiss"
+   },
+   "endMs": 0,
+   "dispatches": []
+  },
+  {
+   "capability": "ui.setValue",
+   "args": "{\"nodeId\": 3, \"text\": \"Bobby Tables\"}",
+   "budgetMs": 15000,
+   "sdk": 37,
+   "tree": "form",
+   "expect": {
+    "ok": true,
+    "data": "{\"dispatched\":true,\"effectVerified\":false,\"nodeId\":3,\"node\":{\"display\":0,\"class\":\"android.widget.EditText\",\"text\":\"Bobby\",\"package\":\"com.example\",\"enabled\":true,\"checkable\":false,\"checked\":false,\"clickable\":true,\"longClickable\":false,\"scrollable\":false,\"selected\":false,\"visible\":true,\"focused\":false,\"editable\":true,\"actions\":[\"click\",\"setValue\"],\"left\":40,\"top\":300,\"right\":1040,\"bottom\":400},\"note\":\"dispatched means the node accepted the action, not that the UI changed; re-read with ui.node or ui.waitFor to confirm the effect\",\"requested\":\"Bobby Tables\",\"readBack\":\"Bobby\"}"
+   },
+   "endMs": 0,
+   "dispatches": [
+    "setValue"
+   ]
+  },
+  {
+   "capability": "ui.setValue",
+   "args": "{\"nodeId\": 3, \"text\": \" \\t \"}",
+   "budgetMs": 15000,
+   "sdk": 37,
+   "tree": "form",
+   "expect": {
+    "ok": false,
+    "code": "E_TRANSPORT_MALFORMED",
+    "reason": "missing arg: text"
+   },
+   "endMs": 0,
+   "dispatches": []
+  },
+  {
+   "capability": "ui.setValue",
+   "args": "{\"nodeId\": 3}",
+   "budgetMs": 15000,
+   "sdk": 37,
+   "tree": "form",
+   "expect": {
+    "ok": false,
+    "code": "E_TRANSPORT_MALFORMED",
+    "reason": "missing arg: text"
+   },
+   "endMs": 0,
+   "dispatches": []
+  },
+  {
+   "capability": "ui.setValue",
+   "args": "{\"nodeId\": 1, \"text\": \"x\"}",
+   "budgetMs": 15000,
+   "sdk": 37,
+   "tree": "form",
+   "expect": {
+    "ok": false,
+    "code": "E_NODE_NOT_ACTIONABLE",
+    "reason": "node does not support setValue"
+   },
+   "endMs": 0,
+   "dispatches": []
+  },
+  {
+   "capability": "ui.setValue",
+   "args": "{\"nodeId\": 15, \"text\": \"gone\"}",
+   "budgetMs": 15000,
+   "sdk": 37,
+   "tree": "form",
+   "expect": {
+    "ok": true,
+    "data": "{\"dispatched\":true,\"effectVerified\":false,\"nodeId\":15,\"node\":{\"display\":0,\"class\":\"android.widget.EditText\",\"text\":\"Temp\",\"package\":\"com.example\",\"enabled\":true,\"checkable\":false,\"checked\":false,\"clickable\":false,\"longClickable\":false,\"scrollable\":false,\"selected\":false,\"visible\":true,\"focused\":false,\"editable\":true,\"actions\":[\"setValue\"],\"left\":40,\"top\":2060,\"right\":1040,\"bottom\":2160},\"note\":\"dispatched means the node accepted the action, not that the UI changed; re-read with ui.node or ui.waitFor to confirm the effect\",\"requested\":\"gone\",\"readBackUnavailable\":\"node is no longer in the tree\"}"
+   },
+   "endMs": 0,
+   "dispatches": [
+    "setValue"
+   ]
+  },
+  {
+   "capability": "ui.setValue",
+   "args": "{\"nodeId\": 9, \"text\": \"x\"}",
+   "budgetMs": 15000,
+   "sdk": 37,
+   "tree": "form",
+   "expect": {
+    "ok": false,
+    "code": "E_NODE_SYSTEM_CONSENT_TARGET",
+    "reason": "the resolved target is a system consent control: the user has to answer that dialog. Refused at execution time - naming the target by nodeId, by view id, or by leaving the package out of the selector does not bypass this check."
+   },
+   "endMs": 0,
+   "dispatches": []
+  },
+  {
+   "capability": "ui.scroll",
+   "args": "{\"nodeId\": 11}",
+   "budgetMs": 15000,
+   "sdk": 37,
+   "tree": "form",
+   "expect": {
+    "ok": false,
+    "code": "E_TRANSPORT_MALFORMED",
+    "reason": "direction must be forward or backward"
+   },
+   "endMs": 0,
+   "dispatches": []
+  },
+  {
+   "capability": "ui.scroll",
+   "args": "{\"nodeId\": 11, \"direction\": \"sideways\"}",
+   "budgetMs": 15000,
+   "sdk": 37,
+   "tree": "form",
+   "expect": {
+    "ok": false,
+    "code": "E_TRANSPORT_MALFORMED",
+    "reason": "direction must be forward or backward"
+   },
+   "endMs": 0,
+   "dispatches": []
+  },
+  {
+   "capability": "ui.scroll",
+   "args": "{\"nodeId\": 11, \"direction\": \"FORWARD\", \"times\": 3}",
+   "budgetMs": 15000,
+   "sdk": 37,
+   "tree": "form",
+   "expect": {
+    "ok": true,
+    "data": "{\"dispatched\":3,\"requested\":3,\"stepLimit\":3,\"direction\":\"forward\",\"movementVerified\":false,\"note\":\"this node reports no range, so movement cannot be measured here; re-read with ui.snapshot or ui.waitFor to confirm the list moved\"}"
+   },
+   "endMs": 360,
+   "dispatches": [
+    "scrollForward",
+    "scrollForward",
+    "scrollForward"
+   ]
+  },
+  {
+   "capability": "ui.scroll",
+   "args": "{\"nodeId\": 11, \"direction\": \"forward\", \"times\": \"2\"}",
+   "budgetMs": 15000,
+   "sdk": 37,
+   "tree": "form",
+   "expect": {
+    "ok": false,
+    "code": "E_TRANSPORT_MALFORMED",
+    "reason": "times must be a number, got \"2\" (string)"
+   },
+   "endMs": 0,
+   "dispatches": []
+  },
+  {
+   "capability": "ui.scroll",
+   "args": "{\"nodeId\": 11, \"direction\": \"forward\", \"times\": 0}",
+   "budgetMs": 15000,
+   "sdk": 37,
+   "tree": "form",
+   "expect": {
+    "ok": false,
+    "code": "E_TRANSPORT_MALFORMED",
+    "reason": "times must be within 1..20"
+   },
+   "endMs": 0,
+   "dispatches": []
+  },
+  {
+   "capability": "ui.scroll",
+   "args": "{\"nodeId\": 11, \"direction\": \"forward\", \"times\": 21}",
+   "budgetMs": 15000,
+   "sdk": 37,
+   "tree": "form",
+   "expect": {
+    "ok": false,
+    "code": "E_TRANSPORT_MALFORMED",
+    "reason": "times must be within 1..20"
+   },
+   "endMs": 0,
+   "dispatches": []
+  },
+  {
+   "capability": "ui.scroll",
+   "args": "{\"nodeId\": 11, \"direction\": \"forward\", \"times\": 2.9}",
+   "budgetMs": 15000,
+   "sdk": 37,
+   "tree": "form",
+   "expect": {
+    "ok": true,
+    "data": "{\"dispatched\":2,\"requested\":2,\"stepLimit\":2,\"direction\":\"forward\",\"movementVerified\":false,\"note\":\"this node reports no range, so movement cannot be measured here; re-read with ui.snapshot or ui.waitFor to confirm the list moved\"}"
+   },
+   "endMs": 240,
+   "dispatches": [
+    "scrollForward",
+    "scrollForward"
+   ]
+  },
+  {
+   "capability": "ui.scroll",
+   "args": "{\"nodeId\": 11, \"direction\": \"backward\"}",
+   "budgetMs": 15000,
+   "sdk": 37,
+   "tree": "form",
+   "expect": {
+    "ok": false,
+    "code": "E_NODE_NOT_ACTIONABLE",
+    "reason": "node does not accept scroll; read ui.node {range} to see what it is"
+   },
+   "endMs": 0,
+   "dispatches": []
+  },
+  {
+   "capability": "ui.scroll",
+   "args": "{\"nodeId\": 11, \"direction\": \"forward\", \"until\": 3}",
+   "budgetMs": 15000,
+   "sdk": 37,
+   "tree": "form",
+   "expect": {
+    "ok": false,
+    "code": "E_NODE_NOT_ACTIONABLE",
+    "reason": "until needs a node that reports a range; read ui.node {range}"
+   },
+   "endMs": 0,
+   "dispatches": []
+  },
+  {
+   "capability": "ui.scroll",
+   "args": "{\"nodeId\": 11, \"direction\": \"forward\", \"until\": true}",
+   "budgetMs": 15000,
+   "sdk": 37,
+   "tree": "form",
+   "expect": {
+    "ok": false,
+    "code": "E_TRANSPORT_MALFORMED",
+    "reason": "until must be a number, got true (Boolean)"
+   },
+   "endMs": 0,
+   "dispatches": []
+  },
+  {
+   "capability": "ui.scroll",
+   "args": "{\"nodeId\": 8, \"direction\": \"forward\", \"times\": 3}",
+   "budgetMs": 15000,
+   "sdk": 37,
+   "tree": "form",
+   "expect": {
+    "ok": true,
+    "data": "{\"dispatched\":1,\"requested\":3,\"stepLimit\":3,\"direction\":\"forward\",\"stoppedEarly\":true,\"stoppedReason\":\"the node at this position changed after 0 observed step(s) of 1 accepted\",\"movementVerified\":false,\"note\":\"this node reports no range, so movement cannot be measured here; re-read with ui.snapshot or ui.waitFor to confirm the list moved\"}"
+   },
+   "endMs": 120,
+   "dispatches": [
+    "scrollForward"
+   ]
+  },
+  {
+   "capability": "ui.scroll",
+   "args": "{\"nodeId\": 8, \"direction\": \"backward\"}",
+   "budgetMs": 15000,
+   "sdk": 37,
+   "tree": "form",
+   "expect": {
+    "ok": false,
+    "code": "E_NODE_NOT_ACTIONABLE",
+    "reason": "app stopped accepting scroll after 0 observed step(s) of 0 accepted"
+   },
+   "endMs": 0,
+   "dispatches": [
+    "scrollBackward"
+   ]
+  },
+  {
+   "capability": "ui.scroll",
+   "args": "{\"nodeId\": 6, \"direction\": \"forward\", \"times\": 3}",
+   "budgetMs": 15000,
+   "sdk": 37,
+   "tree": "form",
+   "expect": {
+    "ok": true,
+    "data": "{\"dispatched\":3,\"requested\":3,\"stepLimit\":3,\"direction\":\"forward\",\"advanced\":3,\"value\":5,\"movementVerified\":true,\"note\":\"advanced counts observed value changes, one settle per step; read ui.node {range} for the value it landed on\"}"
+   },
+   "endMs": 240,
+   "dispatches": [
+    "scrollForward",
+    "scrollForward",
+    "scrollForward"
+   ]
+  },
+  {
+   "capability": "ui.scroll",
+   "args": "{\"nodeId\": 6, \"direction\": \"forward\", \"until\": 10}",
+   "budgetMs": 15000,
+   "sdk": 37,
+   "tree": "form",
+   "expect": {
+    "ok": true,
+    "data": "{\"dispatched\":8,\"requested\":1,\"stepLimit\":40,\"direction\":\"forward\",\"advanced\":8,\"reached\":true,\"target\":10,\"value\":10,\"movementVerified\":true,\"note\":\"advanced counts observed value changes, one settle per step; read ui.node {range} for the value it landed on\"}"
+   },
+   "endMs": 640,
+   "dispatches": [
+    "scrollForward",
+    "scrollForward",
+    "scrollForward",
+    "scrollForward",
+    "scrollForward",
+    "scrollForward",
+    "scrollForward",
+    "scrollForward"
+   ]
+  },
+  {
+   "capability": "ui.scroll",
+   "args": "{\"nodeId\": 6, \"direction\": \"forward\", \"until\": 10, \"times\": 2}",
+   "budgetMs": 15000,
+   "sdk": 37,
+   "tree": "form",
+   "expect": {
+    "ok": true,
+    "data": "{\"dispatched\":2,\"requested\":2,\"stepLimit\":2,\"direction\":\"forward\",\"advanced\":2,\"reached\":false,\"target\":10,\"value\":4,\"movementVerified\":true,\"note\":\"advanced counts observed value changes, one settle per step; read ui.node {range} for the value it landed on\"}"
+   },
+   "endMs": 160,
+   "dispatches": [
+    "scrollForward",
+    "scrollForward"
+   ]
+  },
+  {
+   "capability": "ui.scroll",
+   "args": "{\"nodeId\": 6, \"direction\": \"forward\", \"times\": 20}",
+   "budgetMs": 15000,
+   "sdk": 37,
+   "tree": "form",
+   "expect": {
+    "ok": true,
+    "data": "{\"dispatched\":8,\"requested\":20,\"stepLimit\":20,\"direction\":\"forward\",\"advanced\":8,\"value\":10,\"stoppedEarly\":true,\"stoppedReason\":\"node stopped accepting scroll after 8 observed step(s) of 8 accepted\",\"movementVerified\":true,\"note\":\"advanced counts observed value changes, one settle per step; read ui.node {range} for the value it landed on\"}"
+   },
+   "endMs": 640,
+   "dispatches": [
+    "scrollForward",
+    "scrollForward",
+    "scrollForward",
+    "scrollForward",
+    "scrollForward",
+    "scrollForward",
+    "scrollForward",
+    "scrollForward"
+   ]
+  },
+  {
+   "capability": "ui.scroll",
+   "args": "{\"nodeId\": 6, \"direction\": \"backward\", \"times\": 5}",
+   "budgetMs": 15000,
+   "sdk": 37,
+   "tree": "form",
+   "expect": {
+    "ok": true,
+    "data": "{\"dispatched\":2,\"requested\":5,\"stepLimit\":5,\"direction\":\"backward\",\"advanced\":2,\"value\":0,\"stoppedEarly\":true,\"stoppedReason\":\"node stopped accepting scroll after 2 observed step(s) of 2 accepted\",\"movementVerified\":true,\"note\":\"advanced counts observed value changes, one settle per step; read ui.node {range} for the value it landed on\"}"
+   },
+   "endMs": 160,
+   "dispatches": [
+    "scrollBackward",
+    "scrollBackward"
+   ]
+  },
+  {
+   "capability": "ui.scroll",
+   "args": "{\"nodeId\": 6, \"direction\": \"forward\", \"until\": 11}",
+   "budgetMs": 15000,
+   "sdk": 37,
+   "tree": "form",
+   "expect": {
+    "ok": false,
+    "code": "E_TRANSPORT_MALFORMED",
+    "reason": "until=11.0 is outside this node's range [0.0..10.0] (read by ui.node)"
+   },
+   "endMs": 0,
+   "dispatches": []
+  },
+  {
+   "capability": "ui.scroll",
+   "args": "{\"nodeId\": 6, \"direction\": \"forward\", \"until\": 2.3}",
+   "budgetMs": 15000,
+   "sdk": 37,
+   "tree": "form",
+   "expect": {
+    "ok": true,
+    "data": "{\"dispatched\":0,\"requested\":1,\"stepLimit\":40,\"direction\":\"forward\",\"reached\":true,\"target\":2.3,\"value\":2,\"movementVerified\":false,\"note\":\"this node reports no range, so movement cannot be measured here; re-read with ui.snapshot or ui.waitFor to confirm the list moved\"}"
+   },
+   "endMs": 0,
+   "dispatches": []
+  },
+  {
+   "capability": "ui.scroll",
+   "args": "{\"nodeId\": 7, \"direction\": \"forward\", \"until\": 23}",
+   "budgetMs": 15000,
+   "sdk": 37,
+   "tree": "form",
+   "expect": {
+    "ok": true,
+    "data": "{\"dispatched\":2,\"requested\":1,\"stepLimit\":40,\"direction\":\"forward\",\"advanced\":2,\"reached\":true,\"target\":23,\"value\":23,\"movementVerified\":true,\"note\":\"advanced counts observed value changes, one settle per step; read ui.node {range} for the value it landed on\"}"
+   },
+   "endMs": 320,
+   "dispatches": [
+    "scrollForward",
+    "scrollForward"
+   ]
+  },
+  {
+   "capability": "ui.scroll",
+   "args": "{\"nodeId\": 12, \"direction\": \"forward\"}",
+   "budgetMs": 15000,
+   "sdk": 37,
+   "tree": "form",
+   "expect": {
+    "ok": true,
+    "data": "{\"dispatched\":1,\"requested\":1,\"stepLimit\":1,\"direction\":\"forward\",\"advanced\":0,\"value\":0.5,\"stoppedEarly\":true,\"stoppedReason\":\"value stopped changing after 0 step(s); likely at either end\",\"movementVerified\":false,\"note\":\"advanced counts observed value changes, one settle per step; read ui.node {range} for the value it landed on\"}"
+   },
+   "endMs": 640,
+   "dispatches": [
+    "scrollForward"
+   ]
+  },
+  {
+   "capability": "ui.scroll",
+   "args": "{\"nodeId\": 12, \"direction\": \"forward\"}",
+   "budgetMs": 200,
+   "sdk": 37,
+   "tree": "form",
+   "expect": {
+    "ok": true,
+    "data": "{\"dispatched\":1,\"requested\":1,\"stepLimit\":1,\"direction\":\"forward\",\"advanced\":0,\"value\":0.5,\"stoppedEarly\":true,\"stoppedReason\":\"call budget exhausted after 0 step(s)\",\"movementVerified\":false,\"note\":\"advanced counts observed value changes, one settle per step; read ui.node {range} for the value it landed on\"}"
+   },
+   "endMs": 240,
+   "dispatches": [
+    "scrollForward"
+   ]
+  },
+  {
+   "capability": "ui.scroll",
+   "args": "{\"nodeId\": 12, \"direction\": \"forward\"}",
+   "budgetMs": -5,
+   "sdk": 37,
+   "tree": "form",
+   "expect": {
+    "ok": true,
+    "data": "{\"dispatched\":1,\"requested\":1,\"stepLimit\":1,\"direction\":\"forward\",\"advanced\":0,\"value\":0.5,\"stoppedEarly\":true,\"stoppedReason\":\"call budget exhausted after 0 step(s)\",\"movementVerified\":false,\"note\":\"advanced counts observed value changes, one settle per step; read ui.node {range} for the value it landed on\"}"
+   },
+   "endMs": 80,
+   "dispatches": [
+    "scrollForward"
+   ]
+  },
+  {
+   "capability": "ui.scroll",
+   "args": "{\"nodeId\": 11, \"direction\": \"forward\", \"times\": 3}",
+   "budgetMs": 15000,
+   "sdk": 37,
+   "tree": "form",
+   "expect": {
+    "ok": true,
+    "data": "{\"dispatched\":1,\"requested\":3,\"stepLimit\":3,\"direction\":\"forward\",\"stoppedEarly\":true,\"stoppedReason\":\"node is gone after 0 observed step(s) of 1 accepted\",\"movementVerified\":false,\"note\":\"this node reports no range, so movement cannot be measured here; re-read with ui.snapshot or ui.waitFor to confirm the list moved\"}"
+   },
+   "endMs": 120,
+   "dispatches": [
+    "scrollForward"
+   ],
+   "hostAtMs": 100
+  },
+  {
+   "capability": "ui.scroll",
+   "args": "{\"nodeId\": 11, \"direction\": \"forward\", \"times\": 3}",
+   "budgetMs": 15000,
+   "sdk": 37,
+   "tree": "form",
+   "expect": {
+    "ok": false,
+    "code": "E_NODE_NOT_FOUND",
+    "reason": "node is gone from the tree"
+   },
+   "endMs": 0,
+   "dispatches": [],
+   "hostAtMs": 0
+  },
+  {
+   "capability": "ui.scroll",
+   "args": "{\"nodeId\": 9, \"direction\": \"forward\"}",
+   "budgetMs": 15000,
+   "sdk": 37,
+   "tree": "form",
+   "expect": {
+    "ok": false,
+    "code": "E_NODE_SYSTEM_CONSENT_TARGET",
+    "reason": "the resolved target is a system consent control: the user has to answer that dialog. Refused at execution time - naming the target by nodeId, by view id, or by leaving the package out of the selector does not bypass this check."
+   },
+   "endMs": 0,
+   "dispatches": []
+  },
+  {
+   "capability": "ui.scroll",
+   "args": "{\"nodeId\": 99, \"direction\": \"forward\"}",
+   "budgetMs": 15000,
+   "sdk": 37,
+   "tree": "form",
+   "expect": {
+    "ok": false,
+    "code": "E_NODE_NOT_FOUND",
+    "reason": "no node with nodeId=99 in the current tree: node ids come from ui.snapshot and shift when the screen changes"
+   },
+   "endMs": 0,
+   "dispatches": []
+  },
+  {
+   "capability": "ui.setProgress",
+   "args": "{\"nodeId\": 6}",
+   "budgetMs": 15000,
+   "sdk": 37,
+   "tree": "form",
+   "expect": {
+    "ok": false,
+    "code": "E_TRANSPORT_MALFORMED",
+    "reason": "give percent or value"
+   },
+   "endMs": 0,
+   "dispatches": []
+  },
+  {
+   "capability": "ui.setProgress",
+   "args": "{\"nodeId\": 6, \"value\": 7}",
+   "budgetMs": 15000,
+   "sdk": 37,
+   "tree": "form",
+   "expect": {
+    "ok": true,
+    "data": "{\"dispatched\":true,\"effectVerified\":false,\"nodeId\":6,\"node\":{\"display\":0,\"class\":\"android.widget.SeekBar\",\"desc\":\"Volume\",\"package\":\"com.example\",\"enabled\":true,\"checkable\":false,\"checked\":false,\"clickable\":false,\"longClickable\":false,\"scrollable\":true,\"selected\":false,\"visible\":true,\"focused\":false,\"editable\":false,\"actions\":[\"setProgress\",\"scrollForward\",\"scrollBackward\"],\"left\":40,\"top\":640,\"right\":1040,\"bottom\":700,\"range\":{\"min\":0,\"max\":10,\"current\":2,\"type\":\"float\"}},\"note\":\"dispatched means the node accepted the action, not that the UI changed; re-read with ui.node or ui.waitFor to confirm the effect\",\"requestedValue\":7,\"range\":{\"min\":0,\"max\":10,\"current\":2,\"type\":\"float\"},\"readBack\":7,\"readBackRounds\":3}"
+   },
+   "endMs": 300,
+   "dispatches": [
+    "setProgress"
+   ]
+  },
+  {
+   "capability": "ui.setProgress",
+   "args": "{\"nodeId\": 6, \"percent\": 50}",
+   "budgetMs": 15000,
+   "sdk": 37,
+   "tree": "form",
+   "expect": {
+    "ok": true,
+    "data": "{\"dispatched\":true,\"effectVerified\":false,\"nodeId\":6,\"node\":{\"display\":0,\"class\":\"android.widget.SeekBar\",\"desc\":\"Volume\",\"package\":\"com.example\",\"enabled\":true,\"checkable\":false,\"checked\":false,\"clickable\":false,\"longClickable\":false,\"scrollable\":true,\"selected\":false,\"visible\":true,\"focused\":false,\"editable\":false,\"actions\":[\"setProgress\",\"scrollForward\",\"scrollBackward\"],\"left\":40,\"top\":640,\"right\":1040,\"bottom\":700,\"range\":{\"min\":0,\"max\":10,\"current\":2,\"type\":\"float\"}},\"note\":\"dispatched means the node accepted the action, not that the UI changed; re-read with ui.node or ui.waitFor to confirm the effect\",\"requestedValue\":5,\"range\":{\"min\":0,\"max\":10,\"current\":2,\"type\":\"float\"},\"readBack\":5,\"readBackRounds\":3}"
+   },
+   "endMs": 300,
+   "dispatches": [
+    "setProgress"
+   ]
+  },
+  {
+   "capability": "ui.setProgress",
+   "args": "{\"nodeId\": 6, \"percent\": 50, \"value\": 1}",
+   "budgetMs": 15000,
+   "sdk": 37,
+   "tree": "form",
+   "expect": {
+    "ok": true,
+    "data": "{\"dispatched\":true,\"effectVerified\":false,\"nodeId\":6,\"node\":{\"display\":0,\"class\":\"android.widget.SeekBar\",\"desc\":\"Volume\",\"package\":\"com.example\",\"enabled\":true,\"checkable\":false,\"checked\":false,\"clickable\":false,\"longClickable\":false,\"scrollable\":true,\"selected\":false,\"visible\":true,\"focused\":false,\"editable\":false,\"actions\":[\"setProgress\",\"scrollForward\",\"scrollBackward\"],\"left\":40,\"top\":640,\"right\":1040,\"bottom\":700,\"range\":{\"min\":0,\"max\":10,\"current\":2,\"type\":\"float\"}},\"note\":\"dispatched means the node accepted the action, not that the UI changed; re-read with ui.node or ui.waitFor to confirm the effect\",\"requestedValue\":1,\"range\":{\"min\":0,\"max\":10,\"current\":2,\"type\":\"float\"},\"readBack\":1,\"readBackRounds\":3}"
+   },
+   "endMs": 300,
+   "dispatches": [
+    "setProgress"
+   ]
+  },
+  {
+   "capability": "ui.setProgress",
+   "args": "{\"nodeId\": 6, \"percent\": 150}",
+   "budgetMs": 15000,
+   "sdk": 37,
+   "tree": "form",
+   "expect": {
+    "ok": false,
+    "code": "E_TRANSPORT_MALFORMED",
+    "reason": "percent must be within 0..100, got 150.0"
+   },
+   "endMs": 0,
+   "dispatches": []
+  },
+  {
+   "capability": "ui.setProgress",
+   "args": "{\"nodeId\": 6, \"percent\": \"half\"}",
+   "budgetMs": 15000,
+   "sdk": 37,
+   "tree": "form",
+   "expect": {
+    "ok": false,
+    "code": "E_TRANSPORT_MALFORMED",
+    "reason": "percent must be a number, got \"half\" (string)"
+   },
+   "endMs": 0,
+   "dispatches": []
+  },
+  {
+   "capability": "ui.setProgress",
+   "args": "{\"nodeId\": 6, \"value\": 11}",
+   "budgetMs": 15000,
+   "sdk": 37,
+   "tree": "form",
+   "expect": {
+    "ok": false,
+    "code": "E_TRANSPORT_MALFORMED",
+    "reason": "value=11.0 is outside this node's range [0.0..10.0] (read by ui.node)"
+   },
+   "endMs": 0,
+   "dispatches": []
+  },
+  {
+   "capability": "ui.setProgress",
+   "args": "{\"nodeId\": 6, \"value\": 7.4}",
+   "budgetMs": 15000,
+   "sdk": 37,
+   "tree": "form",
+   "expect": {
+    "ok": true,
+    "data": "{\"dispatched\":true,\"effectVerified\":false,\"nodeId\":6,\"node\":{\"display\":0,\"class\":\"android.widget.SeekBar\",\"desc\":\"Volume\",\"package\":\"com.example\",\"enabled\":true,\"checkable\":false,\"checked\":false,\"clickable\":false,\"longClickable\":false,\"scrollable\":true,\"selected\":false,\"visible\":true,\"focused\":false,\"editable\":false,\"actions\":[\"setProgress\",\"scrollForward\",\"scrollBackward\"],\"left\":40,\"top\":640,\"right\":1040,\"bottom\":700,\"range\":{\"min\":0,\"max\":10,\"current\":2,\"type\":\"float\"}},\"note\":\"dispatched means the node accepted the action, not that the UI changed; re-read with ui.node or ui.waitFor to confirm the effect\",\"requestedValue\":7.4,\"range\":{\"min\":0,\"max\":10,\"current\":2,\"type\":\"float\"},\"readBack\":7,\"readBackRounds\":4}"
+   },
+   "endMs": 600,
+   "dispatches": [
+    "setProgress"
+   ]
+  },
+  {
+   "capability": "ui.setProgress",
+   "args": "{\"nodeId\": 6, \"value\": 7}",
+   "budgetMs": 100,
+   "sdk": 37,
+   "tree": "form",
+   "expect": {
+    "ok": true,
+    "data": "{\"dispatched\":true,\"effectVerified\":false,\"nodeId\":6,\"node\":{\"display\":0,\"class\":\"android.widget.SeekBar\",\"desc\":\"Volume\",\"package\":\"com.example\",\"enabled\":true,\"checkable\":false,\"checked\":false,\"clickable\":false,\"longClickable\":false,\"scrollable\":true,\"selected\":false,\"visible\":true,\"focused\":false,\"editable\":false,\"actions\":[\"setProgress\",\"scrollForward\",\"scrollBackward\"],\"left\":40,\"top\":640,\"right\":1040,\"bottom\":700,\"range\":{\"min\":0,\"max\":10,\"current\":2,\"type\":\"float\"}},\"note\":\"dispatched means the node accepted the action, not that the UI changed; re-read with ui.node or ui.waitFor to confirm the effect\",\"requestedValue\":7,\"range\":{\"min\":0,\"max\":10,\"current\":2,\"type\":\"float\"},\"readBack\":2,\"readBackRounds\":2}"
+   },
+   "endMs": 150,
+   "dispatches": [
+    "setProgress"
+   ]
+  },
+  {
+   "capability": "ui.setProgress",
+   "args": "{\"nodeId\": 10, \"value\": 7}",
+   "budgetMs": 15000,
+   "sdk": 37,
+   "tree": "form",
+   "expect": {
+    "ok": false,
+    "code": "E_NODE_NOT_ACTIONABLE",
+    "reason": "node does not support setProgress"
+   },
+   "endMs": 0,
+   "dispatches": []
+  },
+  {
+   "capability": "ui.setProgress",
+   "args": "{\"nodeId\": 11, \"value\": 7}",
+   "budgetMs": 15000,
+   "sdk": 37,
+   "tree": "form",
+   "expect": {
+    "ok": false,
+    "code": "E_NODE_NOT_ACTIONABLE",
+    "reason": "node reports no range info: not a slider or progress control"
+   },
+   "endMs": 0,
+   "dispatches": []
+  },
+  {
+   "capability": "ui.setProgress",
+   "args": "{\"nodeId\": 13, \"value\": 0.5}",
+   "budgetMs": 15000,
+   "sdk": 37,
+   "tree": "form",
+   "expect": {
+    "ok": true,
+    "data": "{\"dispatched\":true,\"effectVerified\":false,\"nodeId\":13,\"node\":{\"display\":0,\"class\":\"com.google.android.material.slider.Slider\",\"desc\":\"Pan\",\"id\":\"com.example:id\\/other\",\"package\":\"com.example\",\"enabled\":true,\"checkable\":false,\"checked\":false,\"clickable\":false,\"longClickable\":false,\"scrollable\":false,\"selected\":false,\"visible\":true,\"focused\":false,\"editable\":false,\"actions\":[\"setProgress\"],\"left\":40,\"top\":1900,\"right\":1040,\"bottom\":1960,\"range\":{\"min\":-1,\"max\":1,\"current\":0,\"type\":\"float\"}},\"note\":\"dispatched means the node accepted the action, not that the UI changed; re-read with ui.node or ui.waitFor to confirm the effect\",\"requestedValue\":0.5,\"range\":{\"min\":-1,\"max\":1,\"current\":0,\"type\":\"float\"},\"readBackUnavailable\":\"node is gone from the tree, took another node's place, or reports no range\"}"
+   },
+   "endMs": 0,
+   "dispatches": [
+    "setProgress"
+   ]
+  },
+  {
+   "capability": "ui.setProgress",
+   "args": "{\"nodeId\": 14, \"percent\": 33.3}",
+   "budgetMs": 15000,
+   "sdk": 37,
+   "tree": "form",
+   "expect": {
+    "ok": true,
+    "data": "{\"dispatched\":true,\"effectVerified\":false,\"nodeId\":14,\"node\":{\"display\":0,\"class\":\"android.widget.SeekBar\",\"desc\":\"Brightness\",\"package\":\"com.example\",\"enabled\":true,\"checkable\":false,\"checked\":false,\"clickable\":false,\"longClickable\":false,\"scrollable\":false,\"selected\":false,\"visible\":true,\"focused\":false,\"editable\":false,\"actions\":[\"setProgress\"],\"left\":40,\"top\":1980,\"right\":1040,\"bottom\":2040,\"range\":{\"min\":0,\"max\":255,\"current\":85,\"type\":\"int\"}},\"note\":\"dispatched means the node accepted the action, not that the UI changed; re-read with ui.node or ui.waitFor to confirm the effect\",\"requestedValue\":84.915,\"range\":{\"min\":0,\"max\":255,\"current\":100,\"type\":\"int\"},\"readBack\":85,\"readBackRounds\":4}"
+   },
+   "endMs": 600,
+   "dispatches": [
+    "setProgress"
+   ]
+  },
+  {
+   "capability": "ui.setProgress",
+   "args": "{\"nodeId\": 12, \"value\": 0.25}",
+   "budgetMs": 15000,
+   "sdk": 37,
+   "tree": "form",
+   "expect": {
+    "ok": true,
+    "data": "{\"dispatched\":true,\"effectVerified\":false,\"nodeId\":12,\"node\":{\"display\":0,\"class\":\"com.google.android.material.slider.Slider\",\"desc\":\"stuck\",\"package\":\"com.example\",\"enabled\":true,\"checkable\":false,\"checked\":false,\"clickable\":false,\"longClickable\":false,\"scrollable\":true,\"selected\":false,\"visible\":true,\"focused\":false,\"editable\":false,\"actions\":[\"scrollForward\",\"setProgress\"],\"left\":40,\"top\":1820,\"right\":1040,\"bottom\":1880,\"range\":{\"min\":0,\"max\":1,\"current\":0.5,\"type\":\"float\"}},\"note\":\"dispatched means the node accepted the action, not that the UI changed; re-read with ui.node or ui.waitFor to confirm the effect\",\"requestedValue\":0.25,\"range\":{\"min\":0,\"max\":1,\"current\":0.5,\"type\":\"float\"},\"readBack\":0.5,\"readBackRounds\":4}"
+   },
+   "endMs": 600,
+   "dispatches": [
+    "setProgress"
+   ]
+  },
+  {
+   "capability": "ui.imeAction",
+   "args": "{\"nodeId\": 4}",
+   "budgetMs": 15000,
+   "sdk": 29,
+   "tree": "form",
+   "expect": {
+    "ok": false,
+    "code": "E_CAPABILITY_UNAVAILABLE_ON_DEVICE",
+    "reason": "ui.imeAction needs Android 11"
+   },
+   "endMs": 0,
+   "dispatches": []
+  },
+  {
+   "capability": "ui.imeAction",
+   "args": "{\"nodeId\": 4}",
+   "budgetMs": 15000,
+   "sdk": 37,
+   "tree": "form",
+   "expect": {
+    "ok": true,
+    "data": "{\"dispatched\":true,\"effectVerified\":false,\"nodeId\":4,\"node\":{\"display\":0,\"class\":\"com.google.android.material.textfield.TextInputEditText\",\"package\":\"com.example\",\"enabled\":true,\"checkable\":false,\"checked\":false,\"clickable\":false,\"longClickable\":false,\"scrollable\":false,\"selected\":false,\"visible\":true,\"focused\":false,\"editable\":true,\"actions\":[\"setValue\"],\"left\":40,\"top\":420,\"right\":1040,\"bottom\":520},\"note\":\"dispatched means the node accepted the action, not that the UI changed; re-read with ui.node or ui.waitFor to confirm the effect\"}"
+   },
+   "endMs": 0,
+   "dispatches": [
+    "imeAction"
+   ]
+  },
+  {
+   "capability": "ui.imeAction",
+   "args": "{\"nodeId\": 3}",
+   "budgetMs": 15000,
+   "sdk": 37,
+   "tree": "form",
+   "expect": {
+    "ok": false,
+    "code": "E_ACTION_REJECTED",
+    "reason": "imeAction was refused by the app"
+   },
+   "endMs": 0,
+   "dispatches": [
+    "imeAction"
+   ]
+  },
+  {
+   "capability": "ui.imeAction",
+   "args": "{\"nodeId\": 1}",
+   "budgetMs": 15000,
+   "sdk": 37,
+   "tree": "form",
+   "expect": {
+    "ok": false,
+    "code": "E_NODE_NO_IME_ACTION",
+    "reason": "node is not an editable field, so it has no IME action to trigger"
+   },
+   "endMs": 0,
+   "dispatches": []
+  }
+ ],
+ "javaFloat": [
+  {
+   "f": 0.1,
+   "java": "0.1"
+  },
+  {
+   "f": 100.0,
+   "java": "100.0"
+  },
+  {
+   "f": 1e-05,
+   "java": "1.0E-5"
+  },
+  {
+   "f": 2.5,
+   "java": "2.5"
+  },
+  {
+   "f": -0.0,
+   "java": "-0.0"
+  },
+  {
+   "f": 10000000.0,
+   "java": "1.0E7"
+  },
+  {
+   "f": 3.4028234663852886e+38,
+   "java": "3.4028235E38"
+  },
+  {
+   "f": 0.3333333432674408,
+   "java": "0.33333334"
+  },
+  {
+   "f": -1.5,
+   "java": "-1.5"
+  },
+  {
+   "f": 23.0,
+   "java": "23.0"
+  },
+  {
+   "f": 7.4,
+   "java": "7.4"
+  },
+  {
+   "f": 84.915,
+   "java": "84.915"
+  },
+  {
+   "f": 0.001,
+   "java": "0.001"
+  },
+  {
+   "f": 9999999.0,
+   "java": "9999999.0"
+  }
+ ]
+}

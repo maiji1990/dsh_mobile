@@ -29,7 +29,6 @@ public sealed class AutomationActivity : Activity
         _bridge = DshMobileApplication.Current.Bridge;
 
         var root = new LinearLayout(this) { Orientation = Orientation.Vertical };
-        root.SetFitsSystemWindows(true);
         root.SetPadding(24, 16, 24, 16);
         root.AddView(new TextView(this) { Text = GetString(Resource.String.automation_explain) });
         _status = new TextView(this) { AccessibilityLiveRegion = AccessibilityLiveRegion.Polite };
@@ -66,20 +65,79 @@ public sealed class AutomationActivity : Activity
         _surfacePref.Click += (_, _) => ToggleSurfacePreference();
         ShowSurfacePreference();
         root.AddView(_surfacePref);
-        _buttons = [start, stop, selftest, shizuku, probe, a11yRead, _surfacePref];
+        // PR-07 step 4, opt-in: the C# Relay host on its own mailbox (files/pilot-cs/run). The legacy Relay keeps
+        // deciding for the guest; every C# write still asks the user on the C# approval card.
+        _csRelay = Make(Resource.String.automation_cs_relay_start, ToggleCsRelay);
+        root.AddView(_csRelay);
+        _csPhase = new TextView(this) { AccessibilityLiveRegion = AccessibilityLiveRegion.Polite };
+        root.AddView(_csPhase);
+        ShowCsRelay();
+        // PR-07 steps 1–4 shadow, developer action: the same calls to both relays, each through its own approval.
+        var hostProbe = Make(Resource.String.automation_host_probe, () => _ = HostProbeAsync());
+        root.AddView(hostProbe);
+        _buttons = [start, stop, selftest, shizuku, probe, a11yRead, _surfacePref, _csRelay, hostProbe];
 
+        // The page scrolls as a whole: the controls alone are taller than a phone screen, and a fixed layout pushed
+        // the last buttons off it.
         _output = new TextView(this) { TextSize = 11 };
         _output.SetTextIsSelectable(true);
-        var scroll = new ScrollView(this);
-        scroll.AddView(_output);
-        root.AddView(scroll, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MatchParent, 0, 1f));
-        SetContentView(root);
+        _output.SetPadding(0, 16, 0, 0);
+        root.AddView(_output);
+        var page = new ScrollView(this) { FillViewport = true };
+        page.SetFitsSystemWindows(true);
+        page.AddView(root);
+        SetContentView(page);
     }
 
     protected override void OnResume()
     {
         base.OnResume();
         _ = RefreshAsync(); // accessibility may have been toggled in system settings meanwhile
+        WatchCsRelay(true);
+        ShowCsRelay();
+    }
+
+    protected override void OnPause()
+    {
+        WatchCsRelay(false);
+        base.OnPause();
+    }
+
+    private Button _csRelay = null!;
+    private TextView _csPhase = null!;
+    private Relay.RelayHostWatch? _csWatch;
+
+    private void ToggleCsRelay()
+    {
+        if (Relay.CsRelay.Phase is RelayRuntimePhase.Stopped)
+        {
+            Relay.CsRelay.Start(this);
+            _bridge.Note("c# relay start (opt-in)");
+        }
+        else
+        {
+            Relay.CsRelay.Stop();
+            _bridge.Note("c# relay stop");
+        }
+        WatchCsRelay(true);
+        ShowCsRelay();
+    }
+
+    private void WatchCsRelay(bool on)
+    {
+        _csWatch?.Dispose();
+        _csWatch = on && Relay.CsRelay.Host is { } host ? new Relay.RelayHostWatch(host, () => RunOnUiThread(ShowCsRelay)) : null;
+    }
+
+    private void ShowCsRelay()
+    {
+        var host = Relay.CsRelay.Host;
+        var phase = Relay.CsRelay.Phase;
+        _csRelay.SetText(phase is RelayRuntimePhase.Stopped ? Resource.String.automation_cs_relay_start : Resource.String.automation_cs_relay_stop);
+        var detail = phase.ToString()
+            + (host?.IsChannelRunning == true ? " · 信箱运行中" : "")
+            + (host?.DegradedReason is { } r ? " · " + r : "");
+        _csPhase.Text = GetString(Resource.String.automation_cs_relay_phase, new Java.Lang.String(detail));
     }
 
     private Button Make(int text, Action onClick)
@@ -307,6 +365,35 @@ public sealed class AutomationActivity : Activity
             // Never leave the page stuck with every button disabled: say what failed.
             Android.Util.Log.Error("DshMobile", $"a11y read probe failed: {ex}");
             _output.Text = $"automation.relay-a11y-read: {ex.GetType().Name}: {ex.Message}";
+        }
+        finally
+        {
+            _longProbe = false;
+            Enable(true);
+        }
+    }
+
+    private async Task HostProbeAsync()
+    {
+        if (Relay.CsRelay.Host is not { Phase: RelayRuntimePhase.Running } host)
+        {
+            _output.Text = GetString(Resource.String.automation_host_probe_needs_cs);
+            return;
+        }
+        _longProbe = true;
+        Enable(false);
+        _output.Text = GetString(Resource.String.automation_host_probe_running);
+        var runtime = _bridge.Runtime;
+        var entry = host.Paths.EntryDir;
+        try
+        {
+            var report = await Task.Run(() => runtime.ShadowRelayHostAsync(entry, TimeSpan.FromMinutes(15), CancellationToken.None));
+            _output.Text = report is null ? GetString(Resource.String.automation_envelope_probe_off) : $"{report.Slice}: {report.Verdict}\n{report.Detail}";
+        }
+        catch (Exception ex)
+        {
+            Android.Util.Log.Error("DshMobile", $"relay host probe failed: {ex}");
+            _output.Text = $"automation.relay-host: {ex.GetType().Name}: {ex.Message}";
         }
         finally
         {

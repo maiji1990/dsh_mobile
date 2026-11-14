@@ -47,6 +47,16 @@
            Text="libdshmobile_native.so not built ($(DshNativeDir)). Run: pwsh native/build-native.ps1 (or native/dshmobile-native/build.ps1 alone)" />
   </Target>
 
+  <!--
+    ADR-0009: the Shizuku user service runs in a shell-uid app_process with no .NET runtime, so its remote half is a
+    small in-repo Java class (translated from DSHBox RelayShellService.kt, GPL-3.0, docs/UPSTREAMS.md). Compiled into
+    the APK's dex; kept from shrinking because Shizuku instantiates it by name.
+  -->
+  <ItemGroup>
+    <AndroidJavaSource Include="Java\**\*.java" />
+    <ProguardConfiguration Include="relay-shell.pro" />
+  </ItemGroup>
+
   <ItemGroup>
     <ProjectReference Include="..\DshMobile.Core\DshMobile.Core.csproj" />
     <!-- C#-first layers (ADR-0007). -->
