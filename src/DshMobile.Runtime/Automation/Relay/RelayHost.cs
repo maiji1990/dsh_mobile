@@ -6,10 +6,12 @@
 //   src/main/java/interlock/relay/core/runtime/RelayRuntime.kt (the process-wide scope that swallows and logs)
 // Registered in docs/UPSTREAMS.md.
 //
-// Not carried over (legacy keeps them while the slice is LegacyWithShadow; ADR-0007 / MIGRATION.md):
-//   GuestAssets + capabilityRows / capabilitiesJson (the guest-visible entry script, manual and capability list),
-//   the approval overlay and the accessibility-gap notice. A host built from this class serves its own mailbox only;
-//   the guest keeps talking to the legacy Relay until the cut-over.
+//   RelayContainer.kt refreshAssets / refreshAssetsIfChanged / refreshSerialized / republishAssets / scheduleRefresh
+//     and the "assets" init step (GuestAssets.cs, RelayCapabilityListing.cs; ADR-0010)
+//
+// Not carried over (legacy keeps them; ADR-0010): the approval overlay and the accessibility-gap notice.
+// Which mailbox a host serves is its path policy: the opt-in shadow host uses its own (pilot-cs), the guest-facing
+// host the guest's (pilot), and the legacy Relay never runs on the same one at the same time.
 
 using System.Globalization;
 using System.Security.Cryptography;
@@ -86,6 +88,9 @@ public sealed class RelayHostPlatform
 
     public Action StopChannelService { get; init; } = () => { };
 
+    /// <summary>Upstream <c>ShizukuState.snapshot()</c>: running, granted, server uid and version (-1 / -1 without a binder).</summary>
+    public Func<ShizukuSnapshot>? ShizukuState { get; init; }
+
     public TimeProvider Time { get; init; } = TimeProvider.System;
 }
 
@@ -116,6 +121,11 @@ public sealed class RelayHost : IDisposable
     private readonly RelayCoordinator _coordinator;
     private readonly MailboxServer _mailbox;
     private readonly ParkBridgeHolder _parkBridge = new();
+    private readonly GuestAssets _assets;
+    private readonly SemaphoreSlim _refreshGate = new(1, 1);
+    private volatile string? _lastCapabilitiesJson;
+    private volatile ShizukuSnapshot _shizukuSnapshot;
+    private long _lastHeartbeatRefresh;
     private CancellationTokenSource? _scope;
     private CancellationTokenSource? _initJob;
     private bool? _lastTrustedDisplayReady;
@@ -173,6 +183,8 @@ public sealed class RelayHost : IDisposable
             ParkScope = () => _scope?.Token,
             IsCancelRequested = id => _requestStateStore.Get(id)?.CancelRequested == true,
             ApprovalDeadEnd = _approvalQueue.LastDeadEndReason,
+            // Creating / releasing the trusted display rewrites the usable column of the background capabilities.
+            OnSurfaceChanged = () => ScheduleRefresh(onlyIfChanged: true),
             Time = time,
         });
         _mailbox = new MailboxServer(Paths, _reaper, RunLog, _coordinator.Handler,
@@ -191,6 +203,10 @@ public sealed class RelayHost : IDisposable
         }
         _shizukuBackend.ShellOptInOpen = verb => platform.Prefs.GetBoolean(FileShellVerbs, ShellVerbPrefix + verb, false);
         _parkBridge.Delegate = _mailbox;
+        _assets = new GuestAssets(Paths, RunLog, time: time);
+        _shizukuSnapshot = ReadShizuku();
+        // The user service binds asynchronously: "ready" is in the connection callback, not in the Shizuku state.
+        _shizukuBackend.BoundChanged += () => ScheduleRefresh();
     }
 
     /// <summary>Every phase move (inside the state machine's lock: keep handlers light).</summary>
@@ -289,6 +305,10 @@ public sealed class RelayHost : IDisposable
             InitStep(job, undo, "ledger", null, () => _ledger.ReconcileFromDisk(Paths.ArtifactsDir));
             InitStep(job, undo, "ledger", null, () => _reaper.Sweep());
             InitStep(job, undo, "ledger", null, () => ReportAuditPurge(_auditLog.PurgeExpired()));
+            // Assets before the channel: a guest exec'ing a missing or half-written entry script gets an exit code it
+            // cannot tell from a usage error. Not through the single-flight gate (it must not be merged away); a mixed
+            // set from an overlapping event-driven pass is caught by the marker (Intact) on the next check.
+            InitStep(job, undo, "assets", null, () => RepublishAssets(CapabilitiesJson()));
             // A process kill skips disconnect: drop the previous life's "last frame" before binding again.
             InitStep(job, undo, "shizuku", null, _shizukuBackend.ClearFrameCache);
             InitStep(job, undo, "shizuku", () => _shizukuBackend.DisconnectAsync().GetAwaiter().GetResult(), _shizukuBackend.Connect);
@@ -419,6 +439,7 @@ public sealed class RelayHost : IDisposable
         {
             return;
         }
+        _shizukuSnapshot = ReadShizuku() with { Running = running, Granted = granted };
         if (running && granted)
         {
             _shizukuBackend.Connect();
@@ -426,6 +447,8 @@ public sealed class RelayHost : IDisposable
         }
         RunLog.Event(LogSubsystem.Gate, LogEvent.ShizukuState,
             ("binder", running ? "true" : "false"), ("granted", granted ? "true" : "false"));
+        // The listing and the manual follow the grant, so the guest reads the current values.
+        ScheduleRefresh();
     }
 
     /// <summary>The notification's answer, for that request id only (a minute-old tap must not answer a newer question).</summary>
@@ -447,9 +470,30 @@ public sealed class RelayHost : IDisposable
     {
         CheckTrustedDisplayFlip();
         _approvalQueue.Reroute();
+        // Also the accessibility service's bind / unbind (upstream RelayAccessibilityService.onBoundChanged).
+        ScheduleRefresh();
     }
 
-    public void OnHeartbeat() => CheckTrustedDisplayFlip();
+    /// <summary>Interval of the heartbeat's listing check (the host's ticker is faster).</summary>
+    public static readonly TimeSpan HeartbeatRefreshInterval = TimeSpan.FromSeconds(15);
+
+    /// <summary>
+    /// The trusted-display flip, and every <see cref="HeartbeatRefreshInterval"/> a content check of the listing.
+    /// Upstream gets the notification-listener binding and tier / preference changes as callbacks; here the legacy
+    /// pages still write those preferences and the C# listener has no binding callback, so the check stands in for them
+    /// (it writes nothing while the content is unchanged).
+    /// </summary>
+    public void OnHeartbeat()
+    {
+        CheckTrustedDisplayFlip();
+        var now = _platform.Time.GetTimestamp();
+        var last = Interlocked.Read(ref _lastHeartbeatRefresh);
+        if (last == 0 || _platform.Time.GetElapsedTime(last, now) >= HeartbeatRefreshInterval)
+        {
+            Interlocked.Exchange(ref _lastHeartbeatRefresh, now);
+            ScheduleRefresh(onlyIfChanged: true);
+        }
+    }
 
     private void CheckTrustedDisplayFlip()
     {
@@ -481,7 +525,128 @@ public sealed class RelayHost : IDisposable
         ReportAuditPurge(_auditLog.PurgeExpired());
         _platform.StartChannelService();
         _shizukuBackend.Reconnect();
-        _ = Task.Run(_shizukuBackend.RefreshDisplayAsync);
+        _ = Task.Run(async () =>
+        {
+            _shizukuSnapshot = ReadShizuku();
+            await _shizukuBackend.RefreshDisplayAsync().ConfigureAwait(false);
+            RefreshAssetsIfChanged();
+        });
+    }
+
+    private ShizukuSnapshot ReadShizuku()
+    {
+        try
+        {
+            return _platform.ShizukuState?.Invoke() ?? ShizukuSnapshot.None with { Running = _platform.Shizuku.ServerAvailable };
+        }
+#pragma warning disable CA1031 // a binder probe failing means "not running", like upstream's runCatching
+        catch (Exception)
+#pragma warning restore CA1031
+        {
+            return ShizukuSnapshot.None;
+        }
+    }
+
+    /// <summary>Upstream <c>capabilityRows</c>, the system facts read once for the whole listing.</summary>
+    public IReadOnlyList<CapabilityRow> CapabilityRows()
+    {
+        var facts = Facts();
+        return RelayCapabilityListing.Rows(_policy, (wire, route) => RelaySystemProbe.Probe(wire, route, facts), _tiers.TierOf,
+            (wire, route) => _dispatcher.Pick(wire, route) is not null, _dispatcher.IsImplemented);
+    }
+
+    /// <summary>Upstream <c>capabilitiesJson</c>: what <c>&lt;entry&gt;/capabilities.json</c> holds.</summary>
+    public string CapabilitiesJson()
+    {
+        var displayId = _shizukuBackend.DisplayId;
+        return RelayCapabilityListing.Json(CapabilityRows(), Paths.GuestScript, _platform.SelfPackage, _shizukuSnapshot,
+            _shizukuBackend.BoundSnapshot,
+            new TrustedDisplayState(_shizukuBackend.DisplayAlive(), displayId, _a11yBackend.TrustedNodeTreeState(displayId)));
+    }
+
+    /// <summary>The last listing published completely (null until then): the base of "changed, so republish".</summary>
+    public string? PublishedCapabilitiesJson => _lastCapabilitiesJson;
+
+    /// <summary>
+    /// Upstream <c>refreshAssets</c>: not once the channel stopped (a listing for a channel that takes no work only
+    /// sends the guest into calls nobody answers); the next start publishes again.
+    /// </summary>
+    public void RefreshAssets()
+    {
+        if (Phase is not (RelayRuntimePhase.Running or RelayRuntimePhase.Starting))
+        {
+            return;
+        }
+        RefreshSerialized(() => RepublishAssets(CapabilitiesJson()));
+    }
+
+    /// <summary>
+    /// Upstream <c>refreshAssetsIfChanged</c>: only when the listing changed, or the published files are no longer one
+    /// complete batch (the guest can delete, rewrite or replace them by links; a pass abandoned half way leaves a mix).
+    /// </summary>
+    public void RefreshAssetsIfChanged()
+    {
+        if (Phase is not (RelayRuntimePhase.Running or RelayRuntimePhase.Starting))
+        {
+            return;
+        }
+        RefreshSerialized(() =>
+        {
+            var json = CapabilitiesJson();
+            if (json != _lastCapabilitiesJson || !_assets.Intact())
+            {
+                RepublishAssets(json);
+            }
+        });
+    }
+
+    /// <summary>
+    /// Upstream <c>refreshSerialized</c>: a trigger that finds a pass running joins it; the running pass re-checks once
+    /// at its end, so a change after it built its listing is not lost.
+    /// </summary>
+    private void RefreshSerialized(Action work)
+    {
+        if (!_refreshGate.Wait(0))
+        {
+            return;
+        }
+        try
+        {
+            work();
+            var fresh = CapabilitiesJson();
+            if (fresh != _lastCapabilitiesJson || !_assets.Intact())
+            {
+                RepublishAssets(fresh);
+            }
+        }
+#pragma warning disable CA1031 // a refresh runs on the pool: a failure keeps the old record, the next check retries
+        catch (Exception ex)
+#pragma warning restore CA1031
+        {
+            RunLog.Warn(LogSubsystem.Storage, LogEvent.AtomicWriteFailed, ("file", "capabilities.json " + ex.GetType().Name));
+        }
+        finally
+        {
+            _refreshGate.Release();
+        }
+    }
+
+    /// <summary>Upstream <c>republishAssets</c>: the record moves only after a complete publish.</summary>
+    private void RepublishAssets(string json)
+    {
+        if (_assets.Materialize(json))
+        {
+            _lastCapabilitiesJson = json;
+        }
+    }
+
+    private void ScheduleRefresh(bool onlyIfChanged = false)
+    {
+        if (_scope is null)
+        {
+            return;
+        }
+        _ = Task.Run(onlyIfChanged ? RefreshAssetsIfChanged : RefreshAssets);
     }
 
     private void ReportAuditPurge(int removed)
@@ -508,6 +673,7 @@ public sealed class RelayHost : IDisposable
     {
         Stop();
         _shizukuBackend.Dispose();
+        _refreshGate.Dispose();
         _scope?.Dispose();
         _initJob?.Dispose();
     }

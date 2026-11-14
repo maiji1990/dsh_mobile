@@ -344,6 +344,43 @@ public sealed class RelayHostTests : IDisposable
         }
     }
 
+    [Fact]
+    public async Task StartPublishesTheGuestFilesAndAChangeIsRepublished()
+    {
+        var (host, prefs, _) = NewHost();
+        using (host)
+        {
+            host.StartInline();
+            Assert.True(File.Exists(host.Paths.ClientScript));
+            Assert.True(File.Exists(host.Paths.UsageFile));
+            var published = File.ReadAllText(host.Paths.CapabilitiesFile);
+            Assert.Equal(host.CapabilitiesJson(), published);
+            Assert.Equal(published, host.PublishedCapabilitiesJson);
+            Assert.Contains("\"entry\": \"\\/opt\\/pilot\\/bin\\/relay\"", published, StringComparison.Ordinal);
+            Assert.Contains("\"assistantTier\": \"ASK\"", published, StringComparison.Ordinal);
+
+            // A tier the legacy page wrote: the next check publishes the new listing.
+            prefs.PutString(RelaySurfaces.PrefsFile, RelayTierStore.Key("pkg.query"), "DENIED");
+            host.RefreshAssetsIfChanged();
+            var after = File.ReadAllText(host.Paths.CapabilitiesFile);
+            Assert.NotEqual(published, after);
+            Assert.Equal(after, host.PublishedCapabilitiesJson);
+
+            // The guest rewrote the manual: unchanged listing, but the set is no longer intact, so it is republished.
+            File.WriteAllText(host.Paths.UsageFile, "guest wrote this");
+            host.RefreshAssetsIfChanged();
+            Assert.NotEqual("guest wrote this", File.ReadAllText(host.Paths.UsageFile));
+
+            // Stopped: a late trigger publishes nothing.
+            host.Stop();
+            File.WriteAllText(host.Paths.UsageFile, "after stop");
+            host.RefreshAssetsIfChanged();
+            host.RefreshAssets();
+            await Task.Delay(50);
+            Assert.Equal("after stop", File.ReadAllText(host.Paths.UsageFile));
+        }
+    }
+
     private static string? TryRead(string path)
     {
         try

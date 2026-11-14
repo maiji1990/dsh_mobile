@@ -36,8 +36,9 @@ public sealed class AutomationActivity : Activity
         root.AddView(_status);
 
         var row1 = new LinearLayout(this) { Orientation = Orientation.Horizontal };
-        var start = Make(Resource.String.automation_start, () => _ = Run(BridgeMethods.RelayStart));
-        var stop = Make(Resource.String.automation_stop, () => _ = Run(BridgeMethods.RelayStop));
+        // ADR-0010: the user picks who serves the guest mailbox; never both at once.
+        var start = Make(Resource.String.automation_start, ChooseRelayStart);
+        var stop = Make(Resource.String.automation_stop, () => _ = StopRelayAsync());
         row1.AddView(start, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WrapContent, 1f));
         row1.AddView(stop, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WrapContent, 1f));
         root.AddView(row1);
@@ -85,8 +86,17 @@ public sealed class AutomationActivity : Activity
         root.AddView(_output);
         var page = new ScrollView(this) { FillViewport = true };
         page.SetFitsSystemWindows(true);
+        // The selectable output is focusable in touch mode, so it used to take the window's initial focus; the
+        // ScrollView then kept that focused view on screen as the output grew and scrolled the page by itself
+        // while a self-test ran, which hid the top of the page under the app bar (the guest's ui_get_element
+        // then correctly saw that node as not visible). The page itself takes focus first; tapping the output
+        // still focuses it for selection.
+        page.Focusable = true;
+        page.FocusableInTouchMode = true;
+        page.DescendantFocusability = DescendantFocusability.BeforeDescendants;
         page.AddView(root);
         SetContentView(page);
+        page.RequestFocus();
     }
 
     protected override void OnResume()
@@ -107,8 +117,69 @@ public sealed class AutomationActivity : Activity
     private TextView _csPhase = null!;
     private Relay.RelayHostWatch? _csWatch;
 
+    private void ChooseRelayStart() =>
+        new AlertDialog.Builder(this)
+            .SetTitle(Resource.String.automation_start_choice_title)!
+            .SetMessage(Resource.String.automation_start_choice_message)!
+            .SetPositiveButton(Resource.String.automation_start_legacy, (_, _) => _ = StartLegacyRelayAsync())!
+            .SetNeutralButton(Resource.String.automation_start_cs, (_, _) => _ = StartCsGuestRelayAsync())!
+            .Show();
+
+    /// <summary>The legacy Relay takes the guest mailbox: a C# host on it (or on its own mailbox) is stopped first.</summary>
+    private async Task StartLegacyRelayAsync()
+    {
+        if (Relay.CsRelay.GuestFacing)
+        {
+            Relay.CsRelay.StopGuest(_bridge.Layout.UserDataDir);
+            _bridge.Note("c# relay (guest) stopped: legacy relay takes the mailbox");
+        }
+        ShowCsRelay();
+        await Run(BridgeMethods.RelayStart);
+    }
+
+    /// <summary>
+    /// ADR-0010: stop the legacy Relay (fail closed: if it does not stop, the C# host does not take the mailbox), then the
+    /// C# host serves files/pilot and registers the ui_* layer.
+    /// </summary>
+    private async Task StartCsGuestRelayAsync()
+    {
+        Enable(false);
+        var stopped = await _bridge.Client.ExecuteAsync(BridgeMethods.RelayStop, deadline: TimeSpan.FromSeconds(30));
+        if (!stopped.Ok)
+        {
+            Enable(true);
+            _output.Text = GetString(Resource.String.automation_cs_guest_legacy_stop_failed, new Java.Lang.String($"{stopped.Code}: {stopped.Message}"));
+            return;
+        }
+        var registered = Relay.CsRelay.StartGuest(this, _bridge.Layout.UserDataDir);
+        _bridge.Note($"c# relay (guest) start: legacy stopped, ui_* layer {(registered ? "registered" : "conflict")}");
+        _output.Text = registered ? "" : GetString(Resource.String.automation_cs_guest_conflict);
+        WatchCsRelay(true);
+        ShowCsRelay();
+        Enable(true);
+        await RefreshAsync();
+    }
+
+    private async Task StopRelayAsync()
+    {
+        if (Relay.CsRelay.GuestFacing)
+        {
+            var removed = Relay.CsRelay.StopGuest(_bridge.Layout.UserDataDir);
+            _bridge.Note($"c# relay (guest) stop; ui_* layer {(removed ? "removed" : "left (not ours)")}");
+            ShowCsRelay();
+            await RefreshAsync();
+            return;
+        }
+        await Run(BridgeMethods.RelayStop);
+    }
+
     private void ToggleCsRelay()
     {
+        if (Relay.CsRelay.GuestFacing)
+        {
+            _output.Text = GetString(Resource.String.automation_cs_shadow_blocked);
+            return;
+        }
         if (Relay.CsRelay.Phase is RelayRuntimePhase.Stopped)
         {
             Relay.CsRelay.Start(this);
@@ -133,11 +204,15 @@ public sealed class AutomationActivity : Activity
     {
         var host = Relay.CsRelay.Host;
         var phase = Relay.CsRelay.Phase;
-        _csRelay.SetText(phase is RelayRuntimePhase.Stopped ? Resource.String.automation_cs_relay_start : Resource.String.automation_cs_relay_stop);
+        // This button is the shadow host's (own mailbox); the guest-facing host is started from "开启中继".
+        var shadowUp = Relay.CsRelay.Mode == Relay.CsRelayMode.Shadow && phase is not RelayRuntimePhase.Stopped;
+        _csRelay.SetText(shadowUp ? Resource.String.automation_cs_relay_stop : Resource.String.automation_cs_relay_start);
         var detail = phase.ToString()
             + (host?.IsChannelRunning == true ? " · 信箱运行中" : "")
-            + (host?.DegradedReason is { } r ? " · " + r : "");
-        _csPhase.Text = GetString(Resource.String.automation_cs_relay_phase, new Java.Lang.String(detail));
+            + (host?.DegradedReason is { } r ? " · " + r : "")
+            + (host is not null && phase is not RelayRuntimePhase.Stopped ? " · " + host.Paths.Policy.GuestEntry : "");
+        _csPhase.Text = GetString(Relay.CsRelay.GuestFacing ? Resource.String.automation_cs_guest_line : Resource.String.automation_cs_relay_phase,
+            new Java.Lang.String(detail));
     }
 
     private Button Make(int text, Action onClick)
@@ -375,6 +450,11 @@ public sealed class AutomationActivity : Activity
 
     private async Task HostProbeAsync()
     {
+        if (Relay.CsRelay.GuestFacing)
+        {
+            _output.Text = GetString(Resource.String.automation_host_probe_guest_mode);
+            return;
+        }
         if (Relay.CsRelay.Host is not { Phase: RelayRuntimePhase.Running } host)
         {
             _output.Text = GetString(Resource.String.automation_host_probe_needs_cs);
@@ -385,10 +465,15 @@ public sealed class AutomationActivity : Activity
         _output.Text = GetString(Resource.String.automation_host_probe_running);
         var runtime = _bridge.Runtime;
         var entry = host.Paths.EntryDir;
+        var guestEntry = host.Paths.GuestEntry;
         try
         {
+            // ADR-0010, read-only and first (no approvals): the guest files each relay published.
+            var files = runtime.ShadowRelayGuestFiles(entry, guestEntry);
+            var head = files is null ? "" : $"{files.Slice}: {files.Verdict}\n{files.Detail}\n\n";
+            _output.Text = head + GetString(Resource.String.automation_host_probe_running);
             var report = await Task.Run(() => runtime.ShadowRelayHostAsync(entry, TimeSpan.FromMinutes(15), CancellationToken.None));
-            _output.Text = report is null ? GetString(Resource.String.automation_envelope_probe_off) : $"{report.Slice}: {report.Verdict}\n{report.Detail}";
+            _output.Text = head + (report is null ? GetString(Resource.String.automation_envelope_probe_off) : $"{report.Slice}: {report.Verdict}\n{report.Detail}");
         }
         catch (Exception ex)
         {

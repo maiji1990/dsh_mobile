@@ -16,6 +16,12 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- Byte-exact guest assets copied from DSHBox (GPL-3.0; Automation/Relay/Transport/Assets/README.md, docs/UPSTREAMS.md). -->
+    <EmbeddedResource Include="Automation/Relay/Transport/Assets/relay-client.cjs" LogicalName="DshMobile.Relay.relay-client.cjs" />
+    <EmbeddedResource Include="Automation/Relay/Transport/Assets/relay-usage.template.md" LogicalName="DshMobile.Relay.relay-usage.template.md" />
+  </ItemGroup>
+
+  <ItemGroup>
     <!-- zstd decoder for runtime layers (.NET 11 has no in-box Zstandard). Pure managed, MIT; see docs/UPSTREAMS.md. -->
     <PackageReference Include="ZstdSharp.Port" Version="0.8.8" />
   </ItemGroup>

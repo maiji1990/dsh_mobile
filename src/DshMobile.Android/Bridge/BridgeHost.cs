@@ -48,6 +48,16 @@ public sealed class BridgeHost : IDisposable, IDiagnosticsLog
             .AddDshMobileApplication(Layout, Client)
             .BuildServiceProvider();
         Runtime = _services.GetRequiredService<RuntimeCoordinator>();
+        // ADR-0010: the guest-facing C# Relay stops with the sandbox, as the legacy sandbox.stop stops its Relay and
+        // removes the ui_* layer.
+        Runtime.SandboxStopping += () =>
+        {
+            if (Automation.Relay.CsRelay.GuestFacing)
+            {
+                var removed = Automation.Relay.CsRelay.StopGuest(Layout.UserDataDir);
+                Append($"c# relay (guest) stopped with the sandbox; ui_* layer {(removed ? "removed" : "left (not ours)")}");
+            }
+        };
         var s = Runtime.State.Current;
         Append($"runtime coordinator: impl={Runtime.Implementation} journal={s.State}/{s.Harness} gen={s.Generation}{(s.ErrorCode is null ? "" : " last error " + s.ErrorCode)}");
     }

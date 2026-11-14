@@ -13,3 +13,6 @@ tests/TestVectors/layers/** binary
 tests/TestVectors/bundles/** binary
 # Vendored third-party web assets: byte-exact (SHA-256 pinned in tooling/terminal-web.lock.json)
 src/DshMobile.Android/Assets/terminal/vendor/** -text
+# Guest-visible Relay assets copied from DSHBox (byte-exact: their SHA-256 is in the published version.json marker)
+src/DshMobile.Runtime/Automation/Relay/Transport/Assets/** -text
+tests/TestVectors/relay-guest/** -text

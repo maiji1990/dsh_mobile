@@ -132,7 +132,7 @@ public static class RelayEncoding
 }
 
 /// <summary>Android libcore org.json text forms (JSONStringer, JSONObject.numberToString, String.valueOf).</summary>
-internal static class LibcoreJson
+internal static partial class LibcoreJson
 {
     /// <summary>A JSONObject being built: insertion order, a repeated key keeps its first position and takes the new value.</summary>
     internal sealed class ObjectWriter
