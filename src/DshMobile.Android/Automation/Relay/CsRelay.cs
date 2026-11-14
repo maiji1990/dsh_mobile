@@ -9,8 +9,10 @@
 //           dual-relay comparison.
 //   Guest:  serves the guest's mailbox (files/pilot, guest /opt/pilot) and publishes the guest files there, in place
 //           of the legacy Relay, which the caller must have stopped first (never two relays on one mailbox).
-// Both read the same Relay preferences (tiers, surface preference, shell opt-ins) and ask for approval on the C#
-// notification card, so every C# write still needs the user's own answer. Nothing here enables a system permission.
+// Both read the same Relay preferences (tiers, surface preference, shell opt-ins) and ask for approval on the C# card
+// (ADR-0011: inside the 手机操控 page while it is in front, else the floating card when the user granted "display over
+// other apps", else the notification card), so every C# write still needs the user's own answer. Nothing here enables
+// a system permission.
 
 using Android.App;
 using Android.Content;
@@ -18,6 +20,7 @@ using Android.Content.PM;
 using DshMobile.Runtime.Automation;
 using DshMobile.Runtime.Automation.Relay;
 using DshMobile.Runtime.Automation.Relay.Exec.Direct;
+using DshMobile.Runtime.Automation.Relay.Logging;
 using DshMobile.Runtime.Automation.Relay.Shizuku;
 using DshMobile.Runtime.Automation.Relay.Storage;
 using DshMobile.Runtime.Automation.Relay.Transport;
@@ -46,6 +49,30 @@ public static class CsRelay
     private static (bool Running, bool Granted)? _lastShizuku;
     private static AndroidShizukuPlatform? _shizuku;
     private static Action? _unhook;
+    private static AndroidOverlayApproval? _overlay;
+    private static volatile bool _pageCardShown;
+
+    /// <summary>
+    /// Upstream <c>surfaces.uiInForeground()</c>: the 手机操控 page is resumed and renders the in-page approval card
+    /// (ADR-0011). Set by that page; every change re-decides where a pending question is shown.
+    /// </summary>
+    public static bool PageCardShown
+    {
+        get => _pageCardShown;
+        set
+        {
+            if (_pageCardShown == value)
+            {
+                return;
+            }
+            _pageCardShown = value;
+            // Rerouting reads the trusted-display state (a Shizuku binder call): never on the page's main thread.
+            if (Host is { } host)
+            {
+                _ = Task.Run(host.OnForegroundChanged);
+            }
+        }
+    }
 
     /// <summary>The process-wide window the C# notification listener feeds.</summary>
     public static NotificationWindow NotificationFeed { get; } = new(() => DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
@@ -98,6 +125,8 @@ public static class CsRelay
         _ticker?.Dispose();
         _ticker = null;
         _lastShizuku = null;
+        // No floating card left behind for a channel that no longer answers.
+        _overlay?.Withdraw();
         Host?.Stop();
     }
 
@@ -159,6 +188,8 @@ public static class CsRelay
         var shizuku = new AndroidShizukuPlatform(app, paths);
         _shizuku = shizuku;
         var notifications = new RelayApprovalNotifications(app);
+        _overlay ??= new AndroidOverlayApproval(app, (cap, cause, at) =>
+            Host?.RunLog.Warn(LogSubsystem.Gate, LogEvent.OverlayUnavailable, ("cap", cap), ("cause", cause), ("at", at)));
         var host = new RelayHost(new RelayHostPlatform
         {
             FilesDir = app.FilesDir!.AbsolutePath,
@@ -172,9 +203,10 @@ public static class CsRelay
             Projection = new AndroidProjectionPlatform(app, () => AppInForeground(app)),
             Shizuku = shizuku,
             DeviceFacts = () => DeviceFacts(app),
-            // No in-app approval card is wired for the C# host yet: the queue must route to the notification card,
-            // which the user answers (allow goes through the in-app confirmation page).
-            UiInForeground = () => false,
+            // ADR-0011: the in-page card while the 手机操控 page is in front (the queue routes PAGE first), then the
+            // floating card, then the notification card (whose allow goes through the in-app confirmation page).
+            UiInForeground = () => _pageCardShown,
+            Overlay = _overlay,
             AppInForeground = () => AppInForeground(app),
             DeviceInteractive = () => (app.GetSystemService(Context.PowerService) as Android.OS.PowerManager)?.IsInteractive != false,
             Notifications = notifications,
@@ -202,7 +234,7 @@ public static class CsRelay
         });
         shizuku.Backend = host.Shizuku;
         RelayApprovalReceiver.Resolve = host.ResolveApproval;
-        Action bound = host.OnForegroundChanged;
+        Action bound = host.OnAccessibilityBoundChanged;
         DshAccessibilityService.BoundChanged += bound;
         _unhook = () => DshAccessibilityService.BoundChanged -= bound;
         return host;

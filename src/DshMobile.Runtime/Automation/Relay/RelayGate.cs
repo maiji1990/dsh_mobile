@@ -269,22 +269,27 @@ public static class RelaySystemProbe
         return facts.A11yBound ? null : facts.A11yListed ? AccessibilityGap.NotBound : AccessibilityGap.Revoked;
     }
 
-    /// <summary>Upstream <c>probe(descriptor, route)</c>: the route decides for a few capabilities, else all routes.</summary>
-    public static ProbeResult Probe(string wire, SurfaceKind? route, RelaySystemFacts facts)
+    /// <summary>
+    /// Upstream <c>probe(descriptor, route)</c>: the route decides for a few capabilities, else all routes.
+    /// <paramref name="onGap"/> is upstream <c>onAccessibilityGap</c>: called (capability, gap) whenever the answer went
+    /// through the accessibility check and the service is not bound — the one place the gap is decided, so the gate,
+    /// the listing and the hint shown to the user never disagree.
+    /// </summary>
+    public static ProbeResult Probe(string wire, SurfaceKind? route, RelaySystemFacts facts, Action<string, AccessibilityGap>? onGap = null)
     {
         ArgumentNullException.ThrowIfNull(facts);
-        if (route is { } r && RouteState(wire, r, facts) is { } routed)
+        if (route is { } r && RouteState(wire, r, facts, onGap) is { } routed)
         {
             return routed;
         }
-        return AllRoutes(wire, facts);
+        return AllRoutes(wire, facts, onGap);
     }
 
-    private static ProbeResult? RouteState(string wire, SurfaceKind route, RelaySystemFacts f)
+    private static ProbeResult? RouteState(string wire, SurfaceKind route, RelaySystemFacts f, Action<string, AccessibilityGap>? onGap)
     {
         if (CoordinateCaps.Contains(wire))
         {
-            return route == SurfaceKind.BackendTrusted ? ProbeResult.GrantedResult : Accessibility(f);
+            return route == SurfaceKind.BackendTrusted ? ProbeResult.GrantedResult : Accessibility(wire, f, onGap);
         }
         return wire switch
         {
@@ -299,7 +304,7 @@ public static class RelaySystemProbe
         };
     }
 
-    private static ProbeResult AllRoutes(string wire, RelaySystemFacts f)
+    private static ProbeResult AllRoutes(string wire, RelaySystemFacts f, Action<string, AccessibilityGap>? onGap)
     {
         if (ShellCaps.Contains(wire))
         {
@@ -307,11 +312,11 @@ public static class RelaySystemProbe
         }
         if (TreeCaps.Contains(wire))
         {
-            return Accessibility(f);
+            return Accessibility(wire, f, onGap);
         }
         if (CoordinateCaps.Contains(wire))
         {
-            return f.TrustedDisplayAvailable ? ProbeResult.GrantedResult : Accessibility(f);
+            return f.TrustedDisplayAvailable ? ProbeResult.GrantedResult : Accessibility(wire, f, onGap);
         }
         return wire switch
         {
@@ -333,9 +338,19 @@ public static class RelaySystemProbe
         return missing.Count == 0 ? ProbeResult.GrantedResult : new(SystemGrantState.RuntimeAskable, [.. missing.Select(p => "permission:" + p)]);
     }
 
-    /// <summary>Listed but not bound counts as granted (the app was stopped, the permission is still there).</summary>
-    private static ProbeResult Accessibility(RelaySystemFacts f) =>
-        Gap(f) == AccessibilityGap.Revoked ? new(SystemGrantState.ManualOnly, ["accessibility"]) : ProbeResult.GrantedResult;
+    /// <summary>
+    /// Upstream <c>accessibilityState</c>: listed but not bound counts as granted (the app was stopped, the permission is
+    /// still there); either gap is reported to <paramref name="onGap"/>.
+    /// </summary>
+    private static ProbeResult Accessibility(string wire, RelaySystemFacts f, Action<string, AccessibilityGap>? onGap)
+    {
+        if (Gap(f) is not { } gap)
+        {
+            return ProbeResult.GrantedResult;
+        }
+        onGap?.Invoke(wire, gap);
+        return gap == AccessibilityGap.Revoked ? new(SystemGrantState.ManualOnly, ["accessibility"]) : ProbeResult.GrantedResult;
+    }
 }
 
 /// <summary>

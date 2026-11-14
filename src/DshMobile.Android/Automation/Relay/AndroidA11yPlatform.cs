@@ -47,6 +47,12 @@ internal sealed class AndroidA11yPlatform(Context context) : IA11yPlatform
         {
             packages.Add(window.Root?.PackageName);
         }
+        // ADR-0011: our floating approval card counts as one of this app's windows even if the system leaves it out of
+        // the list (or the list lags its removal), so the agent can never press it.
+        if (AndroidOverlayApproval.OnScreen)
+        {
+            packages.Add(SelfPackage);
+        }
         return packages;
     }
 

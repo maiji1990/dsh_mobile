@@ -38,6 +38,7 @@ ADR-0009 之后 C# 宿主能完整处理一次请求，但只服务自己的信�
    通过真机验收（guest `relay doctor` + `ui_*` 自检 + DSH 里真实 `ui_*` 调用）并经用户确认后，再单独翻转默认，
    之后才删除该切片的 DSHBox 依赖（ADR-0007 规则 3）。
 8. **暂不移植**：悬浮窗审批、无障碍缺口提示、应用内审批卡（C# 宿主 `UiInForeground` 仍为 false，只走通知卡）。
+   （已由 [ADR-0011](0011-relay-approval-surfaces-and-a11y-ownership.md) 加入；同一 ADR 去掉了旧无障碍服务的声明。）
    `media.write` 的 RIFF 偏移缺陷继续保留以维持影子可比，翻转默认时单独修复。
 
 ## 后果

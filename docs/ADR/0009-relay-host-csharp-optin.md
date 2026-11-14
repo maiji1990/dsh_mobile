@@ -31,7 +31,8 @@ PR-07 第一至八段把 Relay 的信封、准入、执行面、闸门、确认�
    读一次 `(pingBinder, checkSelfPermission)`，变化时调 `RelayHost.OnShizukuStateChanged`，同一时钟驱动 `OnHeartbeat`。
    代价是状态变化最多晚 3 s 被看到；绑定 / 解绑仍按上游规则只在两者同时成立时进行。
 6. **暂不移植**（仍由旧实现负责，切换切片再处理）：GuestAssets / 能力表发布（`capabilities.json`）、悬浮窗、
-   无障碍缺口提示、应用内审批卡。C# 宿主不发布任何 guest 可见文件。（GuestAssets / 能力表已由 [ADR-0010](0010-relay-guest-switch.md) 移植。）
+   无障碍缺口提示、应用内审批卡。C# 宿主不发布任何 guest 可见文件。（GuestAssets / 能力表已由 [ADR-0010](0010-relay-guest-switch.md) 移植；悬浮窗、无障碍缺口提示、应用内审批卡由
+   [ADR-0011](0011-relay-approval-surfaces-and-a11y-ownership.md) 作为 C# 宿主的新功能加入。）
 7. **保留上游缺陷以保持影子可比**：`media.write` 类型嗅探的 RIFF 偏移（见 `docs/UPSTREAMS.md`）。切换为 C# 默认时单独修复并更新向量。
 
 ## 后果

@@ -3,7 +3,9 @@ using Android.Views;
 using DshMobile.App.Bridge;
 using DshMobile.Application.Shadow;
 using DshMobile.Core.Bridge;
+using DshMobile.Runtime.Automation;
 using DshMobile.Runtime.Automation.Relay;
+using DshMobile.Runtime.Automation.Relay.Interlock;
 using DshMobile.Runtime.Automation.Relay.Shizuku;
 
 namespace DshMobile.App.Automation;
@@ -30,6 +32,10 @@ public sealed class AutomationActivity : Activity
 
         var root = new LinearLayout(this) { Orientation = Orientation.Vertical };
         root.SetPadding(24, 16, 24, 16);
+        // ADR-0011: the C# Relay's approval card sits at the top of this page while the page is in front.
+        _cardSlot = new FrameLayout(this) { Visibility = ViewStates.Gone };
+        _cardSlot.SetPadding(0, 0, 0, 16);
+        root.AddView(_cardSlot);
         root.AddView(new TextView(this) { Text = GetString(Resource.String.automation_explain) });
         _status = new TextView(this) { AccessibilityLiveRegion = AccessibilityLiveRegion.Polite };
         _status.SetPadding(0, 16, 0, 16);
@@ -43,8 +49,7 @@ public sealed class AutomationActivity : Activity
         row1.AddView(stop, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WrapContent, 1f));
         root.AddView(row1);
         var row2 = new LinearLayout(this) { Orientation = Orientation.Horizontal };
-        var settings = Make(Resource.String.automation_a11y_settings,
-            () => StartActivity(new Intent(Android.Provider.Settings.ActionAccessibilitySettings)));
+        var settings = Make(Resource.String.automation_a11y_settings, OpenAccessibilitySettings);
         var selftest = Make(Resource.String.automation_selftest, () => _ = SelfTestAsync());
         row2.AddView(settings, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WrapContent, 1f));
         row2.AddView(selftest, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WrapContent, 1f));
@@ -52,6 +57,10 @@ public sealed class AutomationActivity : Activity
         // ADR-0008: asks Shizuku to show its own grant dialog (the user answers it in Shizuku); never starts Shizuku.
         var shizuku = Make(Resource.String.automation_shizuku_connect, ConnectShizuku);
         root.AddView(shizuku);
+        // ADR-0011: opens the system "display over other apps" page for this app; the user grants it there (or not:
+        // the floating card is then skipped and the notification card asks instead).
+        _overlayPerm = Make(Resource.String.automation_overlay_not_granted, OpenOverlaySettings);
+        root.AddView(_overlayPerm);
         // PR-07 segment 2 shadow, developer action: only always-rejected requests, never anything that reaches approval.
         var probe = Make(Resource.String.automation_envelope_probe, () => _ = EnvelopeProbeAsync());
         root.AddView(probe);
@@ -84,7 +93,7 @@ public sealed class AutomationActivity : Activity
         _output.SetTextIsSelectable(true);
         _output.SetPadding(0, 16, 0, 0);
         root.AddView(_output);
-        var page = new ScrollView(this) { FillViewport = true };
+        var page = _page = new ScrollView(this) { FillViewport = true };
         page.SetFitsSystemWindows(true);
         // The selectable output is focusable in touch mode, so it used to take the window's initial focus; the
         // ScrollView then kept that focused view on screen as the output grew and scrolled the page by itself
@@ -105,17 +114,31 @@ public sealed class AutomationActivity : Activity
         _ = RefreshAsync(); // accessibility may have been toggled in system settings meanwhile
         WatchCsRelay(true);
         ShowCsRelay();
+        ShowOverlayPermission();
+        // Upstream uiInForeground(): from now on a pending C# question is asked on this page.
+        Relay.CsRelay.PageCardShown = true;
     }
 
     protected override void OnPause()
     {
+        // The question moves to the floating card or the notification before this page goes away.
+        Relay.CsRelay.PageCardShown = false;
         WatchCsRelay(false);
         base.OnPause();
     }
 
     private Button _csRelay = null!;
     private TextView _csPhase = null!;
+    private Button _overlayPerm = null!;
+    private ScrollView _page = null!;
+    private FrameLayout _cardSlot = null!;
+    private Relay.ApprovalCardView? _card;
+    private int _cardRequestId;
+    private AlertDialog? _gapDialog;
+    private RelayHost.AccessibilityNoticeInfo? _gapShown;
     private Relay.RelayHostWatch? _csWatch;
+    private RelayHost? _watchedHost;
+    private Action? _unwatchHost;
 
     private void ChooseRelayStart() =>
         new AlertDialog.Builder(this)
@@ -197,7 +220,199 @@ public sealed class AutomationActivity : Activity
     private void WatchCsRelay(bool on)
     {
         _csWatch?.Dispose();
-        _csWatch = on && Relay.CsRelay.Host is { } host ? new Relay.RelayHostWatch(host, () => RunOnUiThread(ShowCsRelay)) : null;
+        _csWatch = null;
+        _unwatchHost?.Invoke();
+        _unwatchHost = null;
+        _watchedHost = null;
+        if (!on || Relay.CsRelay.Host is not { } host)
+        {
+            HideCard();
+            CloseGapDialog();
+            return;
+        }
+        _watchedHost = host;
+        _csWatch = new Relay.RelayHostWatch(host, () => RunOnUiThread(ShowCsRelay));
+        // Both arrive on pool threads; every handler re-checks that this host is still the one watched.
+        Action<InterlockQueue.Presentation> routing = p => RunOnUiThread(() => ShowRouting(host, p));
+        Action<RelayHost.AccessibilityNoticeInfo?> notice = n => RunOnUiThread(() => ShowNotice(host, n));
+        host.ApprovalRoutingChanged += routing;
+        host.AccessibilityNoticeChanged += notice;
+        _unwatchHost = () =>
+        {
+            host.ApprovalRoutingChanged -= routing;
+            host.AccessibilityNoticeChanged -= notice;
+        };
+        ShowRouting(host, host.ApprovalRouting);
+        ShowNotice(host, host.AccessibilityNotice);
+    }
+
+    /// <summary>
+    /// ADR-0011 in-page card: shown only while the queue routes the displayed question to this page. Answers go to the
+    /// queue by request id, so a card left over from an earlier question can never answer a newer one. The window is
+    /// FLAG_SECURE while it shows; the agent cannot press it (writes on the host display are suspended while any of this
+    /// app's windows is up).
+    /// </summary>
+    private void ShowRouting(RelayHost host, InterlockQueue.Presentation? routing)
+    {
+        if (host != _watchedHost)
+        {
+            return;
+        }
+        if (routing is not { Via: InterlockChannel.Page, Request: { } request } || !Relay.CsRelay.PageCardShown)
+        {
+            HideCard();
+            return;
+        }
+        if (_card is not null && _cardRequestId == request.Id)
+        {
+            _card.SetPendingCount(routing.WaitingCount);
+            return;
+        }
+        HideCard();
+        var id = request.Id;
+        var capability = request.Prompt.Capability;
+        _card = new Relay.ApprovalCardView(this, request.Prompt, routing.WaitingCount, choice =>
+        {
+            HideCard();
+            var taken = host.ResolveApproval(choice, id);
+            _bridge.Note($"c# relay page card: {capability} -> {choice.Wire()} (request {id}{(taken ? "" : ", already settled")})");
+        });
+        _cardRequestId = id;
+        Window!.AddFlags(WindowManagerFlags.Secure);
+        _cardSlot.AddView(_card.View, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MatchParent, ViewGroup.LayoutParams.WrapContent));
+        _cardSlot.Visibility = ViewStates.Visible;
+        _card.Start();
+        _page.ScrollTo(0, 0);
+    }
+
+    private void HideCard()
+    {
+        if (_card is null)
+        {
+            return;
+        }
+        _card.Stop();
+        _card = null;
+        _cardRequestId = 0;
+        _cardSlot.RemoveAllViews();
+        _cardSlot.Visibility = ViewStates.Gone;
+        Window?.ClearFlags(WindowManagerFlags.Secure);
+    }
+
+    /// <summary>
+    /// Upstream <c>AccessibilityNotice</c> dialog: a call was held back because the accessibility step is missing. It only
+    /// says what to do; the user turns the service on in system settings (the app never does).
+    /// </summary>
+    private void ShowNotice(RelayHost host, RelayHost.AccessibilityNoticeInfo? notice)
+    {
+        if (host != _watchedHost)
+        {
+            return;
+        }
+        if (notice is null)
+        {
+            CloseGapDialog();
+            return;
+        }
+        if (_gapDialog is { IsShowing: true } && _gapShown == notice)
+        {
+            return;
+        }
+        CloseGapDialog();
+        _gapShown = notice;
+        var message = GetString(notice.Gap == AccessibilityGap.NotBound ? Resource.String.relay_gap_not_bound : Resource.String.relay_gap_revoked,
+            new Java.Lang.String(notice.Capability));
+        _gapDialog = new AlertDialog.Builder(this)
+            .SetTitle(Resource.String.relay_gap_title)!
+            .SetMessage(message)!
+            .SetCancelable(false)!
+            .SetPositiveButton(Resource.String.relay_gap_open, (_, _) =>
+            {
+                host.DismissAccessibilityNotice();
+                OpenAccessibilitySettings();
+            })!
+            .SetNegativeButton(Resource.String.relay_gap_dismiss, (_, _) => host.DismissAccessibilityNotice())!
+            .Show();
+    }
+
+    private void CloseGapDialog()
+    {
+        // Dismissing here is not the user's "知道了": the notice stays until they answer it.
+        _gapDialog?.Dismiss();
+        _gapDialog = null;
+        _gapShown = null;
+    }
+
+    /// <summary>This app's own service (ADR-0011: the only one), straight to its page where the ROM supports that.</summary>
+    private void OpenAccessibilitySettings()
+    {
+        var component = new ComponentName(PackageName!, "dshmobile.relay.DshAccessibilityService").FlattenToString();
+        try
+        {
+            var details = new Intent("android.settings.ACCESSIBILITY_DETAILS_SETTINGS");
+            details.PutExtra(Intent.ExtraComponentName, component);
+            StartActivity(details);
+            return;
+        }
+        catch (ActivityNotFoundException)
+        {
+        }
+        catch (Java.Lang.SecurityException)
+        {
+        }
+        StartActivity(new Intent(Android.Provider.Settings.ActionAccessibilitySettings));
+    }
+
+    private void OpenOverlaySettings()
+    {
+        try
+        {
+            StartActivity(new Intent(Android.Provider.Settings.ActionManageOverlayPermission, Android.Net.Uri.Parse("package:" + PackageName)));
+        }
+        catch (ActivityNotFoundException)
+        {
+            StartActivity(new Intent(Android.Provider.Settings.ActionManageOverlayPermission));
+        }
+    }
+
+    private void ShowOverlayPermission() =>
+        _overlayPerm.SetText(Android.Provider.Settings.CanDrawOverlays(this)
+            ? Resource.String.automation_overlay_granted
+            : Resource.String.automation_overlay_not_granted);
+
+    /// <summary>The accessibility line, from this app's own service (the legacy service is no longer declared).</summary>
+    private string A11yLine(AccessibilityGap? gap) => GetString(gap switch
+    {
+        null => Resource.String.automation_a11y_on,
+        AccessibilityGap.NotBound => Resource.String.automation_a11y_not_bound,
+        _ => Resource.String.automation_a11y_off,
+    });
+
+    private AccessibilityGap? LocalA11yGap()
+    {
+        if (Relay.DshAccessibilityService.Instance is not null)
+        {
+            return null;
+        }
+        var package = PackageName!;
+        var listed = (Android.Provider.Settings.Secure.GetString(ContentResolver, Android.Provider.Settings.Secure.EnabledAccessibilityServices) ?? "")
+            .Split(':').Any(c => c.StartsWith(package + "/", StringComparison.OrdinalIgnoreCase));
+        return listed ? AccessibilityGap.NotBound : AccessibilityGap.Revoked;
+    }
+
+    /// <summary>ADR-0011: in guest mode the status line is the C# host's own (the legacy Relay is stopped then).</summary>
+    private async Task ShowCsStatusAsync(RelayHost host)
+    {
+        // Status() reads the system facts (Shizuku binder included): off the main thread.
+        var s = await Task.Run(host.Status);
+        var registered = UiToolsRegistration.IsRegistered(_bridge.Layout.UserDataDir);
+        _status.Text = string.Join('\n',
+            $"C# Relay: {s.Phase}{(s.ChannelRunning ? " · 信箱运行中" : "")}{(s.DegradedReason is { } r ? " · " + r : "")}",
+            A11yLine(s.AccessibilityGap),
+            $"允许的能力：{string.Join(", ", s.Allowed)}",
+            $"guest CLI：{s.GuestEntry}",
+            ShizukuLine(ShizukuClient.Probe()),
+            GetString(registered ? Resource.String.automation_tools_cs_registered : Resource.String.automation_tools_off));
     }
 
     private void ShowCsRelay()
@@ -213,6 +428,10 @@ public sealed class AutomationActivity : Activity
             + (host is not null && phase is not RelayRuntimePhase.Stopped ? " · " + host.Paths.Policy.GuestEntry : "");
         _csPhase.Text = GetString(Relay.CsRelay.GuestFacing ? Resource.String.automation_cs_guest_line : Resource.String.automation_cs_relay_phase,
             new Java.Lang.String(detail));
+        if (Relay.CsRelay.GuestFacing && host is not null)
+        {
+            _ = ShowCsStatusAsync(host);
+        }
     }
 
     private Button Make(int text, Action onClick)
@@ -224,7 +443,8 @@ public sealed class AutomationActivity : Activity
         return b;
     }
 
-    private Task RefreshAsync() => Run(BridgeMethods.RelayStatus);
+    private Task RefreshAsync() =>
+        Relay.CsRelay.GuestFacing && Relay.CsRelay.Host is { } host ? ShowCsStatusAsync(host) : Run(BridgeMethods.RelayStatus);
 
     private async Task Run(string method)
     {
@@ -239,7 +459,8 @@ public sealed class AutomationActivity : Activity
         var s = BridgeCodec.ReadPayload(resp, BridgeJsonContext.Default.RelayStatus)!;
         _status.Text = string.Join('\n',
             $"Relay: {s.Phase}{(s.ChannelRunning ? " · 信箱运行中" : "")}{(s.DegradedReason is { } r ? " · " + r : "")}",
-            GetString(s.AccessibilityEnabled ? Resource.String.automation_a11y_on : Resource.String.automation_a11y_off),
+            // ADR-0011: the legacy service is no longer declared, so its own flag is always off; show this app's.
+            A11yLine(LocalA11yGap()),
             $"允许的能力：{string.Join(", ", s.Allowed)}",
             $"guest CLI：{s.GuestCli}",
             ShizukuLine(ShizukuClient.Probe()),
@@ -329,6 +550,8 @@ public sealed class AutomationActivity : Activity
         var editor = GetSharedPreferences(RelaySurfaces.PrefsFile, FileCreationMode.Private)!.Edit()!;
         editor.PutString(RelaySurfaces.PreferenceKey, next.Name());
         editor.Commit();
+        // The C# host re-reads its preferences now instead of at the next heartbeat (the legacy Relay reads on its own).
+        Relay.CsRelay.Host?.OnPreferencesChanged();
         ShowSurfacePreference();
         _output.Text = GetString(Resource.String.automation_surface_pref_changed, new Java.Lang.String(SurfacePreferenceLabel(next)));
         _bridge.Note($"relay surface preference -> {next.Name()} (developer)");
