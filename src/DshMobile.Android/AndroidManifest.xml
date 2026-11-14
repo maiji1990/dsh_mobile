@@ -7,6 +7,11 @@
   <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
   <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
   <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+  <!--
+    ADR-0011: the floating approval card while the assistant works in another app. A special-access grant the user
+    makes in system Settings ("display over other apps"); without it the question goes to the notification card.
+  -->
+  <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
 
   <!--
     Browser automation (TASK-011, ADR-0005): DSHBox's browser runtime guards its command service and broadcasts
@@ -63,6 +68,14 @@
           android:name="android.accessibilityservice"
           android:resource="@xml/dsh_accessibility_service_config" />
     </service>
+    <!--
+      ADR-0011: the legacy Relay's accessibility service (merged from the interlock-relay-core AAR) is no longer
+      declared, so the user sees one "DSH Mobile 手机操控" service, this app's own. The legacy Relay's ui_* then report
+      accessibility as off (stable error, not a fake success). The AAR itself stays until every PR is done.
+    -->
+    <service
+        android:name="interlock.relay.core.exec.a11y.RelayAccessibilityService"
+        tools:node="remove" />
     <service
         android:name="dshmobile.relay.DshNotificationListener"
         android:label="@string/relay_cs_listener_label"

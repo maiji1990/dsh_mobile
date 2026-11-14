@@ -10,6 +10,7 @@ using DshMobile.Runtime.Automation.Relay;
 using DshMobile.Runtime.Automation.Relay.A11y;
 using DshMobile.Runtime.Automation.Relay.Exec.Direct;
 using DshMobile.Runtime.Automation.Relay.Exec.Shizuku;
+using DshMobile.Runtime.Automation.Relay.Interlock;
 using DshMobile.Runtime.Automation.Relay.Transport;
 
 namespace DshMobile.Runtime.Tests;
@@ -179,7 +180,12 @@ public sealed class RelayHostTests : IDisposable
         public static T Of<T>() where T : class => Create<T, Stub>();
     }
 
-    private (RelayHost Host, MemoryPrefs Prefs, List<string> Service) NewHost(Func<bool>? foreground = null)
+    private static RelaySystemFacts FactsOf(bool bound, bool listed) =>
+        new(35, A11yBound: bound, A11yListed: listed, ShellAvailable: false, TrustedDisplayAvailable: false,
+            NotificationListener: false, new HashSet<string>(), MicrophoneBlocked: false);
+
+    private (RelayHost Host, MemoryPrefs Prefs, List<string> Service) NewHost(
+        Func<bool>? foreground = null, Func<RelaySystemFacts>? facts = null, IOverlayApprovalChannel? overlay = null)
     {
         var prefs = new MemoryPrefs();
         var service = new List<string>();
@@ -194,9 +200,9 @@ public sealed class RelayHostTests : IDisposable
             Audio = Stub.Of<IAudioRecorder>(),
             Projection = Stub.Of<IProjectionPlatform>(),
             Shizuku = Stub.Of<IShizukuPlatform>(),
-            DeviceFacts = () => new RelaySystemFacts(35, A11yBound: false, A11yListed: false, ShellAvailable: false,
-                TrustedDisplayAvailable: false, NotificationListener: false, new HashSet<string>(), MicrophoneBlocked: false),
+            DeviceFacts = facts ?? (() => FactsOf(bound: false, listed: false)),
             UiInForeground = foreground ?? (() => false),
+            Overlay = overlay,
             AppInForeground = () => false,
             StartChannelService = () => service.Add("start"),
             StopChannelService = () => service.Add("stop"),
@@ -378,6 +384,197 @@ public sealed class RelayHostTests : IDisposable
             host.RefreshAssets();
             await Task.Delay(50);
             Assert.Equal("after stop", File.ReadAllText(host.Paths.UsageFile));
+        }
+    }
+
+    private void Drop(RelayHost host, string id, string capability, string args = "{}")
+    {
+        var staging = Path.Combine(_root, "drop");
+        Directory.CreateDirectory(staging);
+        var temp = Path.Combine(staging, id + ".json");
+        File.WriteAllText(temp, $$"""{"v":1,"id":"{{id}}","capability":"{{capability}}","args":{{args}},"ttlMs":30000}""",
+            new UTF8Encoding(false));
+        File.Move(temp, Path.Combine(host.Paths.InboxDir, id + ".json"));
+    }
+
+    private static async Task<string> ReplyCode(RelayHost host, string id)
+    {
+        var sw = Stopwatch.StartNew();
+        while (sw.Elapsed < TimeSpan.FromSeconds(20))
+        {
+            if (TryRead(Path.Combine(host.Paths.OutboxDir, id + ".json")) is { } reply)
+            {
+                using var doc = JsonDocument.Parse(reply);
+                return doc.RootElement.GetProperty("ok").GetBoolean()
+                    ? "ok"
+                    : doc.RootElement.GetProperty("error").GetProperty("code").GetString()!;
+            }
+            await Task.Delay(50);
+        }
+        throw new TimeoutException("no reply for " + id);
+    }
+
+    private static async Task Until(Func<bool> condition)
+    {
+        var sw = Stopwatch.StartNew();
+        while (!condition())
+        {
+            Assert.True(sw.Elapsed < TimeSpan.FromSeconds(20), "condition not reached");
+            await Task.Delay(20);
+        }
+    }
+
+    [Fact]
+    public void AnAccessibilityGapIsShownOnceUntilDismissedAndComesBackWhenTheBindingMoves()
+    {
+        var listed = false;
+        var (host, _, _) = NewHost(facts: () => FactsOf(bound: false, listed: listed));
+        using (host)
+        {
+            var seen = new List<RelayHost.AccessibilityNoticeInfo?>();
+            host.AccessibilityNoticeChanged += seen.Add;
+
+            // The listing probes every capability without the hook: no hint while the assistant has tried nothing.
+            Assert.NotEmpty(host.CapabilityRows());
+            Assert.Empty(seen);
+
+            host.Probe("ui.snapshot", SurfaceKind.Foreground);
+            Assert.Equal(new RelayHost.AccessibilityNoticeInfo(AccessibilityGap.Revoked, "ui.snapshot"), host.AccessibilityNotice);
+            host.Probe("ui.tap", SurfaceKind.Foreground); // the same gap again: still the one hint
+            Assert.Single(seen);
+
+            host.DismissAccessibilityNotice();
+            Assert.Null(host.AccessibilityNotice);
+            host.Probe("ui.snapshot", SurfaceKind.Foreground); // dismissed: the same gap stays quiet
+            Assert.Null(host.AccessibilityNotice);
+
+            listed = true; // enabled in Settings but not bound: a different gap is not silenced
+            host.Probe("ui.snapshot", SurfaceKind.Foreground);
+            Assert.Equal(AccessibilityGap.NotBound, host.AccessibilityNotice?.Gap);
+            host.DismissAccessibilityNotice();
+
+            listed = false;
+            host.OnAccessibilityBoundChanged(); // the binding moved: the earlier "seen" no longer holds
+            host.Probe("ui.snapshot", SurfaceKind.Foreground);
+            Assert.Equal(AccessibilityGap.Revoked, host.AccessibilityNotice?.Gap);
+            Assert.Equal([AccessibilityGap.Revoked, null, AccessibilityGap.NotBound, null, AccessibilityGap.Revoked],
+                seen.Select(n => n?.Gap));
+        }
+    }
+
+    [Fact]
+    public async Task AnApprovalTakesTheGapHintDownAndHoldsItBackUntilAnswered()
+    {
+        var (host, _, _) = NewHost(foreground: () => true);
+        using (host)
+        {
+            host.StartInline();
+            host.Probe("ui.snapshot", SurfaceKind.Foreground);
+            Assert.NotNull(host.AccessibilityNotice);
+
+            Drop(host, "g1", "pkg.query");
+            await Until(() => host.ApprovalRouting?.Request is not null);
+            Assert.Equal(InterlockChannel.Page, host.ApprovalRouting!.Via);
+            Assert.Null(host.AccessibilityNotice); // cleared, not silenced
+            host.Probe("ui.snapshot", SurfaceKind.Foreground); // a second dialog would hide the question
+            Assert.Null(host.AccessibilityNotice);
+
+            Assert.True(host.ResolveApproval(InterlockChoice.Deny, host.ApprovalRouting.Request!.Id));
+            Assert.Equal("E_GATE_HOST_DENIED", await ReplyCode(host, "g1"));
+            await Until(() => host.ApprovalRouting?.Request is null);
+            host.Probe("ui.snapshot", SurfaceKind.Foreground);
+            Assert.Equal(AccessibilityGap.Revoked, host.AccessibilityNotice?.Gap);
+            host.Stop();
+        }
+    }
+
+    private sealed class FakeOverlay(InterlockChoice answer) : IOverlayApprovalChannel
+    {
+        public List<string> Asked { get; } = [];
+
+        public bool CanShow() => true;
+
+        public Task<InterlockChoice> PresentAsync(ApprovalPrompt prompt, CancellationToken cancellationToken)
+        {
+            lock (Asked)
+            {
+                Asked.Add(prompt.Capability);
+            }
+            return Task.FromResult(answer);
+        }
+
+        public bool IsPresented() => false;
+
+        public void Withdraw()
+        {
+        }
+
+        public Action<ApprovalPrompt, InterlockChoice>? OnParkedChoice { get; set; }
+
+        public Action? OnHidden { get; set; }
+    }
+
+    [Fact]
+    public async Task OutsideThePageTheFloatingCardAsksAndItsAnswerSettlesTheCall()
+    {
+        var overlay = new FakeOverlay(InterlockChoice.Deny);
+        var (host, _, _) = NewHost(foreground: () => false, overlay: overlay);
+        using (host)
+        {
+            var vias = new List<InterlockChannel>();
+            host.ApprovalRoutingChanged += p =>
+            {
+                if (p.Request is not null)
+                {
+                    lock (vias)
+                    {
+                        vias.Add(p.Via);
+                    }
+                }
+            };
+            host.StartInline();
+            Drop(host, "o1", "pkg.query");
+            Assert.Equal("E_GATE_HOST_DENIED", await ReplyCode(host, "o1"));
+            Assert.Equal(["pkg.query"], overlay.Asked);
+            lock (vias)
+            {
+                Assert.Equal([InterlockChannel.Overlay], vias.Distinct());
+            }
+            host.Stop();
+        }
+    }
+
+    [Fact]
+    public void StatusReportsTheTiersTheGapAndTheGuestEntry()
+    {
+        var (host, prefs, _) = NewHost(facts: () => FactsOf(bound: false, listed: true));
+        using (host)
+        {
+            prefs.PutString(RelaySurfaces.PrefsFile, RelayTierStore.Key("pkg.query"), "DENIED");
+            var s = host.Status();
+            Assert.Equal(RelayRuntimePhase.Stopped, s.Phase);
+            Assert.False(s.ChannelRunning);
+            Assert.Equal(AccessibilityGap.NotBound, s.AccessibilityGap);
+            Assert.DoesNotContain("pkg.query", s.Allowed);
+            Assert.Contains("ui.snapshot", s.Allowed);
+            Assert.Equal(host.Paths.GuestScript, s.GuestEntry);
+        }
+    }
+
+    [Fact]
+    public async Task APreferenceWrittenByThisAppIsPublishedWithoutWaitingForTheHeartbeat()
+    {
+        var (host, prefs, _) = NewHost();
+        using (host)
+        {
+            host.StartInline();
+            var before = host.PublishedCapabilitiesJson;
+            Assert.NotNull(before);
+            prefs.PutString(RelaySurfaces.PrefsFile, RelayTierStore.Key("pkg.query"), "DENIED");
+            host.OnPreferencesChanged();
+            await Until(() => host.PublishedCapabilitiesJson != before);
+            Assert.Equal(host.PublishedCapabilitiesJson, File.ReadAllText(host.Paths.CapabilitiesFile));
+            host.Stop();
         }
     }
 

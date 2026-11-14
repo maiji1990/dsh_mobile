@@ -72,6 +72,12 @@ public sealed class RelayHostPlatform
 
     public IApprovalNotificationSurface? Notifications { get; init; }
 
+    /// <summary>
+    /// Upstream <c>surfaces.approvalOverlay()</c>: the floating approval card (ADR-0011), shown over other apps when the
+    /// user granted "display over other apps"; null = no overlay route.
+    /// </summary>
+    public IOverlayApprovalChannel? Overlay { get; init; }
+
     /// <summary>The window the notification listener feeds (process-wide); a private empty one when absent.</summary>
     public NotificationWindow? NotificationFeed { get; init; }
 
@@ -149,7 +155,7 @@ public sealed class RelayHost : IDisposable
         _approvalQueue = new InterlockQueue(
             isForegroundCapable: platform.UiInForeground,
             onRouting: RerouteApprovalPresentation,
-            overlay: null,
+            overlay: platform.Overlay,
             overlayBlind: TrustedDisplayReady,
             canNotify: () => platform.Notifications?.CanShow() == true,
             otherCardOnScreen: platform.AskSurface.IsPresented,
@@ -238,7 +244,118 @@ public sealed class RelayHost : IDisposable
     public SurfacePolicy Policy => _policy;
 
     /// <summary>The system probe on the decided route, with the two facts only the host knows filled in.</summary>
-    public ProbeResult Probe(string wire, SurfaceKind route) => RelaySystemProbe.Probe(wire, route, Facts());
+    /// <remarks>
+    /// This is the gate's probe, so an accessibility gap seen here is a call that was really held back and is reported
+    /// to the user (<see cref="AccessibilityNotice"/>). The listing probes without the hook (upstream <c>listingThread</c>):
+    /// its periodic checks must not pop a hint while the assistant has tried nothing.
+    /// </remarks>
+    public ProbeResult Probe(string wire, SurfaceKind route) => RelaySystemProbe.Probe(wire, route, Facts(), PublishAccessibilityGap);
+
+    /// <summary>Upstream <c>AccessibilityNotice</c>: which accessibility step was missing when a call was held back.</summary>
+    public sealed record AccessibilityNoticeInfo(AccessibilityGap Gap, string Capability);
+
+    private readonly Lock _noticeLock = new();
+    private AccessibilityNoticeInfo? _notice;
+    private AccessibilityGap? _silencedGap;
+
+    /// <summary>The hint to show (null = none); the host UI renders it and calls <see cref="DismissAccessibilityNotice"/>.</summary>
+    public AccessibilityNoticeInfo? AccessibilityNotice
+    {
+        get
+        {
+            lock (_noticeLock)
+            {
+                return _notice;
+            }
+        }
+    }
+
+    /// <summary>The hint appeared or went away (any thread).</summary>
+    public event Action<AccessibilityNoticeInfo?>? AccessibilityNoticeChanged;
+
+    /// <summary>
+    /// Upstream <c>publishAccessibilityGap</c>: not while an approval is up (two dialogs on one screen and the user only
+    /// sees the later one while the assistant waits on the first); the same gap once dismissed stays quiet until the
+    /// binding changes.
+    /// </summary>
+    private void PublishAccessibilityGap(string wire, AccessibilityGap gap)
+    {
+        AccessibilityNoticeInfo notice;
+        lock (_noticeLock)
+        {
+            if (_routing?.Request is not null || _silencedGap == gap || _notice?.Gap == gap)
+            {
+                return;
+            }
+            notice = new AccessibilityNoticeInfo(gap, wire);
+            _notice = notice;
+        }
+        AccessibilityNoticeChanged?.Invoke(notice);
+    }
+
+    /// <summary>Upstream <c>dismissAccessibilityNotice</c>: the user saw it; the same gap stays quiet until the binding moves.</summary>
+    public void DismissAccessibilityNotice()
+    {
+        lock (_noticeLock)
+        {
+            if (_notice is null)
+            {
+                return;
+            }
+            _silencedGap = _notice.Gap;
+            _notice = null;
+        }
+        AccessibilityNoticeChanged?.Invoke(null);
+    }
+
+    /// <summary>Clears the hint without silencing it (an approval took the screen; the gap is still there).</summary>
+    private void ClearAccessibilityNotice()
+    {
+        lock (_noticeLock)
+        {
+            if (_notice is null)
+            {
+                return;
+            }
+            _notice = null;
+        }
+        AccessibilityNoticeChanged?.Invoke(null);
+    }
+
+    /// <summary>
+    /// Upstream <c>RelayAccessibilityService.onBoundChanged</c>: the earlier "seen" no longer holds (conditions changed,
+    /// so the hint may come again), the pending question is re-routed and the listing re-checked.
+    /// </summary>
+    public void OnAccessibilityBoundChanged()
+    {
+        lock (_noticeLock)
+        {
+            _silencedGap = null;
+        }
+        OnForegroundChanged();
+    }
+
+    /// <summary>
+    /// A relay preference (surface preference, tier, shell verb, verbose log) was written by this app's own UI: the
+    /// listing and manual follow at once instead of at the next heartbeat check.
+    /// </summary>
+    public void OnPreferencesChanged() => ScheduleRefresh(onlyIfChanged: true);
+
+    /// <summary>What the host page shows about this relay (C#-owned status line, ADR-0011).</summary>
+    public sealed record StatusInfo(
+        RelayRuntimePhase Phase,
+        bool ChannelRunning,
+        string? DegradedReason,
+        AccessibilityGap? AccessibilityGap,
+        IReadOnlyList<string> Allowed,
+        string GuestEntry);
+
+    public StatusInfo Status()
+    {
+        var facts = Facts();
+        var allowed = RelayCapabilityCatalog.All.Select(c => c.Wire).Where(w => _tiers.TierOf(w) != AccessTier.Denied).ToList();
+        return new StatusInfo(Phase, IsChannelRunning, DegradedReason, RelaySystemProbe.Gap(facts), allowed, Paths.GuestScript);
+    }
 
     public RelaySystemFacts Facts() => _platform.DeviceFacts() with
     {
@@ -508,7 +625,16 @@ public sealed class RelayHost : IDisposable
 
     private void RerouteApprovalPresentation(InterlockQueue.Presentation routing)
     {
-        _routing = routing;
+        lock (_noticeLock)
+        {
+            // Under the hint's lock: a probe deciding to show the hint either sees this approval or is cleared below.
+            _routing = routing;
+        }
+        if (routing.Request is not null)
+        {
+            // Upstream: an approval coming up takes the hint down (not silenced: the next probe reminds again).
+            ClearAccessibilityNotice();
+        }
         ApprovalNotificationContent.ApplyRouting(routing, _platform.Notifications);
         ApprovalRoutingChanged?.Invoke(routing);
         if (routing.Request is { } pending)
