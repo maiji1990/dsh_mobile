@@ -115,6 +115,13 @@ public sealed class MigrationOptions
     /// </summary>
     public SliceMode RemoteHosts { get; set; } = SliceMode.LegacyWithShadow;
 
+    /// <summary>
+    /// PR-09 second segment (SSH connection, ADR-0012): after each legacy <c>remote.connect</c>, C# opens its own SSH.NET
+    /// connection to the same stored profile (same pin, same Keystore key), runs the same probe, disconnects and is
+    /// compared. Read-only: never pins, never starts the remote DSH. Long-press "connect" is the opt-in C# connect.
+    /// </summary>
+    public SliceMode RemoteConnect { get; set; } = SliceMode.LegacyWithShadow;
+
     /// <summary>Host-path probe for the extractor; null = the real filesystem (the right choice on a device).</summary>
     public Func<string, bool>? HostPathExists { get; set; }
 }

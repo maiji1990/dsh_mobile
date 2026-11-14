@@ -20,6 +20,7 @@ public sealed class RemoteHostsShadow(IShadowReportSink sink, IDiagnosticsLog lo
     public const string IdentitySlice = "remote.identity";
     public const string HostsSlice = "remote.hosts";
     public const string HostKeySlice = "remote.host-key";
+    public const string ConnectSlice = "remote.connect";
 
     /// <summary>Bridge code of a rejected profile / trust request.</summary>
     public const string BadRequest = "BAD_REQUEST";
@@ -276,6 +277,88 @@ public sealed class RemoteHostsShadow(IShadowReportSink sink, IDiagnosticsLog lo
         return FromChecks(HostKeySlice, at, checks, true,
             $"after {method}: {status.Code} ↔ {csDecision} (pin {(profile.PinnedFingerprint is null ? "none" : "set")}{(fp is null ? "" : ", key " + fp)})");
     }
+
+    public bool ConnectEnabled => options.RemoteConnect == SliceMode.LegacyWithShadow;
+
+    /// <summary>
+    /// After a legacy <c>remote.connect</c> (PR-09 second segment): C# connects on its own to <paramref name="profile"/>
+    /// (read before the legacy call, so both used the same pin), probes, disconnects and must reach the same outcome.
+    /// </summary>
+    public async Task<ShadowReport?> ConnectedAsync(RemoteStatusInfo legacy, RemoteHostProfile? profile,
+        Func<RemoteHostProfile, CancellationToken, Task<RemoteConnectAttempt>> connect, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(legacy);
+        ArgumentNullException.ThrowIfNull(connect);
+        if (!ConnectEnabled)
+        {
+            return null;
+        }
+        if (profile is null)
+        {
+            return Emit(Report(ConnectSlice, time.GetUtcNow(), ShadowVerdict.Inconclusive, true, false,
+                $"after remote.connect: host {legacy.HostId ?? "-"} was not stored before the call"));
+        }
+        var start = time.GetTimestamp();
+        RemoteConnectAttempt attempt;
+        try
+        {
+            attempt = await connect(profile, ct).ConfigureAwait(false);
+        }
+        catch (Exception e) when (e is not OperationCanceledException || !ct.IsCancellationRequested)
+        {
+            return Emit(Report(ConnectSlice, time.GetUtcNow(), ShadowVerdict.Inconclusive, true, false,
+                $"C# connect threw {e.GetType().Name}: {e.Message}"));
+        }
+        // Nothing else may use the shadow's session: it only exists to be compared.
+        attempt.Session?.Dispose();
+        var ms = (long)time.GetElapsedTime(start).TotalMilliseconds;
+        return Emit(CompareConnect(legacy, attempt, time.GetUtcNow()) with { CSharpMs = ms });
+    }
+
+    private static readonly HashSet<string> NetworkCodes = [RemoteCodes.Unreachable, RemoteCodes.Timeout];
+
+    /// <summary>
+    /// Legacy connect status ↔ C# attempt: state, code, the fixed messages, fingerprint / key type, and the probe.
+    /// Library-worded messages (UNREACHABLE / TIMEOUT) are not compared; a network failure on one side and a different
+    /// network failure on the other, a C# probe timeout or a missing C# key is Inconclusive.
+    /// </summary>
+    public static ShadowReport CompareConnect(RemoteStatusInfo legacy, RemoteConnectAttempt cs, DateTimeOffset at)
+    {
+        ArgumentNullException.ThrowIfNull(legacy);
+        ArgumentNullException.ThrowIfNull(cs);
+        var summary = $"legacy {legacy.State}/{legacy.Code}, C# {cs.State}/{cs.Code}";
+        if (cs.Code == RemoteConnectRules.IdentityMissing)
+        {
+            return Report(ConnectSlice, at, ShadowVerdict.Inconclusive, true, false, $"{summary}: C# found no Keystore key");
+        }
+        if (legacy.Code != cs.Code && NetworkCodes.Contains(legacy.Code) && NetworkCodes.Contains(cs.Code))
+        {
+            return Report(ConnectSlice, at, ShadowVerdict.Inconclusive, true, true, $"{summary}: network failures differ ({cs.Message})");
+        }
+        if (cs.ProbeTimedOut)
+        {
+            return Report(ConnectSlice, at, ShadowVerdict.Inconclusive, true, true, $"{summary}: a C# probe command timed out");
+        }
+        var checks = new List<(string Name, string Legacy, string CSharp)>
+        {
+            ("state", legacy.State, cs.State),
+            ("code", legacy.Code, cs.Code),
+            ("fingerprint", legacy.Fingerprint ?? "-", cs.Fingerprint ?? "-"),
+            ("keyType", legacy.KeyType ?? "-", cs.KeyType ?? "-"),
+        };
+        if (!NetworkCodes.Contains(legacy.Code))
+        {
+            checks.Add(("message", legacy.Message ?? "-", cs.Message ?? "-"));
+        }
+        checks.Add(("probe", DescribeProbe(legacy.Probe), DescribeProbe(cs.Probe)));
+        var detail = cs.Probe is { } p
+            ? $"after remote.connect: {cs.Code}, node {(p.Node ? p.NodeVersion : "missing")}, dsh {(p.Dsh ? p.DshVersion : "missing")}, host key {cs.SeenFingerprint}"
+            : $"after remote.connect: {cs.Code}{(cs.SeenFingerprint is { } fp ? ", host key " + fp : "")}";
+        return FromChecks(ConnectSlice, at, checks, true, detail);
+    }
+
+    private static string DescribeProbe(RemoteProbe? p) =>
+        p is null ? "-" : $"node={p.Node}|{p.NodeVersion ?? "-"} dsh={p.Dsh}|{p.DshVersion ?? "-"}";
 
     private ShadowReport Emit(ShadowReport report)
     {

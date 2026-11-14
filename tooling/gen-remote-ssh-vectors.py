@@ -525,6 +525,102 @@ redact_lines = [
 ]
 redactions = [{"in": l, "out": redact(l)} for l in redact_lines]
 
+# ---------------------------------------------------------------- PR-09 second segment: connect rules (RemoteHosts.connect)
+
+# JSch 2.28.8 JSch.config "server_host_key" default (javap of the jar the native-bridge build uses).
+HOST_KEY_ALGORITHMS = (
+    "ssh-ed25519-cert-v01@openssh.com,ecdsa-sha2-nistp256-cert-v01@openssh.com,ecdsa-sha2-nistp384-cert-v01@openssh.com,"
+    "ecdsa-sha2-nistp521-cert-v01@openssh.com,rsa-sha2-512-cert-v01@openssh.com,rsa-sha2-256-cert-v01@openssh.com,"
+    "ssh-ed25519,ecdsa-sha2-nistp256,ecdsa-sha2-nistp384,ecdsa-sha2-nistp521,rsa-sha2-512,rsa-sha2-256").split(",")
+
+UNKNOWN_MSG = "confirm the host key fingerprint before connecting"
+CHANGED_MSG = "host key differs from the pinned one; connection refused"
+AUTH_MSG = "public key not accepted; add this phone's key to authorized_keys"
+
+
+def classify(pinned, seen, kind, lib_msg):
+    """The when-block of the legacy connect's catch: host-key facts first, then the failure kind."""
+    if pinned is None and seen is not None:
+        return "HOST_KEY_UNKNOWN", UNKNOWN_MSG
+    if pinned is not None and seen is not None and seen != pinned:
+        return "HOST_KEY_CHANGED", CHANGED_MSG
+    if kind == "AuthRejected":
+        return "AUTH_FAILED", AUTH_MSG
+    if kind == "Timeout":
+        return "TIMEOUT", lib_msg
+    return "UNREACHABLE", lib_msg
+
+
+def jsch_kind(message):
+    m = (message or "").lower()
+    if "auth fail" in m:
+        return "AuthRejected"
+    return "Timeout" if "timeout" in m else "Other"
+
+
+connect_cases = []
+for pinned in (None, OPENSSH_FP, OTHER_FP):
+    for seen in (None, OPENSSH_FP):
+        for kind in ("AuthRejected", "Timeout", "Other"):
+            code, msg = classify(pinned, seen, kind, "lib says no")
+            connect_cases.append({
+                "name": f"pin {'none' if pinned is None else 'match' if pinned == OPENSSH_FP else 'other'}, "
+                        f"key {'seen' if seen else 'not seen'}, {kind}",
+                "pinned": pinned, "seen": seen, "kind": kind, "libraryMessage": "lib says no", "code": code, "message": msg})
+
+jsch_messages = [
+    "Auth fail for methods 'publickey'", "USERAUTH fail", "auth FAIL", "timeout: socket is not established",
+    "Session.connect: java.net.SocketTimeoutException: Read timed out", "java.net.ConnectException: Connection refused",
+    "reject HostKey: [127.0.0.1]:2222", "Auth fail timeout", "", None,
+]
+jsch_kinds = [{"message": m, "kind": jsch_kind(m)} for m in jsch_messages]
+
+
+def kt_lines(s: str):
+    """Kotlin lineSequence(): splits on CRLF, LF, CR; keeps a trailing empty line."""
+    return re.split(r"\r\n|\n|\r", s)
+
+
+def take_utf16(s: str, n: int) -> str:
+    u = s.encode("utf-16-le", "surrogatepass")[: 2 * n]
+    return u.decode("utf-16-le", "surrogatepass")
+
+
+def summarize(exit_status, stdout, stderr):
+    out = ((stdout or "") + (stderr or ""))
+    out = take_utf16(out, 8192)
+    version = None
+    for line in kt_lines(out):
+        if not all(kt_ws(c) for c in line):
+            version = take_utf16(kt_trim(line), 80)
+            break
+    return exit_status == 0, version
+
+
+probe_raw = [
+    ("node on Windows", 0, "v26.13.0\r\n", ""),
+    ("dsh version", 0, "0.2.1-rc.5\n", ""),
+    ("not found under cmd.exe: the error line is kept", 1, "", "'dsh' is not recognized as an internal or external command,\r\noperable program or batch file.\r\n"),
+    ("not found under sh", 127, "", "sh: 1: dsh: not found\n"),
+    ("blank lines first", 0, "\n  \r\n\tv1\n", ""),
+    ("stderr after stdout", 0, "", "v2 on stderr\n"),
+    ("stdout wins over stderr", 0, "out\n", "err\n"),
+    ("CR only line ends", 0, "\rv3\rrest", ""),
+    ("no exit status", None, "v4\n", ""),
+    ("exit 0, no output", 0, "", ""),
+    ("only whitespace", 0, " 　 \n ", ""),
+    ("NEL is not whitespace in Kotlin", 0, "\u0085\n", ""),
+    ("trimmed with unit separators", 0, "\u001f v5 \u001c\n", ""),
+    ("first 80 UTF-16 units", 0, "x" * 100 + "\n", ""),
+    ("80 units end on a whole surrogate pair", 0, "y" * 78 + "\U0001F600tail\n", ""),
+    ("non-zero exit with a version-looking line", 2, "v6\n", ""),
+    ("8192-char cap before the first line", 0, " " * 8192 + "late\n", ""),
+]
+probe_cases = []
+for name, ex, so, se in probe_raw:
+    present, version = summarize(ex, so, se)
+    probe_cases.append({"name": name, "exit": ex, "stdout": so, "stderr": se, "present": present, "version": version})
+
 doc = {
     "description": (
         "PR-09 first segment: remote DSH host over SSH (ADR-0006) — SSH wire encodings, host profile validation and "
@@ -532,7 +628,11 @@ doc = {
         "tooling/gen-remote-ssh-vectors.py from an independent model of the legacy Kotlin rules (RemoteHosts.kt / "
         "SshKeys.kt). Run by the legacy Kotlin (native-bridge LegacyRemoteSshParityTest) and the C# port "
         "(RemoteSshParityTests). csharpOnly = Android libcore org.json semantics (the JVM tests use the real org.json). "
-        "trust is C# only: the legacy rule is inline in RemoteHosts.trust (source contract)."),
+        "trust is C# only: the legacy rule is inline in RemoteHosts.trust (source contract). "
+        "PR-09 second segment (ADR-0012): hostKeyAlgorithms (legacy: JSch.getConfig(\"server_host_key\"); C#: the "
+        "restricted SSH.NET ConnectionInfo), connectOutcome / jschKind (the legacy connect catch block) and probe "
+        "(legacy runProbe / exec): the legacy Kotlin test runs the same expressions as RemoteHosts.kt, which a C# "
+        "source contract pins."),
     "publicBlob": public_blobs,
     "fingerprint": fingerprints,
     "derToSsh": der_cases,
@@ -543,6 +643,10 @@ doc = {
     "trust": trust,
     "launchToken": tokens,
     "redact": redactions,
+    "hostKeyAlgorithms": HOST_KEY_ALGORITHMS,
+    "connectOutcome": connect_cases,
+    "jschKind": jsch_kinds,
+    "probe": probe_cases,
 }
 
 out = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "tests", "TestVectors", "remote-ssh.json")

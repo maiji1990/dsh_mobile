@@ -132,6 +132,60 @@ class LegacyRemoteSshParityTest {
         }
     }
 
+    // ---------------------------------------------------------- PR-09 second segment (ADR-0012)
+
+    /** The legacy connect never sets server_host_key, so JSch's default decides which host key a server presents. */
+    @Test
+    fun hostKeyAlgorithmsAreJschDefault() {
+        val arr = v.getJSONArray("hostKeyAlgorithms")
+        val want = (0 until arr.length()).map { arr.getString(it) }
+        assertEquals(12, want.size)
+        assertEquals(want.joinToString(","), com.jcraft.jsch.JSch.getConfig("server_host_key"))
+    }
+
+    /**
+     * Same expressions as the catch block of RemoteHosts.connect (it needs a JSch session); a C# source contract pins
+     * that block. `kind` stands for the JSch message test the legacy code makes.
+     */
+    private fun classify(pinned: String?, fp: String?, message: String?): Pair<String, String?> = when {
+        pinned == null && fp != null -> "HOST_KEY_UNKNOWN" to "confirm the host key fingerprint before connecting"
+        pinned != null && fp != null && fp != pinned -> "HOST_KEY_CHANGED" to "host key differs from the pinned one; connection refused"
+        (message ?: "").contains("Auth fail", ignoreCase = true) -> "AUTH_FAILED" to "public key not accepted; add this phone's key to authorized_keys"
+        (message ?: "").contains("timeout", ignoreCase = true) -> "TIMEOUT" to message
+        else -> "UNREACHABLE" to message
+    }
+
+    private fun kindOf(message: String?): String = when {
+        (message ?: "").contains("Auth fail", ignoreCase = true) -> "AuthRejected"
+        (message ?: "").contains("timeout", ignoreCase = true) -> "Timeout"
+        else -> "Other"
+    }
+
+    @Test
+    fun connectOutcomes() {
+        for (c in cases("jschKind", 8)) assertEquals(c.toString(), c.getString("kind"), kindOf(c.str("message")))
+        // A real JSch message of each kind. TIMEOUT / UNREACHABLE carry the library's own text, so only the code is compared.
+        val jschText = mapOf("AuthRejected" to "Auth fail", "Timeout" to "timeout: socket is not established", "Other" to "java.net.ConnectException: Connection refused")
+        for (c in cases("connectOutcome", 18)) {
+            val (code, msg) = classify(c.str("pinned"), c.str("seen"), jschText.getValue(c.getString("kind")))
+            assertEquals(c.getString("name"), c.getString("code"), code)
+            if (code != "TIMEOUT" && code != "UNREACHABLE") assertEquals(c.getString("name"), c.str("message"), msg)
+        }
+    }
+
+    /** Same expressions as RemoteHosts.runProbe / exec (they need a JSch channel); a C# source contract pins them. */
+    @Test
+    fun probeSummaries() {
+        for (c in cases("probe", 15)) {
+            val exit: Int? = if (c.isNull("exit")) null else c.getInt("exit")
+            val output = (c.getString("stdout") + c.getString("stderr")).take(8192)
+            val present = exit == 0
+            val version = output.lineSequence().firstOrNull { it.isNotBlank() }?.trim()?.take(80)
+            assertEquals(c.getString("name"), c.getBoolean("present"), present)
+            assertEquals(c.getString("name"), c.str("version"), version)
+        }
+    }
+
     @Test
     fun launchTokensAndRedaction() {
         for (c in cases("launchToken", 10)) assertEquals(c.getString("line"), c.str("token"), RemoteHosts.tokenFrom(c.getString("line")))

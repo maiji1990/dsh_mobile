@@ -50,9 +50,15 @@ public sealed class RemoteActivity : Activity
 
         var save = Make(Resource.String.remote_save, () => _ = SaveAsync());
         var connect = Make(Resource.String.remote_connect, () => _ = ConnectAsync());
-        var start = Make(Resource.String.remote_start, () => _ = Status(BridgeMethods.RemoteStart, null, TimeSpan.FromMinutes(3)));
+        // PR-09 second segment (ADR-0012): long-press = opt-in C# (SSH.NET) connect; short press stays legacy.
+        connect.LongClick += (_, _) => _ = CsConnectAsync();
+        var start = Make(Resource.String.remote_start, StartDsh);
         var stop = Make(Resource.String.remote_stop, () => _ = Status(BridgeMethods.RemoteStop, null, TimeSpan.FromMinutes(1)));
-        var disconnect = Make(Resource.String.remote_disconnect, () => _ = Status(BridgeMethods.RemoteDisconnect, null, TimeSpan.FromSeconds(30)));
+        var disconnect = Make(Resource.String.remote_disconnect, () =>
+        {
+            CsRemoteConnection.Clear();
+            _ = Status(BridgeMethods.RemoteDisconnect, null, TimeSpan.FromSeconds(30));
+        });
         var remove = Make(Resource.String.remote_remove, ConfirmRemove);
         root.AddView(Row(copy, save));
         root.AddView(Row(connect, disconnect));
@@ -98,6 +104,10 @@ public sealed class RemoteActivity : Activity
             Select(list.Hosts[^1]);
         }
         await Status(BridgeMethods.RemoteStatus, null, TimeSpan.FromSeconds(10));
+        if (CsRemoteConnection.Status() is { } cs)
+        {
+            ShowCs(cs);
+        }
     }
 
     private void Select(RemoteHost h)
@@ -140,11 +150,90 @@ public sealed class RemoteActivity : Activity
             _status.Text = GetString(Resource.String.remote_save_first);
             return;
         }
-        var s = await Status(BridgeMethods.RemoteConnect, HostId(_selected.Id), TimeSpan.FromMinutes(3));
+        CsRemoteConnection.Clear();
+        var hostId = _selected.Id;
+        // The profile (and its pin) the legacy connect is about to use: the C# shadow connection uses the same one.
+        var profile = RemoteHostProfile.ParseStored(StoredHosts()).FirstOrDefault(p => p.Id == hostId);
+        var s = await Status(BridgeMethods.RemoteConnect, HostId(hostId), TimeSpan.FromMinutes(3));
+        if (s is not null)
+        {
+            var shadow = _bridge.RemoteShadow;
+            if (shadow.ConnectEnabled)
+            {
+                var connector = CsRemoteConnection.Connector();
+                _ = Task.Run(() => shadow.ConnectedAsync(s, profile, (p, ct) => connector.ConnectAsync(p, ct)));
+            }
+        }
         if (s is { Code: RemoteCodes.HostKeyUnknown, Fingerprint: { } fp })
         {
             ConfirmFingerprint(_selected, fp, s.KeyType);
         }
+    }
+
+    /// <summary>
+    /// Opt-in C# connect (ADR-0012): the legacy connection is closed first (one remote at a time), then SSH.NET connects
+    /// to the stored profile with the same pin and Keystore key and runs the same probe. C# never pins: an unknown key is
+    /// only shown, and confirming it stays with the legacy flow (short press).
+    /// </summary>
+    private async Task CsConnectAsync()
+    {
+        if (_selected is null)
+        {
+            _status.Text = GetString(Resource.String.remote_save_first);
+            return;
+        }
+        var hostId = _selected.Id;
+        await Call(BridgeMethods.RemoteDisconnect, null, BridgeJsonContext.Default.RemoteStatusInfo, TimeSpan.FromSeconds(30));
+        CsRemoteConnection.Clear();
+        var profile = RemoteHostProfile.ParseStored(StoredHosts()).FirstOrDefault(p => p.Id == hostId);
+        if (profile is null)
+        {
+            _status.Text = GetString(Resource.String.remote_save_first);
+            return;
+        }
+        _status.Text = GetString(Resource.String.remote_cs_connecting);
+        Enable(false);
+        try
+        {
+            var connector = CsRemoteConnection.Connector();
+            var attempt = await Task.Run(() => connector.ConnectAsync(profile));
+            CsRemoteConnection.Set(profile, attempt);
+            _bridge.Note($"remote C# connect: state={attempt.State} code={attempt.Code}");
+            if (CsRemoteConnection.Status() is { } st)
+            {
+                ShowCs(st);
+            }
+        }
+        catch (Exception e)
+        {
+            _status.Text = Fmt(Resource.String.remote_cs_failed, $"{e.GetType().Name}: {e.Message}");
+        }
+        finally
+        {
+            Enable(true);
+        }
+    }
+
+    /// <summary>Starting the remote DSH is still legacy-only; a C# session says so instead of pretending.</summary>
+    private void StartDsh()
+    {
+        if (CsRemoteConnection.Connected)
+        {
+            _status.Text = GetString(Resource.String.remote_cs_no_start);
+            return;
+        }
+        _ = Status(BridgeMethods.RemoteStart, null, TimeSpan.FromMinutes(3));
+    }
+
+    private void ShowCs(RemoteStatusInfo s)
+    {
+        Show(s);
+        var extra = GetString(Resource.String.remote_cs_marker);
+        if (s.Code == RemoteCodes.HostKeyUnknown && s.Fingerprint is { } fp)
+        {
+            extra += $"\n{s.KeyType ?? "?"} {fp}\n{GetString(Resource.String.remote_cs_unknown_hint)}";
+        }
+        _status.Text = extra + "\n" + _status.Text;
     }
 
     /// <summary>The user compares the fingerprint with the server's own (ssh-keygen -lf) before trusting it.</summary>
@@ -184,6 +273,7 @@ public sealed class RemoteActivity : Activity
             .SetMessage(Fmt(Resource.String.remote_remove_confirm, h.Label))!
             .SetPositiveButton(Resource.String.remote_remove, async (_, _) =>
             {
+                CsRemoteConnection.Clear(); // legacy remove also disconnects the removed host
                 var before = StoredHosts();
                 var (resp, left) = await CallRaw(BridgeMethods.RemoteHostsRemove, HostId(h.Id), BridgeJsonContext.Default.RemoteHostList, TimeSpan.FromSeconds(30));
                 if (resp is not null)

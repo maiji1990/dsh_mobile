@@ -213,6 +213,116 @@ public sealed class RemoteSshParityTests
         Assert.True(KotlinText.IsWhitespace('　'));
     }
 
+    // ------------------------------------------------------------ PR-09 second segment (ADR-0012)
+
+    [Fact]
+    public void HostKeyAlgorithms_SshNetOffersExactlyTheJschList()
+    {
+        var want = V.GetProperty("hostKeyAlgorithms").EnumerateArray().Select(e => e.GetString()!).ToList();
+        Assert.Equal(12, want.Count);
+        Assert.Equal(want, RemoteConnectRules.HostKeyAlgorithms);
+        var info = new Renci.SshNet.ConnectionInfo("h", "u", new Renci.SshNet.NoneAuthenticationMethod("u"));
+        Assert.Contains("ssh-rsa", info.HostKeyAlgorithms.Keys); // SSH.NET's default carries SHA-1 RSA; JSch's does not
+        RemoteSshConnector.RestrictHostKeyAlgorithms(info);
+        Assert.Equal(want, info.HostKeyAlgorithms.Keys.ToList()); // same entries, same order → same key presented
+    }
+
+    [Fact]
+    public void ConnectOutcome_MatchesVectors()
+    {
+        foreach (var c in Cases("connectOutcome", 18))
+        {
+            var kind = Enum.Parse<SshFailureKind>(c.GetProperty("kind").GetString()!);
+            var got = RemoteConnectRules.Classify(c.StringOrNull("pinned"), c.StringOrNull("seen"), kind, c.GetProperty("libraryMessage").GetString());
+            Assert.True(c.GetProperty("code").GetString() == got.Code, Name(c));
+            Assert.True(c.StringOrNull("message") == got.Message, Name(c));
+        }
+        foreach (var c in Cases("jschKind", 8))
+        {
+            Assert.Equal(c.GetProperty("kind").GetString(), RemoteConnectRules.KindFromJschMessage(c.StringOrNull("message")).ToString());
+        }
+    }
+
+    [Fact]
+    public void Probe_MatchesVectors()
+    {
+        foreach (var c in Cases("probe", 15))
+        {
+            int? exit = c.GetProperty("exit").ValueKind == JsonValueKind.Null ? null : c.GetProperty("exit").GetInt32();
+            var got = RemoteConnectRules.Summarize(exit, RemoteConnectRules.CombineOutput(c.StringOrNull("stdout"), c.StringOrNull("stderr")));
+            Assert.True(c.GetProperty("present").GetBoolean() == got.Present, Name(c));
+            Assert.True(c.StringOrNull("version") == got.Version, $"{Name(c)}: {got.Version}");
+        }
+    }
+
+    [Fact]
+    public void Probe_DshDecidesTheConnectedCode()
+    {
+        Assert.Equal(new RemoteOutcome("OK", null), RemoteConnectRules.AfterProbe(new(true, "v1", true, "0.2")));
+        Assert.Equal(new RemoteOutcome("DSH_MISSING", RemoteConnectRules.DshMissingMessage),
+            RemoteConnectRules.AfterProbe(new(true, "v1", false, "'dsh' is not recognized")));
+        Assert.Equal(("node --version", TimeSpan.FromSeconds(20)), RemoteConnectRules.NodeProbe);
+        Assert.Equal(("dsh --version", TimeSpan.FromSeconds(60)), RemoteConnectRules.DshProbe);
+    }
+
+    [Fact]
+    public void FailureKind_FromSshNetExceptions()
+    {
+        var none = CancellationToken.None;
+        Assert.Equal(SshFailureKind.AuthRejected, RemoteSshConnector.Kind(new Renci.SshNet.Common.SshAuthenticationException("Permission denied (publickey)."), none));
+        Assert.Equal(SshFailureKind.Timeout, RemoteSshConnector.Kind(new Renci.SshNet.Common.SshOperationTimeoutException("slow"), none));
+        Assert.Equal(SshFailureKind.Timeout, RemoteSshConnector.Kind(new System.Net.Sockets.SocketException((int)System.Net.Sockets.SocketError.TimedOut), none));
+        Assert.Equal(SshFailureKind.Other, RemoteSshConnector.Kind(new System.Net.Sockets.SocketException((int)System.Net.Sockets.SocketError.ConnectionRefused), none));
+        Assert.Equal(SshFailureKind.Other, RemoteSshConnector.Kind(
+            new Renci.SshNet.Common.SshConnectionException("Host key could not be verified.", Renci.SshNet.Messages.Transport.DisconnectReason.HostKeyNotVerifiable), none));
+        using var cancelled = new CancellationTokenSource();
+        cancelled.Cancel();
+        Assert.Null(RemoteSshConnector.Kind(new OperationCanceledException(cancelled.Token), cancelled.Token)); // caller's cancel is rethrown
+        Assert.Null(RemoteSshConnector.Kind(new NullReferenceException(), none)); // bugs are not network outcomes
+    }
+
+    [Fact]
+    public void KeystoreHostAlgorithm_SignsOnlyThroughTheSource_AndTheSignatureVerifies()
+    {
+        using var key = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        var source = new FakeKeySource(key, true);
+        var blob = SshIdentity.PublicBlob(source.ReadPublicKey()!);
+        var alg = new KeystoreHostAlgorithm(source, blob);
+        Assert.Equal(SshWire.Algorithm, alg.Name);
+        Assert.Equal(blob, alg.Data);
+        var data = RandomNumberGenerator.GetBytes(200);
+        var sig = alg.Sign(data);
+        Assert.True(alg.VerifySignature(data, sig));
+        Assert.True(SshWire.Verify(blob, data, sig));
+        data[0] ^= 1;
+        Assert.False(alg.VerifySignature(data, sig));
+        Assert.Throws<CryptographicException>(() => new KeystoreHostAlgorithm(new FakeKeySource(key, true) { FailSign = true }, blob).Sign(data));
+    }
+
+    [Fact]
+    public async Task Connector_WithoutKeystoreKey_ReportsIdentityMissing_AndNeverConnects()
+    {
+        var profile = new RemoteHostProfile("id", "pc", "192.0.2.1", 22, "u", 3091, null);
+        var a = await new RemoteSshConnector(new FakeKeySource(null, null)).ConnectAsync(profile);
+        Assert.Equal(("DISCONNECTED", RemoteConnectRules.IdentityMissing), (a.State, a.Code));
+        Assert.Null(a.Session);
+    }
+
+    [Fact]
+    public async Task Connector_ClosedPort_IsUnreachable()
+    {
+        using var listener = new System.Net.Sockets.TcpListener(System.Net.IPAddress.Loopback, 0);
+        listener.Start();
+        var port = ((System.Net.IPEndPoint)listener.LocalEndpoint).Port;
+        listener.Stop(); // nothing listens there any more
+        using var key = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        var profile = new RemoteHostProfile("id", "pc", "127.0.0.1", port, "u", 3091, null);
+        var a = await new RemoteSshConnector(new FakeKeySource(key, true)) { ConnectTimeout = TimeSpan.FromSeconds(5) }.ConnectAsync(profile);
+        Assert.Equal(("DISCONNECTED", "UNREACHABLE"), (a.State, a.Code));
+        Assert.Null(a.Fingerprint);
+        Assert.Null(a.Session);
+    }
+
     private static RemoteHostProfile ToProfile(JsonElement o) => new(
         o.GetProperty("id").GetString()!, o.GetProperty("label").GetString()!, o.GetProperty("host").GetString()!,
         o.GetProperty("port").GetInt32(), o.GetProperty("user").GetString()!, o.GetProperty("dshPort").GetInt32(),

@@ -138,6 +138,83 @@ public sealed class RemoteHostsShadowTests
         Assert.Equal(ShadowVerdict.Inconclusive, s.StatusObserved(BridgeMethods.RemoteConnect, Status("CONNECTED", RemoteCodes.Ok, "gone"), pinned)!.Verdict);
     }
 
+    // ------------------------------------------------------------ PR-09 second segment: remote.connect
+
+    private static readonly RemoteProbe Probe = new(true, "v26.13.0", true, "0.2.1-rc.5");
+    private static readonly RemoteHostProfile Profile = new("a", "pc", "pc.lan", 22, "u", 3091, Fp);
+
+    private static RemoteConnectAttempt Cs(string state, string code, string? message = null, string? fp = null, string? type = null,
+        RemoteProbe? probe = null, bool timedOut = false) => new(state, code, message, fp, type, probe, timedOut, null);
+
+    private static RemoteStatusInfo Legacy(string state, string code, string? message = null, string? fp = null, string? type = null, RemoteProbe? probe = null) =>
+        new(state, code, message, "a", "pc", probe, null, 3091, false, fp, type);
+
+    [Fact]
+    public void CompareConnect_AgreesOnEachLegacyOutcome()
+    {
+        (RemoteStatusInfo L, RemoteConnectAttempt C)[] same =
+        [
+            (Legacy("CONNECTED", "OK", probe: Probe), Cs("CONNECTED", "OK", probe: Probe)),
+            (Legacy("CONNECTED", "DSH_MISSING", RemoteConnectRules.DshMissingMessage, probe: Probe with { Dsh = false, DshVersion = "'dsh' is not recognized" }),
+                Cs("CONNECTED", "DSH_MISSING", RemoteConnectRules.DshMissingMessage, probe: Probe with { Dsh = false, DshVersion = "'dsh' is not recognized" })),
+            (Legacy("DISCONNECTED", "HOST_KEY_UNKNOWN", RemoteConnectRules.UnknownMessage, Fp, "ssh-ed25519"),
+                Cs("DISCONNECTED", "HOST_KEY_UNKNOWN", RemoteConnectRules.UnknownMessage, Fp, "ssh-ed25519")),
+            (Legacy("DISCONNECTED", "HOST_KEY_CHANGED", RemoteConnectRules.ChangedMessage, OtherFp), Cs("DISCONNECTED", "HOST_KEY_CHANGED", RemoteConnectRules.ChangedMessage, OtherFp)),
+            (Legacy("DISCONNECTED", "AUTH_FAILED", RemoteConnectRules.AuthMessage), Cs("DISCONNECTED", "AUTH_FAILED", RemoteConnectRules.AuthMessage)),
+            // Library-worded messages are not compared.
+            (Legacy("DISCONNECTED", "UNREACHABLE", "java.net.ConnectException: Connection refused"), Cs("DISCONNECTED", "UNREACHABLE", "Connection refused")),
+        ];
+        foreach (var (l, c) in same)
+        {
+            var r = RemoteHostsShadow.CompareConnect(l, c, default);
+            Assert.True(r.Verdict == ShadowVerdict.Agree, $"{l.Code}: {r.Detail}");
+            Assert.Equal(RemoteHostsShadow.ConnectSlice, r.Slice);
+        }
+    }
+
+    [Fact]
+    public void CompareConnect_DivergesOnCodeFingerprintKeyTypeOrProbe_InconclusiveOnNoise()
+    {
+        var ok = Legacy("CONNECTED", "OK", probe: Probe);
+        Assert.Equal(ShadowVerdict.Diverge, RemoteHostsShadow.CompareConnect(ok, Cs("DISCONNECTED", "HOST_KEY_CHANGED", RemoteConnectRules.ChangedMessage, OtherFp), default).Verdict);
+        Assert.Equal(ShadowVerdict.Diverge, RemoteHostsShadow.CompareConnect(ok, Cs("CONNECTED", "OK", probe: Probe with { NodeVersion = "v25" }), default).Verdict);
+        Assert.Equal(ShadowVerdict.Diverge, RemoteHostsShadow.CompareConnect(ok, Cs("DISCONNECTED", "UNREACHABLE", "refused"), default).Verdict);
+        var unknown = Legacy("DISCONNECTED", "HOST_KEY_UNKNOWN", RemoteConnectRules.UnknownMessage, Fp, "ssh-ed25519");
+        Assert.Equal(ShadowVerdict.Diverge, RemoteHostsShadow.CompareConnect(unknown, Cs("DISCONNECTED", "HOST_KEY_UNKNOWN", RemoteConnectRules.UnknownMessage, OtherFp, "ecdsa-sha2-nistp256"), default).Verdict);
+        Assert.Equal(ShadowVerdict.Diverge, RemoteHostsShadow.CompareConnect(Legacy("DISCONNECTED", "AUTH_FAILED", RemoteConnectRules.AuthMessage),
+            Cs("DISCONNECTED", "AUTH_FAILED", "other text"), default).Verdict);
+
+        Assert.Equal(ShadowVerdict.Inconclusive, RemoteHostsShadow.CompareConnect(Legacy("DISCONNECTED", "TIMEOUT", "timeout"), Cs("DISCONNECTED", "UNREACHABLE", "x"), default).Verdict);
+        Assert.Equal(ShadowVerdict.Inconclusive, RemoteHostsShadow.CompareConnect(ok, Cs("CONNECTED", "DSH_MISSING", probe: Probe with { Dsh = false, DshVersion = null }, timedOut: true), default).Verdict);
+        Assert.Equal(ShadowVerdict.Inconclusive, RemoteHostsShadow.CompareConnect(ok, Cs("DISCONNECTED", RemoteConnectRules.IdentityMissing), default).Verdict);
+    }
+
+    [Fact]
+    public async Task ConnectedAsync_RunsOnlyWhenEnabled_UsesTheProfileReadBeforeTheCall()
+    {
+        var legacy = Legacy("CONNECTED", "OK", probe: Probe);
+        RemoteHostProfile? used = null;
+        Task<RemoteConnectAttempt> Connect(RemoteHostProfile p, CancellationToken _)
+        {
+            used = p;
+            return Task.FromResult(Cs("CONNECTED", "OK", probe: Probe));
+        }
+
+        var off = new RemoteHostsShadow(_sink, _sink, new MigrationOptions { RemoteConnect = SliceMode.Legacy }, TimeProvider.System);
+        Assert.Null(await off.ConnectedAsync(legacy, Profile, Connect));
+        Assert.Null(used);
+
+        var r = await Shadow().ConnectedAsync(legacy, Profile, Connect);
+        Assert.Equal(ShadowVerdict.Agree, r!.Verdict);
+        Assert.Same(Profile, used);
+
+        Assert.Equal(ShadowVerdict.Inconclusive, (await Shadow().ConnectedAsync(legacy, null, Connect))!.Verdict);
+        var threw = await Shadow().ConnectedAsync(legacy, Profile, (_, _) => throw new InvalidOperationException("boom"));
+        Assert.Equal(ShadowVerdict.Inconclusive, threw!.Verdict);
+        Assert.Contains("boom", threw.Detail, StringComparison.Ordinal);
+        Assert.Equal(3, _sink.Reports.Count(x => x.Slice == RemoteHostsShadow.ConnectSlice)); // the disabled shadow reported nothing
+    }
+
     private static RemoteStatusInfo Status(string state, string code, string? hostId, string? fp = null) =>
         new(state, code, null, hostId, "pc", null, null, 3091, false, fp);
 }
