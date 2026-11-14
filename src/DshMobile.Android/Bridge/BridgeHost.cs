@@ -44,6 +44,7 @@ public sealed class BridgeHost : IDisposable, IDiagnosticsLog
         Layout = new RuntimeLayout(_context.FilesDir!.AbsolutePath, _context.CacheDir?.AbsolutePath, _context.ApplicationInfo!.NativeLibraryDir!);
         _services = new ServiceCollection()
             .AddSingleton<IForegroundServiceController>(new AndroidForegroundService(_context))
+            .AddSingleton<DshMobile.Runtime.Layers.IBundledAssets>(new AndroidBundledAssets(_context.Assets!))
             .AddSingleton<IDiagnosticsLog>(this)
             .AddDshMobileApplication(Layout, Client)
             .BuildServiceProvider();
@@ -250,14 +251,20 @@ public sealed class BridgeHost : IDisposable, IDiagnosticsLog
     // ------------------------------------------------------------------ TASK-004 runtime
 
     // Import / sandbox / DSH deadlines now live in LegacyBridgeRuntimeManager (DshMobile.Runtime.Legacy).
-    private static readonly TimeSpan PrepareDeadline = TimeSpan.FromMinutes(10);
     private static readonly TimeSpan DiagnosticsDeadline = TimeSpan.FromMinutes(3);
 
-    /// <summary>Installs APK-bundled layers (android-side) and, when base/node exist, the bundled DSH layer.</summary>
-    public Task RunPrepareAsync() => RunExclusive("runtime.prepare", async () =>
+    /// <summary>
+    /// Installs the APK-bundled DSH layer when base/node exist (MIGRATION row 17). Default: the legacy
+    /// <c>runtime.prepare</c> decides and C# shadows it; <paramref name="mode"/> = CSharp is the developer opt-in.
+    /// </summary>
+    public Task RunPrepareAsync(SliceMode? mode = null) => RunExclusive("runtime.prepare", async () =>
     {
-        var resp = await Client.ExecuteAsync(BridgeMethods.RuntimePrepare, deadline: PrepareDeadline).ConfigureAwait(false);
-        LogStatus("prepare", resp);
+        Append(mode == SliceMode.CSharp ? "prepare: C# RuntimePreparer (this call only)" : "prepare: legacy runtime.prepare (C# shadow)");
+        var r = await Runtime.PrepareAsync(CancellationToken.None, mode).ConfigureAwait(false);
+        if (!r.Ok)
+        {
+            Append($"prepare FAILED {r.Code}: {r.Message}"); // the coordinator already logged the steps on success
+        }
     });
 
     /// <summary>

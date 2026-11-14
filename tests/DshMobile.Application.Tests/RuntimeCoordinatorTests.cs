@@ -651,4 +651,144 @@ public sealed class RuntimeCoordinatorTests : IDisposable
     [InlineData("@scope/foo@1.2.3", "@scope/foo")]
     public void SpecPackageName_StripsOnlyTheVersion(string spec, string name) =>
         Assert.Equal(name, RuntimeCoordinator.SpecPackageName(spec));
+
+    // ------------------------------------------------------------------ runtime.prepare / bundled DSH (MIGRATION row 17)
+
+    private sealed class FakeAssets(Dictionary<string, byte[]> files) : IBundledAssets
+    {
+        public IReadOnlyList<string> List(string dir) =>
+            files.Keys.Where(k => k.StartsWith(dir + "/", StringComparison.Ordinal)).Select(k => k[(dir.Length + 1)..]).ToList();
+
+        public Stream Open(string path) => new MemoryStream(files[path]);
+    }
+
+    private static FakeAssets DshAssets()
+    {
+        var tar = File.ReadAllBytes(FixtureBundle("dsh-good.tar"));
+        var sha = Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(tar));
+        return new FakeAssets(new()
+        {
+            ["dsh/1.2.0.tar.zst"] = tar,
+            ["dsh/1.2.0.tar.zst.sha256"] = System.Text.Encoding.UTF8.GetBytes(sha + "  dsh.tar.zst\n"),
+            ["runtime/android-side.tar.zst"] = [1],
+        });
+    }
+
+    private DshMobile.Runtime.RuntimeLayout InstalledLayout(string? dshVersion = null)
+    {
+        var layout = new DshMobile.Runtime.RuntimeLayout(Path.Combine(_dir, "files"), null, Path.Combine(_dir, "nolib"));
+        Directory.CreateDirectory(layout.LayerDir("base"));
+        Directory.CreateDirectory(Path.Combine(layout.LayerDir("android-side"), "bin"));
+        File.WriteAllText(Path.Combine(layout.LayerDir("android-side"), "bin", "proot"), "elf");
+        File.WriteAllText(Path.Combine(layout.RuntimeCurrentDir, "runtime-profile.json"),
+            """{"bundle":{"version":"1"},"layers":[{"name":"base","sha256":"aa"}],"assembly":["base"]}""");
+        if (dshVersion is not null)
+        {
+            Directory.CreateDirectory(Path.Combine(layout.LayerDir("dsh"), ".dshbox"));
+            File.WriteAllText(Path.Combine(layout.LayerDir("dsh"), ".dshbox", "version"), dshVersion);
+        }
+        return layout;
+    }
+
+    private RuntimeCoordinator PrepareCoordinator(DshMobile.Runtime.RuntimeLayout layout, IBundledAssets? assets) =>
+        _coordinator ??= new RuntimeCoordinator(_runtime, new RuntimeStateMachine(_journal, "fake"), _fg, _log, _log,
+            new MigrationOptions { HostPathExists = LayerExtractor.AndroidLikeHost, RuntimeHost = SliceMode.Legacy }, null, layout,
+            bundledAssets: assets);
+
+    private const string Step1 = "no full layered runtime in APK (expected; base/node come from import)";
+
+    [Fact]
+    public async Task Prepare_DefaultsToLegacyWithShadow_KeptLayerAgrees()
+    {
+        Assert.Equal(SliceMode.LegacyWithShadow, new MigrationOptions().DshProvision);
+        var layout = InstalledLayout("9.0.0");
+        _runtime.OnPrepare = () => new RuntimeInstallResult(true, "OK", $"{Step1}; DSH kept at 9.0.0");
+        var r = await PrepareCoordinator(layout, DshAssets()).PrepareAsync(CancellationToken.None);
+        Assert.True(r.Ok);
+        Assert.Equal(["prepare"], _runtime.Calls);
+        var report = Assert.Single(_log.Reports);
+        Assert.Equal("runtime.dsh-provision", report.Slice);
+        Assert.True(report.Verdict == ShadowVerdict.Agree, report.Detail);
+    }
+
+    [Fact]
+    public async Task Prepare_Shadow_LegacyInstalledTheSameTree_Agrees()
+    {
+        var layout = InstalledLayout();
+        _runtime.OnPrepare = () =>
+        {
+            // Stands in for the legacy installer: same asset, same result on disk.
+            var r = new DshLayerInstaller(layout, LayerExtractor.AndroidLikeHost)
+                .InstallFromFileAsync(FixtureBundle("dsh-good.tar"), null, "1.2.0", false, CancellationToken.None).GetAwaiter().GetResult();
+            Assert.True(r.Changed);
+            return new RuntimeInstallResult(true, "OK", $"{Step1}; DSH 1.2.0 installed");
+        };
+        await PrepareCoordinator(layout, DshAssets()).PrepareAsync(CancellationToken.None);
+        var report = Assert.Single(_log.Reports);
+        Assert.True(report.Verdict == ShadowVerdict.Agree, report.Detail);
+        Assert.Contains("entries identical", report.Detail, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Prepare_Shadow_DifferentTreeOrSteps_Diverge()
+    {
+        var layout = InstalledLayout();
+        _runtime.OnPrepare = () =>
+        {
+            new DshLayerInstaller(layout, LayerExtractor.AndroidLikeHost)
+                .InstallFromFileAsync(FixtureBundle("dsh-good.tar"), null, "1.2.0", false, CancellationToken.None).GetAwaiter().GetResult();
+            File.WriteAllText(Path.Combine(layout.LayerDir("dsh"), "patched.js"), "legacy rewrote something");
+            return new RuntimeInstallResult(true, "OK", $"{Step1}; DSH 1.2.0 installed");
+        };
+        var c = PrepareCoordinator(layout, DshAssets());
+        await c.PrepareAsync(CancellationToken.None);
+        Assert.Equal(ShadowVerdict.Diverge, _log.Reports[^1].Verdict);
+        Assert.Contains("patched.js", _log.Reports[^1].Detail, StringComparison.Ordinal);
+
+        // C# now sees 1.2.0 installed and predicts "kept"; a legacy that claims to install again diverges.
+        _runtime.OnPrepare = () => new RuntimeInstallResult(true, "OK", $"{Step1}; DSH 1.2.0 installed");
+        await c.PrepareAsync(CancellationToken.None);
+        Assert.Equal(ShadowVerdict.Diverge, _log.Reports[^1].Verdict);
+        Assert.Contains("steps:", _log.Reports[^1].Detail, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Prepare_CSharp_InstallsWithoutTheLegacyBridge_AndJournalsTheVersion()
+    {
+        var layout = InstalledLayout();
+        var c = PrepareCoordinator(layout, DshAssets());
+        var r = await c.PrepareAsync(CancellationToken.None, SliceMode.CSharp);
+        Assert.True(r.Ok, r.Message);
+        Assert.Equal($"{Step1}; DSH 1.2.0 installed", r.Message);
+        Assert.DoesNotContain("prepare", _runtime.Calls);
+        Assert.Equal("1.2.0", new DshLayerInstaller(layout).InstalledVersion());
+        Assert.Equal($"{Step1}; DSH kept at 1.2.0", (await c.PrepareAsync(CancellationToken.None, SliceMode.CSharp)).Message);
+        Assert.Empty(_log.Reports);
+    }
+
+    [Fact]
+    public async Task Prepare_CSharp_RefusesToReplaceTheLayerWhileRunning_ButKeepingIsFine()
+    {
+        var layout = InstalledLayout("1.0.0");
+        var c = PrepareCoordinator(layout, DshAssets());
+        Assert.True((await c.StartAsync(DshProfile.Web, CancellationToken.None)).Ok);
+        var refused = await c.PrepareAsync(CancellationToken.None, SliceMode.CSharp);
+        Assert.False(refused.Ok);
+        Assert.Equal(RuntimeErrorCodes.InvalidTransition, refused.Code);
+        Assert.Equal("1.0.0", new DshLayerInstaller(layout).InstalledVersion());
+
+        File.WriteAllText(Path.Combine(layout.LayerDir("dsh"), ".dshbox", "version"), "9.0.0");
+        var kept = await c.PrepareAsync(CancellationToken.None, SliceMode.CSharp);
+        Assert.True(kept.Ok, kept.Message);
+        Assert.EndsWith("DSH kept at 9.0.0", kept.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Prepare_CSharp_WithoutAssets_IsNotImplementedAndNeverFallsBack()
+    {
+        var r = await PrepareCoordinator(InstalledLayout(), null).PrepareAsync(CancellationToken.None, SliceMode.CSharp);
+        Assert.False(r.Ok);
+        Assert.Equal(RuntimeErrorCodes.NotImplemented, r.Code);
+        Assert.Empty(_runtime.Calls);
+    }
 }

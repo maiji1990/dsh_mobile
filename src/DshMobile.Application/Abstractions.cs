@@ -136,6 +136,15 @@ public sealed class MigrationOptions
     /// </summary>
     public SliceMode RuntimeHost { get; set; } = SliceMode.CSharp;
 
+    /// <summary>
+    /// Bundled DSH layer provisioning (<c>runtime.prepare</c>, MIGRATION row 17): the APK's <c>assets/dsh</c> layer is
+    /// installed into <c>runtime-current/dsh</c> with version arbitration. <see cref="SliceMode.LegacyWithShadow"/>
+    /// (default): the legacy bridge decides; C# predicts the steps beforehand and dry-runs the same asset against the
+    /// installed layer. <see cref="SliceMode.CSharp"/>: the C# <c>RuntimePreparer</c> decides (no DSHBox code). A per-call
+    /// mode passed to <c>RuntimeCoordinator.PrepareAsync</c> overrides this.
+    /// </summary>
+    public SliceMode DshProvision { get; set; } = SliceMode.LegacyWithShadow;
+
     /// <summary>Host-path probe for the extractor; null = the real filesystem (the right choice on a device).</summary>
     public Func<string, bool>? HostPathExists { get; set; }
 }
