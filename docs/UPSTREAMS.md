@@ -9,13 +9,16 @@
 | [WSK-build/DSHBox](https://github.com/WSK-build/DSHBox) | git submodule `third_party/dshbox`（shallow） | `v1.5.1` | `7c9d33c1f29dd2c42dde6c7e2fcdf38814f491c4` | GPL-3.0（品牌资产保留，见其 `TRADEMARK.md`）；子模块各自许可见其 `licenses/` | 运行时、终端、Relay 等原生组件来源 |
 | [deepseek-ai/deepseek-harness](https://github.com/deepseek-ai/deepseek-harness) | 运行时层（npm 包，TASK-004/005 引入） | 待定（最新 tag 观察到 `dsh-v0.2.2-rc.1`，尚无稳定 tag） | — | 见上游 | 原样运行的 DSH / Cordis |
 | [maiji1990/ui_mcp](https://github.com/maiji1990/ui_mcp) | 契约参考（TASK-010；不引入代码，guest 门面按其契约另行实现） | `main` @ `e098f91c7d34f27372ced17bea033861b63b681e`（工具名、错误码、ref 语义、`docs/p2-phone-facade-design.md`） | `e098f91c7d34f27372ced17bea033861b63b681e` | 见上游 | `ui_*` 统一契约 |
+| [termux/proot](https://github.com/termux/proot) | 源码归档，`native/proot/sources.lock` 钉 SHA-256，`native/proot/build.ps1` / `build.sh` 用 NDK 27.0.12077973 构建（ADR-0014） | `v5.1.107.90`（= DSHBox 所带 `libproot.so`；termux-packages proot 配方 commit `96385864cc0f32f3ce1c0c8eeeb97e5c13601762`，无补丁） | `894e5789cd982e53d644bb3a13332f1d35e907ac` | GPL-2.0-or-later（未修改源码） | `libproot.so` / `libproot-loader.so`（默认 `DshProotSource=self` 时进 APK） |
+| [talloc](https://www.samba.org/ftp/talloc/)（Samba） | 同上（`talloc-2.4.3.tar.gz`，SHA-256 `dc46c40b…d854dd`）；只编 `talloc.c`，waf 配置由 `native/proot/compat/talloc/config.h` 代替 | `2.4.3`（termux-packages libtalloc 配方 commit `fbc049451e7fc59cdf510732aad49bd45590b0bb`） | — | LGPL-3.0-or-later（动态链接、未修改源码） | `libtalloc.so` |
+| [termux/libandroid-shmem](https://github.com/termux/libandroid-shmem) | 同上（`v0.7.tar.gz`，SHA-256 `1e5ff845…b98e867`） | `v0.7` | — | BSD-3-Clause（未修改源码） | `libandroid-shmem.so` |
 
 ## DSHBox 模块使用情况
 
 | 模块 | 当前状态 | 引入位置 | 是否生成 C# 绑定 |
 |---|---|---|---|
 | `common` | **已引入**（TASK-003） | `native/settings.gradle.kts` 以 `:common`（与 DSHBox 同名，其脚本按此引用）引用源码目录，构建输出重定向到 `native/build/upstream/` | 否（`Bind="false"`） |
-| `app/src/main/jniLibs`（PRoot、talloc、android-shmem、zstd-jni 预编译 `.so`） | **已引入**（TASK-004） | `:native-bridge:exportRuntimeJars` 复制到 `artifacts/native/jniLibs/` | — |
+| `app/src/main/jniLibs`（PRoot、talloc、android-shmem、zstd-jni 预编译 `.so`） | **已引入**（TASK-004）；PRoot / loader / talloc / shmem 四个文件已可由本仓库从源码构建（ADR-0014），由 `DshProotSource`（`dshbox` / `self`）选择进 APK 的一份，真机验收后默认为 `self`（自建），`dshbox` 为回退；zstd-jni 仍只来自这里 | `:native-bridge:exportRuntimeJars` 复制到 `artifacts/native/jniLibs/` | — |
 | Release 运行层（DSH `0.2.1-rc.5.tar.zst`、`dshapp-runtime-debian-arm64-0.1.0.zip`） | **已引入**（TASK-004） | `runtime-bundle/runtime-assets.lock`（GitHub 发布摘要 SHA-256）+ `fetch-runtime.ps1` | — |
 | `plugin-manager/dshbox-plugins/assets/dshbox/{link-shim.mjs, libdshbox-link.so}` | **已引入**（TASK-005） | 构建时原样复制进 Bridge AAR 资产（仅这两个文件；`assets/plugins/*` 中只另取 `browser-use`（TASK-011，`browser_*` 独立命名空间），mobile-pilot / mobile-adapt 与 `ui_*` 单一契约冲突，不取） | — |
 | `dsh-renderer/api` | **已引入**（TASK-006） | `native/settings.gradle.kts` 以 `:dsh-renderer:api` 引用；使用 `DshOriginPolicy`、`DshTokenRevisionTracker` | 否（`Bind="false"`） |

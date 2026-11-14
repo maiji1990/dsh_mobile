@@ -33,9 +33,24 @@
     <AndroidLibrary Include="$(NativeArtifactsDir)dshbox-browser-bridge-release.aar" Bind="false" />
     <!-- Non-Kotlin/AndroidX runtime jars, audited list in artifacts/native/jars/MANIFEST.txt. -->
     <AndroidLibrary Include="$(NativeArtifactsDir)jars\*.jar" Bind="false" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(DshProotSource)' == 'dshbox'">
     <!-- PRoot / talloc / shmem / zstd-jni prebuilt by DSHBox (licenses: third_party/dshbox/licenses). -->
     <AndroidNativeLibrary Include="$(NativeArtifactsDir)jniLibs\arm64-v8a\*.so" Abi="arm64-v8a" />
     <AndroidNativeLibrary Include="$(NativeArtifactsDir)jniLibs\x86_64\*.so" Abi="x86_64" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(DshProotSource)' == 'self'">
+    <!--
+      ADR-0014: PRoot / loader / talloc / shmem built in this repo (native/proot, same file names and NEEDED layout);
+      only zstd-jni still comes from DSHBox's jniLibs.
+    -->
+    <AndroidNativeLibrary Include="$(NativeArtifactsDir)jniLibs\arm64-v8a\*.so" Abi="arm64-v8a"
+                          Exclude="$(NativeArtifactsDir)jniLibs\arm64-v8a\libproot*.so;$(NativeArtifactsDir)jniLibs\arm64-v8a\libtalloc.so;$(NativeArtifactsDir)jniLibs\arm64-v8a\libandroid-shmem.so" />
+    <AndroidNativeLibrary Include="$(NativeArtifactsDir)jniLibs\x86_64\*.so" Abi="x86_64"
+                          Exclude="$(NativeArtifactsDir)jniLibs\x86_64\libproot*.so;$(NativeArtifactsDir)jniLibs\x86_64\libtalloc.so;$(NativeArtifactsDir)jniLibs\x86_64\libandroid-shmem.so" />
+    <AndroidNativeLibrary Include="$(NativeArtifactsDir)proot\arm64-v8a\*.so" Abi="arm64-v8a" />
+    <AndroidNativeLibrary Include="$(NativeArtifactsDir)proot\x86_64\*.so" Abi="x86_64" />
   </ItemGroup>
 
   <ItemGroup>
@@ -54,5 +69,9 @@
   <Target Name="DshVerifyNativeArtifacts" BeforeTargets="PrepareForBuild">
     <Error Condition="!Exists('$(NativeArtifactsDir)dsh-native-bridge-release.aar') Or !Exists('$(NativeArtifactsDir)dshbox-sandbox-manager-release.aar') Or !Exists('$(NativeArtifactsDir)dshbox-dsh-renderer-api-release.aar') Or !Exists('$(NativeArtifactsDir)dshbox-terminal-session-release.aar') Or !Exists('$(NativeArtifactsDir)jars\MANIFEST.txt') Or !Exists('$(NativeArtifactsDir)jniLibs\arm64-v8a\libproot.so')"
            Text="Native artifacts missing or stale in $(NativeArtifactsDir). Build them first: pwsh native/build-native.ps1 (or bash native/build-native.sh)." />
+    <Error Condition="'$(DshProotSource)' != 'dshbox' And '$(DshProotSource)' != 'self'"
+           Text="DshProotSource must be 'dshbox' or 'self' (got '$(DshProotSource)'); see docs/ADR/0014-in-repo-proot-build.md." />
+    <Error Condition="'$(DshProotSource)' == 'self' And (!Exists('$(NativeArtifactsDir)proot\SHA256SUMS') Or !Exists('$(NativeArtifactsDir)proot\arm64-v8a\libproot.so') Or !Exists('$(NativeArtifactsDir)proot\arm64-v8a\libproot-loader.so') Or !Exists('$(NativeArtifactsDir)proot\x86_64\libproot.so'))"
+           Text="DshProotSource=self but PRoot is not built in $(NativeArtifactsDir)proot. Run: pwsh native/proot/build.ps1 (or bash native/proot/build.sh)." />
   </Target>
 </Project>

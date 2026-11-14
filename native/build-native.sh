@@ -11,3 +11,5 @@ cd "$here"
 ./gradlew --no-daemon :native-bridge:testDebugUnitTest exportAars "$@"
 # ADR-0007 minimal native layer (own C source, NDK, 16 KB aligned): artifacts/native/dshmobile-native/<abi>/
 bash "$here/dshmobile-native/build.sh"
+# ADR-0014 PRoot / loader / talloc / shmem from pinned sources: artifacts/native/proot/<abi>/ (used with DshProotSource=self)
+bash "$here/proot/build.sh"

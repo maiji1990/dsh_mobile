@@ -9,6 +9,9 @@
 - 独立组件（如 Apache-2.0 的 `interlock-relay-core`、Termux 终端 Apache-2.0 部分）保留其原许可与署名。
 - 品牌：App 名称 “DSH Mobile”、图标、Splash 全部为新资产；不使用 DSHBox 名称/图标/品牌图形，不自称 “DeepSeek 官方客户端”。
 - 发布 APK 时必须同时提供对应版本源码（含子模块固定 SHA）。
+  - 注（2026-11-14，[ADR-0014](0014-in-repo-proot-build.md)）：默认（`DshProotSource=self`）构建时，APK 中的 PRoot（GPL-2.0-or-later）、
+    talloc（LGPL-3.0-or-later）、libandroid-shmem（BSD-3-Clause）由本仓库从 `native/proot/sources.lock` 钉住的上游归档构建；
+    其对应源码 = 这三个归档 + `native/proot/` 脚本与 compat 头文件，随发布一并提供。
 
 ## 后果
 

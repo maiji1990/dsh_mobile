@@ -8,5 +8,12 @@
     <Deterministic>true</Deterministic>
     <RepoRoot>$(MSBuildThisFileDirectory)</RepoRoot>
     <NativeArtifactsDir>$(RepoRoot)artifacts\native\</NativeArtifactsDir>
+    <!--
+      ADR-0014: where the APK's PRoot / loader / talloc / shmem come from.
+        dshbox = DSHBox's prebuilt jniLibs (artifacts/native/jniLibs, exported by Gradle)
+        self   = built in this repo from pinned sources (native/proot/build.ps1 -> artifacts/native/proot)
+      Override per build with -p:DshProotSource=...
+    -->
+    <DshProotSource Condition="'$(DshProotSource)' == ''">self</DshProotSource>
   </PropertyGroup>
 </Project>
