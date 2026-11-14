@@ -4,7 +4,9 @@ using Android.Content;
 using Android.Text;
 using Android.Views;
 using DshMobile.App.Bridge;
+using DshMobile.Application.Shadow;
 using DshMobile.Core.Bridge;
+using DshMobile.Runtime.Remote;
 
 namespace DshMobile.App.Remote;
 
@@ -82,8 +84,15 @@ public sealed class RemoteActivity : Activity
         {
             var hw = id.HardwareBacked switch { true => GetString(Resource.String.remote_key_hw), false => GetString(Resource.String.remote_key_sw), null => "?" };
             _identity.Text = $"{GetString(Resource.String.remote_key_heading)}（{hw}）\n{id.PublicKey}\n{id.Fingerprint}";
+            // PR-09 shadow (read-only): C# reads the same Keystore key and signs one labelled challenge inside Keystore.
+            var shadow = _bridge.RemoteShadow;
+            _ = Task.Run(() => shadow.Identity(id, () => SshIdentity.Probe(new AndroidSshKeySource())));
         }
         var list = await Call(BridgeMethods.RemoteHostsList, null, BridgeJsonContext.Default.RemoteHostList, TimeSpan.FromSeconds(10));
+        if (list is not null)
+        {
+            Shadow(s => s.Listed(list.Hosts, StoredHosts()));
+        }
         if (list is { Hosts.Length: > 0 })
         {
             Select(list.Hosts[^1]);
@@ -109,8 +118,14 @@ public sealed class RemoteActivity : Activity
             return;
         }
         var req = new RemoteHostRequest(_selected?.Id, _label.Text ?? "", (_host.Text ?? "").Trim(), port, (_user.Text ?? "").Trim(), dshPort);
-        var saved = await Call(BridgeMethods.RemoteHostsSave, BridgeCodec.ToPayload(req, BridgeJsonContext.Default.RemoteHostRequest),
-            BridgeJsonContext.Default.RemoteHost, TimeSpan.FromSeconds(10));
+        var payload = BridgeCodec.ToPayload(req, BridgeJsonContext.Default.RemoteHostRequest);
+        var before = StoredHosts();
+        var (resp, saved) = await CallRaw(BridgeMethods.RemoteHostsSave, payload, BridgeJsonContext.Default.RemoteHost, TimeSpan.FromSeconds(10));
+        if (resp is not null)
+        {
+            var after = StoredHosts();
+            Shadow(s => s.Saved(payload, before, new RemoteLegacyOutcome<RemoteHost>(resp.Ok, resp.Code, resp.Message, saved), after));
+        }
         if (saved is not null)
         {
             Select(saved);
@@ -140,9 +155,15 @@ public sealed class RemoteActivity : Activity
             .SetMessage(Fmt(Resource.String.remote_trust_message, $"{host.User}@{host.Host}:{host.Port}", keyType ?? "?", fingerprint))!
             .SetPositiveButton(Resource.String.remote_trust_yes, async (_, _) =>
             {
-                var trusted = await Call(BridgeMethods.RemoteTrust,
+                var before = StoredHosts();
+                var (resp, trusted) = await CallRaw(BridgeMethods.RemoteTrust,
                     BridgeCodec.ToPayload(new RemoteTrustRequest(host.Id, fingerprint), BridgeJsonContext.Default.RemoteTrustRequest),
                     BridgeJsonContext.Default.RemoteHostList, TimeSpan.FromSeconds(10));
+                if (resp is not null)
+                {
+                    var after = StoredHosts();
+                    Shadow(s => s.Trusted(host.Id, fingerprint, before, new RemoteLegacyOutcome<RemoteHostList>(resp.Ok, resp.Code, resp.Message, trusted), after));
+                }
                 if (trusted?.Hosts.FirstOrDefault(h => h.Id == host.Id) is { } h)
                 {
                     Select(h);
@@ -163,7 +184,13 @@ public sealed class RemoteActivity : Activity
             .SetMessage(Fmt(Resource.String.remote_remove_confirm, h.Label))!
             .SetPositiveButton(Resource.String.remote_remove, async (_, _) =>
             {
-                await Call(BridgeMethods.RemoteHostsRemove, HostId(h.Id), BridgeJsonContext.Default.RemoteHostList, TimeSpan.FromSeconds(30));
+                var before = StoredHosts();
+                var (resp, left) = await CallRaw(BridgeMethods.RemoteHostsRemove, HostId(h.Id), BridgeJsonContext.Default.RemoteHostList, TimeSpan.FromSeconds(30));
+                if (resp is not null)
+                {
+                    var after = StoredHosts();
+                    Shadow(s => s.Removed(h.Id, before, new RemoteLegacyOutcome<RemoteHostList>(resp.Ok, resp.Code, resp.Message, left), after));
+                }
                 _selected = null;
                 _status.Text = GetString(Resource.String.remote_removed);
             })!
@@ -193,8 +220,21 @@ public sealed class RemoteActivity : Activity
         {
             Show(s);
             _bridge.Note($"{method}: state={s.State} code={s.Code}");
+            var stored = StoredHosts();
+            Shadow(sh => sh.StatusObserved(method, s, stored));
         }
         return s;
+    }
+
+    /// <summary>The profile list exactly as the legacy RemoteHosts stores it (same SharedPreferences instance).</summary>
+    private string? StoredHosts() =>
+        GetSharedPreferences(RemoteHostProfile.PreferencesName, FileCreationMode.Private)!.GetString(RemoteHostProfile.PreferencesKey, null);
+
+    /// <summary>PR-09 shadow comparisons run off the UI thread; inputs are captured by the caller.</summary>
+    private void Shadow(Action<RemoteHostsShadow> compare)
+    {
+        var shadow = _bridge.RemoteShadow;
+        _ = Task.Run(() => compare(shadow));
     }
 
     private void Show(RemoteStatusInfo s)
@@ -233,7 +273,11 @@ public sealed class RemoteActivity : Activity
         _status.Text = string.Join('\n', lines);
     }
 
-    private async Task<T?> Call<T>(string method, JsonElement? payload, JsonTypeInfo<T> type, TimeSpan deadline) where T : class
+    private async Task<T?> Call<T>(string method, JsonElement? payload, JsonTypeInfo<T> type, TimeSpan deadline) where T : class =>
+        (await CallRaw(method, payload, type, deadline)).Value;
+
+    /// <summary>The bridge response (for the shadow, failures included) and its payload when it succeeded.</summary>
+    private async Task<(BridgeResponse? Response, T? Value)> CallRaw<T>(string method, JsonElement? payload, JsonTypeInfo<T> type, TimeSpan deadline) where T : class
     {
         Enable(false);
         try
@@ -242,9 +286,9 @@ public sealed class RemoteActivity : Activity
             if (!resp.Ok)
             {
                 _status.Text = $"{method} FAILED {resp.Code}: {resp.Message}";
-                return null;
+                return (resp, null);
             }
-            return BridgeCodec.ReadPayload(resp, type);
+            return (resp, BridgeCodec.ReadPayload(resp, type));
         }
         finally
         {

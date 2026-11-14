@@ -108,6 +108,13 @@ public sealed class MigrationOptions
     /// </summary>
     public SliceMode RelayHost { get; set; } = SliceMode.LegacyWithShadow;
 
+    /// <summary>
+    /// PR-09 first segment (remote host profiles, host-key pin, SSH identity): after each legacy <c>remote.*</c> call of
+    /// the remote page, the C# port reads the same SharedPreferences list and Keystore key and is compared. SSH stays
+    /// legacy (JSch); C# never writes the list or creates the key.
+    /// </summary>
+    public SliceMode RemoteHosts { get; set; } = SliceMode.LegacyWithShadow;
+
     /// <summary>Host-path probe for the extractor; null = the real filesystem (the right choice on a device).</summary>
     public Func<string, bool>? HostPathExists { get; set; }
 }

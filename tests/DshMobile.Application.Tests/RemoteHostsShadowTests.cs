@@ -1,0 +1,143 @@
+using System.Text.Json;
+using DshMobile.Application.Shadow;
+using DshMobile.Core.Bridge;
+using DshMobile.Runtime.Remote;
+
+namespace DshMobile.Application.Tests;
+
+/// <summary>PR-09 first segment: the read-only remote host shadow (identity, profiles, trust, host-key decision).</summary>
+public sealed class RemoteHostsShadowTests
+{
+    private const string Fp = "SHA256:/O0DopfcupCOPu5e6/7zGNQITxFKE51poNy7jxKvT5Y";
+    private const string OtherFp = "SHA256:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
+
+    private sealed class Sink : IShadowReportSink, IDiagnosticsLog
+    {
+        public readonly List<ShadowReport> Reports = [];
+        public void Report(ShadowReport report) => Reports.Add(report);
+        public void Note(string line) { }
+    }
+
+    private readonly Sink _sink = new();
+
+    private RemoteHostsShadow Shadow(SliceMode mode = SliceMode.LegacyWithShadow) =>
+        new(_sink, _sink, new MigrationOptions { RemoteHosts = mode }, TimeProvider.System);
+
+    private static JsonElement Json(string s) => JsonDocument.Parse(s).RootElement.Clone();
+
+    private static string Stored(params RemoteHost[] hosts) =>
+        JsonSerializer.Serialize(hosts, BridgeJsonContext.Default.RemoteHostArray);
+
+    private static RemoteHost Host(string id, string host = "pc.lan", int port = 22, string? pin = null, string label = "pc") =>
+        new(id, label, host, port, "u", 3091, pin);
+
+    [Fact]
+    public void Disabled_ReportsNothing()
+    {
+        var s = Shadow(SliceMode.Legacy);
+        Assert.Null(s.Listed([], "[]"));
+        Assert.Null(s.StatusObserved(BridgeMethods.RemoteConnect, Status("CONNECTED", RemoteCodes.Ok, "a"), "[]"));
+        Assert.Empty(_sink.Reports);
+    }
+
+    [Fact]
+    public void Identity_AgreesOnSameKey_DivergesOnOtherKeyOrFailedSelfTest()
+    {
+        var facts = new SshIdentityFacts(true, "ecdsa-sha2-nistp256 AAAA dsh-mobile", Fp, true, true, null);
+        var legacy = new RemoteIdentityInfo("ecdsa-sha2-nistp256 AAAA dsh-mobile", Fp, "ecdsa-sha2-nistp256", true);
+        Assert.Equal(ShadowVerdict.Agree, Shadow().Identity(legacy, () => facts)!.Verdict);
+        Assert.Equal(ShadowVerdict.Diverge, RemoteHostsShadow.CompareIdentity(legacy with { Fingerprint = OtherFp }, facts, default).Verdict);
+        Assert.Equal(ShadowVerdict.Diverge, RemoteHostsShadow.CompareIdentity(legacy, facts with { SelfTestVerified = false }, default).Verdict);
+        Assert.Equal(ShadowVerdict.Diverge, RemoteHostsShadow.CompareIdentity(legacy, facts with { HardwareBacked = null }, default).Verdict);
+        Assert.Equal(ShadowVerdict.Diverge, RemoteHostsShadow.CompareIdentity(legacy, new SshIdentityFacts(false, null, null, null, null, null), default).Verdict);
+        Assert.Equal(ShadowVerdict.Inconclusive, RemoteHostsShadow.CompareIdentity(legacy, new SshIdentityFacts(false, null, null, null, null, "locked"), default).Verdict);
+    }
+
+    [Fact]
+    public void Listed_ComparesWithStoredList()
+    {
+        var a = Host("a", pin: Fp);
+        Assert.Equal(ShadowVerdict.Agree, Shadow().Listed([a], Stored(a))!.Verdict);
+        Assert.Equal(ShadowVerdict.Diverge, Shadow().Listed([a], Stored(a with { PinnedFingerprint = null }))!.Verdict);
+        // A corrupt list reads as empty on both sides.
+        Assert.Equal(ShadowVerdict.Agree, Shadow().Listed([], "garbage")!.Verdict);
+    }
+
+    [Fact]
+    public void Saved_NewHost_Update_AndRejection()
+    {
+        var s = Shadow();
+        var newReq = Json("""{"id":null,"label":"","host":"pc.lan","port":22,"user":"u","dshPort":3091}""");
+        var saved = new RemoteHost("uuid-1", "u@pc.lan", "pc.lan", 22, "u", 3091, null);
+        Assert.Equal(ShadowVerdict.Agree, s.Saved(newReq, "[]", new(true, "OK", null, saved), Stored(saved))!.Verdict);
+
+        var pinned = Host("a", pin: Fp);
+        var sameHost = Json("""{"id":"a","label":"pc","host":"pc.lan","port":22,"user":"v","dshPort":3091}""");
+        var kept = pinned with { User = "v" };
+        Assert.Equal(ShadowVerdict.Agree, s.Saved(sameHost, Stored(pinned), new(true, "OK", null, kept), Stored(kept))!.Verdict);
+        // Legacy keeping the pin after the host changed would be a divergence (and a security regression).
+        var moved = Json("""{"id":"a","label":"pc","host":"pc2.lan","port":22,"user":"u","dshPort":3091}""");
+        var wrongly = pinned with { Host = "pc2.lan" };
+        var r = s.Saved(moved, Stored(pinned), new(true, "OK", null, wrongly), Stored(wrongly))!;
+        Assert.Equal(ShadowVerdict.Diverge, r.Verdict);
+        Assert.Contains("pin", r.Detail, StringComparison.Ordinal);
+
+        var bad = Json("""{"id":null,"host":"a b","user":"u"}""");
+        Assert.Equal(ShadowVerdict.Agree, s.Saved(bad, "[]", new(false, "BAD_REQUEST", "host must be a host name or IP address", null), "[]")!.Verdict);
+        var unknown = Json("""{"id":"zz","host":"pc","user":"u"}""");
+        Assert.Equal(ShadowVerdict.Agree, s.Saved(unknown, "[]", new(false, "BAD_REQUEST", "unknown host id", null), "[]")!.Verdict);
+        Assert.Equal(ShadowVerdict.Diverge, s.Saved(bad, "[]", new(true, "OK", null, Host("x", "a b")), Stored(Host("x", "a b")))!.Verdict);
+    }
+
+    [Fact]
+    public void Trust_OnlyTheKeyLastPresented_ThenForgotten()
+    {
+        var s = Shadow();
+        var a = Host("a");
+        var pinnedA = a with { PinnedFingerprint = Fp };
+        // Nothing presented yet: legacy refuses, C# agrees.
+        Assert.Equal(ShadowVerdict.Agree, s.Trusted("a", Fp, Stored(a), new(false, "BAD_REQUEST", HostKeyPin.TrustRejected, null), Stored(a))!.Verdict);
+        // Connect presents the key.
+        Assert.Equal(ShadowVerdict.Agree, s.StatusObserved(BridgeMethods.RemoteConnect, Status("DISCONNECTED", RemoteCodes.HostKeyUnknown, "a", Fp), Stored(a))!.Verdict);
+        Assert.Equal(("a", Fp), s.LastUnknown);
+        // Another fingerprint is still refused.
+        Assert.Equal(ShadowVerdict.Agree, s.Trusted("a", OtherFp, Stored(a), new(false, "BAD_REQUEST", HostKeyPin.TrustRejected, null), Stored(a))!.Verdict);
+        // The presented one pins.
+        var r = s.Trusted("a", Fp, Stored(a), new(true, "OK", null, new RemoteHostList([pinnedA])), Stored(pinnedA))!;
+        Assert.Equal(ShadowVerdict.Agree, r.Verdict);
+        Assert.Null(s.LastUnknown);
+        // Legacy pinning without a presented key would diverge.
+        Assert.Equal(ShadowVerdict.Diverge, s.Trusted("a", Fp, Stored(a), new(true, "OK", null, new RemoteHostList([pinnedA])), Stored(pinnedA))!.Verdict);
+    }
+
+    [Fact]
+    public void Removed_ComparesRemainingList()
+    {
+        var a = Host("a");
+        var b = Host("b", "pc2.lan");
+        Assert.Equal(ShadowVerdict.Agree, Shadow().Removed("a", Stored(a, b), new(true, "OK", null, new RemoteHostList([b])), Stored(b))!.Verdict);
+        Assert.Equal(ShadowVerdict.Diverge, Shadow().Removed("a", Stored(a, b), new(true, "OK", null, new RemoteHostList([a, b])), Stored(a, b))!.Verdict);
+    }
+
+    [Fact]
+    public void HostKey_DecisionFromStatus()
+    {
+        var s = Shadow();
+        var unpinned = Stored(Host("a"));
+        var pinned = Stored(Host("a", pin: Fp));
+        Assert.Equal(ShadowVerdict.Agree, s.StatusObserved(BridgeMethods.RemoteConnect, Status("DISCONNECTED", RemoteCodes.HostKeyChanged, "a", OtherFp), pinned)!.Verdict);
+        Assert.Equal(ShadowVerdict.Agree, s.StatusObserved(BridgeMethods.RemoteConnect, Status("CONNECTED", RemoteCodes.DshMissing, "a"), pinned)!.Verdict);
+        Assert.Equal(ShadowVerdict.Agree, s.StatusObserved(BridgeMethods.RemoteConnect, Status("DISCONNECTED", RemoteCodes.AuthFailed, "a"), pinned)!.Verdict);
+        // Connected without any pin: the legacy accepted an unconfirmed key.
+        Assert.Equal(ShadowVerdict.Diverge, s.StatusObserved(BridgeMethods.RemoteConnect, Status("CONNECTED", RemoteCodes.Ok, "a"), unpinned)!.Verdict);
+        // CHANGED reported although the key equals the pin.
+        Assert.Equal(ShadowVerdict.Diverge, s.StatusObserved(BridgeMethods.RemoteConnect, Status("DISCONNECTED", RemoteCodes.HostKeyChanged, "a", Fp), pinned)!.Verdict);
+        // No decision implied: unreachable, plain status polls.
+        Assert.Null(s.StatusObserved(BridgeMethods.RemoteConnect, Status("DISCONNECTED", RemoteCodes.Unreachable, "a"), pinned));
+        Assert.Null(s.StatusObserved(BridgeMethods.RemoteStatus, Status("CONNECTED", RemoteCodes.Ok, "a"), pinned));
+        Assert.Equal(ShadowVerdict.Inconclusive, s.StatusObserved(BridgeMethods.RemoteConnect, Status("CONNECTED", RemoteCodes.Ok, "gone"), pinned)!.Verdict);
+    }
+
+    private static RemoteStatusInfo Status(string state, string code, string? hostId, string? fp = null) =>
+        new(state, code, null, hostId, "pc", null, null, 3091, false, fp);
+}

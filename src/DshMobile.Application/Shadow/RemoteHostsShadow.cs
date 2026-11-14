@@ -1,0 +1,307 @@
+using System.Text.Json;
+using DshMobile.Core.Bridge;
+using DshMobile.Runtime.Remote;
+
+namespace DshMobile.Application.Shadow;
+
+/// <summary>A legacy bridge answer as the remote page received it.</summary>
+public sealed record RemoteLegacyOutcome<T>(bool Ok, string Code, string? Message, T? Payload) where T : class;
+
+/// <summary>
+/// PR-09 first segment, read-only shadow of the remote host slice (ADR-0006). After each legacy <c>remote.*</c> call
+/// of the remote page, the C# port reads the same SharedPreferences profile list and the same Keystore key and must
+/// reach the same result: identity (public key line, fingerprint, hardware flag, plus a Keystore signature that the C#
+/// DER → SSH conversion keeps verifiable), profile list / save / trust / remove (validation messages, pin carry-over,
+/// the stored list afterwards) and the host-key decision of each connect. SSH itself stays legacy (JSch).
+/// The C# side never writes the profile list and never creates the key.
+/// </summary>
+public sealed class RemoteHostsShadow(IShadowReportSink sink, IDiagnosticsLog log, MigrationOptions options, TimeProvider time)
+{
+    public const string IdentitySlice = "remote.identity";
+    public const string HostsSlice = "remote.hosts";
+    public const string HostKeySlice = "remote.host-key";
+
+    /// <summary>Bridge code of a rejected profile / trust request.</summary>
+    public const string BadRequest = "BAD_REQUEST";
+
+    /// <summary>Message the legacy save gives for an id that is not in the list.</summary>
+    public const string UnknownHostId = "unknown host id";
+
+    private readonly Lock _gate = new();
+    private (string HostId, string Fingerprint)? _lastUnknown;
+
+    public bool Enabled => options.RemoteHosts == SliceMode.LegacyWithShadow;
+
+    /// <summary>The (host, fingerprint) of the last HOST_KEY_UNKNOWN this shadow observed; mirrors legacy memory.</summary>
+    public (string HostId, string Fingerprint)? LastUnknown
+    {
+        get
+        {
+            lock (_gate)
+            {
+                return _lastUnknown;
+            }
+        }
+    }
+
+    /// <summary>After a legacy <c>remote.identity</c>: the C# Keystore probe must describe the same key.</summary>
+    public ShadowReport? Identity(RemoteIdentityInfo legacy, Func<SshIdentityFacts> probe)
+    {
+        ArgumentNullException.ThrowIfNull(legacy);
+        ArgumentNullException.ThrowIfNull(probe);
+        if (!Enabled)
+        {
+            return null;
+        }
+        var start = time.GetTimestamp();
+        var facts = probe();
+        return Emit(CompareIdentity(legacy, facts, time.GetUtcNow()) with { CSharpMs = (long)time.GetElapsedTime(start).TotalMilliseconds });
+    }
+
+    /// <summary>After a legacy <c>remote.hosts.list</c>.</summary>
+    public ShadowReport? Listed(RemoteHost[] legacy, string? stored)
+    {
+        ArgumentNullException.ThrowIfNull(legacy);
+        return Enabled ? Emit(CompareList(legacy, stored, time.GetUtcNow())) : null;
+    }
+
+    /// <summary>After a legacy <c>remote.hosts.save</c>; <paramref name="before"/> was read just before the call.</summary>
+    public ShadowReport? Saved(JsonElement request, string? before, RemoteLegacyOutcome<RemoteHost> legacy, string? after)
+    {
+        ArgumentNullException.ThrowIfNull(legacy);
+        return Enabled ? Emit(CompareSave(request, before, legacy, after, time.GetUtcNow())) : null;
+    }
+
+    /// <summary>After a legacy <c>remote.trust</c>. A successful trust clears the remembered unknown key, as in legacy.</summary>
+    public ShadowReport? Trusted(string hostId, string fingerprint, string? before, RemoteLegacyOutcome<RemoteHostList> legacy, string? after)
+    {
+        ArgumentNullException.ThrowIfNull(legacy);
+        if (!Enabled)
+        {
+            return null;
+        }
+        ShadowReport report;
+        lock (_gate)
+        {
+            report = CompareTrust(hostId, fingerprint, _lastUnknown, before, legacy, after, time.GetUtcNow());
+            if (legacy.Ok)
+            {
+                _lastUnknown = null;
+            }
+        }
+        return Emit(report);
+    }
+
+    /// <summary>After a legacy <c>remote.hosts.remove</c>.</summary>
+    public ShadowReport? Removed(string hostId, string? before, RemoteLegacyOutcome<RemoteHostList> legacy, string? after)
+    {
+        ArgumentNullException.ThrowIfNull(legacy);
+        return Enabled ? Emit(CompareRemove(hostId, before, legacy, after, time.GetUtcNow())) : null;
+    }
+
+    /// <summary>
+    /// After any legacy <c>remote.*</c> status answer. A HOST_KEY_UNKNOWN is remembered (the only key a later trust may
+    /// pin). The host-key decision is compared when the answer implies one: UNKNOWN / CHANGED carry the fingerprint;
+    /// a connect that got past the key exchange (CONNECTED, or AUTH_FAILED) implies the pinned key matched.
+    /// </summary>
+    public ShadowReport? StatusObserved(string method, RemoteStatusInfo status, string? stored)
+    {
+        ArgumentNullException.ThrowIfNull(status);
+        if (!Enabled)
+        {
+            return null;
+        }
+        if (status is { Code: RemoteCodes.HostKeyUnknown, HostId: { } id, Fingerprint: { } fp })
+        {
+            lock (_gate)
+            {
+                _lastUnknown = (id, fp);
+            }
+        }
+        var report = CompareHostKey(method, status, stored, time.GetUtcNow());
+        return report is null ? null : Emit(report);
+    }
+
+    public static ShadowReport CompareIdentity(RemoteIdentityInfo legacy, SshIdentityFacts cs, DateTimeOffset at)
+    {
+        if (!cs.KeyPresent)
+        {
+            var verdict = cs.Error is null ? ShadowVerdict.Diverge : ShadowVerdict.Inconclusive;
+            return Report(IdentitySlice, at, verdict, true, false, cs.Error is null
+                ? $"legacy reported {legacy.Fingerprint} but C# found no Keystore alias {SshIdentity.KeystoreAlias}"
+                : $"C# could not read the Keystore key: {cs.Error}");
+        }
+        var checks = new (string Name, string Legacy, string CSharp)[]
+        {
+            ("publicKey", legacy.PublicKey, cs.PublicKeyLine ?? "-"),
+            ("fingerprint", legacy.Fingerprint, cs.Fingerprint ?? "-"),
+            ("algorithm", legacy.Algorithm, SshWire.Algorithm),
+            ("hardwareBacked", Show(legacy.HardwareBacked), Show(cs.HardwareBacked)),
+            ("selfTest", "verified", cs.SelfTestVerified == true ? "verified" : cs.Error ?? "signature did not verify"),
+        };
+        return FromChecks(IdentitySlice, at, checks, cs.SelfTestVerified == true,
+            $"{cs.Fingerprint} hardwareBacked={Show(cs.HardwareBacked)}, Keystore signature verified after DER → SSH");
+    }
+
+    public static ShadowReport CompareList(RemoteHost[] legacy, string? stored, DateTimeOffset at)
+    {
+        var cs = RemoteHostProfile.ParseStored(stored);
+        var checks = new[] { ("hosts", Describe(legacy.Select(FromDto)), Describe(cs)) };
+        return FromChecks(HostsSlice, at, checks, true, $"after remote.hosts.list: {cs.Count} profile(s) identical");
+    }
+
+    public static ShadowReport CompareSave(JsonElement request, string? before, RemoteLegacyOutcome<RemoteHost> legacy, string? after, DateTimeOffset at)
+    {
+        var listBefore = RemoteHostProfile.ParseStored(before);
+        var listAfter = RemoteHostProfile.ParseStored(after);
+        var id = RemoteHostProfile.RequestedId(request);
+        var existing = id is null ? null : listBefore.FirstOrDefault(p => p.Id == id);
+        RemoteHostProfile? predicted = null;
+        string? rejected = null;
+        if (id is not null && existing is null)
+        {
+            rejected = UnknownHostId;
+        }
+        else
+        {
+            try
+            {
+                predicted = RemoteHostProfile.FromRequest(request, existing, () => "<new>");
+            }
+            catch (RemoteProfileException ex)
+            {
+                rejected = ex.Message;
+            }
+        }
+
+        var checks = new List<(string Name, string Legacy, string CSharp)>
+        {
+            ("outcome", legacy.Ok ? "saved" : $"{legacy.Code}: {legacy.Message}", rejected is null ? "saved" : $"{BadRequest}: {rejected}"),
+        };
+        if (legacy.Ok && predicted is not null && legacy.Payload is { } savedDto)
+        {
+            var saved = FromDto(savedDto);
+            var isNew = existing is null;
+            var idOk = isNew ? saved.Id.Length > 0 && listBefore.All(p => p.Id != saved.Id) : saved.Id == existing!.Id;
+            checks.Add(("id", isNew ? "new id" : saved.Id, idOk ? (isNew ? "new id" : saved.Id) : $"unexpected {saved.Id}"));
+            checks.Add(("profile", Describe([saved with { Id = "" }]), Describe([predicted with { Id = "" }])));
+            checks.Add(("storedAfter", Describe(listAfter), Describe([.. listBefore.Where(p => p.Id != saved.Id), saved])));
+        }
+        else
+        {
+            checks.Add(("storedAfter", Describe(listAfter), Describe(listBefore)));
+        }
+        var detail = legacy.Ok
+            ? $"after remote.hosts.save: {(existing is null ? "new host" : "updated host")}, pin {(predicted?.PinnedFingerprint is null ? "none" : "kept")}"
+            : $"after remote.hosts.save: rejected alike ({rejected})";
+        return FromChecks(HostsSlice, at, checks, true, detail, legacy.Ok);
+    }
+
+    public static ShadowReport CompareTrust(string hostId, string fingerprint, (string HostId, string Fingerprint)? lastUnknown,
+        string? before, RemoteLegacyOutcome<RemoteHostList> legacy, string? after, DateTimeOffset at)
+    {
+        var listBefore = RemoteHostProfile.ParseStored(before);
+        var listAfter = RemoteHostProfile.ParseStored(after);
+        var allowed = HostKeyPin.TrustAllowed(hostId, fingerprint, lastUnknown);
+        var expectedAfter = allowed
+            ? listBefore.Select(p => p.Id == hostId ? p with { PinnedFingerprint = fingerprint } : p).ToList()
+            : listBefore.ToList();
+        var checks = new List<(string Name, string Legacy, string CSharp)>
+        {
+            ("outcome", legacy.Ok ? "pinned" : $"{legacy.Code}: {legacy.Message}", allowed ? "pinned" : $"{BadRequest}: {HostKeyPin.TrustRejected}"),
+            ("storedAfter", Describe(listAfter), Describe(expectedAfter)),
+        };
+        if (legacy is { Ok: true, Payload: { } hosts })
+        {
+            checks.Add(("reply", Describe(hosts.Hosts.Select(FromDto)), Describe(listAfter)));
+        }
+        var detail = $"after remote.trust: {(allowed ? "pinned the key last presented by this host" : "refused alike (not the key last presented)")}"
+            + (lastUnknown is null ? "; C# saw no unknown key in this process" : "");
+        return FromChecks(HostsSlice, at, checks, true, detail, legacy.Ok);
+    }
+
+    public static ShadowReport CompareRemove(string hostId, string? before, RemoteLegacyOutcome<RemoteHostList> legacy, string? after, DateTimeOffset at)
+    {
+        var listAfter = RemoteHostProfile.ParseStored(after);
+        var expected = RemoteHostProfile.ParseStored(before).Where(p => p.Id != hostId).ToList();
+        var checks = new List<(string Name, string Legacy, string CSharp)>
+        {
+            ("outcome", legacy.Ok ? "removed" : $"{legacy.Code}: {legacy.Message}", "removed"),
+            ("storedAfter", Describe(listAfter), Describe(expected)),
+        };
+        if (legacy is { Ok: true, Payload: { } hosts })
+        {
+            checks.Add(("reply", Describe(hosts.Hosts.Select(FromDto)), Describe(listAfter)));
+        }
+        return FromChecks(HostsSlice, at, checks, true, $"after remote.hosts.remove: {expected.Count} profile(s) left", legacy.Ok);
+    }
+
+    /// <summary>Null when the status implies no host-key decision (e.g. UNREACHABLE before the key exchange).</summary>
+    public static ShadowReport? CompareHostKey(string method, RemoteStatusInfo status, string? stored, DateTimeOffset at)
+    {
+        if (status.HostId is not { } id)
+        {
+            return null;
+        }
+        HostKeyDecision legacyDecision;
+        string? fp = status.Fingerprint;
+        switch (status.Code)
+        {
+            case RemoteCodes.HostKeyUnknown when fp is not null:
+                legacyDecision = HostKeyDecision.NotIncluded;
+                break;
+            case RemoteCodes.HostKeyChanged when fp is not null:
+                legacyDecision = HostKeyDecision.Changed;
+                break;
+            case RemoteCodes.AuthFailed when method == BridgeMethods.RemoteConnect:
+                legacyDecision = HostKeyDecision.Ok;
+                break;
+            default:
+                if (method != BridgeMethods.RemoteConnect || status.State is not ("CONNECTED" or "READY"))
+                {
+                    return null;
+                }
+                legacyDecision = HostKeyDecision.Ok;
+                break;
+        }
+        var profile = RemoteHostProfile.ParseStored(stored).FirstOrDefault(p => p.Id == id);
+        if (profile is null)
+        {
+            return Report(HostKeySlice, at, ShadowVerdict.Inconclusive, true, false, $"after {method}: host {id} is no longer stored");
+        }
+        // Without the key blob, an accepted key can only be checked against "a pin exists" (a match is implied).
+        var csDecision = fp is not null ? HostKeyPin.Decide(profile.PinnedFingerprint, fp)
+            : profile.PinnedFingerprint is null ? HostKeyDecision.NotIncluded : HostKeyDecision.Ok;
+        var checks = new[] { ("decision", legacyDecision.ToString(), csDecision.ToString()) };
+        return FromChecks(HostKeySlice, at, checks, true,
+            $"after {method}: {status.Code} ↔ {csDecision} (pin {(profile.PinnedFingerprint is null ? "none" : "set")}{(fp is null ? "" : ", key " + fp)})");
+    }
+
+    private ShadowReport Emit(ShadowReport report)
+    {
+        sink.Report(report);
+        log.Note($"shadow {report.Slice}: {report.Verdict} ({report.Detail})");
+        return report;
+    }
+
+    private static RemoteHostProfile FromDto(RemoteHost h) =>
+        new(h.Id, h.Label, h.Host, h.Port, h.User, h.DshPort, h.PinnedFingerprint);
+
+    /// <summary>A stable, comparable text form of a profile list (never contains a secret: profiles have none).</summary>
+    private static string Describe(IEnumerable<RemoteHostProfile> profiles) =>
+        "[" + string.Join("; ", profiles.Select(p =>
+            $"{p.Id}|{p.Label}|{p.User}@{p.Host}:{p.Port}|dsh {p.DshPort}|pin {p.PinnedFingerprint ?? "-"}")) + "]";
+
+    private static string Show(bool? b) => b switch { true => "true", false => "false", null => "unknown" };
+
+    private static ShadowReport FromChecks(string slice, DateTimeOffset at, IReadOnlyList<(string Name, string Legacy, string CSharp)> checks,
+        bool csharpOk, string agreeDetail, bool legacyOk = true)
+    {
+        var diffs = checks.Where(c => c.Legacy != c.CSharp).ToList();
+        var detail = diffs.Count == 0 ? agreeDetail : string.Join("; ", diffs.Select(d => $"{d.Name} legacy={d.Legacy} csharp={d.CSharp}"));
+        return Report(slice, at, diffs.Count == 0 ? ShadowVerdict.Agree : ShadowVerdict.Diverge, legacyOk, csharpOk, detail);
+    }
+
+    private static ShadowReport Report(string slice, DateTimeOffset at, ShadowVerdict verdict, bool legacyOk, bool csharpOk, string detail) =>
+        new(slice, at, verdict, legacyOk, null, csharpOk, null, detail.Length > 1500 ? detail[..1500] : detail, 0);
+}
