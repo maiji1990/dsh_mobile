@@ -36,7 +36,9 @@ public static class ServiceCollectionExtensions
             sp.GetRequiredService<IShadowReportSink>(),
             sp.GetRequiredService<MigrationOptions>(),
             sp.GetRequiredService<TimeProvider>(),
-            sp.GetRequiredService<RuntimeLayout>()));
+            sp.GetRequiredService<RuntimeLayout>(),
+            // Optional: the platform registers its APK assets (bundled DSH layer); without it the C# preparer refuses.
+            bundledAssets: sp.GetService<DshMobile.Runtime.Layers.IBundledAssets>()));
         services.AddSingleton(sp => new RemoteHostsShadow(
             sp.GetRequiredService<IShadowReportSink>(),
             sp.GetRequiredService<IDiagnosticsLog>(),

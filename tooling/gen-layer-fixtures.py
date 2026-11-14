@@ -232,6 +232,8 @@ def write_expectations():
         json.dump(doc, fh, indent=2, ensure_ascii=False)
         fh.write("\n")
     write_install_scenarios()
+    write_dsh_layer_scenarios()
+    write_install_check_scenarios()
 
 
 # ---------------------------------------------------------------------------------------------------------------
@@ -338,6 +340,159 @@ def write_install_scenarios():
         "scenarios": scenarios,
     }
     with open(os.path.join(OUT, "..", "install-scenarios.json"), "w", encoding="utf-8", newline="\n") as fh:
+        json.dump(doc, fh, indent=2, ensure_ascii=False)
+        fh.write("\n")
+
+
+# ---------------------------------------------------------------------------------------------------------------
+# DSH layer (runtime-current/dsh) install scenarios, run by the legacy DSHBox DshLayer.installFromBundle
+# (native-bridge LegacyDshLayerParityTest) and the C# DshLayerInstaller (DshLayerParityTests). Trees cover files/.
+# ---------------------------------------------------------------------------------------------------------------
+BOM = "﻿"
+
+
+def with_parents(tree):
+    """Adds every parent directory of the listed paths (extraction creates them)."""
+    out = dict(tree)
+    for path in list(tree):
+        parts = path.split("/")
+        for i in range(1, len(parts)):
+            out.setdefault("/".join(parts[:i]), "dir")
+    return dict(sorted(out.items()))
+
+
+def write_dsh_layer_scenarios():
+    F = tarfile.REGTYPE
+    pkg = "node_modules/@deepseek-ai/dsh"
+    real_pkg = '{"name":"@deepseek-ai/dsh","version":"1.3.0"}\n'
+    stub = BOM + '{"name":"dsh-layer","version":"0.0.0-stub"}\n'
+    stub_only = BOM + '{"name":"dsh-layer","version":"0.9.0"}\n'
+    archives = {
+        "dsh-good.tar": {f"{pkg}/lib/bin.js": "bin\n", f"{pkg}/package.json": real_pkg, "package.json": stub},
+        "dsh-stub-only.tar": {f"{pkg}/lib/bin.js": "bin\n", "package.json": stub_only},
+        "dsh-noversion.tar": {f"{pkg}/lib/bin.js": "bin\n"},
+        "dsh-invalid.tar": {"README": "not a dsh layer\n"},
+    }
+    shas = {}
+    for name, files in archives.items():
+        data = tar_bytes([info(path, F, 0o644, text.encode("utf-8")) for path, text in files.items()])
+        with open(os.path.join(BUNDLES, name), "wb") as fh:
+            fh.write(data)
+        shas[name] = hashlib.sha256(data).hexdigest()
+
+    rc = "runtime/runtime-current"
+    common = {"runtime": "dir", rc: "dir", "user-data": "dir", "user-data/keep.txt": "user\n"}
+
+    def layer(archive, version_record, root=f"{rc}/dsh"):
+        t = {f"{root}/{k}": v for k, v in archives[archive].items()}
+        if version_record is not None:
+            t[f"{root}/.dshbox/version"] = version_record
+        return t
+
+    old = {f"{rc}/dsh/old.txt": "old-dsh\n", f"{rc}/dsh/.dshbox/version": "1.0.0"}
+    old_as_previous = {f"{rc}/previous/dsh/old.txt": "old-dsh\n", f"{rc}/previous/dsh/.dshbox/version": "1.0.0"}
+    newer = {f"{rc}/dsh/old.txt": "old-dsh\n", f"{rc}/dsh/.dshbox/version": "2.0.0"}
+    older_previous = {f"{rc}/previous/dsh/prev.txt": "older\n", f"{rc}/previous/keep.txt": "previous body\n"}
+    pkg_only = {f"{rc}/dsh/{pkg}/package.json": '{"version":"3.0.0"}', f"{rc}/dsh/.dshbox/version": "  \n"}
+
+    def sc(name, bundle, sha, new_version, before, result, changed, version, after, allow_downgrade=False):
+        return {"name": name, "bundle": bundle,
+                "sha256": None if sha is None else (shas.get(bundle, "") if sha == "good" else sha),
+                "newVersion": new_version, "allowDowngrade": allow_downgrade,
+                "before": with_parents({**common, **before}), "result": result, "changed": changed,
+                "version": version, "after": with_parents({**common, **after})}
+
+    wrong = "0" * 64
+    scenarios = [
+        sc("fresh install records the incoming version", "dsh-good.tar", "good", "1.2.0", {}, "OK", True, "1.2.0",
+           layer("dsh-good.tar", "1.2.0")),
+        sc("installed newer wins: kept, checksum not even checked", "dsh-good.tar", wrong, "1.2.0", newer, "OK", False,
+           "2.0.0", newer),
+        sc("same version is kept", "dsh-good.tar", "good", "2.0.0", newer, "OK", False, "2.0.0", newer),
+        sc("allowDowngrade replaces a newer layer", "dsh-good.tar", "good", "1.2.0", newer, "OK", True, "1.2.0",
+           layer("dsh-good.tar", "1.2.0"), allow_downgrade=True),
+        sc("upgrade with previous/: old layer becomes previous/dsh, older previous dropped", "dsh-good.tar", "good",
+           "1.2.0", {**old, **older_previous}, "OK", True, "1.2.0",
+           {**layer("dsh-good.tar", "1.2.0"), **old_as_previous, f"{rc}/previous/keep.txt": "previous body\n"}),
+        # Inherited quirk: previous/ does not exist, so the rename fails and the old layer is deleted (no rollback copy).
+        sc("upgrade without previous/: old layer discarded", "dsh-good.tar", "good", "1.2.0", old, "OK", True, "1.2.0",
+           layer("dsh-good.tar", "1.2.0")),
+        sc("no incoming version: discovered from the product package.json", "dsh-good.tar", None, None, old, "OK", True,
+           "1.3.0", layer("dsh-good.tar", "1.3.0")),
+        sc("no incoming version: BOM stub package.json is read", "dsh-stub-only.tar", None, None, {}, "OK", True,
+           "0.9.0", layer("dsh-stub-only.tar", "0.9.0")),
+        sc("no version anywhere: recorded as unknown", "dsh-noversion.tar", None, None, {}, "OK", True, "unknown",
+           layer("dsh-noversion.tar", "unknown")),
+        sc("blank version record falls back to package.json for arbitration", "dsh-good.tar", "good", "2.0.0", pkg_only,
+           "OK", True, "2.0.0", layer("dsh-good.tar", "2.0.0")),
+        sc("checksum mismatch: nothing changes", "dsh-good.tar", wrong, "1.2.0", old, "DSH_SHA256_MISMATCH", False,
+           "1.0.0", old),
+        sc("blank expected checksum never matches", "dsh-good.tar", "", "1.2.0", old, "DSH_SHA256_MISMATCH", False,
+           "1.0.0", old),
+        sc("not a DSH layer (no bin.js): nothing changes, no staging left", "dsh-invalid.tar", "good", "1.2.0", old,
+           "DSH_BUNDLE_INVALID", False, "1.0.0", old),
+        sc("missing bundle file", "missing.tar", None, "1.2.0", newer, "DSH_BUNDLE_NOT_FOUND", False, "2.0.0", newer),
+    ]
+    doc = {
+        "description": "DSH layer install scenarios (generated by tooling/gen-layer-fixtures.py; archives in bundles/dsh-*.tar). "
+                       "`before`/`after` list the whole files/ tree: path -> \"dir\" or the file's UTF-8 content. "
+                       "`sha256`: expected digest passed to the installer (null = no sidecar). Run by the legacy DSHBox "
+                       "DshLayer.installFromBundle (native-bridge LegacyDshLayerParityTest) and the C# DshLayerInstaller "
+                       "(DshLayerParityTests); neither may leave a staging directory behind.",
+        "scenarios": scenarios,
+    }
+    with open(os.path.join(OUT, "..", "dsh-layer.json"), "w", encoding="utf-8", newline="\n") as fh:
+        json.dump(doc, fh, indent=2, ensure_ascii=False)
+        fh.write("\n")
+
+
+# ---------------------------------------------------------------------------------------------------------------
+# isRuntimeInstalled scenarios (legacy DefaultSandboxManager.isRuntimeInstalled, C# RuntimeInstallCheck).
+# PRoot comes from runtime-current/android-side/bin/proot (no native library dir in the tests).
+# ---------------------------------------------------------------------------------------------------------------
+def write_install_check_scenarios():
+    rc = "runtime/runtime-current"
+    sha = {"base": "a" * 64, "node": "b" * 64}
+
+    def profile(layers, assembly):
+        return json.dumps({
+            "bundle": {"kind": "runtime", "name": "fixture", "version": "9.9.9", "arch": "arm64", "compression": "none"},
+            "layers": [{"name": n, "version": "9.9.9", "compression": "none", "sha256": s, "size_bytes": 1,
+                        "env_file": "", "file": f"{n}.tar", "deps": []} for n, s in layers],
+            "assembly": assembly,
+        }, indent=2)
+
+    proot = {f"{rc}/android-side/bin/proot": "elf\n"}
+    base = {f"{rc}/base/etc/os-release": "base\n"}
+    node = {f"{rc}/node/bin/node": "node\n"}
+    good_profile = {f"{rc}/runtime-profile.json": profile([("base", sha["base"]), ("node", sha["node"])], ["base", "node"])}
+    sentinels = {f"{rc}/base/.dshbox/layer-base.sha256": sha["base"], f"{rc}/node/.dshbox/layer-node.sha256": sha["node"]}
+
+    def sc(name, tree, installed, healed=None):
+        return {"name": name, "before": with_parents(tree), "installed": installed,
+                "after": with_parents({**tree, **(healed or {})})}
+
+    scenarios = [
+        sc("nothing installed", {"runtime": "dir"}, False),
+        sc("no proot", {**base, **node, **good_profile, **sentinels}, False),
+        sc("no profile", {**proot, **base, **node}, False),
+        sc("empty assembly", {**proot, **base, f"{rc}/runtime-profile.json": profile([("base", sha["base"])], [])}, False),
+        sc("intact layers", {**proot, **base, **node, **good_profile, **sentinels}, True),
+        sc("sentinel compare is case-insensitive", {**proot, **base, **node, **good_profile,
+           f"{rc}/base/.dshbox/layer-base.sha256": sha["base"].upper(), f"{rc}/node/.dshbox/layer-node.sha256": sha["node"]}, True),
+        sc("sentinel mismatch", {**proot, **base, **node, **good_profile,
+           f"{rc}/base/.dshbox/layer-base.sha256": sha["base"], f"{rc}/node/.dshbox/layer-node.sha256": "c" * 64}, False),
+        sc("missing sentinels are healed from the profile", {**proot, **base, **node, **good_profile}, True, sentinels),
+        sc("assembly layer directory missing", {**proot, **base, **good_profile, f"{rc}/base/.dshbox/layer-base.sha256": sha["base"]}, False),
+        sc("profile layer without sha", {**proot, **base, f"{rc}/runtime-profile.json": profile([("base", "")], ["base"])}, False),
+    ]
+    doc = {
+        "description": "Runtime install check scenarios (generated by tooling/gen-layer-fixtures.py). Run by the legacy DSHBox "
+                       "DefaultSandboxManager.isRuntimeInstalled (native-bridge LegacyDshLayerParityTest) and the C# "
+                       "RuntimeInstallCheck (DshLayerParityTests, heal=true). `after` includes self-healed sentinels.",
+        "scenarios": scenarios,
+    }
+    with open(os.path.join(OUT, "..", "runtime-installed.json"), "w", encoding="utf-8", newline="\n") as fh:
         json.dump(doc, fh, indent=2, ensure_ascii=False)
         fh.write("\n")
 

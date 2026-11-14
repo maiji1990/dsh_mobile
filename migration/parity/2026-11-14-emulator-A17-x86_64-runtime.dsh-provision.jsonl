@@ -1,0 +1,4 @@
+{"slice":"runtime.dsh-provision","at":"2026-11-14T14:11:12.8559563+00:00","verdict":"Agree","legacyOk":true,"legacyCode":null,"csharpOk":true,"csharpCode":null,"detail":"steps equal (DSH kept at 0.2.1-rc.5)","csharpMs":37}
+{"slice":"runtime.dsh-provision","at":"2026-11-14T14:11:57.475288+00:00","verdict":"Agree","legacyOk":true,"legacyCode":null,"csharpOk":true,"csharpCode":null,"detail":"steps equal (DSH 0.2.1-rc.5 installed) | dsh layer: 68212 entries identical","csharpMs":12713}
+{"slice":"runtime.dsh-provision","at":"2026-11-14T14:13:20.8678437+00:00","verdict":"Agree","legacyOk":true,"legacyCode":null,"csharpOk":true,"csharpCode":null,"detail":"steps equal (DSH kept at 0.2.1-rc.5)","csharpMs":100}
+{"slice":"runtime.dsh-provision","at":"2026-11-14T14:14:27.313259+00:00","verdict":"Agree","legacyOk":true,"legacyCode":null,"csharpOk":true,"csharpCode":null,"detail":"steps equal (DSH 0.2.1-rc.5 installed) | dsh layer: 68212 entries identical","csharpMs":16837}

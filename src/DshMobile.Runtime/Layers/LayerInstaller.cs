@@ -231,7 +231,7 @@ public sealed class LayerInstaller(RuntimeLayout layout, Func<string, bool>? hos
     }
 
     /// <summary><c>File.renameTo</c>: false instead of throwing (missing parent, existing target, ...).</summary>
-    private static bool TryRename(string from, string to)
+    internal static bool TryRename(string from, string to)
     {
         try
         {
@@ -255,7 +255,7 @@ public sealed class LayerInstaller(RuntimeLayout layout, Func<string, bool>? hos
         }
     }
 
-    private static bool Exists(string path) => File.Exists(path) || Directory.Exists(path);
+    internal static bool Exists(string path) => File.Exists(path) || Directory.Exists(path);
 
     private static bool IsLink(string path) => new FileInfo(path).LinkTarget is not null;
 
@@ -291,7 +291,7 @@ public sealed class LayerInstaller(RuntimeLayout layout, Func<string, bool>? hos
     }
 
     /// <summary>Fallback when renaming staging into place fails: copy, preserving symlinks literally.</summary>
-    private static void CopyTree(string src, string dest)
+    internal static void CopyTree(string src, string dest)
     {
         Directory.CreateDirectory(dest);
         foreach (var child in Directory.EnumerateFileSystemEntries(src))
@@ -313,7 +313,7 @@ public sealed class LayerInstaller(RuntimeLayout layout, Func<string, bool>? hos
         }
     }
 
-    private sealed class HashingReadStream(Stream inner, IncrementalHash hash) : Stream
+    internal sealed class HashingReadStream(Stream inner, IncrementalHash hash) : Stream
     {
         public override int Read(byte[] buffer, int offset, int count) => Read(buffer.AsSpan(offset, count));
 

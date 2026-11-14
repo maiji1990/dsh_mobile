@@ -50,7 +50,19 @@ public class MainActivity : Activity
         kotlin.Click += (_, _) => _ = _bridge.RunKotlinCompareAsync();
         stress.Click += (_, _) => _ = _bridge.RunStressAsync(1000);
         clear.Click += (_, _) => _bridge.ClearLog();
+        // Default: the legacy runtime.prepare installs the bundled DSH layer, C# shadows it (MIGRATION row 17).
         prepare.Click += (_, _) => _ = _bridge.RunPrepareAsync();
+        // Developer opt-in: the C# RuntimePreparer decides for this one call (no DSHBox code).
+        prepare.LongClick += (_, e) =>
+        {
+            e.Handled = true;
+            new AlertDialog.Builder(this)
+                .SetTitle("准备实现")!
+                .SetMessage("用 C# RuntimePreparer 做这一次准备（安装 APK 内置的 DSH 层，按版本仲裁，实验）？默认仍由旧实现准备并做影子比对。运行中只允许“保留现有版本”，需要替换 DSH 层时会拒绝。")!
+                .SetPositiveButton("C# 准备", (_, _) => _ = _bridge.RunPrepareAsync(DshMobile.Application.SliceMode.CSharp))!
+                .SetNegativeButton("取消", (_, _) => { })!
+                .Show();
+        };
         // Runtime bundle comes from the system picker (no storage permission, no adb needed).
         import.Click += (_, _) => PickRuntimeBundle(csharpImporter: false);
         // Developer opt-in for device acceptance of the C# LayerInstaller (ADR-0007): one import only, explicit choice.

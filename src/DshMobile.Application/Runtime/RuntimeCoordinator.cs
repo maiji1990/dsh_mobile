@@ -42,9 +42,11 @@ public sealed class RuntimeCoordinator : IDisposable
         TimeProvider? time = null,
         RuntimeLayout? layout = null,
         PtyOpener? terminalOpener = null,
-        Func<RuntimeLayout, Action<string>, TimeProvider, IDshHost>? hostFactory = null)
+        Func<RuntimeLayout, Action<string>, TimeProvider, IDshHost>? hostFactory = null,
+        IBundledAssets? bundledAssets = null)
     {
         _hostFactory = hostFactory ?? ((l, note, time) => new DshHost(l, note, time));
+        _assets = bundledAssets;
         _runtime = runtime;
         State = state;
         _foreground = foreground;
@@ -105,6 +107,77 @@ public sealed class RuntimeCoordinator : IDisposable
 
     /// <summary>Where the legacy installer puts the layers; required for the layer-extraction shadow.</summary>
     private readonly RuntimeLayout? _layout;
+
+    /// <summary>The APK assets (bundled DSH layer); required for the C# preparer and its shadow.</summary>
+    private readonly IBundledAssets? _assets;
+
+    /// <summary>
+    /// <c>runtime.prepare</c>: installs the APK-bundled DSH layer when base/node are installed (MIGRATION row 17).
+    /// </summary>
+    /// <param name="mode">Overrides <see cref="MigrationOptions.DshProvision"/> for this call (developer opt-in to
+    /// <see cref="SliceMode.CSharp"/>). The C# preparer refuses to replace the layer while sandbox / DSH processes are
+    /// alive (the legacy one stops and restarts its own DSH, which the C# host does not offer); keeping it is fine.</param>
+    public async Task<RuntimeInstallResult> PrepareAsync(CancellationToken ct, SliceMode? mode = null)
+    {
+        await _op.WaitAsync(ct).ConfigureAwait(false);
+        try
+        {
+            await SyncAsync(ct).ConfigureAwait(false);
+            return await PrepareCoreAsync(mode ?? _options.DshProvision, ct).ConfigureAwait(false);
+        }
+        finally
+        {
+            _op.Release();
+        }
+    }
+
+    /// <summary>Caller holds the operation lock.</summary>
+    private async Task<RuntimeInstallResult> PrepareCoreAsync(SliceMode mode, CancellationToken ct)
+    {
+        if (mode == SliceMode.CSharp)
+        {
+            if (_layout is null || _assets is null)
+            {
+                return new RuntimeInstallResult(false, RuntimeErrorCodes.NotImplemented, "C# prepare needs the runtime layout and the APK assets");
+            }
+            var installer = new DshLayerInstaller(_layout, _options.HostPathExists);
+            var alive = HostOwnsProcesses || State.Current.State is RuntimeState.Running or RuntimeState.Starting or RuntimeState.Stopping;
+            if (alive && BundledDsh.Plan(_assets, installer).WouldInstall)
+            {
+                _log.Note("runtime.prepare (csharp): refused, the bundled DSH layer would be replaced while processes are alive");
+                return new RuntimeInstallResult(false, RuntimeErrorCodes.InvalidTransition, "stop DSH before the bundled DSH layer is replaced");
+            }
+            _log.Note("runtime.prepare: C# RuntimePreparer (legacy prepare not used)");
+            var r = await RuntimePreparer.PrepareAsync(_layout, _assets, ct, _options.HostPathExists).ConfigureAwait(false);
+            var text = string.Join("; ", r.Steps);
+            _log.Note(r.Ok ? $"runtime.prepare (csharp): ok ({text})" : $"runtime.prepare (csharp) FAILED {r.Code}: {r.Message}");
+            // The journal's DSH version keeps following the legacy status, which caches it until the app restarts
+            // (documented limitation of the opt-in path; the result text carries the installed version).
+            return new RuntimeInstallResult(r.Ok, r.Code, r.Ok ? text : r.Message);
+        }
+
+        DshProvisionPrediction? before = null;
+        if (mode == SliceMode.LegacyWithShadow && _layout is not null && _assets is not null)
+        {
+            try
+            {
+                before = DshProvisionPrediction.Read(_layout, _assets, _options.HostPathExists);
+            }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+            {
+                _log.Note($"shadow {DshProvisionShadowCheck.Slice}: prediction failed: {e.Message}");
+            }
+        }
+        var legacy = await _runtime.PrepareAsync(ct).ConfigureAwait(false);
+        _log.Note(legacy.Ok ? $"runtime.prepare: ok ({legacy.Message})" : $"runtime.prepare FAILED {legacy.Code}: {legacy.Message}");
+        if (before is not null)
+        {
+            var report = await DshProvisionShadowCheck.CompareAsync(before, legacy, _layout!, _assets!, _options.HostPathExists, _time, ct).ConfigureAwait(false);
+            _shadow.Report(report);
+            _log.Note($"shadow {report.Slice}: {report.Verdict} ({report.Detail}; csharp {report.CSharpMs} ms)");
+        }
+        return legacy;
+    }
 
     public RuntimeStateMachine State { get; }
 
@@ -354,8 +427,7 @@ public sealed class RuntimeCoordinator : IDisposable
         _shadow.Report(verify);
         _log.Note($"verify {verify.Slice}: {verify.Verdict} ({verify.Detail}; {verify.CSharpMs} ms)");
 
-        var prepare = await _runtime.PrepareAsync(ct).ConfigureAwait(false);
-        _log.Note(prepare.Ok ? $"runtime.prepare: ok ({prepare.Message})" : $"runtime.prepare FAILED {prepare.Code}: {prepare.Message}");
+        var prepare = await PrepareCoreAsync(_options.DshProvision, ct).ConfigureAwait(false);
 
         var after = await _runtime.GetStateAsync(ct).ConfigureAwait(false);
         if (verify.Verdict != ShadowVerdict.Agree || !prepare.Ok || after.State == RuntimeState.NotInstalled)
