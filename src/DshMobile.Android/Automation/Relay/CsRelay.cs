@@ -4,30 +4,48 @@
 // v1.5.1 @ 7c9d33c1f29dd2c42dde6c7e2fcdf38814f491c4) src/main/java/interlock/relay/core/interlock/SystemStateProbe.kt
 // (settingsKeyNamesSelf, microphoneBlockedByPolicy). Registered in docs/UPSTREAMS.md.
 //
-// LegacyWithShadow (ADR-0007): the legacy Relay keeps deciding for the guest. This host is opt-in, serves its own
-// mailbox (files/pilot-cs/run, never the guest's), reads the same Relay preferences (tiers, surface preference,
-// shell opt-ins) read-only, and asks for approval on its own notification card, so every C# write still needs the
-// user's own answer. Nothing here enables a system permission.
+// Two opt-in modes, one C# host at a time (ADR-0009 / ADR-0010):
+//   Shadow: serves its own mailbox (files/pilot-cs, never bound into the guest) next to the legacy Relay, for the
+//           dual-relay comparison.
+//   Guest:  serves the guest's mailbox (files/pilot, guest /opt/pilot) and publishes the guest files there, in place
+//           of the legacy Relay, which the caller must have stopped first (never two relays on one mailbox).
+// Both read the same Relay preferences (tiers, surface preference, shell opt-ins) and ask for approval on the C#
+// notification card, so every C# write still needs the user's own answer. Nothing here enables a system permission.
 
 using Android.App;
 using Android.Content;
 using Android.Content.PM;
+using DshMobile.Runtime.Automation;
 using DshMobile.Runtime.Automation.Relay;
 using DshMobile.Runtime.Automation.Relay.Exec.Direct;
+using DshMobile.Runtime.Automation.Relay.Shizuku;
 using DshMobile.Runtime.Automation.Relay.Storage;
 using DshMobile.Runtime.Automation.Relay.Transport;
 
 namespace DshMobile.App.Automation.Relay;
 
+/// <summary>Which mailbox the C# host serves.</summary>
+public enum CsRelayMode
+{
+    /// <summary>Its own mailbox (files/pilot-cs), next to the legacy Relay: the dual-relay shadow.</summary>
+    Shadow,
+
+    /// <summary>The guest's mailbox (files/pilot, guest /opt/pilot), in place of the legacy Relay.</summary>
+    Guest,
+}
+
 public static class CsRelay
 {
-    /// <summary>The C# host's own directories: never the legacy Relay's mailbox, never bound into the guest.</summary>
-    public static RelayPathPolicy PathPolicy { get; } = RelayPathPolicy.DshMobile with { GuestEntry = "/opt/pilot-cs", HostDirName = "pilot-cs" };
+    /// <summary>The shadow host's own directories: never the legacy Relay's mailbox, never bound into the guest.</summary>
+    public static RelayPathPolicy ShadowPathPolicy { get; } = RelayPathPolicy.DshMobile with { GuestEntry = "/opt/pilot-cs", HostDirName = "pilot-cs" };
+
+    public static RelayPathPolicy PathPolicyOf(CsRelayMode mode) => mode == CsRelayMode.Guest ? RelayPathPolicy.DshMobile : ShadowPathPolicy;
 
     private static readonly Lock Gate = new();
     private static Timer? _ticker;
     private static (bool Running, bool Granted)? _lastShizuku;
     private static AndroidShizukuPlatform? _shizuku;
+    private static Action? _unhook;
 
     /// <summary>The process-wide window the C# notification listener feeds.</summary>
     public static NotificationWindow NotificationFeed { get; } = new(() => DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
@@ -36,13 +54,32 @@ public static class CsRelay
 
     public static RelayRuntimePhase Phase => Host?.Phase ?? RelayRuntimePhase.Stopped;
 
-    public static void Start(Context context)
+    /// <summary>The mode of <see cref="Host"/> (meaningful only while there is one).</summary>
+    public static CsRelayMode Mode { get; private set; }
+
+    /// <summary>The C# host is up on the guest's mailbox: the legacy Relay must stay stopped.</summary>
+    public static bool GuestFacing => Mode == CsRelayMode.Guest && Phase is not RelayRuntimePhase.Stopped;
+
+    /// <summary>
+    /// Starts the host in <paramref name="mode"/>. A host in the other mode is stopped and dropped first (one C# host at
+    /// a time: they share the approval receiver, the accessibility callback and the Relay preferences).
+    /// </summary>
+    public static void Start(Context context, CsRelayMode mode = CsRelayMode.Shadow)
     {
         ArgumentNullException.ThrowIfNull(context);
         var app = context.ApplicationContext ?? context;
         lock (Gate)
         {
-            Host ??= Build(app);
+            if (Host is { } other && Mode != mode)
+            {
+                StopLocked();
+                _unhook?.Invoke();
+                _unhook = null;
+                other.Dispose();
+                Host = null;
+            }
+            Mode = mode;
+            Host ??= Build(app, PathPolicyOf(mode));
             Host.Start();
             _ticker ??= new Timer(_ => Tick(), null, TimeSpan.Zero, TimeSpan.FromSeconds(3));
         }
@@ -52,11 +89,41 @@ public static class CsRelay
     {
         lock (Gate)
         {
-            _ticker?.Dispose();
-            _ticker = null;
-            _lastShizuku = null;
-            Host?.Stop();
+            StopLocked();
         }
+    }
+
+    private static void StopLocked()
+    {
+        _ticker?.Dispose();
+        _ticker = null;
+        _lastShizuku = null;
+        Host?.Stop();
+    }
+
+    /// <summary>
+    /// ADR-0010: the C# host takes the guest's mailbox, then the <c>ui_*</c> layer is written (as the legacy
+    /// <c>relay.start</c> does after <c>MobileAutomation.start</c>). The caller has stopped the legacy Relay. False when
+    /// the layer path holds someone else's file (nothing overwritten; the host still serves the CLI).
+    /// </summary>
+    public static bool StartGuest(Context context, string userDataDir)
+    {
+        Start(context, CsRelayMode.Guest);
+        return UiToolsRegistration.Register(userDataDir);
+    }
+
+    /// <summary>The legacy <c>relay.stop</c> / <c>sandbox.stop</c> pair for the guest-facing host: stop, then remove our layer.</summary>
+    public static bool StopGuest(string userDataDir)
+    {
+        lock (Gate)
+        {
+            if (Mode != CsRelayMode.Guest || Host is null)
+            {
+                return true;
+            }
+            StopLocked();
+        }
+        return UiToolsRegistration.Unregister(userDataDir);
     }
 
     /// <summary>
@@ -86,16 +153,16 @@ public static class CsRelay
         }
     }
 
-    private static RelayHost Build(Context app)
+    private static RelayHost Build(Context app, RelayPathPolicy policy)
     {
-        var paths = new RelayPaths(app.FilesDir!.AbsolutePath, PathPolicy);
+        var paths = new RelayPaths(app.FilesDir!.AbsolutePath, policy);
         var shizuku = new AndroidShizukuPlatform(app, paths);
         _shizuku = shizuku;
         var notifications = new RelayApprovalNotifications(app);
         var host = new RelayHost(new RelayHostPlatform
         {
             FilesDir = app.FilesDir!.AbsolutePath,
-            PathPolicy = PathPolicy,
+            PathPolicy = policy,
             SelfPackage = app.PackageName!,
             SdkInt = (int)Android.OS.Build.VERSION.SdkInt,
             Prefs = new AndroidRelayPrefs(app),
@@ -126,10 +193,18 @@ public static class CsRelay
             },
             StartChannelService = () => RelayCsChannelService.Start(app),
             StopChannelService = () => RelayCsChannelService.Stop(app),
+            ShizukuState = () =>
+            {
+                var probe = ShizukuClient.Probe();
+                var alive = ShizukuConnection.Alive(probe);
+                return new ShizukuSnapshot(alive, alive && probe.PermissionGranted, alive ? probe.Uid : -1, alive ? probe.Version : -1);
+            },
         });
         shizuku.Backend = host.Shizuku;
         RelayApprovalReceiver.Resolve = host.ResolveApproval;
-        DshAccessibilityService.BoundChanged += host.OnForegroundChanged;
+        Action bound = host.OnForegroundChanged;
+        DshAccessibilityService.BoundChanged += bound;
+        _unhook = () => DshAccessibilityService.BoundChanged -= bound;
         return host;
     }
 

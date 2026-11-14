@@ -221,6 +221,32 @@ public sealed class RuntimeCoordinatorTests : IDisposable
     }
 
     [Fact]
+    public async Task Stop_And_FailedStartCleanup_RaiseSandboxStoppingBeforeTheSandboxStops()
+    {
+        var coordinator = Coordinator();
+        var seen = new List<string>();
+        coordinator.SandboxStopping += () => seen.Add("stopping after " + string.Join(",", _runtime.Calls));
+        await coordinator.StartAsync(DshProfile.Web, CancellationToken.None);
+        await coordinator.StopAsync(CancellationToken.None);
+        Assert.Equal(["stopping after sandbox.start,dsh.start,dsh.stop"], seen);
+
+        // A failing listener never keeps the sandbox up.
+        _runtime.Calls.Clear();
+        seen.Clear();
+        coordinator.SandboxStopping += () => throw new InvalidOperationException("listener");
+        _runtime.OnStartSandbox = SandboxEndedInError;
+        await coordinator.StartAsync(DshProfile.Web, CancellationToken.None);
+        Assert.Equal(["stopping after sandbox.start"], seen);
+        Assert.Equal(["sandbox.start", "sandbox.stop"], _runtime.Calls);
+
+        // Nothing running: nothing is stopped, nothing raised.
+        _runtime.Calls.Clear();
+        seen.Clear();
+        await coordinator.StopAsync(CancellationToken.None);
+        Assert.Empty(seen);
+    }
+
+    [Fact]
     public async Task Stop_Fails_KeepsServiceSoProcessesAreNotOrphaned()
     {
         await Coordinator().StartAsync(DshProfile.Web, CancellationToken.None);

@@ -72,6 +72,27 @@ public sealed class RuntimeCoordinator : IDisposable
     /// </summary>
     public TerminalSessions? Terminals { get; }
 
+    /// <summary>
+    /// Raised right before the sandbox is stopped (normal stop, C# host stop, cleanup after a failed start): the point
+    /// where the legacy <c>sandbox.stop</c> stops its Relay and removes the <c>ui_*</c> layer. The C# guest-facing Relay
+    /// (ADR-0010) stops here too. Handlers run synchronously and must not throw.
+    /// </summary>
+    public event Action? SandboxStopping;
+
+    private void NotifySandboxStopping()
+    {
+        try
+        {
+            SandboxStopping?.Invoke();
+        }
+#pragma warning disable CA1031 // a failing listener must not keep the sandbox running
+        catch (Exception ex)
+#pragma warning restore CA1031
+        {
+            _log.Note($"sandbox stopping listener failed: {ex.GetType().Name}: {ex.Message}");
+        }
+    }
+
     private async Task CloseTerminalsAsync()
     {
         if (Terminals is not null && await Terminals.CloseAllAsync().ConfigureAwait(false) is var n and > 0)
@@ -134,6 +155,7 @@ public sealed class RuntimeCoordinator : IDisposable
             if (!sandbox.Ok || sandbox.Snapshot.State != RuntimeState.Running)
             {
                 // Unified cleanup: nothing may stay half-started, and the service must not outlive it.
+                NotifySandboxStopping();
                 var cleanup = await _runtime.StopSandboxAsync(CancellationToken.None).ConfigureAwait(false);
                 if (cleanup.Ok)
                 {
@@ -194,6 +216,7 @@ public sealed class RuntimeCoordinator : IDisposable
             var dsh = await _runtime.StopHarnessAsync(ct).ConfigureAwait(false);
             _log.Note($"dsh.stop: {Describe(dsh)}");
             await CloseTerminalsAsync().ConfigureAwait(false);
+            NotifySandboxStopping();
             var sandbox = await _runtime.StopSandboxAsync(ct).ConfigureAwait(false);
             _log.Note($"sandbox.stop: {Describe(sandbox)}");
             var stopped = dsh.Ok && sandbox.Ok && sandbox.Snapshot.State is RuntimeState.Ready or RuntimeState.NotInstalled;
@@ -612,6 +635,25 @@ public sealed class RuntimeCoordinator : IDisposable
         return report;
     }
 
+    /// <summary>
+    /// Switch-slice shadow (ADR-0010, read-only): the guest files the legacy Relay published against those the opt-in
+    /// C# host published under <paramref name="csEntryDir"/> (guest path <paramref name="csGuestEntry"/>). Null when not
+    /// in shadow mode.
+    /// </summary>
+    public ShadowReport? ShadowRelayGuestFiles(string csEntryDir, string csGuestEntry)
+    {
+        ArgumentNullException.ThrowIfNull(csEntryDir);
+        ArgumentNullException.ThrowIfNull(csGuestEntry);
+        if (_options.RelayHost != SliceMode.LegacyWithShadow || _layout is null)
+        {
+            return null;
+        }
+        var report = RelayGuestFilesShadowCheck.Compare(_layout.PilotEntryDir, csEntryDir, DshMobile.Runtime.Automation.Relay.Storage.RelayPathPolicy.DshMobile.GuestEntry, csGuestEntry, _time.GetUtcNow());
+        _shadow.Report(report);
+        _log.Note($"shadow {report.Slice}: {report.Verdict} ({report.Detail})");
+        return report;
+    }
+
     private async Task<ShadowReport> ShadowA11yCheckAsync(string slice,
         Func<string, Func<DshMobile.Runtime.Automation.Relay.A11y.A11yTree?>, TimeProvider, TimeSpan, CancellationToken, Task<ShadowReport>> run,
         Func<DshMobile.Runtime.Automation.Relay.A11y.A11yTree?> hostTree, TimeSpan timeout, CancellationToken ct)
@@ -812,6 +854,7 @@ public sealed class RuntimeCoordinator : IDisposable
     {
         State.TryTransition(RuntimeState.Stopping, "stop requested (csharp host)");
         await CloseTerminalsAsync().ConfigureAwait(false);
+        NotifySandboxStopping();
         var r = await host.StopAsync(ct).ConfigureAwait(false);
         _log.Note(r.Ok ? "csharp host: stopped, no marker process left" : $"csharp host: stop FAILED {r.Code}: {r.Message}");
         if (!r.Ok)

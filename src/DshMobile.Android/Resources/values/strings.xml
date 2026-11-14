@@ -45,6 +45,15 @@
     <string name="automation_host_probe">双中继比对（开发者，需测试目标应用）</string>
     <string name="automation_host_probe_running">正在向旧中继与 C# 中继发送同一组请求。每项能力两边各弹一张审批卡（旧中继的卡、C# 中继的通知卡），请逐一作答；只作用于测试目标应用。</string>
     <string name="automation_host_probe_needs_cs">请先启动 C# 中继。</string>
+    <string name="automation_start_choice_title">由谁服务 guest 信箱</string>
+    <string name="automation_start_choice_message">旧 Relay 是默认实现。C# Relay（实验，切换切片验收用）会先停止旧 Relay，再接管 /opt/pilot 信箱、发布 relay 命令 / capabilities.json / USAGE.md 并登记 ui_* 工具；审批改走 C# 通知卡 → 应用内确认页。两者不会同时服务同一信箱。</string>
+    <string name="automation_start_legacy">旧 Relay</string>
+    <string name="automation_start_cs">C# Relay（实验）</string>
+    <string name="automation_cs_guest_line">guest 信箱由 C# Relay 服务：%1$s</string>
+    <string name="automation_cs_guest_conflict">ui_* 工具层路径上已有不是本应用写的文件，未覆盖；guest 的 relay 命令仍可用，ui_* 工具不会登记。</string>
+    <string name="automation_cs_guest_legacy_stop_failed">旧 Relay 未能停止（%1$s），C# Relay 不接管信箱。</string>
+    <string name="automation_cs_shadow_blocked">C# Relay 正在服务 guest 信箱；先「关闭中继」，再启动独立信箱的 C# 中继。</string>
+    <string name="automation_host_probe_guest_mode">C# Relay 正在服务 guest 信箱，此时没有旧中继可比；请先关闭中继，再用「开启中继 → 旧 Relay」与「启动 C# 中继（独立信箱）」。</string>
     <string name="automation_surface_pref_changed">已改为「%1$s」。中继在下次开启时重新发布执行面裁决：请先「关闭中继」再「开启中继」，然后运行比对。没有 Shizuku 与可信虚拟屏时，优先后台会如实退回前台并注明原因。</string>
     <string name="automation_a11y_on">无障碍服务：已开启</string>
     <string name="automation_a11y_off">无障碍服务：未开启（读取界面需要先开启）</string>

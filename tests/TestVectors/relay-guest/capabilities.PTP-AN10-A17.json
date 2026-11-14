@@ -1,0 +1,587 @@
+{
+  "protocol": 1,
+  "entry": "\/opt\/pilot\/bin\/relay",
+  "host": {
+    "package": "org.example.dshmobile"
+  },
+  "backend": {
+    "shizuku": {
+      "running": true,
+      "authorized": true,
+      "bound": true,
+      "shellUid": 2000,
+      "version": 13,
+      "trustedDisplay": {
+        "alive": false,
+        "displayId": -1,
+        "nodeTree": "untested"
+      }
+    }
+  },
+  "capabilities": [
+    {
+      "id": "ui.snapshot",
+      "category": "observe",
+      "systemPermission": "GRANTED",
+      "assistantTier": "ASK",
+      "ceiling": "ANY",
+      "usable": true,
+      "implemented": true,
+      "minSdk": 29,
+      "surfaces": [
+        "foreground",
+        "trusted-display"
+      ],
+      "guide": "LIST_ONLY",
+      "surface": "foreground"
+    },
+    {
+      "id": "screen.capture",
+      "category": "observe",
+      "systemPermission": "GRANTED",
+      "assistantTier": "ASK",
+      "ceiling": "SESSION_ONLY",
+      "usable": true,
+      "implemented": true,
+      "minSdk": 29,
+      "surfaces": [
+        "foreground",
+        "trusted-display",
+        "observe-only"
+      ],
+      "guide": "NO_SETTINGS_PAGE",
+      "surface": "foreground"
+    },
+    {
+      "id": "screen.observe",
+      "category": "observe",
+      "systemPermission": "SESSION_CONSENT",
+      "assistantTier": "ASK",
+      "ceiling": "SESSION_ONLY",
+      "usable": true,
+      "implemented": true,
+      "minSdk": 21,
+      "surfaces": [
+        "observe-only"
+      ],
+      "guide": "NO_SETTINGS_PAGE",
+      "surface": "observe-only"
+    },
+    {
+      "id": "screen.record",
+      "category": "observe",
+      "systemPermission": "SESSION_CONSENT",
+      "assistantTier": "ASK",
+      "ceiling": "SESSION_ONLY",
+      "usable": true,
+      "implemented": true,
+      "minSdk": 21,
+      "surfaces": [
+        "observe-only",
+        "foreground",
+        "trusted-display"
+      ],
+      "guide": "NO_SETTINGS_PAGE",
+      "surface": "foreground"
+    },
+    {
+      "id": "notify.read",
+      "category": "observe",
+      "systemPermission": "MANUAL_ONLY",
+      "assistantTier": "ASK",
+      "ceiling": "SESSION_ONLY",
+      "usable": false,
+      "implemented": true,
+      "minSdk": 22,
+      "surfaces": [],
+      "guide": "LIST_ONLY"
+    },
+    {
+      "id": "ui.tap",
+      "category": "control",
+      "systemPermission": "GRANTED",
+      "assistantTier": "ASK",
+      "ceiling": "ANY",
+      "usable": true,
+      "implemented": true,
+      "minSdk": 24,
+      "surfaces": [
+        "foreground",
+        "trusted-display"
+      ],
+      "guide": "LIST_ONLY",
+      "surface": "foreground"
+    },
+    {
+      "id": "ui.swipe",
+      "category": "control",
+      "systemPermission": "GRANTED",
+      "assistantTier": "ASK",
+      "ceiling": "ANY",
+      "usable": true,
+      "implemented": true,
+      "minSdk": 24,
+      "surfaces": [
+        "foreground",
+        "trusted-display"
+      ],
+      "guide": "LIST_ONLY",
+      "surface": "foreground"
+    },
+    {
+      "id": "ui.click",
+      "category": "control",
+      "systemPermission": "GRANTED",
+      "assistantTier": "ASK",
+      "ceiling": "ANY",
+      "usable": true,
+      "implemented": true,
+      "minSdk": 29,
+      "surfaces": [
+        "foreground",
+        "trusted-display"
+      ],
+      "guide": "LIST_ONLY",
+      "surface": "foreground"
+    },
+    {
+      "id": "ui.longClick",
+      "category": "control",
+      "systemPermission": "GRANTED",
+      "assistantTier": "ASK",
+      "ceiling": "ANY",
+      "usable": true,
+      "implemented": true,
+      "minSdk": 29,
+      "surfaces": [
+        "foreground",
+        "trusted-display"
+      ],
+      "guide": "LIST_ONLY",
+      "surface": "foreground"
+    },
+    {
+      "id": "ui.select",
+      "category": "control",
+      "systemPermission": "GRANTED",
+      "assistantTier": "ASK",
+      "ceiling": "ANY",
+      "usable": true,
+      "implemented": true,
+      "minSdk": 29,
+      "surfaces": [
+        "foreground",
+        "trusted-display"
+      ],
+      "guide": "LIST_ONLY",
+      "surface": "foreground"
+    },
+    {
+      "id": "ui.dismiss",
+      "category": "control",
+      "systemPermission": "GRANTED",
+      "assistantTier": "ASK",
+      "ceiling": "ANY",
+      "usable": true,
+      "implemented": true,
+      "minSdk": 29,
+      "surfaces": [
+        "foreground",
+        "trusted-display"
+      ],
+      "guide": "LIST_ONLY",
+      "surface": "foreground"
+    },
+    {
+      "id": "ui.scroll",
+      "category": "control",
+      "systemPermission": "GRANTED",
+      "assistantTier": "ASK",
+      "ceiling": "ANY",
+      "usable": true,
+      "implemented": true,
+      "minSdk": 29,
+      "surfaces": [
+        "foreground",
+        "trusted-display"
+      ],
+      "guide": "LIST_ONLY",
+      "surface": "foreground"
+    },
+    {
+      "id": "ui.setValue",
+      "category": "control",
+      "systemPermission": "GRANTED",
+      "assistantTier": "ASK",
+      "ceiling": "ANY",
+      "usable": true,
+      "implemented": true,
+      "minSdk": 29,
+      "surfaces": [
+        "foreground",
+        "trusted-display"
+      ],
+      "guide": "LIST_ONLY",
+      "surface": "foreground"
+    },
+    {
+      "id": "ui.waitFor",
+      "category": "control",
+      "systemPermission": "GRANTED",
+      "assistantTier": "ASK",
+      "ceiling": "ANY",
+      "usable": true,
+      "implemented": true,
+      "minSdk": 29,
+      "surfaces": [
+        "foreground",
+        "trusted-display"
+      ],
+      "guide": "LIST_ONLY",
+      "surface": "foreground"
+    },
+    {
+      "id": "ui.setProgress",
+      "category": "control",
+      "systemPermission": "GRANTED",
+      "assistantTier": "ASK",
+      "ceiling": "ANY",
+      "usable": true,
+      "implemented": true,
+      "minSdk": 29,
+      "surfaces": [
+        "foreground",
+        "trusted-display"
+      ],
+      "guide": "LIST_ONLY",
+      "surface": "foreground"
+    },
+    {
+      "id": "ui.imeAction",
+      "category": "control",
+      "systemPermission": "GRANTED",
+      "assistantTier": "ASK",
+      "ceiling": "ANY",
+      "usable": true,
+      "implemented": true,
+      "minSdk": 30,
+      "surfaces": [
+        "foreground",
+        "trusted-display"
+      ],
+      "guide": "LIST_ONLY",
+      "surface": "foreground"
+    },
+    {
+      "id": "ui.node",
+      "category": "observe",
+      "systemPermission": "GRANTED",
+      "assistantTier": "ASK",
+      "ceiling": "ANY",
+      "usable": true,
+      "implemented": true,
+      "minSdk": 29,
+      "surfaces": [
+        "foreground",
+        "trusted-display"
+      ],
+      "guide": "LIST_ONLY",
+      "surface": "foreground"
+    },
+    {
+      "id": "ui.text",
+      "category": "control",
+      "systemPermission": "GRANTED",
+      "assistantTier": "ASK",
+      "ceiling": "ANY",
+      "usable": true,
+      "implemented": true,
+      "minSdk": 24,
+      "surfaces": [
+        "foreground",
+        "trusted-display"
+      ],
+      "guide": "LIST_ONLY",
+      "surface": "foreground"
+    },
+    {
+      "id": "ui.key",
+      "category": "control",
+      "systemPermission": "GRANTED",
+      "assistantTier": "ASK",
+      "ceiling": "ANY",
+      "usable": true,
+      "implemented": true,
+      "minSdk": 29,
+      "surfaces": [
+        "foreground",
+        "trusted-display"
+      ],
+      "guide": "LIST_ONLY",
+      "surface": "foreground"
+    },
+    {
+      "id": "app.launch",
+      "category": "control",
+      "systemPermission": "GRANTED",
+      "assistantTier": "ASK",
+      "ceiling": "ANY",
+      "usable": true,
+      "implemented": true,
+      "minSdk": 29,
+      "surfaces": [
+        "foreground",
+        "trusted-display"
+      ],
+      "guide": "DEEP_LINK_OK",
+      "surface": "foreground"
+    },
+    {
+      "id": "sys.intent",
+      "category": "system",
+      "systemPermission": "GRANTED",
+      "assistantTier": "ASK",
+      "ceiling": "ANY",
+      "usable": true,
+      "implemented": true,
+      "minSdk": 29,
+      "surfaces": [
+        "foreground"
+      ],
+      "guide": "NOT_REQUIRED",
+      "surface": "foreground"
+    },
+    {
+      "id": "sys.shell",
+      "category": "dangerous",
+      "systemPermission": "GRANTED",
+      "assistantTier": "DENIED",
+      "ceiling": "ASK_ONLY",
+      "usable": false,
+      "implemented": true,
+      "minSdk": 29,
+      "surfaces": [],
+      "guide": "NO_SETTINGS_PAGE"
+    },
+    {
+      "id": "app.stop",
+      "category": "control",
+      "systemPermission": "GRANTED",
+      "assistantTier": "ASK",
+      "ceiling": "ASK_ONLY",
+      "usable": true,
+      "implemented": true,
+      "minSdk": 29,
+      "surfaces": [],
+      "guide": "NO_SETTINGS_PAGE",
+      "surface": "foreground"
+    },
+    {
+      "id": "surface.virtual",
+      "category": "control",
+      "systemPermission": "GRANTED",
+      "assistantTier": "ASK",
+      "ceiling": "ANY",
+      "usable": false,
+      "implemented": true,
+      "minSdk": 33,
+      "surfaces": [
+        "trusted-display"
+      ],
+      "guide": "NO_SETTINGS_PAGE",
+      "degradeReason": "E_SURFACE_MODE_REQUIRED"
+    },
+    {
+      "id": "clip.read",
+      "category": "data",
+      "systemPermission": "FOREGROUND_FOCUS",
+      "assistantTier": "ASK",
+      "ceiling": "ASK_ONLY",
+      "usable": true,
+      "implemented": true,
+      "minSdk": 29,
+      "surfaces": [
+        "foreground"
+      ],
+      "guide": "NO_SETTINGS_PAGE",
+      "surface": "foreground"
+    },
+    {
+      "id": "clip.write",
+      "category": "data",
+      "systemPermission": "FOREGROUND_FOCUS",
+      "assistantTier": "ASK",
+      "ceiling": "ASK_ONLY",
+      "usable": true,
+      "implemented": true,
+      "minSdk": 29,
+      "surfaces": [
+        "foreground"
+      ],
+      "guide": "NO_SETTINGS_PAGE",
+      "surface": "foreground"
+    },
+    {
+      "id": "contact.read",
+      "category": "data",
+      "systemPermission": "RUNTIME_ASKABLE",
+      "assistantTier": "ASK",
+      "ceiling": "ANY",
+      "usable": false,
+      "implemented": true,
+      "minSdk": 29,
+      "surfaces": [],
+      "guide": "DEEP_LINK_OK"
+    },
+    {
+      "id": "contact.write",
+      "category": "data",
+      "systemPermission": "RUNTIME_ASKABLE",
+      "assistantTier": "ASK",
+      "ceiling": "ASK_ONLY",
+      "usable": false,
+      "implemented": true,
+      "minSdk": 29,
+      "surfaces": [],
+      "guide": "DEEP_LINK_OK"
+    },
+    {
+      "id": "cal.read",
+      "category": "data",
+      "systemPermission": "RUNTIME_ASKABLE",
+      "assistantTier": "ASK",
+      "ceiling": "ANY",
+      "usable": false,
+      "implemented": true,
+      "minSdk": 29,
+      "surfaces": [],
+      "guide": "DEEP_LINK_OK"
+    },
+    {
+      "id": "cal.write",
+      "category": "data",
+      "systemPermission": "RUNTIME_ASKABLE",
+      "assistantTier": "ASK",
+      "ceiling": "ASK_ONLY",
+      "usable": false,
+      "implemented": true,
+      "minSdk": 29,
+      "surfaces": [],
+      "guide": "DEEP_LINK_OK"
+    },
+    {
+      "id": "loc.read",
+      "category": "data",
+      "systemPermission": "RUNTIME_ASKABLE",
+      "assistantTier": "ASK",
+      "ceiling": "ASK_ONLY",
+      "usable": false,
+      "implemented": true,
+      "minSdk": 29,
+      "surfaces": [],
+      "guide": "DEEP_LINK_OK"
+    },
+    {
+      "id": "media.read",
+      "category": "data",
+      "systemPermission": "RUNTIME_ASKABLE",
+      "assistantTier": "ASK",
+      "ceiling": "SESSION_ONLY",
+      "usable": false,
+      "implemented": true,
+      "minSdk": 29,
+      "surfaces": [],
+      "guide": "DEEP_LINK_OK"
+    },
+    {
+      "id": "media.write",
+      "category": "data",
+      "systemPermission": "GRANTED",
+      "assistantTier": "ASK",
+      "ceiling": "ASK_ONLY",
+      "usable": true,
+      "implemented": true,
+      "minSdk": 29,
+      "surfaces": [],
+      "guide": "NOT_REQUIRED",
+      "surface": "foreground"
+    },
+    {
+      "id": "audio.capture",
+      "category": "data",
+      "systemPermission": "UNAVAILABLE_ON_DEVICE",
+      "assistantTier": "ASK",
+      "ceiling": "ASK_ONLY",
+      "usable": false,
+      "implemented": true,
+      "minSdk": 29,
+      "surfaces": [],
+      "guide": "DEEP_LINK_OK"
+    },
+    {
+      "id": "pkg.query",
+      "category": "system",
+      "systemPermission": "GRANTED",
+      "assistantTier": "ASK",
+      "ceiling": "ANY",
+      "usable": true,
+      "implemented": true,
+      "minSdk": 29,
+      "surfaces": [],
+      "guide": "NOT_REQUIRED",
+      "surface": "foreground"
+    },
+    {
+      "id": "app.install",
+      "category": "system",
+      "systemPermission": "GRANTED",
+      "assistantTier": "ASK",
+      "ceiling": "ASK_ONLY",
+      "usable": true,
+      "implemented": true,
+      "minSdk": 29,
+      "surfaces": [],
+      "guide": "DEEP_LINK_OK",
+      "surface": "foreground"
+    },
+    {
+      "id": "sys.settings.write",
+      "category": "system",
+      "systemPermission": "GRANTED",
+      "assistantTier": "ASK",
+      "ceiling": "ASK_ONLY",
+      "usable": true,
+      "implemented": true,
+      "minSdk": 29,
+      "surfaces": [],
+      "guide": "NO_SETTINGS_PAGE",
+      "surface": "foreground"
+    },
+    {
+      "id": "appops.set",
+      "category": "system",
+      "systemPermission": "GRANTED",
+      "assistantTier": "ASK",
+      "ceiling": "ASK_ONLY",
+      "usable": true,
+      "implemented": true,
+      "minSdk": 29,
+      "surfaces": [],
+      "guide": "NO_SETTINGS_PAGE",
+      "surface": "foreground"
+    },
+    {
+      "id": "notify.post",
+      "category": "system",
+      "systemPermission": "GRANTED",
+      "assistantTier": "ASK",
+      "ceiling": "ANY",
+      "usable": true,
+      "implemented": true,
+      "minSdk": 29,
+      "surfaces": [],
+      "guide": "DEEP_LINK_OK",
+      "surface": "foreground"
+    }
+  ]
+}
