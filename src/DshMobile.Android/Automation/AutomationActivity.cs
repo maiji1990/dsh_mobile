@@ -412,7 +412,9 @@ public sealed class AutomationActivity : Activity
             $"允许的能力：{string.Join(", ", s.Allowed)}",
             $"guest CLI：{s.GuestEntry}",
             ShizukuLine(ShizukuClient.Probe()),
-            GetString(registered ? Resource.String.automation_tools_cs_registered : Resource.String.automation_tools_off));
+            _bridge.Runtime.HostUiToolsAtStart is not null
+                ? UiToolsLine(WithHostView(new UiToolsStatus(registered, null, false, false, UiToolsRegistration.ServerName)))
+                : GetString(registered ? Resource.String.automation_tools_cs_registered : Resource.String.automation_tools_off));
     }
 
     private void ShowCsRelay()
@@ -464,7 +466,7 @@ public sealed class AutomationActivity : Activity
             $"允许的能力：{string.Join(", ", s.Allowed)}",
             $"guest CLI：{s.GuestCli}",
             ShizukuLine(ShizukuClient.Probe()),
-            UiToolsLine(s.UiTools));
+            UiToolsLine(WithHostView(s.UiTools)));
         _bridge.Note($"{method}: phase={s.Phase} channel={s.ChannelRunning} a11y={s.AccessibilityEnabled}");
         if (s.UiTools is { } tools)
         {
@@ -572,6 +574,19 @@ public sealed class AutomationActivity : Activity
         var state = ShizukuClient.RequestIfNeeded(out var probe);
         _output.Text = state == ShizukuConnectState.CanRequest ? GetString(Resource.String.automation_shizuku_requested) : ShizukuLine(probe);
         _bridge.Note($"shizuku connect: {state} (v{probe.Version}, uid {probe.Uid})");
+    }
+
+    /// <summary>
+    /// ADR-0015: while the C# host owns DSH, legacy status cannot know what DSH loaded (it reports DSH as stopped); the
+    /// host records whether the ui_* layer was registered each time it spawned DSH.
+    /// </summary>
+    private UiToolsStatus? WithHostView(UiToolsStatus? t)
+    {
+        if (t is null || _bridge.Runtime.HostUiToolsAtStart is not { } loaded)
+        {
+            return t;
+        }
+        return t with { LoadedByDsh = loaded, DshRestartNeeded = loaded != t.Registered };
     }
 
     /// <summary>Says plainly whether DSH has the ui_* tools now; never implies they are live when DSH has not reloaded.</summary>

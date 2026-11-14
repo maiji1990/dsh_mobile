@@ -41,8 +41,10 @@ public sealed class RuntimeCoordinator : IDisposable
         MigrationOptions options,
         TimeProvider? time = null,
         RuntimeLayout? layout = null,
-        PtyOpener? terminalOpener = null)
+        PtyOpener? terminalOpener = null,
+        Func<RuntimeLayout, Action<string>, TimeProvider, IDshHost>? hostFactory = null)
     {
+        _hostFactory = hostFactory ?? ((l, note, time) => new DshHost(l, note, time));
         _runtime = runtime;
         State = state;
         _foreground = foreground;
@@ -108,28 +110,37 @@ public sealed class RuntimeCoordinator : IDisposable
 
     public string Implementation => _runtime.Implementation;
 
-    /// <summary>Feeds an externally observed snapshot (legacy runtime.state event) into the journal.</summary>
+    /// <summary>
+    /// Feeds an externally observed snapshot (legacy runtime.state event) into the journal. Ignored while the C# host
+    /// owns the processes: the legacy runtime does not know about them and would report them as stopped.
+    /// </summary>
     public void Observe(RuntimeSnapshot snapshot)
     {
         ArgumentNullException.ThrowIfNull(snapshot);
+        if (HostOwnsProcesses)
+        {
+            return;
+        }
         State.Observe(snapshot.State, snapshot.Harness, snapshot.DshVersion, _runtime.Implementation);
     }
 
-    /// <param name="mode"><see cref="SliceMode.CSharp"/>: developer opt-in - the C# <see cref="DshHost"/> starts and owns
-    /// the sandbox and DSH processes (no DSHBox code); otherwise the legacy runtime starts them.</param>
+    /// <param name="mode">Overrides <see cref="MigrationOptions.RuntimeHost"/> for this start (ADR-0015).
+    /// <see cref="SliceMode.CSharp"/> (the default): the C# <see cref="DshHost"/> starts and owns the sandbox and DSH
+    /// processes (no DSHBox code); any other value: the legacy runtime starts them (explicit fallback). A C# start whose
+    /// preconditions fail returns their error code; it never falls back to the legacy runtime silently.</param>
     public async Task<RuntimeStartResult> StartAsync(DshProfile profile, CancellationToken ct, SliceMode? mode = null)
     {
         await _op.WaitAsync(ct).ConfigureAwait(false);
         try
         {
             await SyncAsync(ct).ConfigureAwait(false);
-            if (mode == SliceMode.CSharp)
+            if ((mode ?? _options.RuntimeHost) == SliceMode.CSharp)
             {
                 return await StartWithCSharpHostAsync(profile, ct).ConfigureAwait(false);
             }
-            if (_host is { IsActive: true })
+            if (HostOwnsProcesses)
             {
-                return Refused("the C# host is running; stop it before starting the legacy runtime");
+                return Refused($"the C# host owns the runtime processes ({_host!.State}); stop it before starting the legacy runtime");
             }
             var current = State.Current;
             if (current.State == RuntimeState.Running)
@@ -194,7 +205,7 @@ public sealed class RuntimeCoordinator : IDisposable
         await _op.WaitAsync(ct).ConfigureAwait(false);
         try
         {
-            if (_host is { State: not DshHostState.Stopped } host)
+            if (_host is { OwnsProcesses: true } host)
             {
                 return await StopCSharpHostAsync(host, ct).ConfigureAwait(false);
             }
@@ -735,9 +746,12 @@ public sealed class RuntimeCoordinator : IDisposable
         {
             return null;
         }
-        if (_host is { IsActive: true })
+        if (HostOwnsProcesses)
         {
-            _log.Note("shadow runtime.supervisor-observe: skipped (the C# host owns the processes; legacy reports them as stopped)");
+            // ADR-0015: comparing the C# host's processes with themselves proves nothing, and legacy reports them as
+            // stopped. Legacy terminal sessions are still started by legacy code, so their argv shadow still runs.
+            _log.Note("shadow runtime.supervisor-observe / launcher-argv: skipped (the C# host owns the processes)");
+            ShadowTerminalArgv();
             return null;
         }
         var sw = Stopwatch.StartNew();
@@ -762,10 +776,16 @@ public sealed class RuntimeCoordinator : IDisposable
             _log.Note($"shadow {argv.Slice}: {argv.Verdict} ({argv.Detail}; csharp {argv.CSharpMs} ms)");
         }
 
-        // PR-06 terminal argv: each open legacy terminal session (a PRoot child of this app process) vs the C# builder.
+        ShadowTerminalArgv();
+        return report;
+    }
+
+    /// <summary>PR-06 terminal argv: each open legacy terminal session (a PRoot child of this app process) vs the C# builder.</summary>
+    private void ShadowTerminalArgv()
+    {
         if (_layout is not null && !OperatingSystem.IsWindows() && DshMobile.Runtime.Supervision.ProcessTable.Read() is { } procs)
         {
-            sw.Restart();
+            var sw = Stopwatch.StartNew();
             var csharpOwned = Terminals?.Pids ?? [];
             var sessions = procs.ChildrenOf(Environment.ProcessId)
                 .Where(pid => !csharpOwned.Contains(pid))
@@ -777,7 +797,6 @@ public sealed class RuntimeCoordinator : IDisposable
             _shadow.Report(terminal);
             _log.Note($"shadow {terminal.Slice}: {terminal.Verdict} ({terminal.Detail}; csharp {terminal.CSharpMs} ms)");
         }
-        return report;
     }
 
     /// <summary>
@@ -808,10 +827,73 @@ public sealed class RuntimeCoordinator : IDisposable
         }
     }
 
-    private DshHost? _host;
+    private readonly Func<RuntimeLayout, Action<string>, TimeProvider, IDshHost> _hostFactory;
+    private IDshHost? _host;
 
     /// <summary>The C# host (created on first C# start); exposes the launch token to the C# WebView only.</summary>
-    public DshHost? Host => _host;
+    public DshHost? Host => _host as DshHost;
+
+    /// <summary>State of the C# host, or null before its first start.</summary>
+    public DshHostState? HostState => _host?.State;
+
+    /// <summary>
+    /// True while the C# host owns the sandbox / DSH processes, including <see cref="DshHostState.Failed"/> (DSH given up,
+    /// sandbox kept). While true, legacy status reports them as stopped and must not decide anything (ADR-0015).
+    /// </summary>
+    public bool HostOwnsProcesses => _host is { OwnsProcesses: true };
+
+    /// <summary>Whether the running C#-hosted DSH was spawned with the <c>ui_*</c> layer registered (null: unknown / not hosted).</summary>
+    public bool? HostUiToolsAtStart => HostOwnsProcesses ? _host!.UiToolsAtStart : null;
+
+    /// <summary>
+    /// ADR-0015 decision 4: awaited when the C# host stops (and when a C# start is cleaned up), right before
+    /// <see cref="SandboxStopping"/>. The legacy <c>sandbox.stop</c> stops its terminal sessions and Relay (and removes the
+    /// <c>ui_*</c> layer); the C# path never calls it, so the platform layer does the same here. A failure is logged and
+    /// does not block the stop.
+    /// </summary>
+    public Func<CancellationToken, Task>? HostStopping { get; set; }
+
+    private async Task NotifyHostStoppingAsync(CancellationToken ct)
+    {
+        if (HostStopping is not { } hook)
+        {
+            return;
+        }
+        try
+        {
+            await hook(ct).ConfigureAwait(false);
+        }
+#pragma warning disable CA1031 // a failing companion cleanup must not keep the runtime running
+        catch (Exception ex)
+#pragma warning restore CA1031
+        {
+            _log.Note($"host stopping hook failed: {ex.GetType().Name}: {ex.Message}");
+        }
+    }
+
+    private IDshHost CreateHost(RuntimeLayout layout)
+    {
+        var host = _hostFactory(layout, _log.Note, _time);
+        host.StateChanged += (_, _) => OnHostStateChanged(host);
+        return host;
+    }
+
+    /// <summary>
+    /// ADR-0015 decision 3: the health loop giving up (DSH stopped, sandbox kept) is journaled like the legacy "DSH failed,
+    /// sandbox kept". Start / stop transitions are journaled by their own operations (they hold <see cref="_op"/>).
+    /// </summary>
+    private void OnHostStateChanged(IDshHost host)
+    {
+        if (host.State == DshHostState.Failed && State.Current is { State: RuntimeState.Running, Harness: HarnessState.Ready })
+        {
+            _log.Note("csharp host: DSH given up by the health loop (sandbox kept); start restarts the host, stop releases everything");
+            // Running keeps no error code in the journal (as the legacy "DSH failed, sandbox kept"): the code is in the reason.
+            State.TryTransition(RuntimeState.Running, $"csharp host: dsh unhealthy ({DshUnhealthy})", HarnessState.Failed);
+        }
+    }
+
+    /// <summary>Journal error code for a C#-hosted DSH the health loop gave up on.</summary>
+    public const string DshUnhealthy = "DSH_UNHEALTHY";
 
     /// <summary>Caller holds <see cref="_op"/>.</summary>
     private async Task<RuntimeStartResult> StartWithCSharpHostAsync(DshProfile profile, CancellationToken ct)
@@ -824,6 +906,24 @@ public sealed class RuntimeCoordinator : IDisposable
         {
             return Refused($"C# host starts only the '{RuntimeConstants.DshWebProfile}' profile");
         }
+        if (_host is { State: DshHostState.Ready })
+        {
+            _log.Note("start: C# host already ready");
+            return new RuntimeStartResult(true, RuntimeErrorCodes.Ok, "already running", State.Current);
+        }
+        // Only a host that still owns processes (health loop gave up, sandbox kept). A failed START also ends in
+        // Failed but owns nothing; stopping it here would run the companion cleanup and journal Ready over a running
+        // legacy runtime (emulator run 2026-11-14).
+        if (_host is { State: DshHostState.Failed, OwnsProcesses: true } failed)
+        {
+            // DSH was given up with the sandbox kept: restart the whole host; nothing of it can be reused safely.
+            _log.Note("start: the C# host failed earlier (sandbox kept); stopping it before a fresh start");
+            var stopped = await StopCSharpHostAsync(failed, ct).ConfigureAwait(false);
+            if (!stopped.Ok)
+            {
+                return stopped;
+            }
+        }
         if (State.Current.State is RuntimeState.Running or RuntimeState.Starting)
         {
             return Refused($"cannot start the C# host while the runtime is {State.Current.State}");
@@ -832,7 +932,7 @@ public sealed class RuntimeCoordinator : IDisposable
         {
             return Refused($"cannot start while {State.Current.State}");
         }
-        _host ??= new DshHost(_layout, _log.Note, _time);
+        _host ??= CreateHost(_layout);
         _foreground.Acquire();
         var sw = Stopwatch.StartNew();
         _log.Note("start: C# DshHost (legacy runtime not used)");
@@ -840,7 +940,10 @@ public sealed class RuntimeCoordinator : IDisposable
         _log.Note(r.Ok ? $"csharp host: ready in {sw.Elapsed.TotalSeconds:F1} s" : $"csharp host: FAILED {r.Code}: {r.Message}");
         if (!r.Ok)
         {
-            // The host already killed whatever it started; nothing is left for the service to keep alive.
+            // The host already killed whatever it started. Same cleanup as a failed legacy start (its sandbox.stop):
+            // companions that follow the sandbox stop too, then nothing is left for the service to keep alive.
+            await NotifyHostStoppingAsync(CancellationToken.None).ConfigureAwait(false);
+            NotifySandboxStopping();
             _foreground.Release();
             State.TryTransition(RuntimeState.Failed, "csharp host start failed", HarnessState.Stopped, r.Code, r.Message);
             return new RuntimeStartResult(false, r.Code, r.Message, State.Current);
@@ -850,10 +953,11 @@ public sealed class RuntimeCoordinator : IDisposable
     }
 
     /// <summary>Caller holds <see cref="_op"/>.</summary>
-    private async Task<RuntimeStartResult> StopCSharpHostAsync(DshHost host, CancellationToken ct)
+    private async Task<RuntimeStartResult> StopCSharpHostAsync(IDshHost host, CancellationToken ct)
     {
         State.TryTransition(RuntimeState.Stopping, "stop requested (csharp host)");
         await CloseTerminalsAsync().ConfigureAwait(false);
+        await NotifyHostStoppingAsync(ct).ConfigureAwait(false);
         NotifySandboxStopping();
         var r = await host.StopAsync(ct).ConfigureAwait(false);
         _log.Note(r.Ok ? "csharp host: stopped, no marker process left" : $"csharp host: stop FAILED {r.Code}: {r.Message}");
@@ -867,10 +971,37 @@ public sealed class RuntimeCoordinator : IDisposable
         return new RuntimeStartResult(true, RuntimeErrorCodes.Ok, null, State.Current);
     }
 
+    /// <summary>
+    /// ADR-0015 decision 5: what the C# host itself sees, for diagnostics while it owns the processes (legacy status
+    /// would say "stopped"). Read-only; token-free (states, pids, HTTP status only).
+    /// </summary>
+    public async Task<IReadOnlyList<string>> DescribeHostAsync(CancellationToken ct)
+    {
+        if (_host is not { } host)
+        {
+            return ["csharp host: not started in this process"];
+        }
+        var inv = System.Globalization.CultureInfo.InvariantCulture;
+        var snap = State.Current;
+        var lines = new List<string>
+        {
+            $"csharp host: {host.State} · journal {snap.State}/{snap.Harness} gen={snap.Generation}"
+                + (snap.ErrorCode is { } e ? $" last error {e}" : "")
+                + $" · ui_* at DSH start={(host.UiToolsAtStart is { } u ? (u ? "registered" : "off") : "-")}",
+        };
+        var health = await DshMobile.Runtime.Supervision.HttpHealthProbe.CheckAsync(ct: ct).ConfigureAwait(false);
+        lines.Add($"csharp health: webUi={health.WebUiReady} http={health.HttpStatus?.ToString(inv) ?? "-"}");
+        if (!OperatingSystem.IsWindows() && DshMobile.Runtime.Supervision.RuntimeProcessSnapshot.Observe(Environment.ProcessId) is { } p)
+        {
+            lines.Add($"csharp /proc: sandbox root={p.SandboxRootPid?.ToString(inv) ?? "-"} ({p.SandboxTreeSize}) dsh root={p.DshRootPid?.ToString(inv) ?? "-"} ({p.DshTreeSize})");
+        }
+        return lines;
+    }
+
     /// <summary>Aligns the journal with what the runtime actually reports before deciding a transition.</summary>
     private async Task SyncAsync(CancellationToken ct)
     {
-        if (_host is { IsActive: true })
+        if (HostOwnsProcesses)
         {
             return; // the legacy runtime does not know about C#-hosted processes; the journal follows the host
         }

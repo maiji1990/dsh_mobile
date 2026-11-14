@@ -82,6 +82,9 @@ public sealed class HostingTests : IDisposable
         Assert.False(r.Ok);
         Assert.Equal(NativeErrorCodes.ExecutableNotAllowed, r.Code);
         Assert.Equal(DshHostState.Stopped, host.State);
+        // ADR-0015: a refused start owns nothing, so the legacy fallback may start right after.
+        Assert.False(host.OwnsProcesses);
+        Assert.Null(host.UiToolsAtStart);
     }
 
     [Fact]
@@ -107,5 +110,6 @@ public sealed class HostingTests : IDisposable
         var r = await host.StopAsync(CancellationToken.None);
         Assert.True(r.Ok);
         Assert.Equal(DshHostState.Stopped, host.State);
+        Assert.False(host.OwnsProcesses);
     }
 }

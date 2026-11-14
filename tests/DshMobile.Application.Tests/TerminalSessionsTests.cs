@@ -192,7 +192,7 @@ public sealed class TerminalSessionsTests
         var runtime = new StoppableRuntime();
         var log = new Log();
         using var coordinator = new RuntimeCoordinator(runtime, new RuntimeStateMachine(new InMemoryRuntimeJournal(), "fake"), new Foreground(), log, log,
-            new MigrationOptions(), terminalOpener: Open);
+            new MigrationOptions { RuntimeHost = SliceMode.Legacy }, terminalOpener: Open);
         await coordinator.StartAsync(DshProfile.Web, CancellationToken.None);
         await coordinator.Terminals!.CreateAsync(24, 80, CancellationToken.None);
         await coordinator.Terminals.CreateAsync(24, 80, CancellationToken.None);

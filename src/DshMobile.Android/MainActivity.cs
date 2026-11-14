@@ -64,15 +64,16 @@ public class MainActivity : Activity
                 .SetNegativeButton("取消", (_, _) => { })!
                 .Show();
         };
+        // ADR-0015: the C# DshHost starts and owns sandbox + DSH by default (no DSHBox code on that path).
         start.Click += (_, _) => _ = _bridge.RunStartAsync();
-        // Developer opt-in (ADR-0007 milestone): the C# DshHost starts and owns sandbox + DSH, no DSHBox code on that path.
+        // Explicit fallback: the legacy DSHBox sandbox-manager (browser automation still follows it).
         start.LongClick += (_, e) =>
         {
             e.Handled = true;
             new AlertDialog.Builder(this)
                 .SetTitle("启动实现")!
-                .SetMessage("用 C# DshHost 启动沙箱和 DSH（实验，用于真机验收）？期间终端、手机操控、浏览器等仍依赖旧运行时的功能不可用。默认启动仍使用旧实现。")!
-                .SetPositiveButton("C# 宿主", (_, _) => _ = _bridge.RunStartAsync(csharpHost: true))!
+                .SetMessage("默认由 C# 宿主启动沙箱和 DSH。改用旧实现（DSHBox sandbox-manager）做这一次启动？浏览器自动化（browser_*）只在旧实现启动时可用；也用于问题对照。")!
+                .SetPositiveButton("旧实现（回退）", (_, _) => _ = _bridge.RunStartAsync(DshMobile.Application.SliceMode.Legacy))!
                 .SetNegativeButton("取消", (_, _) => { })!
                 .Show();
         };

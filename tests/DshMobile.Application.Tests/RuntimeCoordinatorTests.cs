@@ -120,7 +120,7 @@ public sealed class RuntimeCoordinatorTests : IDisposable
     }
 
     private RuntimeCoordinator Coordinator(SliceMode mode = SliceMode.LegacyWithShadow) =>
-        _coordinator ??= new RuntimeCoordinator(_runtime, new RuntimeStateMachine(_journal, "fake"), _fg, _log, _log, new MigrationOptions { BundleImport = mode });
+        _coordinator ??= new RuntimeCoordinator(_runtime, new RuntimeStateMachine(_journal, "fake"), _fg, _log, _log, new MigrationOptions { BundleImport = mode, RuntimeHost = SliceMode.Legacy });
 
     private RuntimeStartResult SandboxEndedInError()
     {
@@ -378,6 +378,236 @@ public sealed class RuntimeCoordinatorTests : IDisposable
         Assert.False(r.Ok);
         Assert.Equal(RuntimeErrorCodes.InvalidTransition, r.Code);
         Assert.Empty(_runtime.Calls);
+    }
+
+    // ------------------------------------------------------------------ ADR-0015: C# host as the default
+
+    private sealed class FakeHost : DshMobile.Runtime.Hosting.IDshHost
+    {
+        public DshMobile.Runtime.Hosting.DshHostState State { get; private set; }
+        public bool? UiToolsAtStart { get; private set; }
+        private bool _kept;
+        private bool _orphans;
+
+        // Same rule as DshHost: alive between start and stop, after the health loop gave up, or after a stop with orphans.
+        public bool OwnsProcesses => State is DshMobile.Runtime.Hosting.DshHostState.Starting or DshMobile.Runtime.Hosting.DshHostState.Ready
+            or DshMobile.Runtime.Hosting.DshHostState.Stopping || _kept || _orphans;
+
+        public Func<DshMobile.Runtime.Hosting.DshHostResult>? OnStart;
+        public Func<DshMobile.Runtime.Hosting.DshHostResult>? OnStop;
+        public readonly List<string> Calls;
+
+        public FakeHost(List<string> calls) => Calls = calls;
+
+        public event EventHandler? StateChanged;
+
+        public Task<DshMobile.Runtime.Hosting.DshHostResult> StartAsync(CancellationToken ct)
+        {
+            Calls.Add("host.start");
+            var r = OnStart?.Invoke() ?? new DshMobile.Runtime.Hosting.DshHostResult(true, "OK", null);
+            UiToolsAtStart = r.Ok ? true : null;
+            Set(r.Ok ? DshMobile.Runtime.Hosting.DshHostState.Ready : DshMobile.Runtime.Hosting.DshHostState.Failed);
+            return Task.FromResult(r);
+        }
+
+        public Task<DshMobile.Runtime.Hosting.DshHostResult> StopAsync(CancellationToken ct)
+        {
+            Calls.Add("host.stop");
+            var r = OnStop?.Invoke() ?? new DshMobile.Runtime.Hosting.DshHostResult(true, "OK", null);
+            _kept = false;
+            _orphans = !r.Ok;
+            UiToolsAtStart = null;
+            Set(DshMobile.Runtime.Hosting.DshHostState.Stopped);
+            return Task.FromResult(r);
+        }
+
+        /// <summary>What the health loop does when it gives up: DSH stopped, sandbox kept.</summary>
+        public void GiveUp()
+        {
+            _kept = true;
+            Set(DshMobile.Runtime.Hosting.DshHostState.Failed);
+        }
+
+        private void Set(DshMobile.Runtime.Hosting.DshHostState s)
+        {
+            State = s;
+            StateChanged?.Invoke(this, EventArgs.Empty);
+        }
+
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    }
+
+    private FakeHost? _host;
+
+    /// <summary>Default options (C# host is the default start path) with the fake host behind the factory.</summary>
+    private RuntimeCoordinator HostCoordinator()
+    {
+        _host ??= new FakeHost(_runtime.Calls);
+        var layout = new DshMobile.Runtime.RuntimeLayout(Path.Combine(_dir, "files"), null, Path.Combine(_dir, "nolibs"));
+        return _coordinator ??= new RuntimeCoordinator(_runtime, new RuntimeStateMachine(_journal, "fake"), _fg, _log, _log,
+            new MigrationOptions(), null, layout, hostFactory: (_, _, _) => _host);
+    }
+
+    [Fact]
+    public void RuntimeHost_DefaultsToCSharp() => Assert.Equal(SliceMode.CSharp, new MigrationOptions().RuntimeHost);
+
+    [Fact]
+    public async Task Start_Default_UsesTheCSharpHostOnly()
+    {
+        var c = HostCoordinator();
+        var r = await c.StartAsync(DshProfile.Web, CancellationToken.None);
+        Assert.True(r.Ok);
+        Assert.Equal(["host.start"], _runtime.Calls); // the legacy runtime starts nothing
+        Assert.True(_fg.Held);
+        Assert.Equal((RuntimeState.Running, HarnessState.Ready), (r.Snapshot.State, r.Snapshot.Harness));
+        Assert.True(c.HostOwnsProcesses);
+        Assert.True(c.HostUiToolsAtStart);
+        Assert.Contains(_journal.ReadTail(20), e => e.Reason == "start requested (csharp host)");
+
+        // A second start is a no-op, not a second host.
+        var again = await c.StartAsync(DshProfile.Web, CancellationToken.None);
+        Assert.True(again.Ok);
+        Assert.Equal(["host.start"], _runtime.Calls);
+    }
+
+    [Fact]
+    public async Task Start_ExplicitLegacy_IsTheFallbackPath()
+    {
+        var r = await HostCoordinator().StartAsync(DshProfile.Web, CancellationToken.None, SliceMode.Legacy);
+        Assert.True(r.Ok);
+        Assert.Equal(["sandbox.start", "dsh.start"], _runtime.Calls);
+        Assert.False(_coordinator!.HostOwnsProcesses);
+    }
+
+    [Fact]
+    public async Task Start_Default_WithoutLayout_IsRefusedAndNeverFallsBackToLegacy()
+    {
+        using var c = new RuntimeCoordinator(_runtime, new RuntimeStateMachine(_journal, "fake"), _fg, _log, _log, new MigrationOptions());
+        var r = await c.StartAsync(DshProfile.Web, CancellationToken.None);
+        Assert.False(r.Ok);
+        Assert.Equal(RuntimeErrorCodes.InvalidTransition, r.Code);
+        Assert.Empty(_runtime.Calls);
+        Assert.False(_fg.Held);
+    }
+
+    [Fact]
+    public async Task Stop_CSharpHost_RunsCompanionCleanupBeforeSandboxStoppingAndTheHostStop()
+    {
+        var c = HostCoordinator();
+        c.HostStopping = _ => { _runtime.Calls.Add("companions"); return Task.CompletedTask; };
+        c.SandboxStopping += () => _runtime.Calls.Add("sandbox-stopping");
+        await c.StartAsync(DshProfile.Web, CancellationToken.None);
+        var r = await c.StopAsync(CancellationToken.None);
+        Assert.True(r.Ok);
+        Assert.Equal(["host.start", "companions", "sandbox-stopping", "host.stop"], _runtime.Calls);
+        Assert.False(_fg.Held);
+        Assert.Equal(RuntimeState.Ready, r.Snapshot.State);
+        Assert.False(c.HostOwnsProcesses);
+        Assert.Null(c.HostUiToolsAtStart);
+    }
+
+    [Fact]
+    public async Task Stop_CSharpHost_FailingCompanionCleanup_DoesNotBlockTheStop()
+    {
+        var c = HostCoordinator();
+        c.HostStopping = _ => throw new InvalidOperationException("bridge gone");
+        await c.StartAsync(DshProfile.Web, CancellationToken.None);
+        var r = await c.StopAsync(CancellationToken.None);
+        Assert.True(r.Ok);
+        Assert.Contains("host.stop", _runtime.Calls);
+        Assert.Contains(_log.Lines, l => l == "host stopping hook failed: InvalidOperationException: bridge gone");
+        Assert.False(_fg.Held);
+    }
+
+    [Fact]
+    public async Task Stop_CSharpHost_WithOrphans_KeepsTheServiceAndOwnership()
+    {
+        var c = HostCoordinator();
+        await c.StartAsync(DshProfile.Web, CancellationToken.None);
+        _host!.OnStop = () => new DshMobile.Runtime.Hosting.DshHostResult(false, DshMobile.Runtime.Hosting.DshHost.Orphans, "1 left");
+        var r = await c.StopAsync(CancellationToken.None);
+        Assert.False(r.Ok);
+        Assert.True(_fg.Held);
+        Assert.True(c.HostOwnsProcesses);
+        Assert.Equal(RuntimeState.Failed, c.State.Current.State);
+
+        // The retry goes to the host again (not to the legacy "nothing running"), and only a clean stop releases.
+        _host.OnStop = null;
+        var retry = await c.StopAsync(CancellationToken.None);
+        Assert.True(retry.Ok);
+        Assert.Equal(["host.start", "host.stop", "host.stop"], _runtime.Calls);
+        Assert.False(_fg.Held);
+        Assert.False(c.HostOwnsProcesses);
+    }
+
+    [Fact]
+    public async Task HealthLoopGivingUp_IsJournaled_AndTheHostKeepsOwnership()
+    {
+        var c = HostCoordinator();
+        await c.StartAsync(DshProfile.Web, CancellationToken.None);
+        _host!.GiveUp();
+        Assert.Equal((RuntimeState.Running, HarnessState.Failed), (c.State.Current.State, c.State.Current.Harness));
+        Assert.Contains(_journal.ReadTail(20), e => e.Reason == $"csharp host: dsh unhealthy ({RuntimeCoordinator.DshUnhealthy})");
+        Assert.True(c.HostOwnsProcesses);
+
+        // Legacy reports "stopped", but it must neither overwrite the journal nor start a second tree.
+        c.Observe(new RuntimeSnapshot(RuntimeState.Ready, HarnessState.Stopped, 0, null, null, null, DateTimeOffset.UnixEpoch));
+        var legacy = await c.StartAsync(DshProfile.Web, CancellationToken.None, SliceMode.Legacy);
+        Assert.False(legacy.Ok);
+        Assert.Equal(RuntimeErrorCodes.InvalidTransition, legacy.Code);
+        Assert.Equal(RuntimeState.Running, c.State.Current.State);
+        Assert.DoesNotContain("sandbox.start", _runtime.Calls);
+    }
+
+    [Fact]
+    public async Task Start_AfterTheHealthLoopGaveUp_RestartsTheWholeHost()
+    {
+        var c = HostCoordinator();
+        var companions = 0;
+        c.HostStopping = _ => { companions++; return Task.CompletedTask; };
+        await c.StartAsync(DshProfile.Web, CancellationToken.None);
+        _host!.GiveUp();
+        var r = await c.StartAsync(DshProfile.Web, CancellationToken.None);
+        Assert.True(r.Ok);
+        Assert.Equal(["host.start", "host.stop", "host.start"], _runtime.Calls);
+        Assert.Equal(1, companions);
+        Assert.Equal((RuntimeState.Running, HarnessState.Ready), (r.Snapshot.State, r.Snapshot.Harness));
+        Assert.True(_fg.Held);
+    }
+
+    [Fact]
+    public async Task Start_CSharpHostFails_CleansUpCompanionsAndReleasesTheService()
+    {
+        var c = HostCoordinator();
+        var seen = new List<string>();
+        c.HostStopping = _ => { seen.Add("companions"); return Task.CompletedTask; };
+        c.SandboxStopping += () => seen.Add("sandbox-stopping");
+        _host!.OnStart = () => new DshMobile.Runtime.Hosting.DshHostResult(false, DshMobile.Runtime.Hosting.DshHost.NotReady, "not ready");
+        var r = await c.StartAsync(DshProfile.Web, CancellationToken.None);
+        Assert.False(r.Ok);
+        Assert.Equal(DshMobile.Runtime.Hosting.DshHost.NotReady, r.Code);
+        Assert.Equal(["companions", "sandbox-stopping"], seen);
+        Assert.False(_fg.Held);
+        Assert.Equal(RuntimeState.Failed, r.Snapshot.State);
+        Assert.Equal(["host.start"], _runtime.Calls);
+
+        // Nothing is left, so the legacy fallback is allowed right after.
+        Assert.False(c.HostOwnsProcesses);
+        var legacy = await c.StartAsync(DshProfile.Web, CancellationToken.None, SliceMode.Legacy);
+        Assert.True(legacy.Ok);
+
+        // Regression (emulator run 2026-11-14): the host is still in Failed from its failed start but owns nothing; a
+        // default start now must be refused because the legacy runtime runs - not "restart the failed host", which
+        // stopped the companions and journaled Ready over the running legacy runtime.
+        seen.Clear();
+        _runtime.Calls.Clear();
+        _host.OnStart = null;
+        var again = await c.StartAsync(DshProfile.Web, CancellationToken.None);
+        Assert.False(again.Ok);
+        Assert.Equal(RuntimeErrorCodes.InvalidTransition, again.Code);
+        Assert.Empty(seen);
+        Assert.Empty(_runtime.Calls);
+        Assert.Equal(RuntimeState.Running, c.State.Current.State);
     }
 
     [Fact]
