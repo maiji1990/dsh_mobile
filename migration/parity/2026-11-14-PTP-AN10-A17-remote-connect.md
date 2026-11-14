@@ -34,6 +34,13 @@
 - 能力探测结果与旧实现逐字一致；影子连接（含探测、断开）0.8 s。
 - 长按「连接」的 C# 连接：先断开旧连接，`CONNECTED` / `OK`。
 
+## 补记（第三段核对 logcat 时发现）
+
+- 14:03:42 本次测试中出现过一次崩溃（PID 15792）：`MissingMethodException: RemoteHostsShadow.get_ConnectEnabled()`，栈在
+  `RemoteActivity.ConnectAsync`。该成员在源码与构建产物中都存在；用户重进页面后同一构建正常（上表 06:03:45 / 06:04:03 两次进入，
+  之后连接与影子均正常）。判断为 Debug 快速部署的程序集新旧混装，而非代码缺陷；当时未记入本文件。第三段 14:30 安装后的进程无此崩溃
+  （见 [第三段证据](2026-11-14-PTP-AN10-A17-remote-dsh.md)）。
+
 ## 未覆盖
 
 - 真机上未触发 `HOST_KEY_UNKNOWN` / `HOST_KEY_CHANGED` / `AUTH_FAILED` / `UNREACHABLE`（由 Windows OpenSSH 桌面端到端测试 `RemoteSshOpenSshTests` 与向量覆盖）。

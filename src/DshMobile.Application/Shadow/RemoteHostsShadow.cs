@@ -21,6 +21,7 @@ public sealed class RemoteHostsShadow(IShadowReportSink sink, IDiagnosticsLog lo
     public const string HostsSlice = "remote.hosts";
     public const string HostKeySlice = "remote.host-key";
     public const string ConnectSlice = "remote.connect";
+    public const string DshSlice = "remote.dsh";
 
     /// <summary>Bridge code of a rejected profile / trust request.</summary>
     public const string BadRequest = "BAD_REQUEST";
@@ -356,6 +357,74 @@ public sealed class RemoteHostsShadow(IShadowReportSink sink, IDiagnosticsLog lo
             : $"after remote.connect: {cs.Code}{(cs.SeenFingerprint is { } fp ? ", host key " + fp : "")}";
         return FromChecks(ConnectSlice, at, checks, true, detail);
     }
+
+    public bool DshEnabled => options.RemoteDsh == SliceMode.LegacyWithShadow;
+
+    /// <summary>
+    /// After a legacy <c>remote.start</c> / <c>remote.stop</c> (PR-09 third segment, ADR-0013): C# checks on its own —
+    /// through its own SSH.NET connection and its own forward to the remote DSH port, without starting anything —
+    /// what the unauthenticated GET answers, and must reach the legacy verdict. Null when the legacy answer carries no
+    /// verdict to check (start that never reached the forward, stop without a conclusion).
+    /// </summary>
+    public async Task<ShadowReport?> DshObservedAsync(string method, RemoteStatusInfo legacy, RemoteHostProfile? profile,
+        Func<RemoteHostProfile, CancellationToken, Task<int?>> probeHttp, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(legacy);
+        ArgumentNullException.ThrowIfNull(probeHttp);
+        var applicable = method switch
+        {
+            BridgeMethods.RemoteStart => legacy.State == "READY",
+            BridgeMethods.RemoteStop => legacy.RemoteDshStillRunning is not null,
+            _ => false,
+        };
+        if (!DshEnabled || !applicable)
+        {
+            return null;
+        }
+        if (profile is null)
+        {
+            return Emit(Report(DshSlice, time.GetUtcNow(), ShadowVerdict.Inconclusive, true, false, $"after {method}: host {legacy.HostId ?? "-"} was not stored"));
+        }
+        var start = time.GetTimestamp();
+        int? http;
+        try
+        {
+            http = await probeHttp(profile, ct).ConfigureAwait(false);
+        }
+        catch (Exception e) when (e is not OperationCanceledException || !ct.IsCancellationRequested)
+        {
+            return Emit(Report(DshSlice, time.GetUtcNow(), ShadowVerdict.Inconclusive, true, false, $"after {method}: C# check failed: {e.GetType().Name}: {e.Message}"));
+        }
+        var ms = (long)time.GetElapsedTime(start).TotalMilliseconds;
+        var report = method == BridgeMethods.RemoteStart ? CompareDshStart(legacy, http, time.GetUtcNow()) : CompareDshStop(legacy, http, time.GetUtcNow());
+        return Emit(report with { CSharpMs = ms });
+    }
+
+    /// <summary>Legacy READY ↔ the C# GET through its own forward: same HTTP status, same verdict (401 → OK).</summary>
+    public static ShadowReport CompareDshStart(RemoteStatusInfo legacy, int? csHttp, DateTimeOffset at)
+    {
+        ArgumentNullException.ThrowIfNull(legacy);
+        var cs = RemoteDshRules.AfterStart(csHttp);
+        var checks = new[]
+        {
+            ("httpUnauthenticated", Show(legacy.HttpUnauthenticated), Show(csHttp)),
+            ("code", legacy.Code, cs.Code),
+        };
+        return FromChecks(DshSlice, at, checks, true,
+            $"after remote.start: remote DSH answers HTTP {Show(csHttp)} without the token through a C# forward too → {cs.Code}");
+    }
+
+    /// <summary>Legacy stop verdict ↔ the C# GET through its own forward (C# session up, so no answer = not running).</summary>
+    public static ShadowReport CompareDshStop(RemoteStatusInfo legacy, int? csHttp, DateTimeOffset at)
+    {
+        ArgumentNullException.ThrowIfNull(legacy);
+        var cs = RemoteDshRules.StillRunning(true, csHttp, true);
+        var checks = new[] { ("remoteDshStillRunning", Show(legacy.RemoteDshStillRunning), Show(cs)) };
+        return FromChecks(DshSlice, at, checks, true,
+            $"after remote.stop: C# forward got {(csHttp is null ? "no answer" : "HTTP " + Show(csHttp))} → still running {Show(cs)}");
+    }
+
+    private static string Show(int? i) => i is { } v ? v.ToString(System.Globalization.CultureInfo.InvariantCulture) : "null";
 
     private static string DescribeProbe(RemoteProbe? p) =>
         p is null ? "-" : $"node={p.Node}|{p.NodeVersion ?? "-"} dsh={p.Dsh}|{p.DshVersion ?? "-"}";

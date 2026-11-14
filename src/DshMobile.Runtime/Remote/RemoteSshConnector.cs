@@ -50,62 +50,6 @@ public sealed record RemoteConnectAttempt(
     public string? SeenFingerprint { get; init; }
 }
 
-/// <summary>A live C# SSH session to one remote host profile. Thread-safe; dispose to disconnect.</summary>
-public sealed class RemoteSshSession : IDisposable
-{
-    private readonly SshClient _client;
-    private int _disposed;
-
-    internal RemoteSshSession(SshClient client, RemoteHostProfile profile)
-    {
-        _client = client;
-        Profile = profile;
-    }
-
-    public RemoteHostProfile Profile { get; }
-
-    /// <summary>False after a keepalive / socket failure or <see cref="Dispose"/>.</summary>
-    public bool IsConnected => Volatile.Read(ref _disposed) == 0 && _client.IsConnected;
-
-    /// <summary>Runs one fixed command (never caller text) with the legacy exec rules.</summary>
-    internal async Task<ProbeRun> ExecAsync(string command, TimeSpan timeout, CancellationToken ct)
-    {
-        using var cmd = _client.CreateCommand(command);
-        cmd.CommandTimeout = timeout;
-        try
-        {
-            await cmd.ExecuteAsync(ct).ConfigureAwait(false);
-        }
-        catch (SshOperationTimeoutException)
-        {
-            // Legacy would keep what was read so far; reading SSH.NET's output after a timeout can block, so C# keeps none.
-            return new ProbeRun(null, "", true);
-        }
-        catch (Exception e) when (e is SshException or SocketException or ObjectDisposedException or InvalidOperationException)
-        {
-            return new ProbeRun(null, "", false);
-        }
-        return new ProbeRun(cmd.ExitStatus, RemoteConnectRules.CombineOutput(cmd.Result, cmd.Error), false);
-    }
-
-    public void Dispose()
-    {
-        if (Interlocked.Exchange(ref _disposed, 1) != 0)
-        {
-            return;
-        }
-        try
-        {
-            _client.Disconnect();
-        }
-        catch (Exception e) when (e is SshException or SocketException or ObjectDisposedException or InvalidOperationException)
-        {
-            // Already gone: nothing to release beyond Dispose.
-        }
-        _client.Dispose();
-    }
-}
-
 /// <summary>
 /// Connects to a remote host profile over SSH.NET with the ADR-0006 policy: public key only (Keystore), only the pinned
 /// host key is accepted (an unknown or different key ends the attempt during key exchange, before auth), the host-key
@@ -116,7 +60,12 @@ public sealed class RemoteSshConnector(ISshKeySource keys)
     /// <summary>Test hook: overrides <see cref="RemoteConnectRules.ConnectTimeout"/>.</summary>
     internal TimeSpan ConnectTimeout { get; init; } = RemoteConnectRules.ConnectTimeout;
 
-    public async Task<RemoteConnectAttempt> ConnectAsync(RemoteHostProfile profile, CancellationToken ct = default)
+    public Task<RemoteConnectAttempt> ConnectAsync(RemoteHostProfile profile, CancellationToken ct = default) => Connect(profile, true, ct);
+
+    /// <summary>Connect without the node / dsh probe: for the PR-09 shadow checks that only need a session (ADR-0013).</summary>
+    public Task<RemoteConnectAttempt> ConnectSessionAsync(RemoteHostProfile profile, CancellationToken ct = default) => Connect(profile, false, ct);
+
+    private async Task<RemoteConnectAttempt> Connect(RemoteHostProfile profile, bool probe, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(profile);
         var pub = keys.ReadPublicKey();
@@ -160,12 +109,18 @@ public sealed class RemoteSshConnector(ISshKeySource keys)
         var session = new RemoteSshSession(client, profile);
         try
         {
+            if (!probe)
+            {
+                session.SetConnected(RemoteCodes.Ok, null);
+                return new RemoteConnectAttempt("CONNECTED", RemoteCodes.Ok, null, null, null, null, false, session) { SeenFingerprint = seen?.SeenFingerprint };
+            }
             var node = await session.ExecAsync(RemoteConnectRules.NodeProbe.Command, RemoteConnectRules.NodeProbe.Timeout, ct).ConfigureAwait(false);
             var dsh = await session.ExecAsync(RemoteConnectRules.DshProbe.Command, RemoteConnectRules.DshProbe.Timeout, ct).ConfigureAwait(false);
-            var probe = RemoteConnectRules.ToProbe(
+            var result = RemoteConnectRules.ToProbe(
                 RemoteConnectRules.Summarize(node.ExitStatus, node.Output), RemoteConnectRules.Summarize(dsh.ExitStatus, dsh.Output));
-            var after = RemoteConnectRules.AfterProbe(probe);
-            return new RemoteConnectAttempt("CONNECTED", after.Code, after.Message, null, null, probe, node.TimedOut || dsh.TimedOut, session)
+            var after = RemoteConnectRules.AfterProbe(result);
+            session.SetConnected(after.Code, after.Message);
+            return new RemoteConnectAttempt("CONNECTED", after.Code, after.Message, null, null, result, node.TimedOut || dsh.TimedOut, session)
             {
                 SeenFingerprint = seen?.SeenFingerprint,
             };

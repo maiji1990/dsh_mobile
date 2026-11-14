@@ -28,17 +28,6 @@ internal static class CsRemoteConnection
         }
     }
 
-    /// <summary>True while a C# SSH session is open.</summary>
-    public static bool Connected
-    {
-        get
-        {
-            lock (Gate)
-            {
-                return _last?.Session is { IsConnected: true };
-            }
-        }
-    }
 
     /// <summary>Makes <paramref name="attempt"/> (to <paramref name="profile"/>) current; the previous session is closed.</summary>
     public static void Set(RemoteHostProfile profile, RemoteConnectAttempt attempt)
@@ -69,28 +58,48 @@ internal static class CsRemoteConnection
         old?.Dispose();
     }
 
+    /// <summary>The open C# session, if any (start / stop of the remote DSH run on it).</summary>
+    public static RemoteSshSession? Session
+    {
+        get
+        {
+            lock (Gate)
+            {
+                return _last?.Session is { IsConnected: true } s ? s : null;
+            }
+        }
+    }
+
     /// <summary>
-    /// The current attempt as a legacy-shaped status, after the legacy liveness rule: a session that dropped (keepalive
-    /// failed, network gone) is reported DISCONNECTED / UNREACHABLE and its probe forgotten. Null when nothing is current.
+    /// The current attempt as a legacy-shaped status, after the legacy liveness rule (<see cref="RemoteSshSession.Refresh"/>):
+    /// a dropped session is DISCONNECTED / UNREACHABLE with its probe forgotten; a READY remote that exited loses its token.
+    /// <paramref name="op"/> is the result of a start / stop just made (it carries the HTTP check / stop verdict).
+    /// Null when nothing is current.
     /// </summary>
-    public static RemoteStatusInfo? Status()
+    public static RemoteStatusInfo? Status(RemoteDshStatus? op = null)
     {
         RemoteConnectAttempt? a;
         RemoteHostProfile? p;
-        RemoteSshSession? dropped = null;
         lock (Gate)
         {
-            if (_last?.Session is { IsConnected: false } s)
-            {
-                dropped = s;
-                _last = _last with { State = "DISCONNECTED", Code = RemoteCodes.Unreachable, Message = "connection lost; connect again", Probe = null, Session = null };
-            }
             a = _last;
             p = _profile;
         }
-        dropped?.Dispose();
-        return a is null
-            ? null
-            : new RemoteStatusInfo(a.State, a.Code, a.Message, p?.Id, p?.Label, a.Probe, null, p?.DshPort, false, a.Fingerprint, a.KeyType);
+        if (a is null)
+        {
+            return null;
+        }
+        if (a.Session is not { } s)
+        {
+            return new RemoteStatusInfo(a.State, a.Code, a.Message, p?.Id, p?.Label, a.Probe, null, p?.DshPort, false, a.Fingerprint, a.KeyType);
+        }
+        var d = s.Refresh();
+        if (op is not null && d.State == op.State && d.Code == op.Code)
+        {
+            d = d with { HttpUnauthenticated = op.HttpUnauthenticated, RemoteDshStillRunning = op.RemoteDshStillRunning };
+        }
+        var probe = d.State == "DISCONNECTED" ? null : a.Probe;
+        return new RemoteStatusInfo(d.State, d.Code, d.Message, p?.Id, p?.Label, probe, d.LocalPort, p?.DshPort, d.HasLaunchToken,
+            null, null, d.HttpUnauthenticated, d.RemoteDshStillRunning);
     }
 }

@@ -186,6 +186,65 @@ class LegacyRemoteSshParityTest {
         }
     }
 
+    // ---------------------------------------------------------- PR-09 third segment (ADR-0013)
+
+    /**
+     * The line handling of RemoteHosts.readTokenLine (it reads JSch channel streams) on the vector's decoded chunks:
+     * the same statements, with the real RemoteHosts.tokenFrom / redact; a C# source contract pins them.
+     */
+    private fun readLaunch(chunks: List<Pair<Int, String>>): Pair<String?, String> {
+        val partial = (0..1).map { StringBuilder() }
+        val tail = ArrayDeque<String>()
+        for ((idx, text) in chunks) {
+            partial[idx].append(text)
+            while (true) {
+                val nl = partial[idx].indexOf('\n')
+                if (nl < 0) break
+                val line = partial[idx].substring(0, nl).trimEnd('\r')
+                partial[idx].delete(0, nl + 1)
+                RemoteHosts.tokenFrom(line)?.let { return it to "" }
+                tail.addLast(RemoteHosts.redact(line).take(160))
+                while (tail.size > 6) tail.removeFirst()
+            }
+        }
+        return null to "remote dsh web printed no launch URL; tail: ${tail.joinToString(" | ").take(400)}"
+    }
+
+    @Test
+    fun launchOutput() {
+        for (c in cases("launchOutput", 10)) {
+            val arr = c.getJSONArray("chunks")
+            val chunks = (0 until arr.length()).map { arr.getJSONObject(it).let { o -> o.getInt("stream") to o.getString("text") } }
+            val (token, failure) = readLaunch(chunks)
+            assertEquals(c.getString("name"), c.str("token"), token)
+            if (token == null) assertEquals(c.getString("name"), c.str("failure"), failure)
+        }
+    }
+
+    /** Same expressions as the end of RemoteHosts.startDsh and the stillUp block of stopDsh. */
+    @Test
+    fun startAndStopVerdicts() {
+        for (c in cases("afterStart", 6)) {
+            val http: Int? = if (c.isNull("http")) null else c.getInt("http")
+            assertEquals(c.toString(), c.getString("code"), if (http == 401) "OK" else "DSH_START_FAILED")
+            assertEquals(c.toString(), c.str("message"), if (http == 401) null else "forwarded DSH answered HTTP $http instead of 401")
+        }
+        for (c in cases("stillRunning", 28)) {
+            val lport: Int? = if (c.getBoolean("hadForward")) 1 else null
+            val http: Int? = if (c.isNull("http")) null else c.getInt("http")
+            val connected = c.getBoolean("sessionConnected")
+            val stillUp = lport?.let {
+                when {
+                    http != null -> http in 200..499
+                    connected -> false
+                    else -> null
+                }
+            }
+            val want: Boolean? = if (c.isNull("stillRunning")) null else c.getBoolean("stillRunning")
+            assertEquals(c.toString(), want, stillUp)
+        }
+    }
+
     @Test
     fun launchTokensAndRedaction() {
         for (c in cases("launchToken", 10)) assertEquals(c.getString("line"), c.str("token"), RemoteHosts.tokenFrom(c.getString("line")))

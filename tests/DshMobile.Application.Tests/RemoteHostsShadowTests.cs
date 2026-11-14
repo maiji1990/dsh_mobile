@@ -215,6 +215,56 @@ public sealed class RemoteHostsShadowTests
         Assert.Equal(3, _sink.Reports.Count(x => x.Slice == RemoteHostsShadow.ConnectSlice)); // the disabled shadow reported nothing
     }
 
+    // ------------------------------------------------------------ PR-09 third segment: remote.dsh
+
+    private static RemoteStatusInfo Started(string code, int? http) =>
+        new("READY", code, null, "a", "pc", Probe, 50000, 3091, true, HttpUnauthenticated: http);
+
+    private static RemoteStatusInfo Stopped(bool? still) =>
+        new("CONNECTED", "OK", null, "a", "pc", Probe, null, 3091, false, RemoteDshStillRunning: still);
+
+    [Fact]
+    public void CompareDsh_StartAndStopVerdicts()
+    {
+        Assert.Equal(ShadowVerdict.Agree, RemoteHostsShadow.CompareDshStart(Started("OK", 401), 401, default).Verdict);
+        Assert.Equal(ShadowVerdict.Agree, RemoteHostsShadow.CompareDshStart(Started("DSH_START_FAILED", 200), 200, default).Verdict);
+        Assert.Equal(ShadowVerdict.Diverge, RemoteHostsShadow.CompareDshStart(Started("OK", 401), null, default).Verdict);
+        Assert.Equal(ShadowVerdict.Diverge, RemoteHostsShadow.CompareDshStart(Started("OK", 401), 200, default).Verdict);
+
+        Assert.Equal(ShadowVerdict.Agree, RemoteHostsShadow.CompareDshStop(Stopped(false), null, default).Verdict);
+        Assert.Equal(ShadowVerdict.Agree, RemoteHostsShadow.CompareDshStop(Stopped(true), 401, default).Verdict);
+        Assert.Equal(ShadowVerdict.Diverge, RemoteHostsShadow.CompareDshStop(Stopped(false), 401, default).Verdict);
+        Assert.Equal(ShadowVerdict.Agree, RemoteHostsShadow.CompareDshStop(Stopped(false), 500, default).Verdict); // 500 is not "running"
+    }
+
+    [Fact]
+    public async Task DshObservedAsync_OnlyChecksLegacyVerdicts_NeverWithoutOne()
+    {
+        var calls = 0;
+        Task<int?> Probe401(RemoteHostProfile p, CancellationToken _)
+        {
+            calls++;
+            Assert.Equal(3091, p.DshPort);
+            return Task.FromResult<int?>(401);
+        }
+
+        var s = Shadow();
+        Assert.Equal(ShadowVerdict.Agree, (await s.DshObservedAsync(BridgeMethods.RemoteStart, Started("OK", 401), Profile, Probe401))!.Verdict);
+        // No verdict to check: start that never reached the forward, stop without a conclusion, other methods.
+        Assert.Null(await s.DshObservedAsync(BridgeMethods.RemoteStart, new RemoteStatusInfo("CONNECTED", "DSH_START_FAILED", "no URL", "a", "pc", null, null, 3091, false), Profile, Probe401));
+        Assert.Null(await s.DshObservedAsync(BridgeMethods.RemoteStop, Stopped(null), Profile, Probe401));
+        Assert.Null(await s.DshObservedAsync(BridgeMethods.RemoteConnect, Started("OK", 401), Profile, Probe401));
+        Assert.Equal(1, calls);
+
+        var failed = await s.DshObservedAsync(BridgeMethods.RemoteStop, Stopped(false), Profile, (_, _) => throw new InvalidOperationException("C# connect UNREACHABLE"));
+        Assert.Equal(ShadowVerdict.Inconclusive, failed!.Verdict);
+
+        var off = new RemoteHostsShadow(_sink, _sink, new MigrationOptions { RemoteDsh = SliceMode.Legacy }, TimeProvider.System);
+        Assert.Null(await off.DshObservedAsync(BridgeMethods.RemoteStart, Started("OK", 401), Profile, Probe401));
+        Assert.Equal(1, calls);
+        Assert.Equal(2, _sink.Reports.Count(r => r.Slice == RemoteHostsShadow.DshSlice));
+    }
+
     private static RemoteStatusInfo Status(string state, string code, string? hostId, string? fp = null) =>
         new(state, code, null, hostId, "pc", null, null, 3091, false, fp);
 }

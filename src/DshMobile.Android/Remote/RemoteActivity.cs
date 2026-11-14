@@ -53,7 +53,7 @@ public sealed class RemoteActivity : Activity
         // PR-09 second segment (ADR-0012): long-press = opt-in C# (SSH.NET) connect; short press stays legacy.
         connect.LongClick += (_, _) => _ = CsConnectAsync();
         var start = Make(Resource.String.remote_start, StartDsh);
-        var stop = Make(Resource.String.remote_stop, () => _ = Status(BridgeMethods.RemoteStop, null, TimeSpan.FromMinutes(1)));
+        var stop = Make(Resource.String.remote_stop, StopDsh);
         var disconnect = Make(Resource.String.remote_disconnect, () =>
         {
             CsRemoteConnection.Clear();
@@ -214,15 +214,70 @@ public sealed class RemoteActivity : Activity
         }
     }
 
-    /// <summary>Starting the remote DSH is still legacy-only; a C# session says so instead of pretending.</summary>
+    /// <summary>Start of the remote DSH: on the C# session when one is open (ADR-0013), otherwise legacy + shadow check.</summary>
     private void StartDsh()
     {
-        if (CsRemoteConnection.Connected)
+        if (CsRemoteConnection.Session is { } cs)
         {
-            _status.Text = GetString(Resource.String.remote_cs_no_start);
+            _ = CsDshAsync(cs, start: true);
             return;
         }
-        _ = Status(BridgeMethods.RemoteStart, null, TimeSpan.FromMinutes(3));
+        _ = LegacyDshAsync(BridgeMethods.RemoteStart, TimeSpan.FromMinutes(3));
+    }
+
+    private void StopDsh()
+    {
+        if (CsRemoteConnection.Session is { } cs)
+        {
+            _ = CsDshAsync(cs, start: false);
+            return;
+        }
+        _ = LegacyDshAsync(BridgeMethods.RemoteStop, TimeSpan.FromMinutes(1));
+    }
+
+    private async Task CsDshAsync(RemoteSshSession session, bool start)
+    {
+        Enable(false);
+        try
+        {
+            var d = await Task.Run(() => start ? session.StartDshAsync() : session.StopDshAsync());
+            _bridge.Note($"remote C# {(start ? "start" : "stop")}: state={d.State} code={d.Code} http={d.HttpUnauthenticated?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "-"} still={d.RemoteDshStillRunning?.ToString() ?? "-"} token={d.HasLaunchToken}");
+            if (CsRemoteConnection.Status(d) is { } st)
+            {
+                ShowCs(st);
+            }
+        }
+        catch (Exception e)
+        {
+            _status.Text = Fmt(Resource.String.remote_cs_failed, $"{e.GetType().Name}: {e.Message}");
+        }
+        finally
+        {
+            Enable(true);
+        }
+    }
+
+    /// <summary>
+    /// Legacy start / stop; then the PR-09 shadow (ADR-0013) checks the verdict through its own C# connection and forward
+    /// to the same remote port — read-only, it never starts or stops a remote process.
+    /// </summary>
+    private async Task LegacyDshAsync(string method, TimeSpan deadline)
+    {
+        var hostId = _selected?.Id;
+        var profile = hostId is null ? null : RemoteHostProfile.ParseStored(StoredHosts()).FirstOrDefault(p => p.Id == hostId);
+        var s = await Status(method, null, deadline);
+        var shadow = _bridge.RemoteShadow;
+        if (s is null || !shadow.DshEnabled)
+        {
+            return;
+        }
+        var connector = CsRemoteConnection.Connector();
+        _ = Task.Run(() => shadow.DshObservedAsync(method, s, profile, async (p, ct) =>
+        {
+            var a = await connector.ConnectSessionAsync(p, ct);
+            using var session = a.Session ?? throw new InvalidOperationException($"C# connect {a.Code}: {a.Message}");
+            return await session.ProbeHttpAsync(p.DshPort, ct);
+        }));
     }
 
     private void ShowCs(RemoteStatusInfo s)

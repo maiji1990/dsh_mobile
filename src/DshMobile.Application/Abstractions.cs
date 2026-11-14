@@ -122,6 +122,13 @@ public sealed class MigrationOptions
     /// </summary>
     public SliceMode RemoteConnect { get; set; } = SliceMode.LegacyWithShadow;
 
+    /// <summary>
+    /// PR-09 third segment (remote dsh web start / stop, ADR-0013): after each legacy <c>remote.start</c> /
+    /// <c>remote.stop</c>, C# checks through its own SSH.NET connection and forward what the remote DSH port answers
+    /// without the token and must reach the legacy verdict. It never starts or stops a remote process.
+    /// </summary>
+    public SliceMode RemoteDsh { get; set; } = SliceMode.LegacyWithShadow;
+
     /// <summary>Host-path probe for the extractor; null = the real filesystem (the right choice on a device).</summary>
     public Func<string, bool>? HostPathExists { get; set; }
 }

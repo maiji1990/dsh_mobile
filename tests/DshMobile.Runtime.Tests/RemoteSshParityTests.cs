@@ -323,6 +323,85 @@ public sealed class RemoteSshParityTests
         Assert.Null(a.Session);
     }
 
+    // ------------------------------------------------------------ PR-09 third segment (ADR-0013)
+
+    [Fact]
+    public void LaunchOutput_MatchesVectors()
+    {
+        foreach (var c in Cases("launchOutput", 10))
+        {
+            var reader = new LaunchOutputReader();
+            string? token = null;
+            foreach (var ch in c.GetProperty("chunks").EnumerateArray())
+            {
+                token ??= reader.Feed(ch.GetProperty("stream").GetInt32(), ch.GetProperty("text").GetString()!);
+            }
+            Assert.True(c.StringOrNull("token") == token, $"{Name(c)}: {token}");
+            Assert.Equal(token, reader.Token);
+            if (token is null)
+            {
+                Assert.True(c.StringOrNull("failure") == reader.NoLaunchUrlMessage(), $"{Name(c)}: {reader.NoLaunchUrlMessage()}");
+            }
+        }
+    }
+
+    [Fact]
+    public void AfterStartAndStillRunning_MatchVectors()
+    {
+        static int? Int(JsonElement c, string n) => c.GetProperty(n).ValueKind == JsonValueKind.Null ? null : c.GetProperty(n).GetInt32();
+        foreach (var c in Cases("afterStart", 6))
+        {
+            var got = RemoteDshRules.AfterStart(Int(c, "http"));
+            Assert.Equal((c.GetProperty("code").GetString(), c.StringOrNull("message")), (got.Code, got.Message));
+        }
+        foreach (var c in Cases("stillRunning", 28))
+        {
+            bool? want = c.GetProperty("stillRunning").ValueKind == JsonValueKind.Null ? null : c.GetProperty("stillRunning").GetBoolean();
+            Assert.True(want == RemoteDshRules.StillRunning(c.GetProperty("hadForward").GetBoolean(), Int(c, "http"), c.GetProperty("sessionConnected").GetBoolean()), c.GetRawText());
+        }
+    }
+
+    [Fact]
+    public void StartCommand_IsFixed_AndRejectsPortsOutsideTheProfileRange()
+    {
+        Assert.Equal("dsh --profile web --port 3091", RemoteDshRules.StartCommand(3091));
+        Assert.Throws<ArgumentOutOfRangeException>(() => RemoteDshRules.StartCommand(1023));
+        Assert.Throws<ArgumentOutOfRangeException>(() => RemoteDshRules.StartCommand(65536));
+        Assert.True(RemoteDshRules.KeepsSession("DSH_START_FAILED") && RemoteDshRules.KeepsSession("FORWARD_FAILED"));
+        Assert.False(RemoteDshRules.KeepsSession("NOT_CONNECTED"));
+        Assert.Equal(500, RemoteDshRules.Cap(new string('m', 900))!.Length);
+    }
+
+    [Fact]
+    public void LaunchOutput_KeepsOnlyTheToken_AndIgnoresLaterOutput()
+    {
+        var reader = new LaunchOutputReader();
+        Assert.Equal("t1", reader.Feed(0, "dsh web: http://127.0.0.1:3091/?token=t1\n"));
+        Assert.Null(reader.Feed(0, "dsh web: http://127.0.0.1:3091/?token=t2\n"));
+        Assert.Equal("t1", reader.Token);
+        Assert.DoesNotContain("t1", reader.NoLaunchUrlMessage(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task HttpStatus_ReadsTheStatusWithoutRedirects_NullWhenNothingAnswers()
+    {
+        using var listener = new System.Net.Sockets.TcpListener(System.Net.IPAddress.Loopback, 0);
+        listener.Start();
+        var port = ((System.Net.IPEndPoint)listener.LocalEndpoint).Port;
+        var serve = Task.Run(async () =>
+        {
+            using var c = await listener.AcceptTcpClientAsync();
+            using var s = c.GetStream();
+            var buf = new byte[4096];
+            _ = await s.ReadAsync(buf);
+            await s.WriteAsync("HTTP/1.1 401 Unauthorized\r\nLocation: /x\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"u8.ToArray());
+        });
+        Assert.Equal(401, await RemoteSshSession.HttpStatusAsync(port, CancellationToken.None));
+        await serve;
+        listener.Stop();
+        Assert.Null(await RemoteSshSession.HttpStatusAsync(port, CancellationToken.None));
+    }
+
     private static RemoteHostProfile ToProfile(JsonElement o) => new(
         o.GetProperty("id").GetString()!, o.GetProperty("label").GetString()!, o.GetProperty("host").GetString()!,
         o.GetProperty("port").GetInt32(), o.GetProperty("user").GetString()!, o.GetProperty("dshPort").GetInt32(),

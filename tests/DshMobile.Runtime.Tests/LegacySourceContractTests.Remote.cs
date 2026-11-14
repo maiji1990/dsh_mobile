@@ -73,6 +73,44 @@ public partial class LegacySourceContractTests
         Assert.DoesNotContain("server_host_key", kt, StringComparison.Ordinal);
     }
 
+    /// <summary>PR-09 third segment: the legacy dsh web start / stop / liveness expressions RemoteDshRules ports.</summary>
+    [Fact]
+    public void RemoteHosts_DshStartStopRules_MatchTheCSharpPort()
+    {
+        var kt = Bridge("RemoteHosts.kt");
+        string[] expected =
+        [
+            $"return fail(\"NOT_CONNECTED\", \"{RemoteDshRules.NotConnectedMessage}\")",
+            "ch.setCommand(\"dsh --profile web --port ${p.dshPort}\")",
+            $"return fail(\"DSH_START_FAILED\", \"{RemoteDshRules.NoLaunchUrlPrefix}${{tail.joinToString(\" | \").take(400)}}\")",
+            "s.setPortForwardingL(\"127.0.0.1\", 0, \"127.0.0.1\", p.dshPort)",
+            "return fail(\"FORWARD_FAILED\", e.message)",
+            "set(\"READY\", if (http == 401) \"OK\" else \"DSH_START_FAILED\", if (http == 401) null else \"forwarded DSH answered HTTP $http instead of 401\")",
+            "val line = partial[idx].substring(0, nl).trimEnd('\\r')",
+            "tokenFrom(line)?.let { return it }",
+            "tail.addLast(redact(line).take(160))",
+            "while (tail.size > 6) tail.removeFirst()",
+            "connectTimeout = 5_000",
+            "readTimeout = 10_000",
+            "instanceFollowRedirects = false",
+            "Thread.sleep(1500)",
+            "http != null -> http in 200..499",
+            "session?.isConnected == true -> false",
+            "else -> null",
+            "runCatching { ch.sendSignal(\"TERM\") }",
+            $"set(\"DISCONNECTED\", \"UNREACHABLE\", \"{RemoteDshRules.ConnectionLostMessage}\")",
+            $"set(\"CONNECTED\", \"DSH_START_FAILED\", \"{RemoteDshRules.ExitedMessage}\")",
+            "if (code != \"DSH_START_FAILED\" && code != \"FORWARD_FAILED\") {",
+            "this.message = message?.take(500)",
+            "private const val DSH_START_TIMEOUT_MS = 120_000L",
+        ];
+        foreach (var line in expected)
+        {
+            Assert.True(kt.Contains(line, StringComparison.Ordinal), line);
+        }
+        Assert.DoesNotContain("setPortForwardingR", kt, StringComparison.Ordinal); // never a remote forward (ADR-0006)
+    }
+
     [Fact]
     public void SshKeys_AliasAndComment_MatchTheCSharpPort()
     {

@@ -20,6 +20,24 @@ public sealed class WindowsOpenSshFactAttribute : FactAttribute
     }
 }
 
+/// <summary>Also needs the upstream <c>dsh</c> on this machine's PATH (the remote of the start / stop test).</summary>
+public sealed class WindowsOpenSshWithDshFactAttribute : FactAttribute
+{
+    public WindowsOpenSshWithDshFactAttribute()
+    {
+        if (new WindowsOpenSshFactAttribute().Skip is { } skip)
+        {
+            Skip = skip;
+            return;
+        }
+        var path = Environment.GetEnvironmentVariable("PATH") ?? "";
+        if (!path.Split(Path.PathSeparator).Any(d => d.Length > 0 && (File.Exists(Path.Combine(d, "dsh.cmd")) || File.Exists(Path.Combine(d, "dsh.exe")))))
+        {
+            Skip = "dsh is not on PATH";
+        }
+    }
+}
+
 /// <summary>
 /// PR-09 second segment (ADR-0012) end to end against a real OpenSSH server: this machine's sshd.exe started as an
 /// ordinary user process in debug mode (one connection, loopback, a throwaway host key and authorized_keys) — no system
@@ -87,8 +105,41 @@ public sealed class RemoteSshOpenSshTests : IDisposable
         Assert.False(a.Session!.IsConnected);
     }
 
+    /// <summary>
+    /// PR-09 third segment (ADR-0013): the real upstream dsh web as the remote — launch line, token in memory only, local
+    /// forward answering 401 without the token, the shadow's own-forward check, stop verdict "not running".
+    /// </summary>
+    [WindowsOpenSshWithDshFact]
+    public async Task DshWebStartStop_AgainstWindowsOpenSsh()
+    {
+        Run("ssh-keygen.exe", "-q", "-t", "ed25519", "-N", "", "-f", Path.Combine(_dir, "host_ed25519"));
+        File.Copy(Path.Combine(_dir, "host_ed25519"), Path.Combine(_dir, "host_ecdsa"));
+        File.Copy(Path.Combine(_dir, "host_ed25519"), Path.Combine(_dir, "host_rsa"));
+        var hostFp = SshWire.Fingerprint(Convert.FromBase64String(File.ReadAllText(Path.Combine(_dir, "host_ed25519.pub")).Split(' ')[1]));
+        var keys = new Keys(_client);
+        File.WriteAllText(Path.Combine(_dir, "authorized_keys"), SshWire.OpenSshLine(SshIdentity.PublicBlob(keys.ReadPublicKey()), "test") + "\n");
+        var dshPort = FreePort();
+        var a = await Attempt(keys, Environment.UserName, hostFp, dshPort, probe: false);
+        using var session = a.Session ?? throw new InvalidOperationException($"{a.Code}: {a.Message}");
+
+        var nothing = await session.ProbeHttpAsync(dshPort);
+        Assert.Null(nothing); // nothing listens before the start
+
+        var started = await session.StartDshAsync();
+        Assert.True(started is { State: "READY", Code: "OK", HttpUnauthenticated: 401, HasLaunchToken: true }, started.ToString());
+        Assert.NotNull(started.LocalPort);
+        Assert.Equal(started.LocalPort, session.LocalPort);
+        Assert.Equal("READY", session.Refresh().State);
+        Assert.Equal(401, await session.ProbeHttpAsync(dshPort)); // the shadow's own-forward check sees the same
+
+        var stopped = await session.StopDshAsync();
+        Assert.True(stopped is { State: "CONNECTED", Code: "OK", RemoteDshStillRunning: false, HasLaunchToken: false, LocalPort: null }, stopped.ToString());
+        Assert.Null(await session.ProbeHttpAsync(dshPort));
+        Assert.Null(await RemoteSshSession.HttpStatusAsync(started.LocalPort!.Value, CancellationToken.None)); // forward closed
+    }
+
     /// <summary>One sshd -d per attempt (debug mode serves a single connection, then exits).</summary>
-    private async Task<RemoteConnectAttempt> Attempt(Keys keys, string user, string? pinned)
+    private async Task<RemoteConnectAttempt> Attempt(Keys keys, string user, string? pinned, int dshPort = 3091, bool probe = true)
     {
         var port = FreePort();
         var config = Path.Combine(_dir, $"sshd_config_{port}");
@@ -124,8 +175,9 @@ public sealed class RemoteSshOpenSshTests : IDisposable
         try
         {
             await listening.Task.WaitAsync(TimeSpan.FromSeconds(20));
-            var profile = new RemoteHostProfile("id-1", "pc", "127.0.0.1", port, user, 3091, pinned);
-            return await new RemoteSshConnector(keys).ConnectAsync(profile);
+            var profile = new RemoteHostProfile("id-1", "pc", "127.0.0.1", port, user, dshPort, pinned);
+            var connector = new RemoteSshConnector(keys);
+            return probe ? await connector.ConnectAsync(profile) : await connector.ConnectSessionAsync(profile);
         }
         catch (TimeoutException)
         {

@@ -621,6 +621,68 @@ for name, ex, so, se in probe_raw:
     present, version = summarize(ex, so, se)
     probe_cases.append({"name": name, "exit": ex, "stdout": so, "stderr": se, "present": present, "version": version})
 
+# ---------------------------------------------------------------- PR-09 third segment: dsh web (RemoteHosts.startDsh / stopDsh)
+
+TOKEN_RE = re.compile(r"token=[^ \t\n\x0b\f\r&#]+")
+
+
+def read_launch(chunks):
+    """readTokenLine: per-stream partial lines, shared tail of 6 redacted lines (160 chars each)."""
+    partial = {}
+    tail = []
+    for stream, text in chunks:
+        buf = partial.get(stream, "") + text
+        while "\n" in buf:
+            nl = buf.index("\n")
+            line = buf[:nl].rstrip("\r")
+            buf = buf[nl + 1:]
+            t = token_from(line)
+            if t is not None:
+                return t, None
+            tail.append(take_utf16(redact(line), 160))
+            if len(tail) > 6:
+                tail.pop(0)
+        partial[stream] = buf
+    joined = " | ".join(tail)
+    return None, "remote dsh web printed no launch URL; tail: " + take_utf16(joined, 400)
+
+
+launch_raw = [
+    ("launch line on stdout", [(0, "starting\n"), (0, "dsh web: http://127.0.0.1:3091/?token=abc\n")]),
+    ("launch line on stderr", [(1, "dsh web: http://127.0.0.1:3091/?token=e1\r\n")]),
+    ("launch line split across chunks", [(0, "dsh we"), (0, "b: http://h/?tok"), (0, "en=split\n")]),
+    ("streams keep separate partial lines", [(0, "dsh web: http://h/?"), (1, "noise\n"), (0, "token=sep\n")]),
+    ("no newline after the launch line: not seen", [(0, "dsh web: http://h/?token=late")]),
+    ("first launch line wins", [(0, "dsh web: http://h/?token=one\ndsh web: http://h/?token=two\n")]),
+    ("no URL: tail of the last 6 lines, redacted", [(0, "".join(f"line {i}\n" for i in range(9))), (1, "bad token=secret here\n")]),
+    ("no output at all", []),
+    ("long lines are cut to 160 and the tail to 400", [(0, ("x" * 300 + "\n") * 4)]),
+    ("CRLF and blank lines", [(0, "\r\n\r\nerr: EADDRINUSE 127.0.0.1:3091\r\n")]),
+    ("launch URL without token", [(0, "dsh web: http://h/\n")]),
+]
+launch_cases = []
+for name, chunks in launch_raw:
+    token, msg = read_launch(chunks)
+    launch_cases.append({"name": name, "chunks": [{"stream": s, "text": t} for s, t in chunks], "token": token, "failure": msg})
+
+after_start = []
+for http in (401, 200, 303, 404, 500, None):
+    ok = http == 401
+    after_start.append({"http": http, "code": "OK" if ok else "DSH_START_FAILED",
+                        "message": None if ok else f"forwarded DSH answered HTTP {'null' if http is None else http} instead of 401"})
+
+still_running = []
+for had in (True, False):
+    for http in (401, 200, 199, 499, 500, 303, None):
+        for connected in (True, False):
+            if not had:
+                v = None
+            elif http is not None:
+                v = 200 <= http <= 499
+            else:
+                v = False if connected else None
+            still_running.append({"hadForward": had, "http": http, "sessionConnected": connected, "stillRunning": v})
+
 doc = {
     "description": (
         "PR-09 first segment: remote DSH host over SSH (ADR-0006) — SSH wire encodings, host profile validation and "
@@ -632,7 +694,8 @@ doc = {
         "PR-09 second segment (ADR-0012): hostKeyAlgorithms (legacy: JSch.getConfig(\"server_host_key\"); C#: the "
         "restricted SSH.NET ConnectionInfo), connectOutcome / jschKind (the legacy connect catch block) and probe "
         "(legacy runProbe / exec): the legacy Kotlin test runs the same expressions as RemoteHosts.kt, which a C# "
-        "source contract pins."),
+        "source contract pins. PR-09 third segment (ADR-0013): launchOutput (readTokenLine), afterStart and "
+        "stillRunning (startDsh / stopDsh verdicts), same arrangement."),
     "publicBlob": public_blobs,
     "fingerprint": fingerprints,
     "derToSsh": der_cases,
@@ -647,6 +710,9 @@ doc = {
     "connectOutcome": connect_cases,
     "jschKind": jsch_kinds,
     "probe": probe_cases,
+    "launchOutput": launch_cases,
+    "afterStart": after_start,
+    "stillRunning": still_running,
 }
 
 out = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "tests", "TestVectors", "remote-ssh.json")
