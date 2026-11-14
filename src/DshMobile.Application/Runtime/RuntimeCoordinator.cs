@@ -585,6 +585,33 @@ public sealed class RuntimeCoordinator : IDisposable
             .ConfigureAwait(false);
     }
 
+    /// <summary>
+    /// PR-07 steps 1–4 shadow (developer action, needs both relays running and the debug test target installed): the
+    /// same calls to the legacy mailbox and to the opt-in C# host's mailbox under <paramref name="csEntryDir"/>, each
+    /// through its own approval, answers compared after normalization. Null when not in shadow mode.
+    /// </summary>
+    public async Task<ShadowReport?> ShadowRelayHostAsync(string csEntryDir, TimeSpan timeout, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(csEntryDir);
+        if (_options.RelayHost != SliceMode.LegacyWithShadow || _layout is null)
+        {
+            return null;
+        }
+        ShadowReport report;
+        try
+        {
+            report = await RelayHostShadowCheck.RunAsync(_layout.PilotEntryDir, csEntryDir, _time, timeout, null, ct).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            report = new ShadowReport(RelayHostShadowCheck.Slice, _time.GetUtcNow(), ShadowVerdict.Inconclusive, false, null, true,
+                ex.GetType().Name, $"check could not use a mailbox: {ex.Message}", 0);
+        }
+        _shadow.Report(report);
+        _log.Note($"shadow {report.Slice}: {report.Verdict} ({report.Detail})");
+        return report;
+    }
+
     private async Task<ShadowReport> ShadowA11yCheckAsync(string slice,
         Func<string, Func<DshMobile.Runtime.Automation.Relay.A11y.A11yTree?>, TimeProvider, TimeSpan, CancellationToken, Task<ShadowReport>> run,
         Func<DshMobile.Runtime.Automation.Relay.A11y.A11yTree?> hostTree, TimeSpan timeout, CancellationToken ct)

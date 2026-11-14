@@ -58,7 +58,7 @@ public sealed class StorageReaper
         _log = runLog;
         _now = now ?? RelayClock.MonotonicNow;
         _wallNow = wallNow ?? RelayClock.WallNow;
-        _availableBytes = availableBytes ?? (dir => new DriveInfo(Path.GetPathRoot(Path.GetFullPath(dir))!).AvailableFreeSpace);
+        _availableBytes = availableBytes ?? VolumeAvailableBytes;
         if (!paths.EnsureWritableDirs())
         {
             _log.Event(LogSubsystem.Storage, LogEvent.DirsUnavailable);
@@ -518,6 +518,18 @@ public sealed class StorageReaper
             }
         }
         return null;
+    }
+
+    /// <summary>
+    /// Upstream <c>StatFs(dir).availableBytes</c>: free space on the volume that holds <paramref name="dir"/> itself.
+    /// On Unix (Android) DriveInfo statvfs()es the name it is given, so it gets the directory; the path root would be
+    /// "/", the read-only system partition, which has next to no room and made every artifact "quota exhausted"
+    /// (found on the device, PR-07 relay-host shadow). Windows only accepts a drive root.
+    /// </summary>
+    internal static long VolumeAvailableBytes(string dir)
+    {
+        var full = Path.GetFullPath(dir);
+        return new DriveInfo(OperatingSystem.IsWindows() ? Path.GetPathRoot(full)! : full).AvailableFreeSpace;
     }
 
     private bool DeviceHasRoom(long bytes)

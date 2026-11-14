@@ -45,5 +45,44 @@
           android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
           android:value="Runs a user-started local Linux sandbox (PRoot) hosting the DeepSeek Harness developer agent and its loopback web UI." />
     </service>
+
+    <!--
+      C# Relay (PR-07 step 4, ADR-0007/ADR-0009): this app's own services. Each one is enabled or started only by the
+      user (accessibility / notification access are granted in system Settings) or by the opt-in C# Relay host.
+      Exported only where the system must bind them, and then guarded by the system-only bind permission.
+    -->
+    <service
+        android:name="dshmobile.relay.DshAccessibilityService"
+        android:label="@string/relay_cs_a11y_label"
+        android:exported="true"
+        android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+      <intent-filter>
+        <action android:name="android.accessibilityservice.AccessibilityService" />
+      </intent-filter>
+      <meta-data
+          android:name="android.accessibilityservice"
+          android:resource="@xml/dsh_accessibility_service_config" />
+    </service>
+    <service
+        android:name="dshmobile.relay.DshNotificationListener"
+        android:label="@string/relay_cs_listener_label"
+        android:exported="true"
+        android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
+      <intent-filter>
+        <action android:name="android.service.notification.NotificationListenerService" />
+      </intent-filter>
+    </service>
+    <service
+        android:name="dshmobile.relay.RelayCsProjectionService"
+        android:exported="false"
+        android:foregroundServiceType="mediaProjection" />
+    <service
+        android:name="dshmobile.relay.RelayCsChannelService"
+        android:exported="false"
+        android:foregroundServiceType="specialUse">
+      <property
+          android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+          android:value="Keeps the user-started on-device automation channel alive so the accessibility service is not unbound by background cleaners." />
+    </service>
   </application>
 </manifest>

@@ -61,11 +61,14 @@ internal static class OrgJson
     }
 
     /// <summary><c>optInt(name)</c>: 0 when absent or not convertible (booleans, objects, unparsable strings).</summary>
-    public static int OptInt(JsonElement obj, string name)
+    public static int OptInt(JsonElement obj, string name) => OptInt(obj, name, 0);
+
+    /// <summary><c>optInt(name, fallback)</c>: <paramref name="fallback"/> when absent or not convertible.</summary>
+    public static int OptInt(JsonElement obj, string name, int fallback)
     {
         if (!TryGet(obj, name, out var v))
         {
-            return 0;
+            return fallback;
         }
         switch (v.ValueKind)
         {
@@ -77,18 +80,38 @@ internal static class OrgJson
                 }
                 return JavaDoubleToInt(double.Parse(raw, NumberStyles.Float, CultureInfo.InvariantCulture));
             case JsonValueKind.String:
-                return JavaParseDouble(v.GetString()!) is { } d ? JavaDoubleToInt(d) : 0;
+                return JavaParseDouble(v.GetString()!) is { } d ? JavaDoubleToInt(d) : fallback;
             default:
-                return 0;
+                return fallback;
         }
     }
 
-    /// <summary><c>optLong(name)</c>: 0 when absent or not convertible.</summary>
-    public static long OptLong(JsonElement obj, string name)
+    /// <summary><c>optBoolean(name, fallback)</c>: a JSON boolean, or the string "true"/"false" in any case.</summary>
+    public static bool OptBoolean(JsonElement obj, string name, bool fallback = false)
     {
         if (!TryGet(obj, name, out var v))
         {
-            return 0;
+            return fallback;
+        }
+        return v.ValueKind switch
+        {
+            JsonValueKind.True => true,
+            JsonValueKind.False => false,
+            JsonValueKind.String when string.Equals(v.GetString(), "true", StringComparison.OrdinalIgnoreCase) => true,
+            JsonValueKind.String when string.Equals(v.GetString(), "false", StringComparison.OrdinalIgnoreCase) => false,
+            _ => fallback,
+        };
+    }
+
+    /// <summary><c>optLong(name)</c>: 0 when absent or not convertible.</summary>
+    public static long OptLong(JsonElement obj, string name) => OptLong(obj, name, 0);
+
+    /// <summary><c>optLong(name, fallback)</c>.</summary>
+    public static long OptLong(JsonElement obj, string name, long fallback)
+    {
+        if (!TryGet(obj, name, out var v))
+        {
+            return fallback;
         }
         switch (v.ValueKind)
         {
@@ -100,9 +123,9 @@ internal static class OrgJson
                 }
                 return JavaDoubleToLong(double.Parse(raw, NumberStyles.Float, CultureInfo.InvariantCulture));
             case JsonValueKind.String:
-                return JavaParseDouble(v.GetString()!) is { } d ? JavaDoubleToLong(d) : 0;
+                return JavaParseDouble(v.GetString()!) is { } d ? JavaDoubleToLong(d) : fallback;
             default:
-                return 0;
+                return fallback;
         }
     }
 
@@ -174,10 +197,34 @@ internal static class OrgJson
         {
             return double.IsNegative(d) ? "-0.0" : "0.0";
         }
-        var abs = Math.Abs(d);
-        var sign = d < 0 ? "-" : "";
+        return Layout(d < 0 ? "-" : "", Math.Abs(d), Math.Abs(d).ToString("R", CultureInfo.InvariantCulture));
+    }
+
+    /// <summary>
+    /// <c>Float.toString</c> (what a Kotlin string template prints for a Float): the same layout as
+    /// <see cref="JavaDouble"/>, with the shortest digits that identify the float rather than the double.
+    /// </summary>
+    public static string JavaFloat(float f)
+    {
+        if (float.IsNaN(f))
+        {
+            return "NaN";
+        }
+        if (float.IsInfinity(f))
+        {
+            return f > 0 ? "Infinity" : "-Infinity";
+        }
+        if (f == 0)
+        {
+            return float.IsNegative(f) ? "-0.0" : "0.0";
+        }
+        return Layout(f < 0 ? "-" : "", Math.Abs((double)f), Math.Abs(f).ToString("R", CultureInfo.InvariantCulture));
+    }
+
+    private static string Layout(string sign, double abs, string roundTrip)
+    {
         // Shortest round-trip digits and the decimal exponent of the first one.
-        var (digits, exp) = Decompose(abs.ToString("R", CultureInfo.InvariantCulture));
+        var (digits, exp) = Decompose(roundTrip);
         if (abs >= 1e-3 && abs < 1e7)
         {
             // exp = position of the decimal point relative to the first digit

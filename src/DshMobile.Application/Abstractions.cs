@@ -101,6 +101,13 @@ public sealed class MigrationOptions
     /// </summary>
     public SliceMode RelayA11yWaitFor { get; set; } = SliceMode.LegacyWithShadow;
 
+    /// <summary>
+    /// PR-07 steps 1–4 (write path, Direct, Shizuku, host / coordinator / services): an opt-in C# Relay host serves its
+    /// own mailbox (files/pilot-cs/run); a developer-run shadow sends the same requests to both mailboxes, each through
+    /// its own approval, and compares the normalized answers. The guest keeps talking to the legacy Relay.
+    /// </summary>
+    public SliceMode RelayHost { get; set; } = SliceMode.LegacyWithShadow;
+
     /// <summary>Host-path probe for the extractor; null = the real filesystem (the right choice on a device).</summary>
     public Func<string, bool>? HostPathExists { get; set; }
 }

@@ -20,8 +20,13 @@ internal static class RelayA11yTreeSource
     private const string ServiceClass = "interlock/relay/core/exec/a11y/RelayAccessibilityService";
     private const string CompanionClass = ServiceClass + "$Companion";
 
-    /// <summary>The running service, or null when the user has not enabled it (or the class is not packaged).</summary>
-    public static AccessibilityService? Current()
+    /// <summary>
+    /// The running service: this app's own C# service when the user enabled it, else the legacy Relay's (read through
+    /// JNI while that slice is LegacyWithShadow), else null.
+    /// </summary>
+    public static AccessibilityService? Current() => Relay.DshAccessibilityService.Instance ?? Legacy();
+
+    private static AccessibilityService? Legacy()
     {
         try
         {
@@ -62,7 +67,7 @@ internal static class RelayA11yTreeSource
     }
 
     /// <summary>Upstream <c>displayBounds</c>: maximum window metrics (not the app window, which shrinks in split screen).</summary>
-    private static Bounds DisplayBounds(Context app)
+    internal static Bounds DisplayBounds(Context app)
     {
         var wm = app.GetSystemService(Context.WindowService).JavaCast<IWindowManager>()!;
         if (OperatingSystem.IsAndroidVersionAtLeast(30))
@@ -151,4 +156,42 @@ internal sealed class A11yNodeAdapter(AccessibilityNodeInfo info, int siblingInd
     public IReadOnlyList<int> ActionIds => [.. (info.ActionList ?? []).Select(a => a.Id)];
 
     public A11yRange? Range => info.GetRangeInfo() is { } r ? new A11yRange((int)r.Type, r.Min, r.Max, r.Current) : null;
+
+    /// <summary>Upstream <c>performAction(action[, Bundle])</c>; a platform exception counts as refused.</summary>
+    public bool PerformAction(int action, A11yActionArgs? args)
+    {
+        try
+        {
+            if (args is null)
+            {
+                return info.PerformAction((Android.Views.Accessibility.Action)action);
+            }
+            using var extras = new Android.OS.Bundle();
+            if (args.SetText is { } text)
+            {
+                extras.PutCharSequence(AccessibilityNodeInfo.ActionArgumentSetTextCharsequence, text);
+            }
+            if (args.ProgressValue is { } value)
+            {
+                extras.PutFloat(AccessibilityNodeInfo.ActionArgumentProgressValue, value);
+            }
+            return info.PerformAction((Android.Views.Accessibility.Action)action, extras);
+        }
+        catch (Java.Lang.Throwable)
+        {
+            return false;
+        }
+    }
+
+    public IA11yNode? FindInputFocus()
+    {
+        try
+        {
+            return info.FindFocus(NodeFocus.Input) is { } focused ? new A11yNodeAdapter(focused, 0) : null;
+        }
+        catch (Java.Lang.Throwable)
+        {
+            return null;
+        }
+    }
 }

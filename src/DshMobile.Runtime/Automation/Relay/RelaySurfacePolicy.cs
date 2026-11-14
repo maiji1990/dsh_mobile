@@ -101,6 +101,9 @@ public static class RelaySurfaces
         ["notify.post"] = (None, Direct),
     };
 
+    /// <summary>Every registered capability wire, in registry order (upstream <c>RelayCapabilities.BuiltIn.all()</c>).</summary>
+    public static IReadOnlyCollection<string> Wires => Table.Keys;
+
     /// <summary>The capability's allowed surfaces in registry order; empty for mode-independent capabilities.</summary>
     public static IReadOnlyList<SurfaceKind> SurfacesOf(string wire) =>
         Table.TryGetValue(wire, out var e) ? e.Surfaces : throw new ArgumentException($"unknown capability {wire}", nameof(wire));

@@ -58,7 +58,19 @@ public interface IA11yNode : INodeView
     IReadOnlyList<int> ActionIds { get; }
 
     A11yRange? Range { get; }
+
+    /// <summary>
+    /// <c>performAction(action[, extras])</c>: true when the node accepted it (not that the UI changed). A platform
+    /// exception counts as refused. Read-only views (tests, the read path) keep the default.
+    /// </summary>
+    bool PerformAction(int action, A11yActionArgs? args) => false;
+
+    /// <summary><c>findFocus(FOCUS_INPUT)</c> from this node: the field that holds input focus, if any.</summary>
+    IA11yNode? FindInputFocus() => null;
 }
+
+/// <summary>The extras the write path puts in the action Bundle: set-text text or the progress value.</summary>
+public sealed record A11yActionArgs(string? SetText = null, float? ProgressValue = null);
 
 /// <summary>Upstream <c>DisplayTree</c>: which display a call reads, its pixel frame and where the root comes from.</summary>
 public sealed class A11yTree(int displayId, Bounds screen, int densityDpi, Func<IA11yNode?> rootProvider)
@@ -234,7 +246,7 @@ public sealed partial class NodeReader(A11yTree tree)
 
     private readonly A11yTree _tree = tree ?? throw new ArgumentNullException(nameof(tree));
 
-    private abstract record Target
+    internal abstract record Target
     {
         public sealed record Bad(RelayError Error, string Reason) : Target;
 
@@ -317,7 +329,7 @@ public sealed partial class NodeReader(A11yTree tree)
         return found;
     }
 
-    private Target Resolve(JsonElement args)
+    internal Target Resolve(JsonElement args)
     {
         if (!args.TryGetProperty(A11yRules.KeyRelative, out _))
         {
@@ -507,7 +519,7 @@ public sealed partial class NodeReader(A11yTree tree)
             hasOnScreenArea: A11yRules.NormalizeBounds(target.Node.BoundsInScreen, _tree.Screen) is not null,
             displayId: _tree.DisplayId);
 
-    private static BackendResult.Failed Ambiguous(IReadOnlyList<NodeMatch> matches)
+    internal static BackendResult.Failed Ambiguous(IReadOnlyList<NodeMatch> matches)
     {
         var preview = string.Join("; ", matches.Take(MaxCandidates).Select(match =>
         {

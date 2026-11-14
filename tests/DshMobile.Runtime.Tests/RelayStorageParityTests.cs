@@ -26,6 +26,20 @@ public sealed class RelayStorageParityTests : IDisposable
 
     private static string Rel(string root, string path) => Path.GetRelativePath(root, path).Replace('\\', '/');
 
+    /// <summary>
+    /// Device finding (PR-07 relay-host shadow): the default free-space probe must measure the directory's own volume
+    /// (upstream StatFs(dir)), not "/" on Unix, which is the read-only system partition on Android.
+    /// </summary>
+    [Fact]
+    public void Default_free_space_probe_measures_the_directorys_volume()
+    {
+        Directory.CreateDirectory(_root);
+        var expected = new DriveInfo(OperatingSystem.IsWindows() ? Path.GetPathRoot(_root)! : _root).AvailableFreeSpace;
+        var actual = StorageReaper.VolumeAvailableBytes(_root);
+        Assert.True(actual > QuotaLedger.ReservedFloorBytes, $"probe reported {actual} bytes free");
+        Assert.InRange(actual, expected / 2, expected * 2);
+    }
+
     [Fact]
     public void Paths_ForThisAppsPolicy()
     {
