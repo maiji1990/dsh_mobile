@@ -100,12 +100,18 @@ public sealed class BrowserToolsActivity : Activity
         var broker = s.BrokerRunning ? GetString(Resource.String.dm_browser_broker_on)
             : s.SandboxState == "RUNNING" ? GetString(Resource.String.dm_browser_broker_off_error)
             : GetString(Resource.String.dm_browser_broker_off);
-        var lines = new List<string>
+        var lines = new List<string>();
+        if (DshMobileApplication.Current.Bridge.Runtime.HostOwnsProcesses)
         {
+            // ADR-0015: the browser broker follows the legacy sandbox state, which the C# host does not drive.
+            lines.Add(GetString(Resource.String.dm_browser_csharp_host));
+        }
+        lines.AddRange(
+        [
             broker + (s.LastError is { } e ? " · " + e : ""),
             $"guest CLI：{s.GuestCli}{(s.CliReady ? "" : GetString(Resource.String.dm_browser_cli_missing))}",
             ToolsLine(s),
-        };
+        ]);
         // The adapter only logs failures; show them as they are instead of implying the tools are fine.
         if (s.AdapterLogLines is { Length: > 0 } logged)
         {

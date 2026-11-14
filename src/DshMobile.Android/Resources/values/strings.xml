@@ -7,7 +7,7 @@
     <string name="action_clear">清空日志</string>
     <string name="status_idle">空闲</string>
     <string name="status_running">运行中…</string>
-    <string name="section_runtime">运行环境（DSHBox sandbox-manager）</string>
+    <string name="section_runtime">运行环境（默认 C# 宿主；长按「启动 DSH」可回退旧实现）</string>
     <string name="action_prepare">准备运行环境</string>
     <string name="action_import">导入运行环境包</string>
     <string name="action_start">启动 DSH</string>
@@ -127,6 +127,7 @@
     <string name="dm_browser_tools_enable_warning">将把 DSHBox 的 browser-use 适配插件（GPL-3.0，24 个 browser_* 工具）安装到 DSH 的 web profile。它在沙箱内以 DSH 权限运行；AI 操作网页仍需你在浏览器内逐次批准控制。重启 DSH 后生效。</string>
     <string name="dm_browser_broker_on">浏览器通道：运行中（沙箱已启动）</string>
     <string name="dm_browser_broker_off">浏览器通道：未运行（需先启动沙箱）</string>
+    <string name="dm_browser_csharp_host">当前由 C# 宿主运行沙箱和 DSH：浏览器自动化（browser_*）不可用。需要时先停止，再长按「启动 DSH」选「旧实现（回退）」。</string>
     <string name="dm_browser_broker_off_error">浏览器通道：沙箱已启动但通道未运行</string>
     <string name="dm_browser_cli_missing">（未就绪）</string>
     <string name="dm_browser_tools_off">browser_* 工具：未安装</string>

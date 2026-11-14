@@ -59,8 +59,75 @@ public sealed class BridgeHost : IDisposable, IDiagnosticsLog
                 Append($"c# relay (guest) stopped with the sandbox; ui_* layer {(removed ? "removed" : "left (not ours)")}");
             }
         };
+        // ADR-0015: the C# host never calls the legacy sandbox.stop, which is where legacy terminal sessions and the
+        // legacy Relay (+ ui_* layer) stop. Do the same here with the existing bridge calls.
+        Runtime.HostStopping = StopLegacyCompanionsAsync;
+        // The status line follows the journal while the C# host owns the processes (legacy events say "stopped").
+        Runtime.State.Changed += (_, _) => Changed?.Invoke(this, EventArgs.Empty);
         var s = Runtime.State.Current;
         Append($"runtime coordinator: impl={Runtime.Implementation} journal={s.State}/{s.Harness} gen={s.Generation}{(s.ErrorCode is null ? "" : " last error " + s.ErrorCode)}");
+    }
+
+    private static readonly TimeSpan CompanionStopDeadline = TimeSpan.FromSeconds(30);
+
+    /// <summary>
+    /// What the legacy <c>sandbox.stop</c> does before stopping its sandbox (RuntimeController): stop every terminal
+    /// session, stop the Relay and remove the ui_* layer. Runs when the C# host stops; the C# guest-facing Relay is
+    /// handled by <see cref="RuntimeCoordinator.SandboxStopping"/>.
+    /// </summary>
+    private async Task StopLegacyCompanionsAsync(CancellationToken ct)
+    {
+        var closed = await OnMainThreadAsync(() =>
+        {
+            var ids = new List<string>();
+            using (var doc = JsonDocument.Parse(_facade.TerminalSessionsJson() ?? "[]"))
+            {
+                foreach (var session in doc.RootElement.EnumerateArray())
+                {
+                    if (session.TryGetProperty("id", out var id) && id.GetString() is { } sid)
+                    {
+                        ids.Add(sid);
+                    }
+                }
+            }
+            foreach (var id in ids)
+            {
+                _facade.CloseTerminalSession(id);
+            }
+            return ids.Count;
+        }).ConfigureAwait(false);
+        if (closed > 0)
+        {
+            Append($"legacy terminal: closed {closed} session(s) with the C# host");
+        }
+        if (!Automation.Relay.CsRelay.GuestFacing)
+        {
+            var relay = await Client.ExecuteAsync(BridgeMethods.RelayStop, deadline: CompanionStopDeadline, cancellationToken: ct).ConfigureAwait(false);
+            Append(relay.Ok ? "legacy relay: stopped with the C# host (ui_* layer removed if ours)" : $"legacy relay: stop FAILED {relay.Code}: {relay.Message}");
+        }
+    }
+
+    private static Task<T> OnMainThreadAsync<T>(Func<T> body)
+    {
+        var looper = Android.OS.Looper.MainLooper!;
+        if (Android.OS.Looper.MyLooper() == looper)
+        {
+            return Task.FromResult(body());
+        }
+        var tcs = new TaskCompletionSource<T>(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var handler = new Android.OS.Handler(looper);
+        handler.Post(() =>
+        {
+            try
+            {
+                tcs.SetResult(body());
+            }
+            catch (Exception e)
+            {
+                tcs.SetException(e);
+            }
+        });
+        return tcs.Task;
     }
 
     private readonly ServiceProvider _services;
@@ -76,8 +143,22 @@ public sealed class BridgeHost : IDisposable, IDiagnosticsLog
 
     public bool IsBusy => Volatile.Read(ref _busy) != 0;
 
-    /// <summary>Latest sandbox/DSH state pushed by the native runtime.state event.</summary>
-    public string RuntimeState => Volatile.Read(ref _runtimeState);
+    /// <summary>
+    /// The C# host's state and the journal while it owns the processes (ADR-0015); otherwise the latest sandbox/DSH state
+    /// pushed by the legacy runtime.state event.
+    /// </summary>
+    public string RuntimeState
+    {
+        get
+        {
+            if (!Runtime.HostOwnsProcesses)
+            {
+                return Volatile.Read(ref _runtimeState);
+            }
+            var s = Runtime.State.Current;
+            return $"C# host={Runtime.HostState} · runtime={s.State} · dsh={s.Harness}{(s.ErrorCode is null ? "" : " · " + s.ErrorCode)}";
+        }
+    }
 
     /// <summary>Raised on an arbitrary thread whenever the log or busy state changes.</summary>
     public event EventHandler? Changed;
@@ -221,12 +302,15 @@ public sealed class BridgeHost : IDisposable, IDiagnosticsLog
     /// Foreground service, sandbox, then DSH, supervised by <see cref="RuntimeCoordinator"/>: a failed sandbox start
     /// is cleaned up and releases the service; a failed stop keeps it (PR-00 defect 3).
     /// </summary>
-    public Task RunStartAsync(bool csharpHost = false) => RunExclusive("start", async () =>
+    /// <param name="mode">Null: <see cref="MigrationOptions.RuntimeHost"/> (the C# host, ADR-0015);
+    /// <see cref="SliceMode.Legacy"/>: the explicit legacy fallback (browser automation).</param>
+    public Task RunStartAsync(SliceMode? mode = null) => RunExclusive("start", async () =>
     {
-        var r = await Runtime.StartAsync(DshProfile.Web, CancellationToken.None, csharpHost ? SliceMode.CSharp : null).ConfigureAwait(false);
+        var r = await Runtime.StartAsync(DshProfile.Web, CancellationToken.None, mode).ConfigureAwait(false);
         var s = r.Snapshot;
+        var owner = Runtime.HostOwnsProcesses ? "csharp host" : "legacy";
         Append(r.Ok
-            ? $"start: ok sandbox={s.State} dsh={s.Harness} version={s.DshVersion ?? "-"} gen={s.Generation}"
+            ? $"start: ok ({owner}) sandbox={s.State} dsh={s.Harness} version={s.DshVersion ?? "-"} gen={s.Generation}"
             : $"start FAILED {r.Code}{(r.UpstreamCode is null ? "" : "/" + r.UpstreamCode)}: {r.Message} (state={s.State} dsh={s.Harness})");
     });
 
@@ -239,6 +323,18 @@ public sealed class BridgeHost : IDisposable, IDiagnosticsLog
     /// <summary>Fixed guest diagnostics (uname/debian/node/dsh --version) plus health.</summary>
     public Task RunDiagnosticsAsync() => RunExclusive("diagnostics", async () =>
     {
+        if (Runtime.HostOwnsProcesses)
+        {
+            // ADR-0015: legacy status / health do not know the C#-hosted processes and would report them as stopped.
+            foreach (var line in await Runtime.DescribeHostAsync(CancellationToken.None).ConfigureAwait(false))
+            {
+                Append(line);
+            }
+            Append("legacy status / health: skipped (the C# host owns the processes)");
+            await Runtime.ShadowSupervisorAsync("", "", false, CancellationToken.None).ConfigureAwait(false);
+            await RunGuestDiagnosticsAsync().ConfigureAwait(false);
+            return;
+        }
         var statusResp = await Client.ExecuteAsync(BridgeMethods.RuntimeStatus).ConfigureAwait(false);
         LogStatus("status", statusResp);
         var health = await Client.ExecuteAsync(BridgeMethods.RuntimeHealth).ConfigureAwait(false);
@@ -256,6 +352,12 @@ public sealed class BridgeHost : IDisposable, IDiagnosticsLog
         {
             await Runtime.ShadowSupervisorAsync(st.SandboxState, st.DshState, health.Ok, CancellationToken.None).ConfigureAwait(false);
         }
+        await RunGuestDiagnosticsAsync().ConfigureAwait(false);
+    });
+
+    /// <summary>The fixed guest commands (each in its own PRoot, independent of who owns the sandbox) + guest-exec shadow.</summary>
+    private async Task RunGuestDiagnosticsAsync()
+    {
         var diag = await Client.ExecuteAsync(BridgeMethods.RuntimeDiagnostics, deadline: DiagnosticsDeadline).ConfigureAwait(false);
         if (!diag.Ok)
         {
@@ -270,7 +372,7 @@ public sealed class BridgeHost : IDisposable, IDiagnosticsLog
         }
         // PR-03 shadow: the same fixed commands through the C# PRoot launcher (no DSHBox code); legacy result stands.
         await Runtime.ShadowGuestDiagnosticsAsync(legacy, CancellationToken.None).ConfigureAwait(false);
-    });
+    }
 
     /// <summary>
     /// PR-06 developer acceptance: the guest login shell on a C#-owned PTY (libdshmobile_native), driven by PtyProbe.

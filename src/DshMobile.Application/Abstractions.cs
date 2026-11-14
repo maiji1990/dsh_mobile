@@ -129,6 +129,13 @@ public sealed class MigrationOptions
     /// </summary>
     public SliceMode RemoteDsh { get; set; } = SliceMode.LegacyWithShadow;
 
+    /// <summary>
+    /// Who starts and owns the sandbox + DSH processes (ADR-0015). <see cref="SliceMode.CSharp"/> (default): the C#
+    /// <c>DshHost</c>; any other value: the legacy DSHBox sandbox-manager through the bridge (explicit fallback, needed
+    /// for browser automation). A per-call mode passed to <c>RuntimeCoordinator.StartAsync</c> overrides this.
+    /// </summary>
+    public SliceMode RuntimeHost { get; set; } = SliceMode.CSharp;
+
     /// <summary>Host-path probe for the extractor; null = the real filesystem (the right choice on a device).</summary>
     public Func<string, bool>? HostPathExists { get; set; }
 }

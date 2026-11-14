@@ -45,8 +45,9 @@ public sealed class DshWebActivity : Activity
         root.AddView(_webView, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MatchParent, 0, 1f));
         SetContentView(root);
 
-        var host = DshMobileApplication.Current.Bridge.Runtime.Host;
-        if (host is { IsActive: true })
+        var runtime = DshMobileApplication.Current.Bridge.Runtime;
+        // ADR-0015: whenever the C# host owns the processes (DSH given up included), the legacy WebView path knows nothing.
+        if (runtime.Host is { } host && runtime.HostOwnsProcesses)
         {
             Log.Info(BridgeHost.LogTag, "webui: C# WebView on the C#-hosted DSH");
             _csharp = new CSharpWebUiController(host,

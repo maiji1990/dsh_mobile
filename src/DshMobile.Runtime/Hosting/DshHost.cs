@@ -29,6 +29,31 @@ public interface IDshTokenSource
 }
 
 /// <summary>
+/// What <c>RuntimeCoordinator</c> needs from the C# runtime host (ADR-0015); <see cref="DshHost"/> is the only production
+/// implementation, the seam exists so the orchestration can be tested without PRoot.
+/// </summary>
+public interface IDshHost : IAsyncDisposable
+{
+    DshHostState State { get; }
+
+    /// <summary>
+    /// True while anything this host started may still be alive (ADR-0015 decision 2): every state between start and
+    /// stop, <see cref="DshHostState.Failed"/> after the health loop gave up (sandbox kept), and a stop that left marker
+    /// processes behind. False after a failed start (the host killed what it started) and after a clean stop.
+    /// </summary>
+    bool OwnsProcesses { get; }
+
+    /// <summary>Whether the <c>ui_*</c> layer was registered when DSH was last spawned (null: not spawned since start).</summary>
+    bool? UiToolsAtStart { get; }
+
+    event EventHandler? StateChanged;
+
+    Task<DshHostResult> StartAsync(CancellationToken ct);
+
+    Task<DshHostResult> StopAsync(CancellationToken ct);
+}
+
+/// <summary>
 /// The C# owner of the sandbox keepalive and the DSH web PRoot processes - no DSHBox code on this path.
 /// Start: preconditions (PRoot only from nativeLibraryDir, base layer, guest bash, node layer), refuse if a legacy tree
 /// is running, sandbox keepalive, sweep dead DSH writer locks, DSH web; READY is decided by
@@ -37,7 +62,7 @@ public interface IDshTokenSource
 /// in-place restart with the FULL DSH argv - the legacy restart call site drops the guest-cache bind, this does not).
 /// Stop: kill the DSH tree, then the sandbox tree (children first), and verify nothing with either marker is left.
 /// </summary>
-public sealed class DshHost : IDshTokenSource, IAsyncDisposable
+public sealed class DshHost : IDshTokenSource, IDshHost
 {
     public const string Conflict = "HOST_CONFLICT";
     public const string NotInstalled = "RUNTIME_NOT_INSTALLED";
@@ -75,6 +100,16 @@ public sealed class DshHost : IDshTokenSource, IAsyncDisposable
     public DshHostState State { get; private set; } = DshHostState.Stopped;
 
     public bool IsActive => State is DshHostState.Starting or DshHostState.Ready or DshHostState.Stopping;
+
+    /// <inheritdoc/>
+    public bool OwnsProcesses =>
+        State is DshHostState.Starting or DshHostState.Ready or DshHostState.Stopping || _sandbox is not null || Volatile.Read(ref _leftAfterKill) > 0;
+
+    /// <summary>Marker processes still alive after the last kill (a stop that left orphans keeps the host owning them).</summary>
+    private int _leftAfterKill;
+
+    /// <inheritdoc/>
+    public bool? UiToolsAtStart { get; private set; }
 
     public string? Token
     {
@@ -168,12 +203,13 @@ public sealed class DshHost : IDshTokenSource, IAsyncDisposable
         await _op.WaitAsync(ct).ConfigureAwait(false);
         try
         {
-            if (State == DshHostState.Stopped)
+            if (State == DshHostState.Stopped && Volatile.Read(ref _leftAfterKill) == 0)
             {
                 return new DshHostResult(true, "OK", "not running");
             }
             SetState(DshHostState.Stopping);
             var left = await KillEverythingAsync().ConfigureAwait(false);
+            UiToolsAtStart = null;
             SetState(DshHostState.Stopped);
             return left == 0
                 ? new DshHostResult(true, "OK", null)
@@ -217,6 +253,8 @@ public sealed class DshHost : IDshTokenSource, IAsyncDisposable
     private Process SpawnDsh()
     {
         _window = DshWindowState.Fresh(NowMs());
+        // DSH reads its --patch layers once at start: this is what "loaded by DSH" means for the ui_* tools.
+        UiToolsAtStart = DshMobile.Runtime.Automation.UiToolsRegistration.IsRegistered(_layout.UserDataDir);
         return Spawn(_builder.DshCommand(), _builder.Environment("dsh"), "dsh", line =>
         {
             if (DshLaunchToken.TryParse(line) is not { } token)
@@ -338,11 +376,14 @@ public sealed class DshHost : IDshTokenSource, IAsyncDisposable
             var left = RemainingMarkerProcesses();
             if (left == 0)
             {
+                Volatile.Write(ref _leftAfterKill, 0);
                 return 0;
             }
             await Task.Delay(250).ConfigureAwait(false);
         }
-        return RemainingMarkerProcesses();
+        var remaining = RemainingMarkerProcesses();
+        Volatile.Write(ref _leftAfterKill, remaining);
+        return remaining;
     }
 
     private static int RemainingMarkerProcesses()
