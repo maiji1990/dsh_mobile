@@ -1,6 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:tools="http://schemas.android.com/tools">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
   <!-- Loopback health checks + DSH's own model/API traffic (TASK-004). -->
   <uses-permission android:name="android.permission.INTERNET" />
   <!-- Keeps the Debian/PRoot sandbox and DSH alive while the UI is in the background (plan 6.3). -->
@@ -14,19 +13,40 @@
   <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
 
   <!--
-    Browser automation (TASK-011, ADR-0005): DSHBox's browser runtime guards its command service and broadcasts
-    with this app-private permission. Signature level: only this APK (same signature) can hold it.
+    C# Relay capabilities (ADR-0008 / ADR-0009). Until PR-10 these came merged from the DSHBox interlock-relay-core AAR;
+    since ADR-0018 the app declares them itself, the same set. Each one is a runtime or special-access grant the user
+    makes in system UI; nothing is granted by the app, and every call is still gated by Relay approval. The merged
+    result is checked with `aapt2 dump badging` (docs/COMPATIBILITY.md).
   -->
-  <permission android:name="${applicationId}.permission.BROWSER_INTERNAL" android:protectionLevel="signature" />
-  <uses-permission android:name="${applicationId}.permission.BROWSER_INTERNAL" />
-
-  <!--
-    Interlock Relay core (TASK-010, ADR-0008): its manifest declares the permissions, `<queries>` and components of
-    all its capabilities, and since ADR-0008 they are all merged as they come (calendar, contacts, location, media,
-    microphone, alarms, screen capture, Shizuku binder, notification listener). Each permission is a runtime or
-    special-access grant the user makes in system UI; nothing is granted by the app, and every call is still gated
-    by Relay approval. The merged result is checked with `aapt2 dump badging` (docs/COMPATIBILITY.md).
-  -->
+  <uses-permission android:name="android.permission.READ_CALENDAR" />
+  <uses-permission android:name="android.permission.WRITE_CALENDAR" />
+  <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+  <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+  <uses-permission android:name="android.permission.READ_CONTACTS" />
+  <uses-permission android:name="android.permission.WRITE_CONTACTS" />
+  <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
+  <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />
+  <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />
+  <uses-permission android:name="android.permission.READ_MEDIA_VISUAL_USER_SELECTED" />
+  <uses-permission android:name="android.permission.RECORD_AUDIO" />
+  <!-- sys.intent clock entries: the system alarm / timer activities require it (normal permission, install-time). -->
+  <uses-permission android:name="com.android.alarm.permission.SET_ALARM" />
+  <!-- Screen capture: a MediaProjection virtual display needs a mediaProjection foreground service (Android 14+). -->
+  <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />
+  <!-- The short CPU-only wake lease while the channel waits for a reply with the screen off. -->
+  <uses-permission android:name="android.permission.WAKE_LOCK" />
+  <!-- Required by ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS (this app's own switch only). -->
+  <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+  <!-- Shizuku backend (ADR-0009): the binder API permission the Shizuku manager grants on the user's answer. -->
+  <uses-permission android:name="moe.shizuku.manager.permission.API_V23" />
+  <!-- Visibility of the Shizuku manager and of launchable apps, instead of QUERY_ALL_PACKAGES. -->
+  <queries>
+    <package android:name="moe.shizuku.privileged.api" />
+    <intent>
+      <action android:name="android.intent.action.MAIN" />
+      <category android:name="android.intent.category.LAUNCHER" />
+    </intent>
+  </queries>
 
   <!--
     extractNativeLibs: PRoot (libproot.so / libproot-loader.so) is exec'd as a program from
@@ -68,14 +88,6 @@
           android:name="android.accessibilityservice"
           android:resource="@xml/dsh_accessibility_service_config" />
     </service>
-    <!--
-      ADR-0011: the legacy Relay's accessibility service (merged from the interlock-relay-core AAR) is no longer
-      declared, so the user sees one "DSH Mobile 手机操控" service, this app's own. The legacy Relay's ui_* then report
-      accessibility as off (stable error, not a fake success). The AAR itself stays until every PR is done.
-    -->
-    <service
-        android:name="interlock.relay.core.exec.a11y.RelayAccessibilityService"
-        tools:node="remove" />
     <service
         android:name="dshmobile.relay.DshNotificationListener"
         android:label="@string/relay_cs_listener_label"
@@ -97,5 +109,17 @@
           android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
           android:value="Keeps the user-started on-device automation channel alive so the accessibility service is not unbound by background cleaners." />
     </service>
+    <!--
+      Shizuku authorization / binder provider (Shizuku client 13.1.5, MIT): authorities namespaced per application id,
+      and the system-only permission keeps ordinary apps from touching it. Declared by the app since ADR-0018 (it came
+      from the interlock-relay-core AAR before).
+    -->
+    <provider
+        android:name="rikka.shizuku.ShizukuProvider"
+        android:authorities="${applicationId}.shizuku"
+        android:enabled="true"
+        android:exported="true"
+        android:multiprocess="false"
+        android:permission="android.permission.INTERACT_ACROSS_USERS_FULL" />
   </application>
 </manifest>

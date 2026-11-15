@@ -69,22 +69,18 @@ public partial class NativeProotBuildContractTests
         Assert.Contains("api=24", sh, StringComparison.Ordinal);
     }
 
+    /// <summary>ADR-0014 / ADR-0018: the in-repo PRoot build is the only source of these libraries in the APK.</summary>
     [Fact]
-    public void ProotSourceSwitch_ReplacesExactlyTheFourDshboxFiles()
+    public void App_PackagesTheInRepoProotBuild()
     {
         var props = File.ReadAllText(Path.Combine(Repo.Root, "Directory.Build.props"));
-        var m = Regex.Match(props, @"<DshProotSource Condition=""'\$\(DshProotSource\)' == ''"">(\w+)</DshProotSource>");
-        Assert.True(m.Success, "DshProotSource default missing from Directory.Build.props");
-        Assert.Contains(m.Groups[1].Value, new[] { "dshbox", "self" });
-
-        var csproj = File.ReadAllText(Path.Combine(Repo.Root, "src", "DshMobile.NativeBinding", "DshMobile.NativeBinding.csproj"));
+        Assert.DoesNotContain("DshProotSource", props, StringComparison.Ordinal);
+        var csproj = File.ReadAllText(Path.Combine(Repo.Root, "src", "DshMobile.Android", "DshMobile.Android.csproj"));
+        Assert.Contains(@"<DshProotDir>$(NativeArtifactsDir)proot\</DshProotDir>", csproj, StringComparison.Ordinal);
         foreach (var abi in new[] { "arm64-v8a", "x86_64" })
         {
-            foreach (var lib in new[] { "libproot*.so", "libtalloc.so", "libandroid-shmem.so" })
-            {
-                Assert.Contains($@"jniLibs\{abi}\{lib}", csproj, StringComparison.Ordinal);
-            }
-            Assert.Contains($@"$(NativeArtifactsDir)proot\{abi}\*.so", csproj, StringComparison.Ordinal);
+            Assert.Contains($@"$(DshProotDir){abi}\*.so", csproj, StringComparison.Ordinal);
         }
+        Assert.DoesNotContain("jniLibs", csproj, StringComparison.Ordinal);
     }
 }

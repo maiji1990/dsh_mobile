@@ -1,5 +1,4 @@
 using System.Text;
-using DshMobile.Application.Shadow;
 using DshMobile.Application.Terminal;
 using DshMobile.Native;
 using DshMobile.Runtime.Guest;
@@ -125,45 +124,5 @@ public class PtyProbeTests
         Assert.Contains("\n30 100", PtyProbe.Plain(Seen), StringComparison.Ordinal);
         Assert.Equal("root@localhost:~# stty size ⏎ 30 100 ⏎ root@localhost:~#", PtyProbe.Printable(Seen));
         Assert.Equal("ab", PtyProbe.Plain("a\u001b]0;title\u0007b"));
-    }
-
-    // ── terminal argv shadow ─────────────────────────────────────────────
-
-    private static readonly DateTimeOffset At = DateTimeOffset.UnixEpoch;
-    private static readonly string[] Shell = ["/data/app/x/lib/arm64/libproot.so", "--kill-on-exit", "-0", "--rootfs=/r", "--cwd=/root", "/usr/bin/bash", "--noprofile", "--login"];
-
-    [Fact]
-    public void IsTerminalShell_OnlyMatchesTheLoginShellPRoot()
-    {
-        Assert.True(TerminalArgvShadowCheck.IsTerminalShell(Shell));
-        Assert.False(TerminalArgvShadowCheck.IsTerminalShell(["/system/bin/sh", "/usr/bin/bash", "--noprofile", "--login"]));
-        Assert.False(TerminalArgvShadowCheck.IsTerminalShell(["/x/libproot.so", "--rootfs=/r", "/usr/bin/bash", "-c", "echo keepalive"]));
-        Assert.False(TerminalArgvShadowCheck.IsTerminalShell(["/x/libproot.so", "--login"]));
-    }
-
-    [Fact]
-    public void NoLegacySession_IsInconclusive()
-    {
-        var r = TerminalArgvShadowCheck.Compare([], Shell, 1, At);
-        Assert.Equal(ShadowVerdict.Inconclusive, r.Verdict);
-    }
-
-    [Fact]
-    public void CSharpWithoutRootfs_WhileLegacyRuns_IsDiverge()
-    {
-        var r = TerminalArgvShadowCheck.Compare([Shell], null, 1, At);
-        Assert.Equal(ShadowVerdict.Diverge, r.Verdict);
-        Assert.Contains("no runtime rootfs", r.Detail, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public void EverySessionIdentical_IsAgree_AndOneDifferentSessionIsNamed()
-    {
-        Assert.Equal(ShadowVerdict.Agree, TerminalArgvShadowCheck.Compare([Shell, Shell], Shell, 1, At).Verdict);
-        string[] other = [.. Shell];
-        other[3] = "--rootfs=/other";
-        var r = TerminalArgvShadowCheck.Compare([Shell, other], Shell, 1, At);
-        Assert.Equal(ShadowVerdict.Diverge, r.Verdict);
-        Assert.StartsWith("session 2: arg 3", r.Detail, StringComparison.Ordinal);
     }
 }

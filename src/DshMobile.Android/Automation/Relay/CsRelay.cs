@@ -4,12 +4,9 @@
 // v1.5.1 @ 7c9d33c1f29dd2c42dde6c7e2fcdf38814f491c4) src/main/java/interlock/relay/core/interlock/SystemStateProbe.kt
 // (settingsKeyNamesSelf, microphoneBlockedByPolicy). Registered in docs/UPSTREAMS.md.
 //
-// Two opt-in modes, one C# host at a time (ADR-0009 / ADR-0010):
-//   Shadow: serves its own mailbox (files/pilot-cs, never bound into the guest) next to the legacy Relay, for the
-//           dual-relay comparison.
-//   Guest:  serves the guest's mailbox (files/pilot, guest /opt/pilot) and publishes the guest files there, in place
-//           of the legacy Relay, which the caller must have stopped first (never two relays on one mailbox).
-// Both read the same Relay preferences (tiers, surface preference, shell opt-ins) and ask for approval on the C# card
+// The host serves the guest's mailbox (files/pilot, guest /opt/pilot) and publishes the guest files there (ADR-0010).
+// The dual-relay shadow mode (own mailbox next to the legacy Relay) was removed with DSHBox in PR-10 (ADR-0018).
+// It reads the Relay preferences (tiers, surface preference, shell opt-ins) and asks for approval on the C# card
 // (ADR-0011: inside the 手机操控 page while it is in front, else the floating card when the user granted "display over
 // other apps", else the notification card), so every C# write still needs the user's own answer. Nothing here enables
 // a system permission.
@@ -28,23 +25,8 @@ using DshMobile.Runtime.Automation.Relay.Transport;
 
 namespace DshMobile.App.Automation.Relay;
 
-/// <summary>Which mailbox the C# host serves.</summary>
-public enum CsRelayMode
-{
-    /// <summary>Its own mailbox (files/pilot-cs), next to the legacy Relay: the dual-relay shadow.</summary>
-    Shadow,
-
-    /// <summary>The guest's mailbox (files/pilot, guest /opt/pilot), in place of the legacy Relay.</summary>
-    Guest,
-}
-
 public static class CsRelay
 {
-    /// <summary>The shadow host's own directories: never the legacy Relay's mailbox, never bound into the guest.</summary>
-    public static RelayPathPolicy ShadowPathPolicy { get; } = RelayPathPolicy.DshMobile with { GuestEntry = "/opt/pilot-cs", HostDirName = "pilot-cs" };
-
-    public static RelayPathPolicy PathPolicyOf(CsRelayMode mode) => mode == CsRelayMode.Guest ? RelayPathPolicy.DshMobile : ShadowPathPolicy;
-
     private static readonly Lock Gate = new();
     private static Timer? _ticker;
     private static (bool Running, bool Granted)? _lastShizuku;
@@ -82,42 +64,18 @@ public static class CsRelay
 
     public static RelayRuntimePhase Phase => Host?.Phase ?? RelayRuntimePhase.Stopped;
 
-    /// <summary>The mode of <see cref="Host"/> (meaningful only while there is one).</summary>
-    public static CsRelayMode Mode { get; private set; }
+    /// <summary>The C# host is up on the guest's mailbox.</summary>
+    public static bool GuestFacing => Phase is not RelayRuntimePhase.Stopped;
 
-    /// <summary>The C# host is up on the guest's mailbox: the legacy Relay must stay stopped.</summary>
-    public static bool GuestFacing => Mode == CsRelayMode.Guest && Phase is not RelayRuntimePhase.Stopped;
-
-    /// <summary>
-    /// Starts the host in <paramref name="mode"/>. A host in the other mode is stopped and dropped first (one C# host at
-    /// a time: they share the approval receiver, the accessibility callback and the Relay preferences).
-    /// </summary>
-    public static void Start(Context context, CsRelayMode mode = CsRelayMode.Shadow)
+    private static void Start(Context context)
     {
         ArgumentNullException.ThrowIfNull(context);
         var app = context.ApplicationContext ?? context;
         lock (Gate)
         {
-            if (Host is { } other && Mode != mode)
-            {
-                StopLocked();
-                _unhook?.Invoke();
-                _unhook = null;
-                other.Dispose();
-                Host = null;
-            }
-            Mode = mode;
-            Host ??= Build(app, PathPolicyOf(mode));
+            Host ??= Build(app, RelayPathPolicy.DshMobile);
             Host.Start();
             _ticker ??= new Timer(_ => Tick(), null, TimeSpan.Zero, TimeSpan.FromSeconds(3));
-        }
-    }
-
-    public static void Stop()
-    {
-        lock (Gate)
-        {
-            StopLocked();
         }
     }
 
@@ -132,16 +90,15 @@ public static class CsRelay
     }
 
     /// <summary>
-    /// ADR-0010: the C# host takes the guest's mailbox, then the <c>ui_*</c> layer is written (as the legacy
-    /// <c>relay.start</c> does after <c>MobileAutomation.start</c>). The caller has stopped the legacy Relay. False when
-    /// the layer path holds someone else's file (nothing overwritten; the host still serves the CLI).
+    /// ADR-0010: the C# host takes the guest's mailbox, the ui_* guest scripts are staged, then the <c>ui_*</c> layer is
+    /// written (as DSHBox <c>relay.start</c> does after <c>MobileAutomation.start</c>). If the scripts cannot be written
+    /// the layer is not registered (DSH would load a facade that is not there). False when the layer path holds someone
+    /// else's file (nothing overwritten; the host still serves the CLI).
     /// </summary>
-    /// The ui_* guest scripts are staged by C# first (they used to appear as a side effect of the legacy bridge's first
-    /// call); if they cannot be written the layer is not registered (DSH would load a facade that is not there).
     public static (bool Registered, string? StageError) StartGuest(Context context, RuntimeLayout layout)
     {
         ArgumentNullException.ThrowIfNull(layout);
-        Start(context, CsRelayMode.Guest);
+        Start(context);
         try
         {
             UiFacadeAssets.Stage(layout.GuestCacheDir);
@@ -153,19 +110,12 @@ public static class CsRelay
         return (UiToolsRegistration.Register(layout.UserDataDir), null);
     }
 
-    /// <summary>
-    /// The legacy Relay was started from this process (long-press fallback) and not stopped since. Process-wide: the legacy
-    /// Relay lives in this process and does not come back on its own after the process dies (its sticky service stops
-    /// itself when no channel runs), so false means only a C# Relay can be serving the guest mailbox.
-    /// </summary>
-    public static bool LegacyFallbackActive { get; set; }
-
-    /// <summary>The legacy <c>relay.stop</c> / <c>sandbox.stop</c> pair for the guest-facing host: stop, then remove our layer.</summary>
+    /// <summary>DSHBox's <c>relay.stop</c> / <c>sandbox.stop</c> pair: stop the host, then remove our layer.</summary>
     public static bool StopGuest(string userDataDir)
     {
         lock (Gate)
         {
-            if (Mode != CsRelayMode.Guest || Host is null)
+            if (Host is null)
             {
                 return true;
             }
@@ -341,7 +291,7 @@ internal sealed class RelayHostWatch : IDisposable
     public void Dispose() => _host.PhaseChanged -= _handler;
 }
 
-/// <summary>Upstream <c>RelayPrefs.Default</c>: SharedPreferences by file name (the same files the legacy Relay uses).</summary>
+/// <summary>Upstream <c>RelayPrefs.Default</c>: SharedPreferences by file name (the same files DSHBox's Relay used).</summary>
 internal sealed class AndroidRelayPrefs(Context context) : IRelayPrefs
 {
     private readonly Context _app = context.ApplicationContext ?? context;

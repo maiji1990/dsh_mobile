@@ -45,16 +45,6 @@ public class GuestPluginsTests
     }
 
     [Fact]
-    public void ShellLine_MatchesLegacyRuntimeControllerSource()
-    {
-        var src = File.ReadAllText(Repo.PathOf("native", "native-bridge", "src", "main", "java", "dshmobile", "nativebridge", "RuntimeController.kt"));
-        // runGuestScript's PATH (with Kotlin's ${'$'} for '$') and runPluginCommand's cd + quoted wrapper + shellJoin(argv).
-        Assert.Contains("val path = \"export PATH=/opt/dshbox:/root/projects/.dsh/dshbox/bin:${'$'}PATH\"", src, StringComparison.Ordinal);
-        Assert.Contains("runGuestScript(\"cd /root/projects && ${shellQuote(GUEST_DSH)} ${shellJoin(argv)}\")", src, StringComparison.Ordinal);
-        Assert.StartsWith(GuestPlugins.PathExport.Replace("$PATH", "", StringComparison.Ordinal), "export PATH=/opt/dshbox:/root/projects/.dsh/dshbox/bin:", StringComparison.Ordinal);
-    }
-
-    [Fact]
     public async Task Run_InvalidOperand_IsBadRequestWithoutSpawning()
     {
         var layout = new RuntimeLayout(Path.Combine(Path.GetTempPath(), "dshm-plugins-none"), null, Path.Combine(Path.GetTempPath(), "dshm-nolibs"));

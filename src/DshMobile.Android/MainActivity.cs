@@ -28,8 +28,6 @@ public class MainActivity : Activity
         _logScroll = FindViewById<ScrollView>(Resource.Id.log_scroll)!;
 
         var info = FindViewById<Button>(Resource.Id.btn_info)!;
-        var kotlin = FindViewById<Button>(Resource.Id.btn_kotlin)!;
-        var stress = FindViewById<Button>(Resource.Id.btn_stress)!;
         var clear = FindViewById<Button>(Resource.Id.btn_clear)!;
         var prepare = FindViewById<Button>(Resource.Id.btn_prepare)!;
         var import = FindViewById<Button>(Resource.Id.btn_import)!;
@@ -42,112 +40,45 @@ public class MainActivity : Activity
         var terminal = FindViewById<Button>(Resource.Id.btn_terminal)!;
         var plugins = FindViewById<Button>(Resource.Id.btn_plugins)!;
         var automation = FindViewById<Button>(Resource.Id.btn_automation)!;
-        _actions = [info, kotlin, stress, prepare, import, start, stop, diag, probe];
+        _actions = [info, prepare, import, start, stop, diag, probe];
 
         // Fire-and-forget is intentional: BridgeHost owns the task and reports through its log,
         // so an Activity recreated mid-run (rotation) still sees the result.
-        // C# by default; long-press = the legacy bridge's answer for comparison (explicit fallback, ADR-0016).
         info.Click += (_, _) => _ = _bridge.RunInfoAsync();
-        info.LongClick += (_, e) =>
-        {
-            e.Handled = true;
-            _ = _bridge.RunInfoAsync(legacy: true);
-        };
-        kotlin.Click += (_, _) => _ = _bridge.RunKotlinCompareAsync();
-        kotlin.LongClick += (_, e) =>
-        {
-            e.Handled = true;
-            _ = _bridge.RunKotlinCompareAsync(legacy: true);
-        };
-        stress.Click += (_, _) => _ = _bridge.RunStressAsync(1000);
         clear.Click += (_, _) => _bridge.ClearLog();
-        // ADR-0016: the C# RuntimePreparer installs the bundled DSH layer by default (MIGRATION row 17).
+        // The C# RuntimePreparer installs the bundled DSH layer (MIGRATION row 17).
         prepare.Click += (_, _) => _ = _bridge.RunPrepareAsync();
-        // Explicit fallback: the legacy runtime.prepare for this one call, shadowed by C#.
-        prepare.LongClick += (_, e) =>
-        {
-            e.Handled = true;
-            new AlertDialog.Builder(this)
-                .SetTitle("准备实现")!
-                .SetMessage("默认由 C# RuntimePreparer 安装 APK 内置的 DSH 层（按版本仲裁）。改用旧实现（DSHBox）做这一次准备？C# 会做影子比对。")!
-                .SetPositiveButton("旧实现（回退）", (_, _) => _ = _bridge.RunPrepareAsync(DshMobile.Application.SliceMode.LegacyWithShadow))!
-                .SetNegativeButton("取消", (_, _) => { })!
-                .Show();
-        };
-        // Runtime bundle comes from the system picker (no storage permission, no adb needed). ADR-0016: C# importer.
-        import.Click += (_, _) => PickRuntimeBundle(null);
-        // Explicit fallback: the legacy importer for this one import, shadowed by the C# inspector / extractor.
+        // Runtime bundle comes from the system picker (no storage permission, no adb needed); C# LayerInstaller.
+        import.Click += (_, _) => PickRuntimeBundle();
+        // Long-press: put the previous runtime body back (MIGRATION row 18).
         import.LongClick += (_, e) =>
         {
             e.Handled = true;
-            new AlertDialog.Builder(this)
-                .SetTitle("导入实现")!
-                .SetMessage("默认由 C# LayerInstaller 导入。改用旧实现（DSHBox）做这一次导入？C# 会做影子比对。")!
-                .SetPositiveButton("旧实现（回退）", (_, _) => PickRuntimeBundle(DshMobile.Application.SliceMode.LegacyWithShadow))!
-                .SetNeutralButton("回滚到上一版", (_, _) => ConfirmRollback())!
-                .SetNegativeButton("取消", (_, _) => { })!
-                .Show();
+            ConfirmRollback();
         };
-        // ADR-0015: the C# DshHost starts and owns sandbox + DSH by default (no DSHBox code on that path).
+        // ADR-0015: the C# DshHost starts and owns sandbox + DSH.
         start.Click += (_, _) => _ = _bridge.RunStartAsync();
-        // Explicit fallback: the legacy DSHBox sandbox-manager (browser automation still follows it).
-        start.LongClick += (_, e) =>
-        {
-            e.Handled = true;
-            new AlertDialog.Builder(this)
-                .SetTitle("启动实现")!
-                .SetMessage("默认由 C# 宿主启动沙箱和 DSH。改用旧实现（DSHBox sandbox-manager）做这一次启动？浏览器自动化（browser_*）只在旧实现启动时可用；也用于问题对照。")!
-                .SetPositiveButton("旧实现（回退）", (_, _) => _ = _bridge.RunStartAsync(DshMobile.Application.SliceMode.Legacy))!
-                .SetNegativeButton("取消", (_, _) => { })!
-                .Show();
-        };
         stop.Click += (_, _) => _ = _bridge.RunStopAsync();
         diag.Click += (_, _) => _ = _bridge.RunDiagnosticsAsync();
-        // Developer opt-in (ADR-0007 PR-06): self-test of the C#-owned PTY (guest login shell, no legacy terminal code).
+        // Developer opt-in (ADR-0007 PR-06): self-test of the C#-owned PTY (guest login shell).
         diag.LongClick += (_, e) =>
         {
             e.Handled = true;
             new AlertDialog.Builder(this)
                 .SetTitle("终端 PTY 自检")!
                 .SetMessage("用 C# + libdshmobile_native 打开一个 guest 登录 shell，自动执行 tty / stty / 调整窗口大小 / Ctrl-C / exit 并检查无残留进程（用于真机验收）。")!
-                .SetPositiveButton("开始自检", (_, _) => _ = _bridge.RunCSharpPtyProbeAsync())!
+                .SetPositiveButton("开始自检", (_, _) => _ = _bridge.RunPtyProbeAsync())!
                 .SetNegativeButton("取消", (_, _) => { })!
                 .Show();
         };
-        // MIGRATION row 24: the C# PRoot launcher probes every profile; long-press = the legacy dsh.probe (fallback).
+        // MIGRATION row 24: the C# PRoot launcher probes every profile.
         probe.Click += (_, _) => _ = _bridge.RunProbesAsync();
-        probe.LongClick += (_, e) =>
-        {
-            e.Handled = true;
-            new AlertDialog.Builder(this)
-                .SetTitle("探针实现")!
-                .SetMessage("默认由 C# PRoot 启动器逐个探测 DSH profile。改用旧实现（DSHBox）做这一次探测？")!
-                .SetPositiveButton("旧实现（回退）", (_, _) => _ = _bridge.RunProbesAsync(legacy: true))!
-                .SetNegativeButton("取消", (_, _) => { })!
-                .Show();
-        };
         openDsh.Click += (_, _) => StartActivity(new Android.Content.Intent(this, typeof(DshWebActivity)));
         files.Click += (_, _) => StartActivity(new Android.Content.Intent(this, typeof(FilesActivity)));
-        // ADR-0016: the C# terminal (C#-owned PTY sessions + local xterm.js screen) is the default.
-        terminal.Click += (_, _) => StartActivity(new Android.Content.Intent(this,
-            _bridge.Runtime.Options.Terminal == DshMobile.Application.SliceMode.CSharp
-                ? typeof(DshMobile.App.Terminal.CSharpTerminalActivity)
-                : typeof(DshMobile.App.Terminal.TerminalActivity)));
-        // Explicit fallback: the legacy TerminalView (its sessions are independent of the C# ones).
-        terminal.LongClick += (_, e) =>
-        {
-            e.Handled = true;
-            new AlertDialog.Builder(this)
-                .SetTitle("终端实现")!
-                .SetMessage("默认打开 C# 终端（会话由 C# 经 libdshmobile_native 持有）。改为打开旧终端（DSHBox TerminalView）？两边的会话互相独立。")!
-                .SetPositiveButton("旧终端（回退）", (_, _) => StartActivity(new Android.Content.Intent(this, typeof(DshMobile.App.Terminal.TerminalActivity))))!
-                .SetNegativeButton("取消", (_, _) => { })!
-                .Show();
-        };
+        // The C# terminal (C#-owned PTY sessions + local xterm.js screen).
+        terminal.Click += (_, _) => StartActivity(new Android.Content.Intent(this, typeof(DshMobile.App.Terminal.CSharpTerminalActivity)));
         plugins.Click += (_, _) => StartActivity(new Android.Content.Intent(this, typeof(DshMobile.App.Plugins.PluginsActivity)));
         automation.Click += (_, _) => StartActivity(new Android.Content.Intent(this, typeof(DshMobile.App.Automation.AutomationActivity)));
-        FindViewById<Button>(Resource.Id.btn_browser)!.Click +=
-            (_, _) => StartActivity(new Android.Content.Intent(this, typeof(DshMobile.App.Browser.BrowserToolsActivity)));
         FindViewById<Button>(Resource.Id.btn_remote)!.Click +=
             (_, _) => StartActivity(new Android.Content.Intent(this, typeof(DshMobile.App.Remote.RemoteActivity)));
 
@@ -162,9 +93,6 @@ public class MainActivity : Activity
 
     private const int RequestRuntimeBundle = 61;
 
-    /// <summary>Importer chosen for the pending picker result (null = the default; reset after each use).</summary>
-    private DshMobile.Application.SliceMode? _importMode;
-
     /// <summary>MIGRATION row 18: put the previous runtime body back (C#), after an explicit confirmation.</summary>
     private void ConfirmRollback() =>
         new AlertDialog.Builder(this)
@@ -174,17 +102,12 @@ public class MainActivity : Activity
             .SetNegativeButton("取消", (_, _) => { })!
             .Show();
 
-    private void PickRuntimeBundle(DshMobile.Application.SliceMode? mode)
-    {
-        _importMode = mode;
+    private void PickRuntimeBundle() =>
         StartActivityForResult(DocumentPicker.OpenIntent(["application/zip", ".zip"], multiple: false), RequestRuntimeBundle);
-    }
 
     protected override async void OnActivityResult(int requestCode, Result resultCode, Intent? data)
     {
         base.OnActivityResult(requestCode, resultCode, data);
-        var importMode = _importMode;
-        _importMode = null;
         if (requestCode != RequestRuntimeBundle || resultCode != Result.Ok || data?.Data is not { } uri)
         {
             return;
@@ -205,7 +128,7 @@ public class MainActivity : Activity
                 await input.CopyToAsync(output);
             });
             _bridge.Note($"import: copied {new FileInfo(dest).Length / 1024 / 1024} MiB in {sw.Elapsed.TotalSeconds:F1} s");
-            await _bridge.RunImportAsync(dest, deleteAfter: true, importMode);
+            await _bridge.RunImportAsync(dest, deleteAfter: true);
         }
         catch (Exception e) when (e is IOException or Java.Lang.Exception or UnauthorizedAccessException)
         {

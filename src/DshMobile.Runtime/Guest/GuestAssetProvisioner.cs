@@ -47,7 +47,7 @@ public static class GuestAssetProvisioner
 
     private const string ProbeResource = "DshMobile.Guest.dsh-probe.mjs";
 
-    /// <summary>The embedded bytes of this repo's <c>dsh-probe.mjs</c> (single source: native-bridge guest assets).</summary>
+    /// <summary>The embedded bytes of this repo's <c>dsh-probe.mjs</c> (<c>Guest/Assets/</c>, moved from the bridge's guest assets in PR-10).</summary>
     public static byte[] ReadProbeScript()
     {
         using var stream = typeof(GuestAssetProvisioner).Assembly.GetManifestResourceStream(ProbeResource)

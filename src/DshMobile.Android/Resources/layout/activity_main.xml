@@ -43,28 +43,6 @@
             android:text="@string/action_info" />
 
         <Button
-            android:id="@+id/btn_kotlin"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:minHeight="48dp"
-            android:text="@string/action_kotlin" />
-    </LinearLayout>
-
-    <LinearLayout
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:orientation="horizontal">
-
-        <Button
-            android:id="@+id/btn_stress"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:minHeight="48dp"
-            android:text="@string/action_stress" />
-
-        <Button
             android:id="@+id/btn_clear"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
@@ -183,13 +161,6 @@
         android:layout_height="wrap_content"
         android:minHeight="48dp"
         android:text="@string/action_automation" />
-
-    <Button
-        android:id="@+id/btn_browser"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:minHeight="48dp"
-        android:text="@string/action_browser" />
 
     <Button
         android:id="@+id/btn_remote"

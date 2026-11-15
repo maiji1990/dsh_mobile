@@ -48,6 +48,32 @@
   </Target>
 
   <!--
+    ADR-0014: PRoot / loader / talloc / shmem built in this repo from pinned upstream sources (native/proot, same file
+    names and NEEDED layout as DSHBox). The only PRoot source since PR-10 (ADR-0018).
+  -->
+  <PropertyGroup>
+    <DshProotDir>$(NativeArtifactsDir)proot\</DshProotDir>
+  </PropertyGroup>
+  <ItemGroup>
+    <AndroidNativeLibrary Include="$(DshProotDir)arm64-v8a\*.so" Abi="arm64-v8a" />
+    <AndroidNativeLibrary Include="$(DshProotDir)x86_64\*.so" Abi="x86_64" />
+  </ItemGroup>
+  <Target Name="DshRequireProot" BeforeTargets="PrepareForBuild">
+    <Error Condition="!Exists('$(DshProotDir)SHA256SUMS') Or !Exists('$(DshProotDir)arm64-v8a\libproot.so') Or !Exists('$(DshProotDir)arm64-v8a\libproot-loader.so') Or !Exists('$(DshProotDir)x86_64\libproot.so')"
+           Text="PRoot not built in $(DshProotDir). Run: pwsh native/build-native.ps1 (or native/proot/build.ps1 alone)" />
+  </Target>
+
+  <!--
+    Guest files copied unmodified from DSHBox v1.5.1 (link shim, offline corepack cache; Assets/README.md has the
+    provenance and hashes). The link shim is a guest (aarch64 glibc) library copied into the sandbox, not an app native
+    library, so it must stay an asset. The README itself is not an asset.
+  -->
+  <ItemGroup>
+    <AndroidNativeLibrary Remove="Assets\**\*.so" />
+    <AndroidAsset Remove="Assets\README.md" />
+  </ItemGroup>
+
+  <!--
     ADR-0009: the Shizuku user service runs in a shell-uid app_process with no .NET runtime, so its remote half is a
     small in-repo Java class (translated from DSHBox RelayShellService.kt, GPL-3.0, docs/UPSTREAMS.md). Compiled into
     the APK's dex; kept from shrinking because Shizuku instantiates it by name.
@@ -59,9 +85,8 @@
 
   <!--
     Shizuku client (MIT, Maven Central, exact version): a direct dependency of the app since the C# Relay's Shizuku
-    backend (AndroidShizuku / ShizukuClient, ADR-0009) and the user service above use it. It used to arrive only as a
-    transitive export of the DSHBox interlock-relay-core Gradle build (artifacts/native/aars), which PR-10 removes; the
-    legacy Relay (fallback) finds the same classes here. Not bound: C# reaches it through JNI by class name.
+    backend (AndroidShizuku / ShizukuClient, ADR-0009) and the user service above use it (ADR-0017; it used to arrive as
+    a transitive export of the DSHBox Gradle build). Not bound: C# reaches it through JNI by class name.
   -->
   <ItemGroup>
     <AndroidMavenLibrary Include="dev.rikka.shizuku:api" Version="13.1.5" Bind="false" />
@@ -74,8 +99,6 @@
     <ProjectReference Include="..\DshMobile.Core\DshMobile.Core.csproj" />
     <!-- C#-first layers (ADR-0007). -->
     <ProjectReference Include="..\DshMobile.Application\DshMobile.Application.csproj" />
-    <!-- Legacy DSHBox bridge (ADR-0002, superseded): removed in PR-10. -->
-    <ProjectReference Include="..\DshMobile.NativeBinding\DshMobile.NativeBinding.csproj" />
   </ItemGroup>
 
   <ItemGroup>

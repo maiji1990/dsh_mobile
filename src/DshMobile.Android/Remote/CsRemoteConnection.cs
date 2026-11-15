@@ -1,12 +1,11 @@
-using DshMobile.Core.Bridge;
+using DshMobile.Core.Contracts;
 using DshMobile.Runtime.Remote;
 
 namespace DshMobile.App.Remote;
 
 /// <summary>
-/// The opt-in C# SSH connection of the remote page (PR-09 second segment, ADR-0012): at most one, process-wide, so it
-/// survives the activity being recreated. The legacy connection and this one are never up at the same time (V1: one
-/// remote at a time) — the page disconnects the other side before connecting either.
+/// The C# SSH connection of the remote page (PR-09 second segment, ADR-0012): at most one, process-wide, so it survives
+/// the activity being recreated (V1: one remote at a time).
 /// </summary>
 internal static class CsRemoteConnection
 {
@@ -15,19 +14,6 @@ internal static class CsRemoteConnection
     private static RemoteConnectAttempt? _last;
 
     public static RemoteSshConnector Connector() => new(new AndroidSshKeySource());
-
-    private static volatile bool _legacyFallbackActive;
-
-    /// <summary>
-    /// Set when the legacy (JSch) connect was used on the fallback in this process, cleared after a legacy disconnect
-    /// succeeded. The legacy connection only lives in this process, so without it the page never calls the legacy
-    /// remote.* methods (ADR-0016: nothing on the default path goes through the bridge).
-    /// </summary>
-    public static bool LegacyFallbackActive
-    {
-        get => _legacyFallbackActive;
-        set => _legacyFallbackActive = value;
-    }
 
     /// <summary>True while a C# attempt is the page's current connection state (also after it failed, until cleared).</summary>
     public static bool Current
@@ -84,7 +70,7 @@ internal static class CsRemoteConnection
     }
 
     /// <summary>
-    /// The current attempt as a legacy-shaped status, after the legacy liveness rule (<see cref="RemoteSshSession.Refresh"/>):
+    /// The current attempt as a status, after the DSHBox liveness rule (<see cref="RemoteSshSession.Refresh"/>):
     /// a dropped session is DISCONNECTED / UNREACHABLE with its probe forgotten; a READY remote that exited loses its token.
     /// <paramref name="op"/> is the result of a start / stop just made (it carries the HTTP check / stop verdict).
     /// Null when nothing is current.

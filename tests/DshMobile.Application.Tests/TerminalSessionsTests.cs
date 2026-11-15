@@ -13,11 +13,14 @@ namespace DshMobile.Application.Tests;
 /// PR-06 C# terminal sessions: the legacy DshTerminalManager rules (numbering, active session, close, natural exit,
 /// stopAll), output kept for re-attaching, and the extra-keys / CTRL mapping. Shells are <see cref="FakeShell"/>s.
 /// </summary>
-public sealed class TerminalSessionsTests
+public sealed class TerminalSessionsTests : IDisposable
 {
     private readonly List<FakeShell> _shells = [];
     private readonly List<string> _log = [];
     private int _nextPid = 5000;
+    private readonly string _dir = Directory.CreateTempSubdirectory("dshm-term-").FullName;
+
+    public void Dispose() => Directory.Delete(_dir, recursive: true);
 
     private Task<ProotPtySession> Open(int rows, int columns, CancellationToken ct)
     {
@@ -186,20 +189,28 @@ public sealed class TerminalSessionsTests
         }
     }
 
+    private RuntimeCoordinator Coordinator(Log log, List<string> calls, out FakeDshHost host)
+    {
+        var layout = new RuntimeLayout(Path.Combine(_dir, "files"), null, Path.Combine(_dir, "nolibs"));
+        TestRuntime.Install(layout.FilesDir);
+        var h = host = new FakeDshHost(calls);
+        return new RuntimeCoordinator(layout, new RuntimeStateMachine(new InMemoryRuntimeJournal(), RuntimeCoordinator.Implementation), new Foreground(), log, log,
+            terminalOpener: Open, hostFactory: (_, _, _) => h);
+    }
+
     [Fact]
     public async Task CoordinatorStop_ClosesCSharpSessions_BeforeTheSandboxStops()
     {
-        var runtime = new StoppableRuntime();
         var log = new Log();
-        using var coordinator = new RuntimeCoordinator(runtime, new RuntimeStateMachine(new InMemoryRuntimeJournal(), "fake"), new Foreground(), log, log,
-            new MigrationOptions { RuntimeHost = SliceMode.Legacy }, terminalOpener: Open);
-        await coordinator.StartAsync(DshProfile.Web, CancellationToken.None);
-        await coordinator.Terminals!.CreateAsync(24, 80, CancellationToken.None);
+        using var coordinator = Coordinator(log, [], out var host);
+        Assert.True((await coordinator.StartAsync(DshProfile.Web, CancellationToken.None)).Ok);
         await coordinator.Terminals.CreateAsync(24, 80, CancellationToken.None);
-        runtime.OnSandboxStop = () => runtime.SessionsAtSandboxStop = coordinator.Terminals.Snapshot().Count;
+        await coordinator.Terminals.CreateAsync(24, 80, CancellationToken.None);
+        int? sessionsAtHostStop = null;
+        host.BeforeStop = () => sessionsAtHostStop = coordinator.Terminals.Snapshot().Count;
         var r = await coordinator.StopAsync(CancellationToken.None);
         Assert.True(r.Ok);
-        Assert.Equal(0, runtime.SessionsAtSandboxStop);
+        Assert.Equal(0, sessionsAtHostStop);
         Assert.All(_shells, sh => Assert.Equal([NativePty.SigHup], sh.Signals));
         Assert.Contains("terminal.csharp: closed 2 session(s) on stop", log.Lines);
     }
@@ -208,56 +219,19 @@ public sealed class TerminalSessionsTests
     public async Task CoordinatorStop_WithoutAStartedSandbox_StillClosesCSharpSessions()
     {
         // The C# terminal does not need a started sandbox; "stop: nothing running" must not leave its shells alive.
-        var runtime = new StoppableRuntime();
         var log = new Log();
-        using var coordinator = new RuntimeCoordinator(runtime, new RuntimeStateMachine(new InMemoryRuntimeJournal(), "fake"), new Foreground(), log, log,
-            new MigrationOptions(), terminalOpener: Open);
-        await coordinator.Terminals!.CreateAsync(24, 80, CancellationToken.None);
+        var calls = new List<string>();
+        using var coordinator = Coordinator(log, calls, out _);
+        await coordinator.Terminals.CreateAsync(24, 80, CancellationToken.None);
         await coordinator.Terminals.CreateAsync(24, 80, CancellationToken.None);
         var r = await coordinator.StopAsync(CancellationToken.None);
         Assert.True(r.Ok);
         Assert.Empty(coordinator.Terminals.Snapshot());
+        Assert.Empty(calls);
         Assert.Equal(2, _shells.Count);
         Assert.All(_shells, sh => Assert.Equal([NativePty.SigHup], sh.Signals));
         Assert.Equal(["terminal.csharp: closed 2 session(s) on stop", "stop: nothing running"],
             log.Lines.Where(l => l.Contains("on stop", StringComparison.Ordinal) || l.StartsWith("stop:", StringComparison.Ordinal)));
-    }
-
-    private sealed class StoppableRuntime : IRuntimeManager
-    {
-        private RuntimeState _state = RuntimeState.Ready;
-
-        public Action? OnSandboxStop { get; set; }
-
-        public int? SessionsAtSandboxStop { get; set; }
-
-        public string Implementation => "fake";
-
-        private RuntimeStartResult Ok() => new(true, "OK", null, new RuntimeSnapshot(_state, HarnessState.Stopped, 0, null, null, null, DateTimeOffset.UnixEpoch));
-
-        public Task<RuntimeSnapshot> GetStateAsync(CancellationToken ct = default) => Task.FromResult(Ok().Snapshot);
-
-        public Task<RuntimeInstallResult> InstallAsync(RuntimePackage package, IProgress<RuntimeProgress>? progress, CancellationToken ct) =>
-            Task.FromResult(new RuntimeInstallResult(true, "OK", null));
-
-        public Task<RuntimeInstallResult> PrepareAsync(CancellationToken ct) => Task.FromResult(new RuntimeInstallResult(true, "OK", null));
-
-        public Task<RuntimeStartResult> StartSandboxAsync(CancellationToken ct)
-        {
-            _state = RuntimeState.Running;
-            return Task.FromResult(Ok());
-        }
-
-        public Task<RuntimeStartResult> StartHarnessAsync(DshProfile profile, CancellationToken ct) => Task.FromResult(Ok());
-
-        public Task<RuntimeStartResult> StopHarnessAsync(CancellationToken ct) => Task.FromResult(Ok());
-
-        public Task<RuntimeStartResult> StopSandboxAsync(CancellationToken ct)
-        {
-            OnSandboxStop?.Invoke();
-            _state = RuntimeState.Ready;
-            return Task.FromResult(Ok());
-        }
     }
 }
 

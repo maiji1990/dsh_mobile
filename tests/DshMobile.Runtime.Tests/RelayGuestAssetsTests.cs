@@ -1,6 +1,7 @@
 // Switch slice (ADR-0010): the guest-visible Relay files the C# host publishes must be the ones the legacy Relay
 // publishes. Locked against files the legacy Relay wrote on the acceptance device (Honor PTP-AN10, Android 17,
-// 2026-11-14; tests/TestVectors/relay-guest/) and against the upstream sources.
+// 2026-11-14; tests/TestVectors/relay-guest/) and against values of the upstream sources (DSHBox v1.5.1 @ 7c9d33c,
+// pinned when PR-10 removed the submodule).
 
 using System.Security.Cryptography;
 using System.Text;
@@ -16,6 +17,10 @@ public sealed class RelayGuestAssetsTests : IDisposable
     /// <summary>The legacy Relay's version.json on the device: the hashes of what it published.</summary>
     private const string DeviceScriptHash = "9cb271f6a1adb50509ebc0293c9f9947fb2c09b71b5c0968942dfbdba0d8ff9b";
     private const string DeviceUsageHash = "40470726a2ec2dce817033ebaa171d728fac2046804edd042559e46d7fe96dd8";
+    /// <summary>SHA-256 of interlock-relay-core <c>assets/relay/relay-client.cjs</c> at DSHBox 7c9d33c.</summary>
+    private const string UpstreamScriptHash = "9cb271f6a1adb50509ebc0293c9f9947fb2c09b71b5c0968942dfbdba0d8ff9b";
+    /// <summary>SHA-256 of <c>GuestAssets.kt</c> <c>USAGE_TEMPLATE</c> after Kotlin's trimIndent, at DSHBox 7c9d33c.</summary>
+    private const string UpstreamUsageTemplateHash = "e655efd9db93a8b81ab305087db1779ef0a6fe86a204bc07b25aa3e533b2e26f";
     private const string DeviceCapabilitiesHash = "50e5ea8eabe42e330acf65736620311d8b2ab7643cde8ffb8eca9be81de5734c";
 
     private readonly string _root = Path.Combine(Path.GetTempPath(), "relay-guest-" + Guid.NewGuid().ToString("N"));
@@ -41,23 +46,15 @@ public sealed class RelayGuestAssetsTests : IDisposable
     public void Embedded_entry_script_is_the_upstream_asset_byte_for_byte()
     {
         var embedded = RelayGuestAssetFiles.Load(RelayPathPolicy.DefaultAssetClient)!;
-        var upstream = File.ReadAllBytes(Repo.PathOf("third_party", "dshbox", "pilot", "interlock-relay-core", "src", "main", "assets", "relay", "relay-client.cjs"));
-
         Assert.Equal(DeviceScriptHash, Sha(embedded));
-        Assert.Equal(Sha(upstream), Sha(embedded));
+        Assert.Equal(UpstreamScriptHash, Sha(embedded));
         Assert.Null(RelayGuestAssetFiles.Load("relay/other.cjs"));
     }
 
     [Fact]
     public void Embedded_usage_template_is_upstreams_trimmed_raw_string()
     {
-        var kt = File.ReadAllText(Repo.PathOf("third_party", "dshbox", "pilot", "interlock-relay-core", "src", "main", "java", "interlock", "relay", "core",
-            "transport", "GuestAssets.kt")).Replace("\r\n", "\n", StringComparison.Ordinal);
-        const string open = "USAGE_TEMPLATE = \"\"\"";
-        var start = kt.IndexOf(open, StringComparison.Ordinal) + open.Length;
-        var end = kt.IndexOf("\"\"\".trimIndent()", start, StringComparison.Ordinal);
-
-        Assert.Equal(KotlinTrimIndent(kt[start..end]), RelayGuestAssetFiles.UsageTemplate());
+        Assert.Equal(UpstreamUsageTemplateHash, Sha(RelayGuestAssetFiles.UsageTemplate()));
     }
 
     [Fact]
@@ -204,19 +201,4 @@ public sealed class RelayGuestAssetsTests : IDisposable
         Assert.False(assets.Intact());
     }
 
-    /// <summary>Kotlin <c>String.trimIndent()</c>: first / last blank lines dropped, the common indent of the others cut.</summary>
-    private static string KotlinTrimIndent(string raw)
-    {
-        var lines = raw.Split('\n').ToList();
-        var indent = lines.Where(l => !string.IsNullOrWhiteSpace(l)).Min(l => l.Length - l.TrimStart().Length);
-        if (lines.Count > 0 && string.IsNullOrWhiteSpace(lines[0]))
-        {
-            lines.RemoveAt(0);
-        }
-        if (lines.Count > 0 && string.IsNullOrWhiteSpace(lines[^1]))
-        {
-            lines.RemoveAt(lines.Count - 1);
-        }
-        return string.Join('\n', lines.Select(l => string.IsNullOrWhiteSpace(l) ? (l.Length < indent ? "" : l[indent..]) : l[indent..]));
-    }
 }

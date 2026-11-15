@@ -3,16 +3,15 @@
 
 using System.Text.Json;
 using Android.Content;
-using DshMobile.Core.Bridge;
+using DshMobile.Core.Contracts;
 using DshMobile.Runtime.Remote;
 
 namespace DshMobile.App.Remote;
 
 /// <summary>
-/// The C# owner of the remote host profile list (ADR-0016, MIGRATION row 45): the same SharedPreferences file and key
-/// as the legacy <c>RemoteHosts</c>, so the legacy fallback connection sees every profile and pin C# wrote. Process-wide
-/// and serialized like the legacy store (which ran under the bridge op lock). The last unconfirmed host key is the one
-/// the <b>C#</b> connection saw: <see cref="Trust"/> pins nothing else.
+/// The owner of the remote host profile list (ADR-0016, MIGRATION row 45): the same SharedPreferences file and key as
+/// DSHBox <c>RemoteHosts</c>, so profiles and pins written before the migration are kept. Process-wide and serialized.
+/// The last unconfirmed host key is the one the connection saw: <see cref="Trust"/> pins nothing else.
 /// </summary>
 internal static class CsRemoteHosts
 {
@@ -33,7 +32,7 @@ internal static class CsRemoteHosts
     /// <summary>Saves a <c>remote.hosts.save</c>-shaped request; throws <see cref="RemoteProfileException"/> on a rejected one.</summary>
     public static RemoteHostProfile Save(Context c, RemoteHostRequest request)
     {
-        var json = BridgeCodec.ToPayload(request, BridgeJsonContext.Default.RemoteHostRequest);
+        var json = System.Text.Json.JsonSerializer.SerializeToElement(request, ContractsJsonContext.Default.RemoteHostRequest);
         lock (Gate)
         {
             var (all, saved) = RemoteHostStore.Save(List(c), json, () => Guid.NewGuid().ToString());
