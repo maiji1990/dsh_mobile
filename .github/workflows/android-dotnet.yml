@@ -28,6 +28,13 @@ jobs:
       - name: Install android workload (pinned by global.json workloadVersion)
         run: dotnet workload install android
 
+      # The pinned PRoot / talloc / libandroid-shmem archives, keyed on sources.lock: a flaky upstream host (samba.org)
+      # does not fail the build once they are cached. build.ps1 still checks every archive against its pinned SHA-256.
+      - uses: actions/cache@v4
+        with:
+          path: native/.generated/proot/src-cache
+          key: proot-sources-${{ hashFiles('native/proot/sources.lock') }}
+
       # The pinned NDK of native/dshmobile-native/build.ps1 and native/proot/build.ps1 (Gradle used to fetch it).
       - name: Native layer (libdshmobile_native + PRoot)
         shell: pwsh
