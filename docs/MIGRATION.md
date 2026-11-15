@@ -77,7 +77,7 @@ MainActivity ─▶ BridgeHost ─▶ RuntimeCoordinator (C#, 状态机 + journa
 | C# 宿主默认 | ADR-0015：`MigrationOptions.RuntimeHost` 默认 C#；宿主拥有进程以实际存活为准（含健康循环放弃、停止残留）；停止时按旧 `sandbox.stop` 口径清理旧终端 / 旧 Relay / `ui_*` 层；状态行 / 诊断 / `ui_*` 加载状态以宿主为准；长按回退旧实现 | 已合并（maiji1990/dsh_mobile#29，CI 通过）；单测 + 模拟器冒烟，真机验收待补 |
 | DSH 层供给 | 内置 DSH 层供给（`runtime.prepare`）的 C# 移植：`DshLayerInstaller` / `BundledDsh` / `RuntimeInstallCheck` / `RuntimePreparer`；默认旧实现 + 影子 `runtime.dsh-provision`，长按「准备」可选 C# | 已合并（maiji1990/dsh_mobile#30）；向量新旧双绿，模拟器影子 4 次 Agree |
 | 全部影子切片 C# 默认 | ADR-0016：`MigrationOptions` 中全部影子切片默认 C#（导入、准备、诊断 guest 命令、插件列表、终端、`ui_*` / Relay、远程主机 / 连接 / 远端 DSH）；长按逐次回退旧实现，回退时影子照常运行；C# 远程主机列表写入（`RemoteHostStore` / `CsRemoteHosts`）与 Keystore 密钥创建 | maiji1990/dsh_mobile#31；单测 Core 65 / Runtime 715 / Application 208 通过；模拟器冒烟（[证据](../migration/parity/2026-11-15-emulator-A17-x86_64-csharp-default-all.md)）；真机验收待补 |
-| ui_* 执行层 C# 收口 | ADR-0016 补充：ui_* guest 脚本由 C# 写入（`UiFacadeAssets`）、`relay.selftest` 的 C# 版、停止态状态由 C#、默认路径不再调用旧桥（仅本进程启动过旧 Relay 回退时才停旧 Relay / 走旧状态）；页内审批卡到点经 `ExpireApproval` 收尾（修复 FLAG_SECURE 残留） | maiji1990/dsh_mobile#31；单测 Core 65 / Runtime 721 / Application 210 通过；模拟器冒烟（[证据](../migration/parity/2026-11-15-emulator-A17-x86_64-ui-exec-layer.md)）；真机验收待补 |
+| ui_* 执行层 C# 收口 | ADR-0016 补充：ui_* guest 脚本由 C# 写入（`UiFacadeAssets`）、`relay.selftest` 的 C# 版、停止态状态由 C#、默认路径不再调用旧桥（仅本进程启动过旧 Relay 回退时才停旧 Relay / 走旧状态）；页内审批卡到点经 `ExpireApproval` 收尾（修复 FLAG_SECURE 残留） | maiji1990/dsh_mobile#32；单测 Core 65 / Runtime 721 / Application 210 通过；模拟器冒烟（[证据](../migration/parity/2026-11-15-emulator-A17-x86_64-ui-exec-layer.md)）；真机验收待补 |
 | PR-03 … PR-11（其余） | 见迁移方案第 6 节与切片总表 | 见各切片行 |
 
 ## 4. 已修复的现有缺陷（迁移方案第 7 节）
