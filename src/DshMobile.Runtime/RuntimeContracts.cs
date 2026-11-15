@@ -71,6 +71,10 @@ public static class RuntimeErrorCodes
     /// <summary>A lower layer (installer, guest) failed; its own code is kept separately.</summary>
     public const string Upstream = "RUNTIME_ERROR";
     public const string NotImplemented = "NOT_IMPLEMENTED";
+    /// <summary>No runtime bundle zip was given or found where the app looks for one.</summary>
+    public const string BundleNotFound = "RUNTIME_BUNDLE_NOT_FOUND";
+    /// <summary>The picked runtime bundle could not be read or copied into the app.</summary>
+    public const string BundleUnreadable = "RUNTIME_BUNDLE_UNREADABLE";
 }
 
 public sealed record GuestExecutionOptions(

@@ -60,9 +60,9 @@ public class TerminalWebAssetsTests
     }
 
     [Fact]
-    public void Activity_ServesOnlyTerminalAssets_AndBlocksNavigation()
+    public void Screen_ServesOnlyTerminalAssets_AndBlocksNavigation()
     {
-        var cs = File.ReadAllText(Repo.PathOf("src", "DshMobile.Android", "Terminal", "CSharpTerminalActivity.cs"));
+        var cs = File.ReadAllText(Repo.PathOf("src", "DshMobile.Android", "Terminal", "TerminalFragment.cs"));
         Assert.Contains("path.StartsWith(\"/terminal/\", StringComparison.Ordinal) && !path.Contains(\"..\", StringComparison.Ordinal)", cs, StringComparison.Ordinal);
         Assert.Contains("return Refuse(403, \"Forbidden\");", cs, StringComparison.Ordinal);
         Assert.Contains("public override bool ShouldOverrideUrlLoading(WebView? view, IWebResourceRequest? request) => true;", cs, StringComparison.Ordinal);

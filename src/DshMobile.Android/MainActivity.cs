@@ -1,181 +1,163 @@
-using Android.Content;
+using Android.Content.PM;
 using Android.Views;
+using AndroidX.Activity;
+using AndroidX.AppCompat.App;
+using AndroidX.Core.View;
+using AndroidX.Fragment.App;
 using DshMobile.App.Files;
-using DshMobile.App.Bridge;
+using DshMobile.App.Home;
+using DshMobile.App.More;
+using DshMobile.App.Terminal;
+using DshMobile.App.Ui;
+using Google.Android.Material.BottomNavigation;
 
 namespace DshMobile.App;
 
-[Activity(Label = "@string/app_name", MainLauncher = true, Exported = true)]
-public class MainActivity : Activity
+/// <summary>
+/// App shell (ADR-0021): four tabs — Home, Terminal, Files, More — under a Material 3 bottom navigation bar. Tabs are
+/// fragments that are shown / hidden rather than replaced, so a terminal session view or a folder position survives a
+/// tab switch; the terminal's shells outlive the screen anyway (<c>TerminalSessions</c>). The bottom bar hides while the
+/// soft keyboard is up so the terminal keeps its rows.
+/// </summary>
+[Activity(
+    Label = "@string/app_name",
+    MainLauncher = true,
+    Exported = true,
+    // Rotation / keyboard changes keep the terminal WebView; a light / dark switch recreates (the terminal replays).
+    ConfigurationChanges = ConfigChanges.Orientation | ConfigChanges.ScreenSize | ConfigChanges.ScreenLayout
+        | ConfigChanges.SmallestScreenSize | ConfigChanges.Keyboard | ConfigChanges.KeyboardHidden,
+    WindowSoftInputMode = SoftInput.AdjustResize)]
+public sealed class MainActivity : AppCompatActivity
 {
-    private BridgeHost _bridge = null!;
-    private TextView _status = null!;
-    private TextView _runtimeState = null!;
-    private TextView _log = null!;
-    private ScrollView _logScroll = null!;
-    private Button[] _actions = [];
-    private int _refreshPosted;
+    private const string TabKey = "tab";
+    private static readonly (int Id, string Tag)[] Tabs =
+    [
+        (Resource.Id.nav_home, "home"),
+        (Resource.Id.nav_terminal, "terminal"),
+        (Resource.Id.nav_files, "files"),
+        (Resource.Id.nav_more, "more"),
+    ];
+
+    private BottomNavigationView _nav = null!;
+    private int _tab = Resource.Id.nav_home;
 
     protected override void OnCreate(Bundle? savedInstanceState)
     {
         base.OnCreate(savedInstanceState);
+        Edges.Enable(Window!);
         SetContentView(Resource.Layout.activity_main);
+        _nav = FindViewById<BottomNavigationView>(Resource.Id.bottom_nav)!;
+        var content = FindViewById(Resource.Id.tab_content)!;
+        var root = FindViewById(Resource.Id.screen_root)!;
+        ViewCompat.SetOnApplyWindowInsetsListener(root, new Edges.Listener((v, insets) =>
+        {
+            var bars = insets.GetInsets(WindowInsetsCompat.Type.SystemBars() | WindowInsetsCompat.Type.DisplayCutout())!;
+            var ime = Edges.ImeVisible(insets);
+            v.SetPadding(bars.Left, bars.Top, bars.Right, 0);
+            // With the keyboard up the bar is hidden and the tab ends at the keyboard; otherwise the bar pads itself.
+            _nav.Visibility = ime ? ViewStates.Gone : ViewStates.Visible;
+            content.SetPadding(0, 0, 0, ime ? insets.GetInsets(WindowInsetsCompat.Type.Ime())!.Bottom : 0);
+            return insets;
+        }));
 
-        _bridge = DshMobileApplication.Current.Bridge;
-        _status = FindViewById<TextView>(Resource.Id.status)!;
-        _runtimeState = FindViewById<TextView>(Resource.Id.runtime_state)!;
-        _log = FindViewById<TextView>(Resource.Id.log)!;
-        _logScroll = FindViewById<ScrollView>(Resource.Id.log_scroll)!;
-
-        var info = FindViewById<Button>(Resource.Id.btn_info)!;
-        var clear = FindViewById<Button>(Resource.Id.btn_clear)!;
-        var prepare = FindViewById<Button>(Resource.Id.btn_prepare)!;
-        var import = FindViewById<Button>(Resource.Id.btn_import)!;
-        var start = FindViewById<Button>(Resource.Id.btn_start)!;
-        var stop = FindViewById<Button>(Resource.Id.btn_stop)!;
-        var diag = FindViewById<Button>(Resource.Id.btn_diag)!;
-        var probe = FindViewById<Button>(Resource.Id.btn_probe)!;
-        var openDsh = FindViewById<Button>(Resource.Id.btn_open_dsh)!;
-        var files = FindViewById<Button>(Resource.Id.btn_files)!;
-        var terminal = FindViewById<Button>(Resource.Id.btn_terminal)!;
-        var plugins = FindViewById<Button>(Resource.Id.btn_plugins)!;
-        var automation = FindViewById<Button>(Resource.Id.btn_automation)!;
-        _actions = [info, prepare, import, start, stop, diag, probe];
-
-        // Fire-and-forget is intentional: BridgeHost owns the task and reports through its log,
-        // so an Activity recreated mid-run (rotation) still sees the result.
-        info.Click += (_, _) => _ = _bridge.RunInfoAsync();
-        clear.Click += (_, _) => _bridge.ClearLog();
-        // The C# RuntimePreparer installs the bundled DSH layer (MIGRATION row 17).
-        prepare.Click += (_, _) => _ = _bridge.RunPrepareAsync();
-        // Runtime bundle comes from the system picker (no storage permission, no adb needed); C# LayerInstaller.
-        import.Click += (_, _) => PickRuntimeBundle();
-        // Long-press: put the previous runtime body back (MIGRATION row 18).
-        import.LongClick += (_, e) =>
+        _tab = savedInstanceState?.GetInt(TabKey, Resource.Id.nav_home) ?? Resource.Id.nav_home;
+        _nav.ItemSelected += (_, e) =>
         {
             e.Handled = true;
-            ConfirmRollback();
+            Show(e.Item.ItemId);
         };
-        // ADR-0015: the C# DshHost starts and owns sandbox + DSH.
-        start.Click += (_, _) => _ = _bridge.RunStartAsync();
-        stop.Click += (_, _) => _ = _bridge.RunStopAsync();
-        diag.Click += (_, _) => _ = _bridge.RunDiagnosticsAsync();
-        // Developer opt-in (ADR-0007 PR-06): self-test of the C#-owned PTY (guest login shell).
-        diag.LongClick += (_, e) =>
-        {
-            e.Handled = true;
-            new AlertDialog.Builder(this)
-                .SetTitle("终端 PTY 自检")!
-                .SetMessage("用 C# + libdshmobile_native 打开一个 guest 登录 shell，自动执行 tty / stty / 调整窗口大小 / Ctrl-C / exit 并检查无残留进程（用于真机验收）。")!
-                .SetPositiveButton("开始自检", (_, _) => _ = _bridge.RunPtyProbeAsync())!
-                .SetNegativeButton("取消", (_, _) => { })!
-                .Show();
-        };
-        // MIGRATION row 24: the C# PRoot launcher probes every profile.
-        probe.Click += (_, _) => _ = _bridge.RunProbesAsync();
-        openDsh.Click += (_, _) => StartActivity(new Android.Content.Intent(this, typeof(DshWebActivity)));
-        files.Click += (_, _) => StartActivity(new Android.Content.Intent(this, typeof(FilesActivity)));
-        // The C# terminal (C#-owned PTY sessions + local xterm.js screen).
-        terminal.Click += (_, _) => StartActivity(new Android.Content.Intent(this, typeof(DshMobile.App.Terminal.CSharpTerminalActivity)));
-        plugins.Click += (_, _) => StartActivity(new Android.Content.Intent(this, typeof(DshMobile.App.Plugins.PluginsActivity)));
-        automation.Click += (_, _) => StartActivity(new Android.Content.Intent(this, typeof(DshMobile.App.Automation.AutomationActivity)));
-        FindViewById<Button>(Resource.Id.btn_remote)!.Click +=
-            (_, _) => StartActivity(new Android.Content.Intent(this, typeof(DshMobile.App.Remote.RemoteActivity)));
+        _nav.ItemReselected += (_, e) => (Current() as ITabRoot)?.OnReselected();
+        _nav.SelectedItemId = _tab;
+        Show(_tab);
 
-        // The foreground-service notification is only visible with this permission (Android 13+).
-        // The service itself runs either way, so a denial is not an error.
-        if (OperatingSystem.IsAndroidVersionAtLeast(33)
-            && CheckSelfPermission(Android.Manifest.Permission.PostNotifications) != Android.Content.PM.Permission.Granted)
+        OnBackPressedDispatcher.AddCallback(this, new BackCallback(this));
+
+        // The foreground-service notification is only visible with this permission (Android 13+). The user answers the
+        // system dialog; the service runs either way, so a denial is not an error.
+        if (savedInstanceState is null && OperatingSystem.IsAndroidVersionAtLeast(33)
+            && CheckSelfPermission(Android.Manifest.Permission.PostNotifications) != Permission.Granted)
         {
             RequestPermissions([Android.Manifest.Permission.PostNotifications], 1);
         }
     }
 
-    private const int RequestRuntimeBundle = 61;
-
-    /// <summary>MIGRATION row 18: put the previous runtime body back (C#), after an explicit confirmation.</summary>
-    private void ConfirmRollback() =>
-        new AlertDialog.Builder(this)
-            .SetTitle("回滚运行时")!
-            .SetMessage("把 runtime-current/previous 里的上一版 base / node / android-side 与 runtime-profile.json 换回来（当前这一版移到 runtime-current/failed）。DSH 层与工作区（user-data）不动。运行时须已停止；没有上一版时会如实报 BUNDLE_NO_ROLLBACK_SLOT。")!
-            .SetPositiveButton("回滚", (_, _) => _ = _bridge.RunRollbackAsync())!
-            .SetNegativeButton("取消", (_, _) => { })!
-            .Show();
-
-    private void PickRuntimeBundle() =>
-        StartActivityForResult(DocumentPicker.OpenIntent(["application/zip", ".zip"], multiple: false), RequestRuntimeBundle);
-
-    protected override async void OnActivityResult(int requestCode, Result resultCode, Intent? data)
+    protected override void OnSaveInstanceState(Bundle outState)
     {
-        base.OnActivityResult(requestCode, resultCode, data);
-        if (requestCode != RequestRuntimeBundle || resultCode != Result.Ok || data?.Data is not { } uri)
+        base.OnSaveInstanceState(outState);
+        outState.PutInt(TabKey, _tab);
+    }
+
+    /// <summary>Switches to a tab (also from other screens' buttons, e.g. Home → Terminal).</summary>
+    public void SelectTab(int id) => _nav.SelectedItemId = id;
+
+    private void Show(int id)
+    {
+        var fm = SupportFragmentManager;
+        var tx = fm.BeginTransaction();
+        foreach (var (tabId, tag) in Tabs)
         {
-            return;
-        }
-        // Copy into app cache (an allowed import root), import, then delete the copy.
-        var name = WorkspaceSafeName(DocumentPicker.DisplayName(ContentResolver!, uri));
-        var dest = System.IO.Path.Combine(CacheDir!.AbsolutePath, "runtime-import", name);
-        try
-        {
-            Directory.CreateDirectory(System.IO.Path.GetDirectoryName(dest)!);
-            var resolver = ContentResolver!;
-            var sw = System.Diagnostics.Stopwatch.StartNew();
-            _bridge.Note($"import: copying {name} from picker ...");
-            await Task.Run(async () =>
+            var f = fm.FindFragmentByTag(tag);
+            if (tabId == id)
             {
-                await using var input = resolver.OpenInputStream(uri) ?? throw new IOException("cannot open picked file");
-                await using var output = File.Create(dest);
-                await input.CopyToAsync(output);
-            });
-            _bridge.Note($"import: copied {new FileInfo(dest).Length / 1024 / 1024} MiB in {sw.Elapsed.TotalSeconds:F1} s");
-            await _bridge.RunImportAsync(dest, deleteAfter: true);
-        }
-        catch (Exception e) when (e is IOException or Java.Lang.Exception or UnauthorizedAccessException)
-        {
-            _bridge.Note($"import: copy failed {e.GetType().Name}: {e.Message}");
-            File.Delete(dest);
-        }
-    }
-
-    private static string WorkspaceSafeName(string name) =>
-        DshMobile.Core.Files.WorkspaceFileSystem.SanitizeFileName(name);
-
-    protected override void OnStart()
-    {
-        base.OnStart();
-        _bridge.Changed += OnBridgeChanged;
-        Render();
-    }
-
-    protected override void OnStop()
-    {
-        _bridge.Changed -= OnBridgeChanged;
-        base.OnStop();
-    }
-
-    private void OnBridgeChanged(object? sender, EventArgs e)
-    {
-        // Coalesce bursts (the stress test logs from many threads) into one UI-thread render.
-        if (Interlocked.Exchange(ref _refreshPosted, 1) == 0)
-        {
-            RunOnUiThread(() =>
+                if (f is null)
+                {
+                    tx.Add(Resource.Id.tab_content, Create(tabId), tag);
+                }
+                else
+                {
+                    tx.Show(f);
+                }
+            }
+            else if (f is not null && !f.IsHidden)
             {
-                Volatile.Write(ref _refreshPosted, 0);
-                Render();
-            });
+                tx.Hide(f);
+            }
         }
+        tx.SetReorderingAllowed(true);
+        tx.CommitNow();
+        _tab = id;
     }
 
-    private void Render()
+    private static AndroidX.Fragment.App.Fragment Create(int id) => id switch
     {
-        var busy = _bridge.IsBusy;
-        _status.SetText(busy ? Resource.String.status_running : Resource.String.status_idle);
-        _runtimeState.Text = _bridge.RuntimeState;
-        foreach (var b in _actions)
+        _ when id == Resource.Id.nav_terminal => new TerminalFragment(),
+        _ when id == Resource.Id.nav_files => new FilesFragment(),
+        _ when id == Resource.Id.nav_more => new MoreFragment(),
+        _ => new HomeFragment(),
+    };
+
+    private AndroidX.Fragment.App.Fragment? Current() =>
+        SupportFragmentManager.FindFragmentByTag(Tabs.First(t => t.Id == _tab).Tag);
+
+    /// <summary>Back: the tab's own back first (a folder up), then to Home, then out of the app.</summary>
+    private sealed class BackCallback(MainActivity owner) : OnBackPressedCallback(true)
+    {
+        public override void HandleOnBackPressed()
         {
-            b.Enabled = !busy;
+            if ((owner.Current() as ITabRoot)?.OnBack() == true)
+            {
+                return;
+            }
+            if (owner._tab != Resource.Id.nav_home)
+            {
+                owner.SelectTab(Resource.Id.nav_home);
+                return;
+            }
+            Enabled = false;
+            owner.OnBackPressedDispatcher.OnBackPressed();
+            Enabled = true;
         }
-        _log.Text = _bridge.LogText;
-        _logScroll.Post(() => _logScroll.FullScroll(FocusSearchDirection.Down));
+    }
+}
+
+/// <summary>A tab fragment's hooks into the shell.</summary>
+public interface ITabRoot
+{
+    /// <summary>Handles back inside the tab (e.g. a folder up); false lets the shell handle it.</summary>
+    bool OnBack() => false;
+
+    /// <summary>The tab's item was tapped again (scroll to top, refresh, …).</summary>
+    void OnReselected()
+    {
     }
 }

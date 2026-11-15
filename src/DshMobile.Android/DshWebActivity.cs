@@ -3,8 +3,12 @@ using Android.Content.PM;
 using DshMobile.App.Files;
 using Android.Views;
 using Android.Webkit;
+using AndroidX.Activity;
+using AndroidX.AppCompat.App;
 using DshMobile.App.Bridge;
+using DshMobile.App.Ui;
 using DshMobile.App.WebUi;
+using Google.Android.Material.ProgressIndicator;
 using Log = Android.Util.Log;
 
 namespace DshMobile.App;
@@ -12,6 +16,7 @@ namespace DshMobile.App;
 /// <summary>
 /// Full-screen host for the official DSH WebUI (TASK-006, MIGRATION row 25). Loading, the launch-token exchange,
 /// navigation policy and 401 recovery live in <see cref="CSharpWebUiController"/>: this class never sees the token.
+/// ADR-0021: edge-to-edge with a Material status banner that disappears once the page has loaded.
 /// </summary>
 [Activity(
     Label = "@string/dsh_title",
@@ -20,26 +25,26 @@ namespace DshMobile.App;
     ConfigurationChanges = ConfigChanges.Orientation | ConfigChanges.ScreenSize | ConfigChanges.ScreenLayout
         | ConfigChanges.SmallestScreenSize | ConfigChanges.Keyboard | ConfigChanges.KeyboardHidden | ConfigChanges.UiMode,
     WindowSoftInputMode = SoftInput.AdjustResize)]
-public sealed class DshWebActivity : Activity
+public sealed class DshWebActivity : AppCompatActivity
 {
     private WebView? _webView;
     private TextView? _status;
-    private BackCallback? _back;
+    private View? _banner;
+    private LinearProgressIndicator? _progress;
     private CSharpWebUiController? _csharp;
 
     protected override void OnCreate(Bundle? savedInstanceState)
     {
         base.OnCreate(savedInstanceState);
 
-        var root = new LinearLayout(this) { Orientation = Orientation.Vertical };
-        root.SetFitsSystemWindows(true);
-        _status = new TextView(this);
-        _status.SetPadding(24, 12, 24, 12);
-        _status.AccessibilityLiveRegion = AccessibilityLiveRegion.Polite;
-        _webView = new WebView(this);
-        root.AddView(_status, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MatchParent, ViewGroup.LayoutParams.WrapContent));
-        root.AddView(_webView, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MatchParent, 0, 1f));
-        SetContentView(root);
+        Edges.Enable(Window!);
+        SetContentView(Resource.Layout.activity_web);
+        Edges.Pad(FindViewById(Resource.Id.screen_root)!);
+        _banner = FindViewById(Resource.Id.web_banner);
+        _progress = FindViewById<LinearProgressIndicator>(Resource.Id.web_progress);
+        _status = FindViewById<TextView>(Resource.Id.web_status);
+        _webView = FindViewById<WebView>(Resource.Id.web_view)!;
+        ShowState("LOADING", "");
 
         var runtime = DshMobileApplication.Current.Bridge.Runtime;
         DshMobile.Runtime.Hosting.IDshTokenSource tokens = runtime.Host is { } host ? host : NoDshToken.Instance;
@@ -67,20 +72,12 @@ public sealed class DshWebActivity : Activity
             }));
         _csharp.Attach(_webView);
 
-        if (OperatingSystem.IsAndroidVersionAtLeast(33))
-        {
-            // Predictive back (default for targetSdk 36+): navigate WebView history first, then leave.
-            _back = new BackCallback(this);
-            OnBackInvokedDispatcher.RegisterOnBackInvokedCallback(0, _back);
-        }
+        // Predictive back (default for targetSdk 36+): navigate WebView history first, then leave.
+        OnBackPressedDispatcher.AddCallback(this, new BackCallback(this));
     }
 
     protected override void OnDestroy()
     {
-        if (OperatingSystem.IsAndroidVersionAtLeast(33) && _back is not null)
-        {
-            OnBackInvokedDispatcher.UnregisterOnBackInvokedCallback(_back);
-        }
         _csharp?.Detach();
         _csharp = null;
         if (_webView is not null)
@@ -135,7 +132,13 @@ public sealed class DshWebActivity : Activity
     private void ShowState(string state, string detail)
     {
         // LOADED hides the bar so the WebUI gets the whole screen; anything else stays visible.
-        _status!.Visibility = state == "LOADED" ? ViewStates.Gone : ViewStates.Visible;
+        _banner!.Visibility = state == "LOADED" ? ViewStates.Gone : ViewStates.Visible;
+        var waiting = state is "WAITING_TOKEN" or "LOADING";
+        _progress!.Visibility = waiting ? ViewStates.Visible : ViewStates.Gone;
+        _banner.SetBackgroundColor(new Android.Graphics.Color(Rows.Color(_banner,
+            waiting ? Resource.Attribute.colorSurfaceContainerHigh : Resource.Attribute.colorErrorContainer)));
+        _status!.SetTextColor(new Android.Graphics.Color(Rows.Color(_status,
+            waiting ? Resource.Attribute.colorOnSurface : Resource.Attribute.colorOnErrorContainer)));
         _status.Text = state switch
         {
             "WAITING_TOKEN" => GetString(Resource.String.web_waiting),
@@ -162,8 +165,8 @@ public sealed class DshWebActivity : Activity
         }
     }
 
-    private sealed class BackCallback(DshWebActivity owner) : Java.Lang.Object, Android.Window.IOnBackInvokedCallback
+    private sealed class BackCallback(DshWebActivity owner) : OnBackPressedCallback(true)
     {
-        public void OnBackInvoked() => owner.GoBack();
+        public override void HandleOnBackPressed() => owner.GoBack();
     }
 }

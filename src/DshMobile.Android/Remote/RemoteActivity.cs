@@ -2,9 +2,13 @@ using Android.Content;
 using Android.Text;
 using Android.Views;
 using DshMobile.App.Bridge;
+using DshMobile.App.Ui;
 using DshMobile.Core.Contracts;
 using DshMobile.Runtime;
 using DshMobile.Runtime.Remote;
+using Google.Android.Material.Button;
+using Google.Android.Material.Dialog;
+using Google.Android.Material.ProgressIndicator;
 
 namespace DshMobile.App.Remote;
 
@@ -12,67 +16,77 @@ namespace DshMobile.App.Remote;
 /// Remote DSH host over SSH (TASK-012, ADR-0006). Shows the phone's SSH public key (private key stays in Android
 /// Keystore), edits one host profile, connects over C# SSH.NET with explicit host-key confirmation (ADR-0012), starts /
 /// stops the remote <c>dsh web</c> (ADR-0013) and reports what the remote really offers. Remote never gets this phone's
-/// ui_*.
+/// ui_*. ADR-0021: the same steps as a Material 3 page (connection, host profile, public key).
 /// </summary>
-[Activity(Label = "@string/remote_title", Exported = false)]
-public sealed class RemoteActivity : Activity
+[Activity(Label = "@string/remote_title", Exported = false, WindowSoftInputMode = SoftInput.AdjustResize)]
+public sealed class RemoteActivity : DshActivity
 {
     private BridgeHost _bridge = null!;
-    private TextView _identity = null!;
-    private TextView _status = null!;
+    private TextView _key = null!;
+    private TextView _keyMeta = null!;
+    private string? _publicKeyLine;
+    private TextView _statusTitle = null!;
+    private ImageView _statusIcon = null!;
+    private TextView _statusText = null!;
+    private LinearProgressIndicator _progress = null!;
     private EditText _label = null!, _host = null!, _port = null!, _user = null!, _dshPort = null!;
+    private MaterialButton _connect = null!, _disconnect = null!, _start = null!, _stop = null!, _remove = null!;
     private Button[] _buttons = [];
     private RemoteHost? _selected;
 
     protected override void OnCreate(Bundle? savedInstanceState)
     {
         base.OnCreate(savedInstanceState);
+        SetScreen(Resource.Layout.activity_remote, Resource.String.remote_title);
         _bridge = DshMobileApplication.Current.Bridge;
+        _progress = FindViewById<LinearProgressIndicator>(Resource.Id.remote_progress)!;
+        _key = FindViewById<TextView>(Resource.Id.remote_key)!;
+        _keyMeta = FindViewById<TextView>(Resource.Id.remote_key_meta)!;
+        _statusTitle = FindViewById<TextView>(Resource.Id.remote_status_title)!;
+        _statusIcon = FindViewById<ImageView>(Resource.Id.remote_status_icon)!;
+        _statusText = FindViewById<TextView>(Resource.Id.remote_status)!;
+        _label = FindViewById<EditText>(Resource.Id.remote_label)!;
+        _host = FindViewById<EditText>(Resource.Id.remote_host)!;
+        _port = FindViewById<EditText>(Resource.Id.remote_port)!;
+        _user = FindViewById<EditText>(Resource.Id.remote_user)!;
+        _dshPort = FindViewById<EditText>(Resource.Id.remote_dsh_port)!;
 
-        var root = new LinearLayout(this) { Orientation = Orientation.Vertical };
-        root.SetPadding(24, 16, 24, 16);
-        root.AddView(new TextView(this) { Text = GetString(Resource.String.remote_explain) });
-
-        _identity = new TextView(this) { TextSize = 12 };
-        _identity.SetTextIsSelectable(true);
-        _identity.SetPadding(0, 12, 0, 12);
-        root.AddView(_identity);
-        var copy = Make(Resource.String.remote_copy_key, CopyKey);
-
-        _label = Field(root, Resource.String.remote_label, InputTypes.ClassText);
-        _host = Field(root, Resource.String.remote_host, InputTypes.ClassText | InputTypes.TextVariationUri);
-        _port = Field(root, Resource.String.remote_port, InputTypes.ClassNumber);
-        _user = Field(root, Resource.String.remote_user, InputTypes.ClassText);
-        _dshPort = Field(root, Resource.String.remote_dsh_port, InputTypes.ClassNumber);
-        _port.Text = "22";
-        _dshPort.Text = "3091";
-
-        var save = Make(Resource.String.remote_save, Save);
-        var connect = Make(Resource.String.remote_connect, () => _ = ConnectAsync());
-        var start = Make(Resource.String.remote_start, StartDsh);
-        var stop = Make(Resource.String.remote_stop, StopDsh);
-        var disconnect = Make(Resource.String.remote_disconnect, () =>
+        var copy = Wire(Resource.Id.remote_copy_key, CopyKey);
+        var save = Wire(Resource.Id.remote_save, Save);
+        _connect = Wire(Resource.Id.remote_connect, () => _ = ConnectAsync());
+        _start = Wire(Resource.Id.remote_start, StartDsh);
+        _stop = Wire(Resource.Id.remote_stop, StopDsh);
+        _disconnect = Wire(Resource.Id.remote_disconnect, () =>
         {
             CsRemoteConnection.Clear();
-            _status.Text = GetString(Resource.String.remote_cs_disconnected);
+            SetStatus(GetString(Resource.String.remote_cs_disconnected));
             _bridge.Note("remote disconnect");
         });
-        var remove = Make(Resource.String.remote_remove, ConfirmRemove);
-        root.AddView(Row(copy, save));
-        root.AddView(Row(connect, disconnect));
-        root.AddView(Row(start, stop));
-        root.AddView(Row(remove, new View(this)));
-        _buttons = [copy, save, connect, start, stop, disconnect, remove];
+        _remove = Wire(Resource.Id.remote_remove, ConfirmRemove);
+        _buttons = [copy, save, _connect, _start, _stop, _disconnect, _remove];
+        ShowConnection();
+    }
 
-        _status = new TextView(this) { AccessibilityLiveRegion = AccessibilityLiveRegion.Polite };
-        _status.SetTextIsSelectable(true);
-        _status.SetPadding(0, 16, 0, 16);
-        root.AddView(_status);
+    /// <summary>The status block; <see cref="ShowConnection"/> keeps the title and buttons in step with the session.</summary>
+    private void SetStatus(string text)
+    {
+        _statusText.Text = text;
+        _statusText.Visibility = text.Length == 0 ? ViewStates.Gone : ViewStates.Visible;
+        ShowConnection();
+    }
 
-        var scroll = new ScrollView(this);
-        scroll.SetFitsSystemWindows(true);
-        scroll.AddView(root);
-        SetContentView(scroll);
+    private void ShowConnection()
+    {
+        var connected = CsRemoteConnection.Session is not null;
+        _statusTitle.SetText(connected ? Resource.String.remote_connected_title : Resource.String.remote_not_connected_title);
+        _statusIcon.ImageTintList = Android.Content.Res.ColorStateList.ValueOf(new Android.Graphics.Color(connected
+            ? Rows.Color(_statusIcon, Resource.Attribute.colorPrimary)
+            : Rows.Color(_statusIcon, Resource.Attribute.colorOnSurfaceVariant)));
+        _connect.Visibility = connected ? ViewStates.Gone : ViewStates.Visible;
+        _disconnect.Visibility = connected ? ViewStates.Visible : ViewStates.Gone;
+        _start.Visibility = connected ? ViewStates.Visible : ViewStates.Gone;
+        _stop.Visibility = connected ? ViewStates.Visible : ViewStates.Gone;
+        _remove.Visibility = _selected is null ? ViewStates.Gone : ViewStates.Visible;
     }
 
     protected override void OnResume()
@@ -108,12 +122,16 @@ public sealed class RemoteActivity : Activity
         if (id is { PublicKeyLine: { } line, Fingerprint: { } fp })
         {
             var hw = id.HardwareBacked switch { true => GetString(Resource.String.remote_key_hw), false => GetString(Resource.String.remote_key_sw), null => "?" };
-            _identity.Text = $"{GetString(Resource.String.remote_key_heading)}（{hw}）\n{line}\n{fp}"
+            _publicKeyLine = line;
+            _key.Text = line;
+            _keyMeta.Text = $"{fp} · {hw}"
                 + (id.SelfTestVerified == false ? "\n" + Fmt(Resource.String.remote_key_selftest_failed, id.Error ?? "?") : "");
         }
         else
         {
-            _identity.Text = Fmt(Resource.String.remote_key_unavailable, id.Error ?? "no key");
+            _publicKeyLine = null;
+            _key.Text = "";
+            _keyMeta.Text = Fmt(Resource.String.remote_key_unavailable, id.Error ?? "no key");
         }
         // The public line is what the user copies into authorized_keys anyway (not a secret).
         _bridge.Note($"remote identity: present={id.KeyPresent} hw={id.HardwareBacked?.ToString() ?? "?"} selftest={id.SelfTestVerified?.ToString() ?? "-"} key={id.PublicKeyLine ?? "-"} {id.Fingerprint ?? ""}");
@@ -131,6 +149,7 @@ public sealed class RemoteActivity : Activity
     private void Select(RemoteHost h)
     {
         _selected = h;
+        _remove.Visibility = ViewStates.Visible;
         _label.Text = h.Label;
         _host.Text = h.Host;
         _port.Text = h.Port.ToString();
@@ -142,7 +161,7 @@ public sealed class RemoteActivity : Activity
     {
         if (!int.TryParse(_port.Text, out var port) || !int.TryParse(_dshPort.Text, out var dshPort))
         {
-            _status.Text = GetString(Resource.String.remote_bad_port);
+            SetStatus(GetString(Resource.String.remote_bad_port));
             return;
         }
         var req = new RemoteHostRequest(_selected?.Id, _label.Text ?? "", (_host.Text ?? "").Trim(), port, (_user.Text ?? "").Trim(), dshPort);
@@ -151,11 +170,11 @@ public sealed class RemoteActivity : Activity
             var cs = CsRemoteHosts.Save(this, req);
             _bridge.Note($"remote.hosts.save: {(req.Id is null ? "new" : "updated")} host, pin {(cs.PinnedFingerprint is null ? "none" : "kept")}");
             Select(CsRemoteHosts.ToDto(cs));
-            _status.Text = GetString(cs.PinnedFingerprint is null ? Resource.String.remote_saved_unpinned : Resource.String.remote_saved_pinned);
+            SetStatus(GetString(cs.PinnedFingerprint is null ? Resource.String.remote_saved_unpinned : Resource.String.remote_saved_pinned));
         }
         catch (RemoteProfileException e)
         {
-            _status.Text = $"remote.hosts.save FAILED {RuntimeErrorCodes.BadRequest}: {e.Message}";
+            SetStatus($"remote.hosts.save FAILED {RuntimeErrorCodes.BadRequest}: {e.Message}");
         }
     }
 
@@ -167,7 +186,7 @@ public sealed class RemoteActivity : Activity
     {
         if (_selected is null)
         {
-            _status.Text = GetString(Resource.String.remote_save_first);
+            SetStatus(GetString(Resource.String.remote_save_first));
             return;
         }
         var hostId = _selected.Id;
@@ -175,10 +194,10 @@ public sealed class RemoteActivity : Activity
         var profile = RemoteHostProfile.ParseStored(StoredHosts()).FirstOrDefault(p => p.Id == hostId);
         if (profile is null)
         {
-            _status.Text = GetString(Resource.String.remote_save_first);
+            SetStatus(GetString(Resource.String.remote_save_first));
             return;
         }
-        _status.Text = GetString(Resource.String.remote_cs_connecting);
+        SetStatus(GetString(Resource.String.remote_cs_connecting));
         Enable(false);
         try
         {
@@ -199,7 +218,7 @@ public sealed class RemoteActivity : Activity
         }
         catch (Exception e)
         {
-            _status.Text = Fmt(Resource.String.remote_cs_failed, $"{e.GetType().Name}: {e.Message}");
+            SetStatus(Fmt(Resource.String.remote_cs_failed, $"{e.GetType().Name}: {e.Message}"));
         }
         finally
         {
@@ -219,7 +238,7 @@ public sealed class RemoteActivity : Activity
             _ = CsDshAsync(cs, start);
             return;
         }
-        _status.Text = GetString(Resource.String.remote_not_connected);
+        SetStatus(GetString(Resource.String.remote_not_connected));
     }
 
     private async Task CsDshAsync(RemoteSshSession session, bool start)
@@ -236,7 +255,7 @@ public sealed class RemoteActivity : Activity
         }
         catch (Exception e)
         {
-            _status.Text = Fmt(Resource.String.remote_cs_failed, $"{e.GetType().Name}: {e.Message}");
+            SetStatus(Fmt(Resource.String.remote_cs_failed, $"{e.GetType().Name}: {e.Message}"));
         }
         finally
         {
@@ -252,7 +271,7 @@ public sealed class RemoteActivity : Activity
         {
             extra += $"\n{s.KeyType ?? "?"} {fp}\n{GetString(Resource.String.remote_cs_unknown_hint)}";
         }
-        _status.Text = extra + "\n" + _status.Text;
+        SetStatus(extra + "\n" + _statusText.Text);
     }
 
     /// <summary>
@@ -261,7 +280,8 @@ public sealed class RemoteActivity : Activity
     /// </summary>
     private void ConfirmFingerprint(RemoteHost host, string fingerprint, string? keyType)
     {
-        new AlertDialog.Builder(this)
+        new MaterialAlertDialogBuilder(this)
+            .SetIcon(Resource.Drawable.ic_key)!
             .SetTitle(Resource.String.remote_trust_title)!
             .SetMessage(Fmt(Resource.String.remote_trust_message, $"{host.User}@{host.Host}:{host.Port}", keyType ?? "?", fingerprint))!
             .SetPositiveButton(Resource.String.remote_trust_yes, async (_, _) =>
@@ -278,7 +298,7 @@ public sealed class RemoteActivity : Activity
                 }
                 catch (RemoteProfileException e)
                 {
-                    _status.Text = $"remote.trust FAILED {RuntimeErrorCodes.BadRequest}: {e.Message}";
+                    SetStatus($"remote.trust FAILED {RuntimeErrorCodes.BadRequest}: {e.Message}");
                 }
             })!
             .SetNegativeButton(Android.Resource.String.Cancel, (_, _) => { })!
@@ -291,15 +311,17 @@ public sealed class RemoteActivity : Activity
         {
             return;
         }
-        new AlertDialog.Builder(this)
-            .SetMessage(Fmt(Resource.String.remote_remove_confirm, h.Label))!
+        new MaterialAlertDialogBuilder(this)
+            .SetIcon(Resource.Drawable.ic_delete)!
+            .SetTitle(Fmt(Resource.String.remote_remove_confirm, h.Label))!
             .SetPositiveButton(Resource.String.remote_remove, (_, _) =>
             {
                 CsRemoteConnection.Clear(); // removing a host also disconnects it
                 CsRemoteHosts.Remove(this, h.Id);
                 _bridge.Note("remote.hosts.remove");
                 _selected = null;
-                _status.Text = GetString(Resource.String.remote_removed);
+                ShowConnection();
+                SetStatus(GetString(Resource.String.remote_removed));
             })!
             .SetNegativeButton(Android.Resource.String.Cancel, (_, _) => { })!
             .Show();
@@ -307,8 +329,8 @@ public sealed class RemoteActivity : Activity
 
     private void CopyKey()
     {
-        var text = _identity.Text?.Split('\n').FirstOrDefault(l => l.StartsWith("ecdsa-sha2-nistp256 ", StringComparison.Ordinal));
-        if (text is null)
+        var text = _publicKeyLine;
+        if (text is null || !text.StartsWith("ecdsa-sha2-nistp256 ", StringComparison.Ordinal))
         {
             return;
         }
@@ -353,39 +375,22 @@ public sealed class RemoteActivity : Activity
         {
             lines.Add(GetString(Resource.String.remote_auth_hint));
         }
-        _status.Text = string.Join('\n', lines);
+        SetStatus(string.Join('\n', lines));
     }
 
     private string Fmt(int resId, params string[] args) =>
         GetString(resId, args.Select(a => (Java.Lang.Object)new Java.Lang.String(a)).ToArray()) ?? "";
 
-    private EditText Field(LinearLayout root, int hint, InputTypes type)
+    private MaterialButton Wire(int id, Action onClick)
     {
-        var e = new EditText(this) { Hint = GetString(hint), InputType = type };
-        e.SetSingleLine(true);
-        root.AddView(e);
-        return e;
-    }
-
-    private LinearLayout Row(View a, View b)
-    {
-        var row = new LinearLayout(this) { Orientation = Orientation.Horizontal };
-        row.AddView(a, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WrapContent, 1f));
-        row.AddView(b, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WrapContent, 1f));
-        return row;
-    }
-
-    private Button Make(int text, Action onClick)
-    {
-        var b = new Button(this);
-        b.SetText(text);
-        b.SetMinHeight((int)(48 * Resources!.DisplayMetrics!.Density));
+        var b = FindViewById<MaterialButton>(id)!;
         b.Click += (_, _) => onClick();
         return b;
     }
 
     private void Enable(bool on)
     {
+        _progress.Visibility = on ? ViewStates.Gone : ViewStates.Visible;
         foreach (var b in _buttons)
         {
             b.Enabled = on;

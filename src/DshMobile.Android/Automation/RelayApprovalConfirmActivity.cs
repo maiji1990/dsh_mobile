@@ -20,7 +20,7 @@ namespace DshMobile.App.Automation;
 [Activity(
     Name = ApprovalNotificationContent.ConfirmActivity,
     Label = "@string/relay_approval_confirm_title",
-    Theme = "@style/Theme.DshMobile.Material3",
+    Theme = "@style/Theme.DshMobile",
     Exported = false,
     ExcludeFromRecents = true,
     NoHistory = true,

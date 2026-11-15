@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Brand colour scheme (Material 3 colour roles, light). Used where dynamic colour is unavailable (Android 11 and older,
+  or a ROM without it); on Android 12+ DynamicColors replaces these with wallpaper-based roles. Dark: values-night.
+-->
+<resources>
+  <color name="dshm_primary">#0061A4</color>
+  <color name="dshm_on_primary">#FFFFFF</color>
+  <color name="dshm_primary_container">#D1E4FF</color>
+  <color name="dshm_on_primary_container">#001D36</color>
+  <color name="dshm_secondary">#535F70</color>
+  <color name="dshm_on_secondary">#FFFFFF</color>
+  <color name="dshm_secondary_container">#D7E3F7</color>
+  <color name="dshm_on_secondary_container">#101C2B</color>
+  <color name="dshm_tertiary">#6B5778</color>
+  <color name="dshm_on_tertiary">#FFFFFF</color>
+  <color name="dshm_tertiary_container">#F2DAFF</color>
+  <color name="dshm_on_tertiary_container">#251431</color>
+  <color name="dshm_error">#BA1A1A</color>
+  <color name="dshm_on_error">#FFFFFF</color>
+  <color name="dshm_error_container">#FFDAD6</color>
+  <color name="dshm_on_error_container">#410002</color>
+  <color name="dshm_background">#FAF9FD</color>
+  <color name="dshm_on_background">#1A1C1E</color>
+  <color name="dshm_surface">#FAF9FD</color>
+  <color name="dshm_on_surface">#1A1C1E</color>
+  <color name="dshm_surface_variant">#DFE2EB</color>
+  <color name="dshm_on_surface_variant">#43474E</color>
+  <color name="dshm_outline">#73777F</color>
+  <color name="dshm_outline_variant">#C3C7CF</color>
+  <color name="dshm_inverse_surface">#2F3033</color>
+  <color name="dshm_inverse_on_surface">#F1F0F4</color>
+  <color name="dshm_inverse_primary">#9ECAFF</color>
+  <color name="dshm_surface_dim">#DAD9DD</color>
+  <color name="dshm_surface_bright">#FAF9FD</color>
+  <color name="dshm_surface_container_lowest">#FFFFFF</color>
+  <color name="dshm_surface_container_low">#F4F3F7</color>
+  <color name="dshm_surface_container">#EEEDF1</color>
+  <color name="dshm_surface_container_high">#E8E8EB</color>
+  <color name="dshm_surface_container_highest">#E2E2E6</color>
+  <!-- Status dot / icon for "running". Not a theme role: green reads as "up" in both schemes. -->
+  <color name="dshm_running">#1E8E3E</color>
+  <!-- Terminal screen: always dark, whatever the app theme. -->
+  <color name="dshm_terminal_background">#000000</color>
+  <bool name="dshm_light_bars">true</bool>
+</resources>

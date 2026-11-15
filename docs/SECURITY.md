@@ -29,7 +29,7 @@
 | 工作区文件：`.dsh/`（DSH_HOME，含 `.credentials.yaml`）只列出，不可预览 / 导出 / 写入（真机验证） | 同上 |
 | 工作区导入：不覆盖已有文件；先写临时文件再改名，失败不留半成品；文件名净化为单一路径分量 | 同上 |
 | 文件进出只经系统文件选择器（SAF）按次授权，无存储权限 | `src/DshMobile.Android/Files/` |
-| 终端：PTY 字节经 WebMessagePort 送入本地 xterm.js 页，页面资源拦截只放行 `/terminal/**`、CSP 禁网络；不进入日志 | `CSharpTerminalActivity`、`TerminalSessions` |
+| 终端：PTY 字节经 WebMessagePort 送入本地 xterm.js 页，页面资源拦截只放行 `/terminal/**`、CSP 禁网络；不进入日志 | `TerminalFragment`、`TerminalSessions` |
 | 终端：停止运行时（含「无运行」时）先关闭全部 C# 终端会话，避免 guest 进程脱离生命周期 | `RuntimeCoordinator.StopAsync` |
 | 终端：Ctrl 键栏为一次性锁存 | `TerminalKeys` |
 | 插件：spec / name 只接受 npm registry 包名（可选 @scope 与版本），拒绝路径、URL、git、file:、选项注入与 shell 元字符；profile 白名单（单测覆盖） | `PluginCommand`、`UpstreamPinnedValuesTests` |

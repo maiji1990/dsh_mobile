@@ -45,7 +45,7 @@ internal sealed class ApprovalCardView
         _prompt = prompt;
         _onDeadline = onDeadline;
         _waiting = waitingCount;
-        _context = new ContextThemeWrapper(context, Resource.Style.Theme_DshMobile_Material3);
+        _context = new ContextThemeWrapper(context, Resource.Style.Theme_DshMobile);
         var density = _context.Resources!.DisplayMetrics!.Density;
         int Dp(int v) => (int)(v * density);
 

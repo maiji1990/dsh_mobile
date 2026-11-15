@@ -24,6 +24,8 @@ public sealed class DshMobileApplication : global::Android.App.Application
     {
         base.OnCreate();
         Current = this;
+        // ADR-0021: Material You colours from the wallpaper on Android 12+; elsewhere the brand scheme in colors.xml.
+        Google.Android.Material.Color.DynamicColors.ApplyToActivitiesIfAvailable(this);
         _bridge = new BridgeHost(this);
     }
 }

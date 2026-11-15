@@ -1,60 +1,59 @@
 using Android.Views;
+using Android.Views.InputMethods;
 using DshMobile.App.Bridge;
+using DshMobile.App.Ui;
 using DshMobile.Runtime.Guest;
 using DshMobile.Runtime.Plugins;
+using Google.Android.Material.Button;
+using Google.Android.Material.Dialog;
+using Google.Android.Material.ProgressIndicator;
+using Google.Android.Material.TextField;
 
 namespace DshMobile.App.Plugins;
 
 /// <summary>
-/// Cordis plugin manager (TASK-009) for the `web` profile: lists, adds and removes plugins through DSH's own
+/// Cordis plugin manager (TASK-009, ADR-0021) for the `web` profile: lists, adds and removes plugins through DSH's own
 /// `dsh plugin` (pnpm) through the C# PRoot launcher. Installing a plugin runs third-party code inside the sandbox, so
 /// every add/remove is confirmed by the user; an install that added a package DSH cannot load is rolled back
 /// (MIGRATION row 29). Results show the real exit status and output.
 /// </summary>
-[Activity(Label = "@string/plugins_title", Exported = false)]
-public sealed class PluginsActivity : Activity
+[Activity(Label = "@string/plugins_title", Exported = false, WindowSoftInputMode = SoftInput.AdjustResize)]
+public sealed class PluginsActivity : DshActivity
 {
     private const string Profile = "web";
     private static readonly TimeSpan ListDeadline = TimeSpan.FromMinutes(3);
     private static readonly TimeSpan ChangeDeadline = TimeSpan.FromMinutes(15);
 
     private BridgeHost _bridge = null!;
-    private ListView _list = null!;
-    private EditText _spec = null!;
-    private TextView _status = null!;
-    private Button _add = null!;
+    private LinearLayout _list = null!;
+    private TextInputEditText _spec = null!;
+    private TextView _output = null!;
+    private MaterialButton _add = null!;
+    private LinearProgressIndicator _progress = null!;
     private List<(string Name, string Version)> _plugins = [];
+    private bool _busy;
+    private bool _listed = true;
 
     protected override void OnCreate(Bundle? savedInstanceState)
     {
         base.OnCreate(savedInstanceState);
+        SetScreen(Resource.Layout.activity_plugins, Resource.String.plugins_title);
         _bridge = DshMobileApplication.Current.Bridge;
-
-        var root = new LinearLayout(this) { Orientation = Orientation.Vertical };
-        root.SetFitsSystemWindows(true);
-        root.SetPadding(24, 16, 24, 16);
-        root.AddView(new TextView(this) { Text = Fmt(Resource.String.plugins_profile, Profile) });
-
-        var row = new LinearLayout(this) { Orientation = Orientation.Horizontal };
-        _spec = new EditText(this) { Hint = GetString(Resource.String.plugins_spec_hint) };
-        _spec.SetSingleLine(true);
-        _add = new Button(this) { Text = GetString(Resource.String.plugins_add) };
+        _list = FindViewById<LinearLayout>(Resource.Id.plugins_list)!;
+        _spec = FindViewById<TextInputEditText>(Resource.Id.plugins_spec)!;
+        _output = FindViewById<TextView>(Resource.Id.plugins_output)!;
+        _add = FindViewById<MaterialButton>(Resource.Id.plugins_add)!;
+        _progress = FindViewById<LinearProgressIndicator>(Resource.Id.plugins_progress)!;
+        FindViewById<TextView>(Resource.Id.plugins_profile)!.Text = Rows.Fmt(this, Resource.String.plugins_profile, Profile);
         _add.Click += (_, _) => ConfirmAdd();
-        row.AddView(_spec, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WrapContent, 1f));
-        row.AddView(_add);
-        root.AddView(row);
-
-        _status = new TextView(this) { AccessibilityLiveRegion = AccessibilityLiveRegion.Polite };
-        _status.SetTextIsSelectable(true);
-        var statusScroll = new ScrollView(this);
-        statusScroll.AddView(_status);
-        root.AddView(statusScroll, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MatchParent, 0, 1f));
-
-        _list = new ListView(this);
-        _list.ItemClick += (_, e) => ConfirmRemove(_plugins[e.Position].Name);
-        root.AddView(_list, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MatchParent, 0, 2f));
-        SetContentView(root);
-
+        _spec.EditorAction += (_, e) =>
+        {
+            e.Handled = e.ActionId == ImeAction.Done;
+            if (e.Handled)
+            {
+                ConfirmAdd();
+            }
+        };
         _ = RefreshAsync();
     }
 
@@ -64,26 +63,46 @@ public sealed class PluginsActivity : Activity
         SetBusy(true, keepStatus ? null : GetString(Resource.String.plugins_loading));
         var r = await ListAsync();
         _plugins = r.Ok ? GuestPlugins.ParseList(r.Output).ToList() : [];
-        _list.Adapter = new ArrayAdapter<string>(this, Android.Resource.Layout.SimpleListItem1,
-            _plugins.Count == 0 ? [GetString(r.Ok ? Resource.String.plugins_none : Resource.String.plugins_list_failed)] : _plugins.Select(p => $"{p.Name}  {p.Version}").ToList());
-        _list.Enabled = _plugins.Count > 0;
+        _listed = r.Ok;
+        ShowList();
         SetBusy(false, keepStatus ? null : Describe("list", r));
+    }
+
+    private void ShowList()
+    {
+        _list.RemoveAllViews();
+        if (_plugins.Count == 0)
+        {
+            Rows.Add(_list, Resource.Drawable.ic_extension, GetString(_listed ? Resource.String.plugins_none : Resource.String.plugins_list_failed));
+            return;
+        }
+        foreach (var (name, version) in _plugins)
+        {
+            var row = Rows.Add(_list, Resource.Drawable.ic_extension, name, version);
+            var remove = new MaterialButton(this, null, Resource.Attribute.materialIconButtonStyle);
+            remove.SetIconResource(Resource.Drawable.ic_delete);
+            remove.ContentDescription = Rows.Fmt(this, Resource.String.plugins_remove_confirm, name);
+            remove.Click += (_, _) => ConfirmRemove(name);
+            remove.Enabled = !_busy;
+            row.SetTrailing(remove);
+        }
     }
 
     private void ConfirmAdd()
     {
         var spec = _spec.Text?.Trim() ?? "";
-        if (spec.Length == 0)
+        if (spec.Length == 0 || _busy)
         {
             return;
         }
-        new AlertDialog.Builder(this)
-            .SetTitle(Fmt(Resource.String.plugins_add_confirm_title, spec))!
+        new MaterialAlertDialogBuilder(this)
+            .SetIcon(Resource.Drawable.ic_extension)!
+            .SetTitle(Rows.Fmt(this, Resource.String.plugins_add_confirm_title, spec))!
             .SetMessage(GetString(Resource.String.plugins_add_confirm_body) + "\n\n" + AddNote)!
             .SetNegativeButton(Android.Resource.String.Cancel, (_, _) => { })!
             .SetPositiveButton(Resource.String.plugins_add, async (_, _) =>
             {
-                SetBusy(true, Fmt(Resource.String.plugins_installing, spec));
+                SetBusy(true, Rows.Fmt(this, Resource.String.plugins_installing, spec));
                 var r = await ChangeAsync("add", spec);
                 SetBusy(false, Describe("add " + spec, r));
                 if (r.Ok)
@@ -96,12 +115,12 @@ public sealed class PluginsActivity : Activity
     }
 
     private void ConfirmRemove(string name) =>
-        new AlertDialog.Builder(this)
-            .SetTitle(Fmt(Resource.String.plugins_remove_confirm, name))!
+        new MaterialAlertDialogBuilder(this)
+            .SetTitle(Rows.Fmt(this, Resource.String.plugins_remove_confirm, name))!
             .SetNegativeButton(Android.Resource.String.Cancel, (_, _) => { })!
             .SetPositiveButton(Resource.String.plugins_remove, async (_, _) =>
             {
-                SetBusy(true, Fmt(Resource.String.plugins_removing, name));
+                SetBusy(true, Rows.Fmt(this, Resource.String.plugins_removing, name));
                 SetBusy(false, Describe("remove " + name, await ChangeAsync("remove", name)));
                 await RefreshAsync(keepStatus: true);
             })!
@@ -112,7 +131,7 @@ public sealed class PluginsActivity : Activity
     /// <summary><c>dsh plugin list --json --depth 0</c> through the C# PRoot launcher.</summary>
     private async Task<GuestPluginResult> ListAsync()
     {
-        var runtime = DshMobileApplication.Current.Bridge.Runtime;
+        var runtime = _bridge.Runtime;
         try
         {
             using var cts = new CancellationTokenSource(ListDeadline);
@@ -128,7 +147,7 @@ public sealed class PluginsActivity : Activity
 
     private async Task<PluginChangeResult> ChangeAsync(string verb, string operand)
     {
-        var runtime = DshMobileApplication.Current.Bridge.Runtime;
+        var runtime = _bridge.Runtime;
         try
         {
             using var cts = new CancellationTokenSource(ChangeDeadline);
@@ -158,14 +177,13 @@ public sealed class PluginsActivity : Activity
 
     private void SetBusy(bool busy, string? status)
     {
+        _busy = busy;
         _add.Enabled = !busy;
-        _list.Enabled = !busy && _plugins.Count > 0;
+        _progress.Visibility = busy ? ViewStates.Visible : ViewStates.Gone;
+        ShowList();
         if (status is not null)
         {
-            _status.Text = status;
+            _output.Text = status.TrimEnd();
         }
     }
-
-    /// <summary>Android %1$s formatting with a non-null Java string argument.</summary>
-    private string Fmt(int resId, string arg) => GetString(resId, new Java.Lang.String(arg)) ?? arg;
 }
