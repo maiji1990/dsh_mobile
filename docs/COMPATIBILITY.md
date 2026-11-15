@@ -1,5 +1,7 @@
 # 兼容性（COMPATIBILITY）
 
+> **PR-10（[ADR-0018](ADR/0018-remove-dshbox.md)）后为历史文档**：下列真机记录多数采集于 PR-10 之前（旧桥 / DSHBox 实现或当时可选的 C# 路径），作为历史证据保留；PR-10 之后的模拟器冒烟见 `migration/parity/2026-11-15-emulator-A17-x86_64-pr10-remove-dshbox.md`。
+
 ## 设备边界（V1）
 
 - `minSdk 29`（Android 10），与 DSHBox `common` / `sandbox-manager` 的 `minSdk = 29` 一致。

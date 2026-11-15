@@ -2,7 +2,7 @@
 // (GPL-3.0-or-later). Registered in docs/UPSTREAMS.md.
 
 using System.Text.Json;
-using DshMobile.Core.Bridge;
+using DshMobile.Core.Contracts;
 
 namespace DshMobile.Runtime.Guest;
 
@@ -55,7 +55,7 @@ public static class DshProbe
         }
         try
         {
-            var result = JsonSerializer.Deserialize(line[ResultPrefix.Length..], BridgeJsonContext.Default.ProbeResult);
+            var result = JsonSerializer.Deserialize(line[ResultPrefix.Length..], ContractsJsonContext.Default.ProbeResult);
             return result is null
                 ? new DshProbeOutcome(profile, null, Malformed, "empty result")
                 : new DshProbeOutcome(profile, result with { Checks = result.Checks ?? [] }, null, null);

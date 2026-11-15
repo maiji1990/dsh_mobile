@@ -60,40 +60,17 @@ public sealed record DshProfile(string Name)
     public static DshProfile Web { get; } = new(RuntimeConstants.DshWebProfile);
 }
 
-/// <summary>Stable runtime error codes (in addition to <see cref="DshMobile.Core.Bridge.BridgeErrorCodes"/>).</summary>
+/// <summary>Stable runtime error codes.</summary>
 public static class RuntimeErrorCodes
 {
     public const string Ok = "OK";
+    /// <summary>The caller's arguments were rejected before anything ran (same value as the former bridge code).</summary>
+    public const string BadRequest = "BAD_REQUEST";
     public const string InvalidTransition = "RUNTIME_INVALID_TRANSITION";
     public const string NotInstalled = "RUNTIME_NOT_INSTALLED";
-    /// <summary>Failure reported by the legacy DSHBox sandbox-manager; the upstream code is kept separately.</summary>
+    /// <summary>A lower layer (installer, guest) failed; its own code is kept separately.</summary>
     public const string Upstream = "RUNTIME_ERROR";
     public const string NotImplemented = "NOT_IMPLEMENTED";
-}
-
-/// <summary>Plan section 5: the one runtime contract the application layer talks to.</summary>
-public interface IRuntimeManager
-{
-    /// <summary>Implementation name for diagnostics (<c>legacy-bridge</c>, <c>csharp</c>).</summary>
-    string Implementation { get; }
-
-    Task<RuntimeSnapshot> GetStateAsync(CancellationToken ct = default);
-
-    Task<RuntimeInstallResult> InstallAsync(RuntimePackage package, IProgress<RuntimeProgress>? progress, CancellationToken ct);
-
-    /// <summary>
-    /// Installs what ships inside the APK (the bundled DSH layer, with version arbitration) on top of installed
-    /// base/node layers. Runs after every successful bundle import, whichever importer did the import.
-    /// </summary>
-    Task<RuntimeInstallResult> PrepareAsync(CancellationToken ct);
-
-    Task<RuntimeStartResult> StartSandboxAsync(CancellationToken ct);
-
-    Task<RuntimeStartResult> StartHarnessAsync(DshProfile profile, CancellationToken ct);
-
-    Task<RuntimeStartResult> StopHarnessAsync(CancellationToken ct);
-
-    Task<RuntimeStartResult> StopSandboxAsync(CancellationToken ct);
 }
 
 public sealed record GuestExecutionOptions(

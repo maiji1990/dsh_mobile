@@ -1,6 +1,6 @@
 using System.Security.Cryptography;
 using System.Text.RegularExpressions;
-using DshMobile.Core.Bridge;
+using DshMobile.Core.Contracts;
 using DshMobile.Runtime.Automation;
 using DshMobile.Runtime.Guest;
 using DshMobile.Runtime.Hosting;
@@ -65,7 +65,7 @@ public sealed partial class GuestAssetProvisionerTests : IDisposable
         Assert.Equal(Shim, File.ReadAllBytes(layout.ShimFile));
         Assert.Equal(ShimSo, File.ReadAllBytes(Path.Combine(layout.ShimDir, GuestAssetProvisioner.LinkShimSoName)));
         var dshmobile = Path.Combine(layout.GuestCacheDir, "dshmobile");
-        Assert.Equal(File.ReadAllBytes(Repo.PathOf("native", "native-bridge", "src", "main", "guest-assets", "dshmobile", "dsh-probe.mjs")),
+        Assert.Equal(File.ReadAllBytes(Repo.PathOf("src", "DshMobile.Runtime", "Guest", "Assets", "dsh-probe.mjs")),
             File.ReadAllBytes(Path.Combine(dshmobile, GuestAssetProvisioner.ProbeName)));
         Assert.True(UiFacadeAssets.Intact(layout.GuestCacheDir));
         var corepack = GuestToolchain.CorepackDir(layout);
@@ -126,44 +126,87 @@ public sealed partial class GuestAssetProvisionerTests : IDisposable
         Assert.Equal("/opt/dshbox-cache/dshmobile/dsh-probe.mjs", GuestAssetProvisioner.GuestProbe);
     }
 
-    // ------------------------------------------------------------------ source contract against GuestToolchain.kt
+    // ------------------------------------------------------------------ pinned against the former GuestToolchain.kt
 
-    private static string KotlinShim(string name)
+    /// <summary>
+    /// The wrapper texts of this repository's bridge GuestToolchain.kt at 128c2ea (DSH_SHIM / PNPM_SHIM after Kotlin's
+    /// trimIndent and <c>${'$'}</c> -> <c>$</c>), pinned when PR-10 removed the bridge (ADR-0018).
+    /// </summary>
+    private static readonly Dictionary<string, string> LegacyShims = new()
     {
-        var kt = File.ReadAllText(Repo.PathOf("native", "native-bridge", "src", "main", "java", "dshmobile", "nativebridge", "GuestToolchain.kt"));
-        var m = Regex.Match(kt, $"private val {name} = \"\"\"\\n(?<body>.*?)\\n\\s*\"\"\"\\.trimIndent\\(\\)", RegexOptions.Singleline);
-        Assert.True(m.Success, name);
-        var lines = m.Groups["body"].Value.Replace("\r\n", "\n").Split('\n');
-        var indent = lines.Where(l => l.Trim().Length > 0).Min(l => l.Length - l.TrimStart().Length);
-        return string.Join("\n", lines.Select(l => l.Length >= indent ? l[indent..] : l.TrimStart())).Replace("${'$'}", "$");
-    }
+        ["dsh"] = DshShim + "\n",
+        ["pnpm"] = PnpmShim + "\n",
+    };
+
+    private const string DshShim = """
+#!/bin/sh
+# DSH Mobile: `dsh` = the app-managed DSH layer's official CLI (same version and profiles as the WebUI).
+# The hard-link shim is required: DSH publishes files with link(), which Android's data partition refuses.
+# Note: `dsh web` would start a second web server and collide with the app's port 3080.
+[ -n "$DSH_HOME" ] || DSH_HOME=/root/projects/.dsh
+export DSH_HOME
+BIN="${DSH_BIN:-/opt/dshapp/runtime/node_modules/@deepseek-ai/dsh/lib/bin.js}"
+SHIM=""
+[ -f /opt/dshbox/link-shim.mjs ] && SHIM="--import /opt/dshbox/link-shim.mjs"
+exec /usr/local/bin/node --expose-internals $SHIM "$BIN" "$@"
+""";
+
+    private const string PnpmShim = """
+#!/bin/sh
+# DSH Mobile: `pnpm` via Node's bundled corepack (no global pnpm on device).
+if [ -d /opt/dshbox-cache ]; then
+  export COREPACK_HOME=/opt/dshbox-cache/corepack
+fi
+STORE=""
+if [ -f ./.modules.yaml ]; then
+  RECORDED=$(sed -n 's/.*"storeDir"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' ./.modules.yaml 2>/dev/null | head -n 1)
+  if [ -z "$RECORDED" ]; then
+    RECORDED=$(sed -n 's/^storeDir:[[:space:]]*//p' ./.modules.yaml 2>/dev/null | head -n 1)
+  fi
+  if [ -n "$RECORDED" ] && [ -d "$RECORDED" ]; then
+    case "$RECORDED" in
+      */v[0-9]*) STORE=${RECORDED%/*} ;;
+      *) STORE="$RECORDED" ;;
+    esac
+  fi
+fi
+if [ -z "$STORE" ]; then
+  if [ -d /opt/dshbox-cache ]; then
+    STORE=/opt/dshbox-cache/pnpm-store
+  else
+    STORE=/root/projects/.dsh/pnpm-store
+  fi
+fi
+export pnpm_config_store_dir="$STORE"
+export pnpm_config_package_import_method=copy
+mkdir -p "$STORE" 2>/dev/null || true
+exec /usr/local/bin/corepack pnpm "$@"
+""";
 
     [Theory]
-    [InlineData("DSH_SHIM", "dsh")]
-    [InlineData("PNPM_SHIM", "pnpm")]
-    public async Task Shims_AreTheLegacyTextByteForByte(string kotlinName, string file)
+    [InlineData("dsh")]
+    [InlineData("pnpm")]
+    public async Task Shims_AreTheLegacyTextByteForByte(string file)
     {
         var layout = Layout();
         GuestToolchain.WriteShims(layout);
-        Assert.Equal(KotlinShim(kotlinName) + "\n", await File.ReadAllTextAsync(Path.Combine(GuestToolchain.ShimBinDir(layout), file)));
+        Assert.Equal(LegacyShims[file], (await File.ReadAllTextAsync(Path.Combine(GuestToolchain.ShimBinDir(layout), file))).Replace("\r\n", "\n", StringComparison.Ordinal));
         if (!OperatingSystem.IsWindows())
         {
             Assert.True(File.GetUnixFileMode(Path.Combine(GuestToolchain.ShimBinDir(layout), file)).HasFlag(UnixFileMode.OtherExecute));
         }
     }
 
+    /// <summary>The bridge's GuestToolchain.kt / RuntimeController.kt values at 128c2ea (pinned in PR-10).</summary>
     [Fact]
-    public void Corepack_ConstantsMatchTheKotlinSource()
+    public void Corepack_AndAssetConstants_AreTheLegacyOnes()
     {
-        var kt = File.ReadAllText(Repo.PathOf("native", "native-bridge", "src", "main", "java", "dshmobile", "nativebridge", "GuestToolchain.kt"));
-        Assert.Contains($"ASSET_DIR = \"{GuestToolchain.AssetDir}\"", kt, StringComparison.Ordinal);
-        Assert.Contains($"COREPACK_ASSET = \"{GuestToolchain.CorepackAsset}\"", kt, StringComparison.Ordinal);
-        Assert.Contains($"READY_MARKER = \"{GuestToolchain.ReadyMarker}\"", kt, StringComparison.Ordinal);
-        var rc = File.ReadAllText(Repo.PathOf("native", "native-bridge", "src", "main", "java", "dshmobile", "nativebridge", "RuntimeController.kt"));
-        Assert.Contains($"copyAsset(\"{GuestAssetProvisioner.LinkShimAsset}\"", rc, StringComparison.Ordinal);
-        Assert.Contains($"copyAsset(\"{GuestAssetProvisioner.LinkShimSoAsset}\"", rc, StringComparison.Ordinal);
-        Assert.Contains($"GUEST_PROBE = \"{GuestAssetProvisioner.GuestProbe}\"", rc, StringComparison.Ordinal);
-        Assert.Contains("\"node $GUEST_PROBE $profile\"", rc, StringComparison.Ordinal);
+        Assert.Equal("toolchain-cache", GuestToolchain.AssetDir);
+        Assert.Equal("corepack-pnpm-11.1.2.tar.zst", GuestToolchain.CorepackAsset);
+        Assert.Equal(".ready-sha256", GuestToolchain.ReadyMarker);
+        Assert.Equal("dshbox/link-shim.mjs", GuestAssetProvisioner.LinkShimAsset);
+        Assert.Equal("dshbox/libdshbox-link.so", GuestAssetProvisioner.LinkShimSoAsset);
+        Assert.Equal("/opt/dshbox-cache/dshmobile/dsh-probe.mjs", GuestAssetProvisioner.GuestProbe);
     }
 
     // ------------------------------------------------------------------ probe
@@ -204,7 +247,7 @@ public sealed partial class GuestAssetProvisionerTests : IDisposable
     [Fact]
     public void Probe_ProfilesAreTheScriptsProfiles()
     {
-        var js = File.ReadAllText(Repo.PathOf("native", "native-bridge", "src", "main", "guest-assets", "dshmobile", "dsh-probe.mjs"));
+        var js = File.ReadAllText(Repo.PathOf("src", "DshMobile.Runtime", "Guest", "Assets", "dsh-probe.mjs"));
         var m = ProfilesSet().Match(js);
         Assert.True(m.Success);
         var inScript = Regex.Matches(m.Groups[1].Value, "\"([^\"]+)\"").Select(x => x.Groups[1].Value).ToList();

@@ -3,7 +3,7 @@
 // feature). Registered in docs/UPSTREAMS.md. Behaviour locked by tests/TestVectors/remote-ssh.json (launchOutput,
 // afterStart, stillRunning) and LegacySourceContractTests.Remote.
 
-using DshMobile.Core.Bridge;
+using DshMobile.Core.Contracts;
 
 namespace DshMobile.Runtime.Remote;
 

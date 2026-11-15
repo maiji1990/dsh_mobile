@@ -1,5 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<!-- Brand override for DSHBox browser-runtime (AGENTS.md rule 4, ADR-0005). -->
-<resources>
-    <string name="browser_collapse">Retour à DSH Mobile</string>
-</resources>

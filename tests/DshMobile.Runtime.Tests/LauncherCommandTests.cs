@@ -102,17 +102,4 @@ public sealed partial class LauncherCommandTests : IDisposable
         Assert.Equal(["/usr/bin/bash", "-c", "echo a b; true"], ProcessTable.Read(Path.Combine(_dir, "proc"))!.Argv(42));
     }
 
-    [GeneratedRegex(@"val command = processRunner\.buildProotDshCommand\((?<args>.*?)\n\s*\)", RegexOptions.Singleline)]
-    private static partial Regex DshCallSite();
-
-    /// <summary>Pins the legacy inconsistency the restart variant models: if upstream fixes it, this fails first.</summary>
-    [Fact]
-    public void LegacyDshCallSites_FirstStartBindsGuestCache_RestartDoesNot()
-    {
-        var src = File.ReadAllText(Repo.PathOf("third_party", "dshbox", "sandbox-manager", "src", "main", "java", "com", "dshbox", "app", "sandbox", "DefaultSandboxManager.kt"));
-        var sites = DshCallSite().Matches(src).Select(m => m.Groups["args"].Value).ToList();
-        Assert.Equal(2, sites.Count);
-        Assert.Contains("guestCacheHostDir", sites[0], StringComparison.Ordinal);
-        Assert.DoesNotContain("guestCacheHostDir", sites[1], StringComparison.Ordinal);
-    }
 }

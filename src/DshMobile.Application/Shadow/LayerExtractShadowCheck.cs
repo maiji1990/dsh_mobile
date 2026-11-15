@@ -9,14 +9,17 @@ using DshMobile.Runtime.Layers;
 namespace DshMobile.Application.Shadow;
 
 /// <summary>
-/// PR-02 shadow for the LayerInstaller slice: after the legacy importer has installed a bundle, the C#
-/// <see cref="LayerExtractor"/> dry-runs every layer archive straight from the same ZIP (nothing written) and the
-/// result is compared with what the legacy code actually put in <c>runtime-current/&lt;layer&gt;</c>.
-/// Must run before anything else touches the layers (the coordinator holds its operation lock).
+/// Post-install check of the LayerInstaller (PR-02; a legacy-vs-C# shadow until PR-10): after a bundle is installed, the
+/// C# <see cref="LayerExtractor"/> dry-runs every layer archive straight from the same ZIP (nothing written) and the
+/// result is compared with what was actually put in <c>runtime-current/&lt;layer&gt;</c>. Must run before anything else
+/// touches the layers (the coordinator holds its operation lock).
 /// </summary>
 public static class LayerExtractShadowCheck
 {
     public const string Slice = "runtime.layer-extract";
+
+    /// <summary>The report name used for the check after a C# import (the only kind since PR-10).</summary>
+    public const string InstallSlice = "runtime.layer-install";
 
     public static async Task<ShadowReport> RunAsync(string zipPath, BundleInspection inspection, RuntimeLayout layout, Func<string, bool>? hostPathExists, TimeProvider time, CancellationToken ct)
     {

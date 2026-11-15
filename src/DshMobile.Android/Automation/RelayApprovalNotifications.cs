@@ -7,8 +7,7 @@ namespace DshMobile.App.Automation;
 
 /// <summary>
 /// The C# Relay approval surface (PR-07 step 4): the same heads-up card as the legacy RelayApproval.kt — "allow once /
-/// allow for this session / deny", no overlay permission. Only the C# approval queue posts it, and only once that
-/// slice decides (SliceMode.CSharp); under LegacyWithShadow the legacy Relay keeps posting its own card.
+/// allow for this session / deny", no overlay permission. Only the C# approval queue posts it.
 /// Notifications blocked → <see cref="CanShow"/> false → the call fails closed; nothing here approves.
 /// </summary>
 public sealed class RelayApprovalNotifications(Context context) : IApprovalNotificationSurface

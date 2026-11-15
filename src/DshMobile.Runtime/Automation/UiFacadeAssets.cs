@@ -1,7 +1,7 @@
 // Ported from this repo's native/native-bridge/src/main/java/dshmobile/nativebridge/RuntimeController.kt
 // (provisionGuestAssets: the ui_* facade copy; relay.selftest's fixed guest command; transition code). The two scripts are
-// this repo's own guest assets (native/native-bridge/src/main/guest-assets/dshmobile/), embedded byte for byte from that
-// single source until PR-10 moves them. Registered in docs/UPSTREAMS.md.
+// this repo's own guest assets, moved from the bridge's guest-assets/dshmobile/ to Automation/Assets/ in PR-10 and embedded
+// byte for byte. Registered in docs/UPSTREAMS.md.
 
 using System.Security.Cryptography;
 

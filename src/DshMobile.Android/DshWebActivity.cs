@@ -5,15 +5,13 @@ using Android.Views;
 using Android.Webkit;
 using DshMobile.App.Bridge;
 using DshMobile.App.WebUi;
-using DshMobile.NativeBridge;
 using Log = Android.Util.Log;
 
 namespace DshMobile.App;
 
 /// <summary>
-/// Full-screen host for the official DSH WebUI (TASK-006). The WebView is created here, but loading,
-/// the launch-token exchange, navigation policy and 401 recovery all live in the native WebUiController:
-/// this class never sees the token.
+/// Full-screen host for the official DSH WebUI (TASK-006, MIGRATION row 25). Loading, the launch-token exchange,
+/// navigation policy and 401 recovery live in <see cref="CSharpWebUiController"/>: this class never sees the token.
 /// </summary>
 [Activity(
     Label = "@string/dsh_title",
@@ -26,9 +24,7 @@ public sealed class DshWebActivity : Activity
 {
     private WebView? _webView;
     private TextView? _status;
-    private StateListener? _listener;
     private BackCallback? _back;
-    /// <summary>Set when DSH is hosted by the C# DshHost (ADR-0007): the C# WebView path replaces the legacy one.</summary>
     private CSharpWebUiController? _csharp;
 
     protected override void OnCreate(Bundle? savedInstanceState)
@@ -46,41 +42,30 @@ public sealed class DshWebActivity : Activity
         SetContentView(root);
 
         var runtime = DshMobileApplication.Current.Bridge.Runtime;
-        // ADR-0015: whenever the C# host owns the processes (DSH given up included), the legacy WebView path knows nothing.
-        // MIGRATION row 25: the C# WebView is also the default when nothing runs; only a DSH started by the legacy runtime
-        // (fallback, in this process) is shown through the legacy WebUiController.
-        if (runtime.HostOwnsProcesses || !runtime.LegacyRuntimeActive)
-        {
-            DshMobile.Runtime.Hosting.IDshTokenSource tokens = runtime.Host is { } host ? host : NoDshToken.Instance;
-            Log.Info(BridgeHost.LogTag, runtime.HostOwnsProcesses ? "webui: C# WebView on the C#-hosted DSH" : "webui: C# WebView (DSH not running)");
-            _csharp = new CSharpWebUiController(tokens,
-                (state, detail) => RunOnUiThread(() =>
+        DshMobile.Runtime.Hosting.IDshTokenSource tokens = runtime.Host is { } host ? host : NoDshToken.Instance;
+        Log.Info(BridgeHost.LogTag, runtime.HostOwnsProcesses ? "webui: C# WebView on the C#-hosted DSH" : "webui: C# WebView (DSH not running)");
+        _csharp = new CSharpWebUiController(tokens,
+            (state, detail) => RunOnUiThread(() =>
+            {
+                // detail is token-free by construction (paths, hosts, error codes only).
+                Log.Info(BridgeHost.LogTag, $"webui {state} {detail}");
+                if (!IsDestroyed)
                 {
-                    // detail is token-free by construction (paths, hosts, error codes only).
-                    Log.Info(BridgeHost.LogTag, $"webui(csharp) {state} {detail}");
-                    if (!IsDestroyed)
-                    {
-                        ShowState(state, detail);
-                    }
-                }),
-                (types, multiple) => RunOnUiThread(() =>
+                    ShowState(state, detail);
+                }
+            }),
+            (types, multiple) => RunOnUiThread(() =>
+            {
+                if (IsDestroyed)
                 {
-                    if (IsDestroyed)
-                    {
-                        _csharp?.CompleteFileChooser(null);
-                    }
-                    else
-                    {
-                        OpenFileChooser(types, multiple);
-                    }
-                }));
-            _csharp.Attach(_webView);
-        }
-        else
-        {
-            _listener = new StateListener(this);
-            DshMobileApplication.Current.Bridge.AttachWebUi(_webView, _listener);
-        }
+                    _csharp?.CompleteFileChooser(null);
+                }
+                else
+                {
+                    OpenFileChooser(types, multiple);
+                }
+            }));
+        _csharp.Attach(_webView);
 
         if (OperatingSystem.IsAndroidVersionAtLeast(33))
         {
@@ -96,15 +81,8 @@ public sealed class DshWebActivity : Activity
         {
             OnBackInvokedDispatcher.UnregisterOnBackInvokedCallback(_back);
         }
-        if (_csharp is not null)
-        {
-            _csharp.Detach();
-            _csharp = null;
-        }
-        else
-        {
-            DshMobileApplication.Current.Bridge.DetachWebUi();
-        }
+        _csharp?.Detach();
+        _csharp = null;
         if (_webView is not null)
         {
             ((ViewGroup?)_webView.Parent)?.RemoveView(_webView);
@@ -140,17 +118,7 @@ public sealed class DshWebActivity : Activity
         }
     }
 
-    private void CompleteChooser(Android.Net.Uri[]? uris)
-    {
-        if (_csharp is not null)
-        {
-            _csharp.CompleteFileChooser(uris);
-        }
-        else
-        {
-            DshMobileApplication.Current.Bridge.CompleteWebFileChooser(uris);
-        }
-    }
+    private void CompleteChooser(Android.Net.Uri[]? uris) => _csharp?.CompleteFileChooser(uris);
 
     private void GoBack()
     {
@@ -176,35 +144,6 @@ public sealed class DshWebActivity : Activity
             "UNREACHABLE" => GetString(Resource.String.web_unreachable) + " " + detail,
             _ => $"{state} {detail}",
         };
-    }
-
-    private sealed class StateListener(DshWebActivity owner) : Java.Lang.Object, IWebUiListener
-    {
-        public void OnWebUiState(string? state, string? detail)
-        {
-            // detail is token-free by contract (paths, hosts, error codes only).
-            Log.Info(BridgeHost.LogTag, $"webui {state} {detail}");
-            owner.RunOnUiThread(() =>
-            {
-                if (!owner.IsDestroyed)
-                {
-                    owner.ShowState(state ?? "", detail ?? "");
-                }
-            });
-        }
-
-        public void OnFileChooserRequested(string[]? acceptTypes, bool allowMultiple) =>
-            owner.RunOnUiThread(() =>
-            {
-                if (owner.IsDestroyed)
-                {
-                    DshMobileApplication.Current.Bridge.CompleteWebFileChooser(null);
-                }
-                else
-                {
-                    owner.OpenFileChooser(acceptTypes ?? [], allowMultiple);
-                }
-            });
     }
 
     /// <summary>No C# host yet in this process: no token, so the page says DSH is not running.</summary>

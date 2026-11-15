@@ -3,8 +3,9 @@ using DshMobile.Runtime.Automation;
 namespace DshMobile.Runtime.Tests;
 
 /// <summary>
-/// The ui_* guest scripts the C# owner stages itself (ADR-0016, ui_* execution layer): byte-identical to the files the
-/// legacy bridge copies from APK assets, staged idempotently, and the self-test command equal to legacy relay.selftest.
+/// The ui_* guest scripts the C# owner stages itself (ADR-0016, ui_* execution layer): byte-identical to their source
+/// files (moved from the legacy bridge's APK assets in PR-10), staged idempotently, and the self-test command equal to
+/// the legacy relay.selftest.
 /// </summary>
 public sealed class UiFacadeAssetsTests : IDisposable
 {
@@ -19,12 +20,12 @@ public sealed class UiFacadeAssetsTests : IDisposable
     }
 
     private static string Source(string name) =>
-        Repo.PathOf("native", "native-bridge", "src", "main", "guest-assets", "dshmobile", name);
+        Repo.PathOf("src", "DshMobile.Runtime", "Automation", "Assets", name);
 
     [Theory]
     [InlineData(UiFacadeAssets.FacadeName)]
     [InlineData(UiFacadeAssets.CheckName)]
-    public void Embedded_IsTheLegacyAssetByteForByte(string name) =>
+    public void Embedded_IsTheSourceFileByteForByte(string name) =>
         Assert.Equal(File.ReadAllBytes(Source(name)), UiFacadeAssets.Read(name));
 
     [Fact]
@@ -59,21 +60,17 @@ public sealed class UiFacadeAssetsTests : IDisposable
         Assert.Equal("/opt/dshbox-cache/dshmobile/ui-facade-check.mjs", UiFacadeAssets.GuestCheck);
     }
 
+    /// <summary>
+    /// The bridge RuntimeController.kt relay.selftest at 128c2ea (pinned in PR-10): <c>GUEST_UI_CHECK</c>, the command
+    /// before its <c>echo DSHMOBILE_EXIT=$?</c> (only there to recover an exit code its runner did not return; the C#
+    /// runner returns the process exit code, which is the same last command's code), and the 400-line tail.
+    /// </summary>
     [Fact]
     public void SelfTestCommand_IsTheLegacyRelaySelftestCommand()
     {
-        var src = File.ReadAllText(Repo.PathOf("native", "native-bridge", "src", "main", "java", "dshmobile", "nativebridge", "RuntimeController.kt"));
-        Assert.Contains($"private const val GUEST_UI_CHECK = \"{UiFacadeAssets.GuestCheck}\"", src, StringComparison.Ordinal);
-        // Legacy appends `echo DSHMOBILE_EXIT=$?` only to recover the exit code its runner does not return; the C# runner
-        // returns the process exit code, which is the same last command's code.
-        var legacy = UiFacadeAssets.SelfTestCommand.Replace(UiFacadeAssets.GuestCheck, "$GUEST_UI_CHECK", StringComparison.Ordinal);
-        Assert.Contains($"\"{legacy}; echo $marker${{d}}?\"", src, StringComparison.Ordinal);
-        Assert.Contains("lines.size > 400", src, StringComparison.Ordinal);
+        Assert.Equal("/opt/dshbox-cache/dshmobile/ui-facade-check.mjs", UiFacadeAssets.GuestCheck);
+        Assert.Equal("/opt/pilot/bin/relay doctor; echo; node /opt/dshbox-cache/dshmobile/ui-facade-check.mjs --approval-wait-ms 50000",
+            UiFacadeAssets.SelfTestCommand);
         Assert.Equal(400, UiFacadeAssets.SelfTestMaxLines);
-        // The legacy provisioning copies exactly these two files into the same host directory.
-        foreach (var name in new[] { UiFacadeAssets.FacadeName, UiFacadeAssets.CheckName })
-        {
-            Assert.Contains($"copyAsset(\"dshmobile/{name}\", File(File(config.guestCacheDir, \"dshmobile\"), \"{name}\"))", src, StringComparison.Ordinal);
-        }
     }
 }

@@ -14,6 +14,7 @@ public interface IBundledAssets
     /// <summary>Names directly under <paramref name="dir"/>; empty when the directory does not exist.</summary>
     IReadOnlyList<string> List(string dir);
 
+    /// <summary>Opens one asset; a missing or unreadable one throws an <see cref="IOException"/>.</summary>
     Stream Open(string path);
 }
 
