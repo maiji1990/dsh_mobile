@@ -19,6 +19,12 @@
     <!-- Byte-exact guest assets copied from DSHBox (GPL-3.0; Automation/Relay/Transport/Assets/README.md, docs/UPSTREAMS.md). -->
     <EmbeddedResource Include="Automation/Relay/Transport/Assets/relay-client.cjs" LogicalName="DshMobile.Relay.relay-client.cjs" />
     <EmbeddedResource Include="Automation/Relay/Transport/Assets/relay-usage.template.md" LogicalName="DshMobile.Relay.relay-usage.template.md" />
+    <!--
+      This repo's own ui_* guest scripts (UiFacadeAssets), embedded from their single source until PR-10 moves them out of
+      the transitional native-bridge tree (legacy still packages the same files as APK assets).
+    -->
+    <EmbeddedResource Include="../../native/native-bridge/src/main/guest-assets/dshmobile/ui-facade.mjs" LogicalName="DshMobile.UiTools.ui-facade.mjs" Link="Automation/Assets/ui-facade.mjs" />
+    <EmbeddedResource Include="../../native/native-bridge/src/main/guest-assets/dshmobile/ui-facade-check.mjs" LogicalName="DshMobile.UiTools.ui-facade-check.mjs" Link="Automation/Assets/ui-facade-check.mjs" />
   </ItemGroup>
 
   <ItemGroup>

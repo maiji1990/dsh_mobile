@@ -817,4 +817,27 @@ public sealed class RuntimeCoordinatorTests : IDisposable
         Assert.Equal(RuntimeErrorCodes.NotImplemented, r.Code);
         Assert.Empty(_runtime.Calls);
     }
+
+    [Fact]
+    public async Task RelaySelfTest_WithoutLayout_IsNotImplemented_AndNeverCallsLegacy()
+    {
+        using var c = new RuntimeCoordinator(_runtime, new RuntimeStateMachine(_journal, "fake"), _fg, _log, _log, new MigrationOptions());
+        var r = await c.RunRelaySelfTestAsync(TimeSpan.FromSeconds(5), CancellationToken.None);
+        Assert.False(r.Ok);
+        Assert.StartsWith(RuntimeErrorCodes.NotImplemented, r.Error, StringComparison.Ordinal);
+        Assert.Empty(_runtime.Calls);
+    }
+
+    [Fact]
+    public async Task RelaySelfTest_StagesTheUiScripts_ThenReportsTheLauncherRefusal_WithoutLegacy()
+    {
+        var layout = new DshMobile.Runtime.RuntimeLayout(Path.Combine(_dir, "files"), null, Path.Combine(_dir, "nolibs"));
+        using var c = new RuntimeCoordinator(_runtime, new RuntimeStateMachine(_journal, "fake"), _fg, _log, _log, new MigrationOptions(), layout: layout);
+        var r = await c.RunRelaySelfTestAsync(TimeSpan.FromSeconds(5), CancellationToken.None);
+        Assert.True(DshMobile.Runtime.Automation.UiFacadeAssets.Intact(layout.GuestCacheDir));
+        Assert.False(r.Ok); // no PRoot in nativeLibraryDir: a stable error, never a fake pass
+        Assert.Null(r.ExitCode);
+        Assert.NotNull(r.Error);
+        Assert.Empty(_runtime.Calls);
+    }
 }

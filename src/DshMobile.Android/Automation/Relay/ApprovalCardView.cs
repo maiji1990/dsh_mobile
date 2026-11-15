@@ -28,15 +28,22 @@ internal sealed class ApprovalCardView
     private readonly TextView _headline;
     private readonly TextView _countdown;
     private readonly Context _context;
+    private readonly Action? _onDeadline;
     private int _waiting;
     private bool _stopped;
 
-    public ApprovalCardView(Context context, ApprovalPrompt prompt, int waitingCount, Action<InterlockChoice> onChoose)
+    /// <param name="onDeadline">
+    /// Called once on the main thread when the countdown reaches the prompt's deadline (upstream: the page card, the
+    /// overlay and the notification all close the question through the same expiry path when their time is up). The
+    /// overlay parks and expires on its own, so it passes none.
+    /// </param>
+    public ApprovalCardView(Context context, ApprovalPrompt prompt, int waitingCount, Action<InterlockChoice> onChoose, Action? onDeadline = null)
     {
         ArgumentNullException.ThrowIfNull(context);
         ArgumentNullException.ThrowIfNull(prompt);
         ArgumentNullException.ThrowIfNull(onChoose);
         _prompt = prompt;
+        _onDeadline = onDeadline;
         _waiting = waitingCount;
         _context = new ContextThemeWrapper(context, Resource.Style.Theme_DshMobile_Material3);
         var density = _context.Resources!.DisplayMetrics!.Density;
@@ -126,8 +133,11 @@ internal sealed class ApprovalCardView
         _countdown.Text = _context.GetString(Resource.String.relay_card_countdown, (int)((left + 999) / 1000));
         if (left > 0)
         {
-            _main.PostDelayed(Tick, 1000);
+            _main.PostDelayed(Tick, Math.Min(1000L, left));
+            return;
         }
+        _stopped = true;
+        _onDeadline?.Invoke();
     }
 
     private void PaintHeadline() =>
