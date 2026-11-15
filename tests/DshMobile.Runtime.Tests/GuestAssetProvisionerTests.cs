@@ -131,7 +131,8 @@ public sealed partial class GuestAssetProvisionerTests : IDisposable
     private static string KotlinShim(string name)
     {
         var kt = File.ReadAllText(Repo.PathOf("native", "native-bridge", "src", "main", "java", "dshmobile", "nativebridge", "GuestToolchain.kt"));
-        var m = Regex.Match(kt, $"private val {name} = \"\"\"\\n(?<body>.*?)\\n\\s*\"\"\"\\.trimIndent\\(\\)", RegexOptions.Singleline);
+        // Tolerate CRLF: a Windows checkout (core.autocrlf, `* text=auto`) converts the .kt to CRLF.
+        var m = Regex.Match(kt, $"private val {name} = \"\"\"\\r?\\n(?<body>.*?)\\r?\\n\\s*\"\"\"\\.trimIndent\\(\\)", RegexOptions.Singleline);
         Assert.True(m.Success, name);
         var lines = m.Groups["body"].Value.Replace("\r\n", "\n").Split('\n');
         var indent = lines.Where(l => l.Trim().Length > 0).Min(l => l.Length - l.TrimStart().Length);
