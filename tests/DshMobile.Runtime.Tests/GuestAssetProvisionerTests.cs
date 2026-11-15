@@ -134,8 +134,9 @@ public sealed partial class GuestAssetProvisionerTests : IDisposable
     /// </summary>
     private static readonly Dictionary<string, string> LegacyShims = new()
     {
-        ["dsh"] = DshShim + "\n",
-        ["pnpm"] = PnpmShim + "\n",
+        // Raw literals take the checkout's line endings (CRLF on a Windows `* text=auto` checkout); the wrappers are LF.
+        ["dsh"] = DshShim.ReplaceLineEndings("\n") + "\n",
+        ["pnpm"] = PnpmShim.ReplaceLineEndings("\n") + "\n",
     };
 
     private const string DshShim = """
