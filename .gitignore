@@ -42,3 +42,4 @@ Thumbs.db
 
 # Upstream runtime layers (hundreds of MB; fetched + hash-verified, never committed)
 artifacts/runtime/
+artifacts/runtime-build/

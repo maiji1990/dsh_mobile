@@ -128,15 +128,18 @@ public sealed class BridgeHost : IDisposable, IDiagnosticsLog
     /// <summary>
     /// Imports a runtime bundle zip (base/node/android-side) with the C# LayerInstaller. <paramref name="zipPath"/>
     /// comes from the system picker copy (MainActivity); without it, falls back to the app-specific external directory
-    /// where a developer can adb-push the bundle.
+    /// where a developer can adb-push the bundle: the self-built <c>dshmobile-runtime-*.zip</c> (ADR-0020) first, else an
+    /// older DSHBox <c>dshapp-runtime-*.zip</c>.
     /// </summary>
     public Task RunImportAsync(string? zipPath = null, bool deleteAfter = false) => RunExclusive("runtime.import", async () =>
     {
         var dir = _context.GetExternalFilesDir(null)?.AbsolutePath;
-        var zip = zipPath ?? (dir is null ? null : Directory.EnumerateFiles(dir, "dshapp-runtime-*.zip").OrderDescending().FirstOrDefault());
+        var zip = zipPath ?? (dir is null ? null : new[] { "dshmobile-runtime-*.zip", "dshapp-runtime-*.zip" }
+            .Select(p => Directory.EnumerateFiles(dir, p).OrderDescending().FirstOrDefault())
+            .FirstOrDefault(z => z is not null));
         if (zip is null)
         {
-            Append($"import: no dshapp-runtime-*.zip in {dir ?? "(external files dir unavailable)"}");
+            Append($"import: no dshmobile-runtime-*.zip (or dshapp-runtime-*.zip) in {dir ?? "(external files dir unavailable)"}");
             return;
         }
         Append($"import: {Path.GetFileName(zip)} ({new FileInfo(zip).Length / 1024 / 1024} MiB) ...");

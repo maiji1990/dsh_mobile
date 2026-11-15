@@ -2,7 +2,8 @@
 # Downloads the runtime layers pinned in runtime-assets.lock, verifies SHA-256, and stages them as
 #   artifacts/runtime/android-assets/runtime/android-side.tar.zst(+.sha256)   -> APK assets/runtime/
 #   artifacts/runtime/android-assets/dsh/<version>.tar.zst(+.sha256)           -> APK assets/dsh/
-#   artifacts/runtime/downloads/dshapp-runtime-*.zip                           -> imported on device (base/node)
+#   artifacts/runtime/downloads/dshmobile-runtime-*.zip                        -> imported on device (base/node)
+# Bundle zips are the self-built dshmobile-runtime-*.zip (ADR-0020) or DSHBox's older dshapp-runtime-*.zip.
 # Nothing here is committed (artifacts/runtime/ is gitignored).
 param([switch]$Force)
 $ErrorActionPreference = 'Stop'
@@ -35,7 +36,7 @@ foreach ($line in $lock) {
         # DSH layer: shipped in the APK under assets/dsh/ with a "<sha>  <file>" sidecar.
         Copy-Item $file (Join-Path $assets "dsh/$name") -Force
         "$sha  $name" | Set-Content -NoNewline -Encoding ascii (Join-Path $assets "dsh/$name.sha256")
-    } elseif ($name -like 'dshapp-runtime-*.zip') {
+    } elseif ($name -like 'dshmobile-runtime-*.zip' -or $name -like 'dshapp-runtime-*.zip') {
         # Only android-side goes into the APK (DSHBox >= 1.4 layout); base/node are imported on device.
         Add-Type -AssemblyName System.IO.Compression.FileSystem
         $zip = [IO.Compression.ZipFile]::OpenRead($file)

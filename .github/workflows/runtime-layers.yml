@@ -1,0 +1,65 @@
+name: runtime-layers
+
+# ADR-0020: builds the runtime layers (base / node / android-side bundle + DSH layer) from runtime-bundle/runtime-build.lock.
+# Manual only. With `release_tag` set, the outputs are also published as a GitHub Release of this repository; after that,
+# runtime-bundle/runtime-assets.lock is pointed at the release in a separate PR.
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "Create a GitHub Release with this tag (e.g. runtime-0.2.0); empty = workflow artifact only"
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+jobs:
+  proot:
+    # The NDK has no linux-arm64 host build, so PRoot (ADR-0014) is built on x86_64 and handed to the arm64 job.
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install NDK 27.0.12077973
+        run: |
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "ndk;27.0.12077973" > /dev/null
+          echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/27.0.12077973" >> "$GITHUB_ENV"
+      - name: Build PRoot
+        run: bash native/proot/build.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: proot-arm64-v8a
+          path: artifacts/native/proot/arm64-v8a/
+          if-no-files-found: error
+
+  layers:
+    needs: proot
+    runs-on: ubuntu-24.04-arm
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: proot-arm64-v8a
+          path: ${{ runner.temp }}/proot
+      - name: Install build tools
+        run: |
+          sudo apt-get update -q
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -q --no-install-recommends \
+            mmdebstrap debian-archive-keyring zstd zip
+      - name: Build layers
+        run: bash runtime-bundle/build-runtime.sh --proot "$RUNNER_TEMP/proot" --work "$RUNNER_TEMP/rt" --out dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: runtime-layers
+          path: dist/
+          if-no-files-found: error
+      - name: Publish release
+        if: ${{ inputs.release_tag != '' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.release_tag }}
+        run: |
+          gh release create "$TAG" dist/* --target "$GITHUB_SHA" --title "Runtime layers $TAG" \
+            --notes "Built by runtime-layers.yml from runtime-bundle/runtime-build.lock at $GITHUB_SHA (ADR-0020). SHA-256 in SHA256SUMS."

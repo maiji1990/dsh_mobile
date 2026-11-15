@@ -4,7 +4,7 @@
 状态取值：`未开始` / `接口已定义` / `影子比对中`（旧实现决策、C# 只读比对）/ `C# 默认（待删旧）` / `已完成（旧依赖已删）`。
 “已验证”只写有证据的：`向量`（`tests/TestVectors` 新旧双跑）/ `单测` / `真机`（附日志位置）。
 
-最后更新：2026-11-15（**[ADR-0019](ADR/0019-rename-dshbox-paths-data-migration.md)：本仓库自有名称不再用 `dshbox`**——guest / 宿主路径、层哨兵、APK 资产与链接垫片改为 `dshmobile`，旧数据由 `DshboxNameMigration` 一次性迁移；链接垫片改由本仓库构建。此前：**PR-10 / [ADR-0018](ADR/0018-remove-dshbox.md)：DSHBox 依赖已全部移除**——子模块 `third_party/dshbox`、Bridge AAR 与其 Gradle 构建、`DshNativeFacade` / Kotlin 旧桥、`DshMobile.NativeBinding`、所有长按回退与影子比对均已删除，App 只剩 C# 实现；浏览器 `browser_*` 按负责人决定不迁移、一并删除；真机验收按负责人决定跳过，以单测 + 模拟器冒烟为准，见 ADR-0018）。下文各行「长按回退」「影子」等描述是 PR-10 之前的历史记录。此前：**里程碑**：方案第 12 节「导入 → 启动 PRoot → READY → WebUI → 停止无孤儿」的每一步都已有不经 DSHBox 代码的 C# 实现并通过 Android 17 真机；**启动路径已切为 C# 宿主默认**（[ADR-0015](ADR/0015-csharp-host-default.md)，旧实现为长按回退）。**2026-11-15 起所有影子比对切片均为 C# 默认**（[ADR-0016](ADR/0016-csharp-default-all-shadow-slices.md)，负责人决定先于真机验收翻转；旧实现为逐次回退，回退时影子照常运行；真机验收逐切片待补，模拟器冒烟见 [证据](../migration/parity/2026-11-15-emulator-A17-x86_64-csharp-default-all.md)）。
+最后更新：2026-11-15（**[ADR-0020](ADR/0020-self-built-runtime-layers.md)：运行层由本仓库构建**（构建脚本 + 手动 CI，Release 待发布）。此前：**[ADR-0019](ADR/0019-rename-dshbox-paths-data-migration.md)：本仓库自有名称不再用 `dshbox`**——guest / 宿主路径、层哨兵、APK 资产与链接垫片改为 `dshmobile`，旧数据由 `DshboxNameMigration` 一次性迁移；链接垫片改由本仓库构建。此前：**PR-10 / [ADR-0018](ADR/0018-remove-dshbox.md)：DSHBox 依赖已全部移除**——子模块 `third_party/dshbox`、Bridge AAR 与其 Gradle 构建、`DshNativeFacade` / Kotlin 旧桥、`DshMobile.NativeBinding`、所有长按回退与影子比对均已删除，App 只剩 C# 实现；浏览器 `browser_*` 按负责人决定不迁移、一并删除；真机验收按负责人决定跳过，以单测 + 模拟器冒烟为准，见 ADR-0018）。下文各行「长按回退」「影子」等描述是 PR-10 之前的历史记录。此前：**里程碑**：方案第 12 节「导入 → 启动 PRoot → READY → WebUI → 停止无孤儿」的每一步都已有不经 DSHBox 代码的 C# 实现并通过 Android 17 真机；**启动路径已切为 C# 宿主默认**（[ADR-0015](ADR/0015-csharp-host-default.md)，旧实现为长按回退）。**2026-11-15 起所有影子比对切片均为 C# 默认**（[ADR-0016](ADR/0016-csharp-default-all-shadow-slices.md)，负责人决定先于真机验收翻转；旧实现为逐次回退，回退时影子照常运行；真机验收逐切片待补，模拟器冒烟见 [证据](../migration/parity/2026-11-15-emulator-A17-x86_64-csharp-default-all.md)）。
 
 ## 1. 切片总表
 
@@ -82,6 +82,7 @@ corepack 缓存，见 `src/DshMobile.Android/Assets/README.md`）。Shizuku 客�
 | 其余切片 C# 默认 | [ADR-0017](ADR/0017-remaining-slices-csharp-default-lazy-legacy-facade.md)：解包 / 回滚 / 状态来源 / DSH 探测 / WebView / 插件安装卸载默认 C#；默认路径不调用旧桥，旧门面懒加载（第一次显式回退才初始化）；guest 资产由 C# 供给；Shizuku 改为 App 直接依赖（`AndroidMavenLibrary` 13.1.5） | maiji1990/dsh_mobile#33；单测 Core 65 / Runtime 739 / Application 216 通过；模拟器冒烟（[证据](../migration/parity/2026-11-15-emulator-A17-x86_64-remaining-slices.md)）；真机验收待补 |
 | PR-10 | [ADR-0018](ADR/0018-remove-dshbox.md)：移除 DSHBox 子模块、Bridge AAR / Gradle、旧门面与绑定、全部回退与影子；guest 资产与清单组件并入 App；浏览器删除；向上游源码扫描的测试改为钉值测试（`UpstreamPinnedValuesTests` 等）；CI 只用 .NET + NDK | maiji1990/dsh_mobile#34（堆叠在 #33 之上）；CRLF 检出复跑通过；单测 Core 35 / Runtime 728 / Application 82、guest node 37 全绿；模拟器冒烟（[证据](../migration/parity/2026-11-15-emulator-A17-x86_64-pr10-remove-dshbox.md)）；真机验收按负责人决定跳过 |
 | 命名迁移 | [ADR-0019](ADR/0019-rename-dshbox-paths-data-migration.md)：`/opt/dshbox` → `/opt/dshmobile`、`/opt/dshbox-cache` → `/opt/dshmobile-cache`、`.dsh/dshbox` → `.dsh/dshmobile`、`files/dshbox` → `files/dshmobile`、层内 `.dshbox/` 哨兵 → `.dshmobile/`、`libdshbox-link.so` → 本仓库构建的 `libdshmobile-link.so`；`DshboxNameMigration` 在协调器首次同步 / 供给前迁移旧数据（幂等、不覆盖、失败逐步报告、成功写标记） | 单测 Core 35 / Runtime 736 / Application 83、guest node 37 全绿；模拟器冒烟：PR-10 留下的真实旧布局经冷启动迁移、诊断写回新路径、再次启动不再扫描（[证据](../migration/parity/2026-11-15-emulator-A17-x86_64-adr0019-rename.md)）；真机验收按负责人决定跳过（ADR-0018 决策 4） |
+| 运行层自建 | [ADR-0020](ADR/0020-self-built-runtime-layers.md)：base / node / android-side / DSH 四层由 `runtime-bundle/build-runtime.sh` 按 `runtime-build.lock` 构建（mmdebstrap + snapshot.debian.org、Node 官方包、自建 PRoot、`npm ci` 钉精确版本的 DSH），手动 CI `runtime-layers.yml` 构建并可发布 Release | WSL 本地构建：node / android-side 两次构建逐字节相同，base / DSH 未做第二次构建；与 DSHBox 层文件清单对照（见 ADR-0020「验证」）；宿主集成测试 `SelfBuiltRuntimeBundleTests` 经 App 自己的安装器装入并校验四层；`RuntimeBuildLockTests` 4 例；**未发布 Release，`runtime-assets.lock` 仍指向 DSHBox Release**；模拟器导入未做（需系统文件选择器）；真机验收按负责人决定跳过 |
 | PR-03 … PR-11（其余） | 见迁移方案第 6 节与切片总表 | 已由上列各 PR 覆盖；PR-11 不再需要（浏览器不迁移） |
 
 ## 4. 已修复的现有缺陷（迁移方案第 7 节）
@@ -111,7 +112,7 @@ corepack 缓存，见 `src/DshMobile.Android/Assets/README.md`）。Shizuku 客�
 
 1. **真机验收**：ADR-0016 / 0017 / 0018 翻转与删除都先于真机验收（负责人决定跳过）。各切片「阻断 / 风险」列中的真机缺口仍然成立；
    发布前应至少在 arm64 真机跑一遍：导入 → 准备 → 启动 → WebUI → 停止无孤儿、终端、插件安装、`ui_*` 审批、远程 SSH。
-2. 运行层仍取自 DSHBox Release（`runtime-bundle/runtime-assets.lock`）；如需摆脱，需要自建 rootfs / node / DSH 层的构建与签名流程（另立 ADR）。
+2. 运行层：[ADR-0020](ADR/0020-self-built-runtime-layers.md) 起由本仓库构建（`runtime-bundle/build-runtime.sh`、`runtime-build.lock`、手动 CI `runtime-layers.yml`）。在本仓库 Release 发布之前，`runtime-assets.lock` 仍指向 DSHBox Release；发布后另一提交把它改指本仓库。
 3. 历史 PR 中记录的已知缺陷（下载 `DOWNLOAD_UNSUPPORTED`、无真机 CI 门禁、SDK 预览版）不受 PR-10 影响。
 
 ## 7. 迁移中发现的旧实现事实（移植时必须保持，或单独决定修正）

@@ -21,3 +21,7 @@ src/DshMobile.Android/Assets/terminal/vendor/** -text
 # Guest-visible Relay assets copied from DSHBox (byte-exact: their SHA-256 is in the published version.json marker)
 src/DshMobile.Runtime/Automation/Relay/Transport/Assets/** -text
 tests/TestVectors/relay-guest/** -text
+# DSH layer manifests pinned by SHA-256 in runtime-bundle/runtime-build.lock (ADR-0020): byte-exact
+runtime-bundle/dsh/** -text
+# Read by runtime-bundle/build-runtime.sh (bash): never CRLF
+runtime-bundle/runtime-build.lock text eol=lf
