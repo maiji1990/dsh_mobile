@@ -35,7 +35,7 @@ dotnet test tests/DshMobile.Application.Tests
 node tooling/run-node-tests.mjs tests/guest
 ```
 
-运行层（DSH / Debian rootfs）：`pwsh runtime-bundle/fetch-runtime.ps1`（按 `runtime-bundle/runtime-assets.lock` 校验 SHA-256）。
+运行层（DSH / Debian rootfs）：`pwsh runtime-bundle/fetch-runtime.ps1`（按 `runtime-bundle/runtime-assets.lock` 校验 SHA-256）。运行层由本仓库构建（ADR-0020）：输入钉在 `runtime-bundle/runtime-build.lock`，`bash runtime-bundle/build-runtime.sh --work <Linux 目录>`（Linux / WSL，需 mmdebstrap 与 arm64 binfmt），CI 为手动触发的 `runtime-layers.yml`。
 
 ## 分层（ADR-0007）
 

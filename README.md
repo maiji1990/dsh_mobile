@@ -4,7 +4,7 @@
 运行时管理、终端、手机操控（`ui_*`）与远程 SSH 全部用 C# 实现。
 
 > 状态：迁移完成（PR-10，[ADR-0018](docs/ADR/0018-remove-dshbox.md)）：不再包含 [DSHBox](https://github.com/WSK-build/DSHBox) 源码、AAR 或 Kotlin 层；
-> 部分 C# 代码移植自 DSHBox（GPL-3.0，见 [docs/UPSTREAMS.md](docs/UPSTREAMS.md)），运行层取自其 Release。PR-10 前后的翻转与删除未经真机验收，
+> 部分 C# 代码移植自 DSHBox（GPL-3.0，见 [docs/UPSTREAMS.md](docs/UPSTREAMS.md)），运行层原取自其 Release，ADR-0020 起改由本仓库构建（`runtime-bundle/build-runtime.sh`）。PR-10 前后的翻转与删除未经真机验收，
 > 见 [docs/MIGRATION.md](docs/MIGRATION.md)。
 > 本项目与 DSHBox、DeepSeek 无隶属关系，不是官方客户端。
 

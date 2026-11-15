@@ -23,7 +23,7 @@
 |---|---|---|---|
 | `common` | **已引入**（TASK-003） | `native/settings.gradle.kts` 以 `:common`（与 DSHBox 同名，其脚本按此引用）引用源码目录，构建输出重定向到 `native/build/upstream/` | 否（`Bind="false"`） |
 | `app/src/main/jniLibs`（PRoot、talloc、android-shmem、zstd-jni 预编译 `.so`） | **已引入**（TASK-004）；PRoot / loader / talloc / shmem 四个文件已可由本仓库从源码构建（ADR-0014），由 `DshProotSource`（`dshbox` / `self`）选择进 APK 的一份，真机验收后默认为 `self`（自建），`dshbox` 为回退；zstd-jni 仍只来自这里 | `:native-bridge:exportRuntimeJars` 复制到 `artifacts/native/jniLibs/` | — |
-| Release 运行层（DSH `0.2.1-rc.5.tar.zst`、`dshapp-runtime-debian-arm64-0.1.0.zip`） | **已引入**（TASK-004） | `runtime-bundle/runtime-assets.lock`（GitHub 发布摘要 SHA-256）+ `fetch-runtime.ps1` | — |
+| Release 运行层（DSH `0.2.1-rc.5.tar.zst`、`dshapp-runtime-debian-arm64-0.1.0.zip`） | **已引入**（TASK-004）；ADR-0020 起由本仓库构建替代，本仓库 Release 发布后 lock 切换 | `runtime-bundle/runtime-assets.lock`（GitHub 发布摘要 SHA-256）+ `fetch-runtime.ps1` | — |
 | `plugin-manager/dshbox-plugins/assets/dshbox/{link-shim.mjs, libdshbox-link.so}` | **已引入**（TASK-005） | 构建时原样复制进 Bridge AAR 资产（仅这两个文件；`assets/plugins/*` 中只另取 `browser-use`（TASK-011，`browser_*` 独立命名空间），mobile-pilot / mobile-adapt 与 `ui_*` 单一契约冲突，不取） | — |
 | `dsh-renderer/api` | **已引入**（TASK-006） | `native/settings.gradle.kts` 以 `:dsh-renderer:api` 引用；使用 `DshOriginPolicy`、`DshTokenRevisionTracker` | 否（`Bind="false"`） |
 | `sandbox-manager` | **已引入**（TASK-004） | `native/settings.gradle.kts` 以 `:sandbox-manager` 引用源码目录 | 否（`Bind="false"`） |
@@ -53,6 +53,7 @@
 
 | 日期 | 上游 | 文件 | 修改理由 |
 |---|---|---|---|
+| 2026-11-15 | DSHBox | `tools/build_arm64_runtime_bundle.sh`、`runtime-bundle/build_{base,node,android_side}.sh`、`tools/pack_runtime.sh`、`runtime-bundle/scripts/gen_profile.sh` → `runtime-bundle/build-runtime.sh`；DSH 层 `package-lock.json`（取自 v1.5.1 Release `0.2.1-rc.5.tar.zst`）→ `runtime-bundle/dsh/` | ADR-0020：运行层改由本仓库构建——mmdebstrap + snapshot.debian.org（可复现）、包清单与定制同 DSHBox、自建 PRoot 作 android-side、在 arm64 Node 下 `npm ci` DSH 层、`.dshmobile/env.d`、bundle 名 `dshmobile-runtime-debian-arm64`；`@deepseek-ai/dsh` 由 `^0.2.1-rc.5` 改钉精确版本（规则 10）；输入钉在 `runtime-build.lock`，`RuntimeBuildLockTests` 核对 |
 | 2026-11-15 | DSHBox | `plugin-manager/dshbox-plugins/tools/link-shim/libdshbox-link.c` → `native/link-shim/libdshmobile-link.c` | ADR-0019：文件名与停用开关改为 `libdshmobile-link` / `DSHMOBILE_LINK_SHIM_DISABLE`、构建说明改指 `build.sh`，拦截逻辑不变；DSHBox 的 chroot 构建脚本由 `native/link-shim/build.sh`（交叉编译）替换；产物 SHA-256 `400b9ba7…1730` 钉在 `UpstreamPinnedValuesTests` |
 | 2026-11-15 | DSHBox | guest / 宿主路径 `/opt/dshbox`、`/opt/dshbox-cache`、`.dsh/dshbox`、`files/dshbox`、层内 `.dshbox/` 哨兵 | ADR-0019：改名为 `dshmobile`，`DshboxNameMigration` 迁移旧数据；运行层自带的 `.dshbox/env.d` 不改（层内容） |
 | 2026-11-09 | DSHBox | （未修改子模块）`SandboxService.provisionBundledDsh` 逻辑移植进 `RuntimeController.kt` | 该函数位于 DSHBox `app` 模块（我们不引入 app）；同语义、去 UI 副作用，GPL-3.0 注明来源 |
