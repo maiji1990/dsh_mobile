@@ -1,8 +1,7 @@
 name: android-dotnet
 
-# Order (plan section 16): native-aar -> .NET binding -> app. Emulator / device matrix comes later.
-# During the C#-first migration (ADR-0007) BOTH implementations are tested: the legacy Kotlin/DSHBox unit tests
-# (inside build-native) and the C# layers run the same golden vectors in tests/TestVectors.
+# Order: native layer (NDK, own sources + pinned PRoot sources) -> .NET tests -> app. Emulator / device matrix comes
+# later. No Gradle, no DSHBox submodule since PR-10 (ADR-0018).
 on:
   push:
     branches: [main]
@@ -14,13 +13,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          submodules: true
           fetch-depth: 0
-
-      - uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: '21'
 
       - uses: actions/setup-dotnet@v4
         with:
@@ -35,29 +28,39 @@ jobs:
       - name: Install android workload (pinned by global.json workloadVersion)
         run: dotnet workload install android
 
-      - name: Native AARs + legacy JVM unit tests (incl. shared-vector parity)
+      # The pinned PRoot / talloc / libandroid-shmem archives, keyed on sources.lock: a flaky upstream host (samba.org)
+      # does not fail the build once they are cached. build.ps1 still checks every archive against its pinned SHA-256.
+      - uses: actions/cache@v4
+        with:
+          path: native/.generated/proot/src-cache
+          key: proot-sources-${{ hashFiles('native/proot/sources.lock') }}
+
+      # The pinned NDK of native/dshmobile-native/build.ps1 and native/proot/build.ps1 (Gradle used to fetch it).
+      - name: Native layer (libdshmobile_native + PRoot)
         shell: pwsh
         run: |
+          & "$env:ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager.bat" --install "ndk;27.0.12077973" | Out-Null
+          if ($LASTEXITCODE -ne 0) { throw "sdkmanager failed with exit code $LASTEXITCODE" }
           "sdk.dir=$($env:ANDROID_HOME -replace '\\','/')" | Set-Content native/local.properties
           ./native/build-native.ps1
 
       - name: Contract tests (Core)
         run: dotnet test tests/DshMobile.Core.Tests -c Release
 
-      - name: Runtime tests (C# port vs. shared vectors and legacy sources)
+      - name: Runtime tests (C# port vs. shared vectors and pinned upstream values)
         run: dotnet test tests/DshMobile.Runtime.Tests -c Release
 
-      - name: Application tests (coordinator, shadow check)
+      - name: Application tests (coordinator)
         run: dotnet test tests/DshMobile.Application.Tests -c Release
 
       # Guest ui_* MCP facade (TASK-010): dependency-free. Explicit *.test.mjs list; fails on 0 files / 0 passing tests.
       - name: Guest facade tests
-        run: node tooling/run-node-tests.mjs native/native-bridge/src/test/guest
+        run: node tooling/run-node-tests.mjs tests/guest
 
       - name: Build app
         run: dotnet build src/DshMobile.Android -c Release
 
       - uses: actions/upload-artifact@v4
         with:
-          name: native-aars
+          name: native-libs
           path: artifacts/native/

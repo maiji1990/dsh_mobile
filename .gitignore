@@ -28,6 +28,7 @@ artifacts/native/jniLibs/
 artifacts/native/aars/
 artifacts/native/dshmobile-native/
 artifacts/native/proot/
+artifacts/native/link-shim/
 artifacts/*.log
 
 # Signing material must never be committed
@@ -41,3 +42,4 @@ Thumbs.db
 
 # Upstream runtime layers (hundreds of MB; fetched + hash-verified, never committed)
 artifacts/runtime/
+artifacts/runtime-build/

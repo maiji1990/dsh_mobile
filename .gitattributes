@@ -1,13 +1,18 @@
 * text=auto
 *.sh text eol=lf
-gradlew text eol=lf
 *.bat text eol=crlf
 *.cmd text eol=crlf
 *.jar binary
 *.aar binary
 *.png binary
 # Guest-side scripts run inside the Linux sandbox
-native/native-bridge/src/main/guest-assets/** text eol=lf
+src/DshMobile.Runtime/Automation/Assets/** text eol=lf
+src/DshMobile.Runtime/Guest/Assets/** text eol=lf
+tests/guest/** text eol=lf
+# APK assets vendored from DSHBox v1.5.1 (byte-exact; SHA-256 pinned in src/DshMobile.Android/Assets/README.md)
+src/DshMobile.Android/Assets/dshmobile/** -text
+src/DshMobile.Android/Assets/toolchain-cache/** -text
+native/link-shim/** -text
 # Layer-archive parity fixtures (tooling/gen-layer-fixtures.py): byte-exact, never EOL-converted
 tests/TestVectors/layers/** binary
 tests/TestVectors/bundles/** binary
@@ -16,3 +21,7 @@ src/DshMobile.Android/Assets/terminal/vendor/** -text
 # Guest-visible Relay assets copied from DSHBox (byte-exact: their SHA-256 is in the published version.json marker)
 src/DshMobile.Runtime/Automation/Relay/Transport/Assets/** -text
 tests/TestVectors/relay-guest/** -text
+# DSH layer manifests pinned by SHA-256 in runtime-bundle/runtime-build.lock (ADR-0020): byte-exact
+runtime-bundle/dsh/** -text
+# Read by runtime-bundle/build-runtime.sh (bash): never CRLF
+runtime-bundle/runtime-build.lock text eol=lf

@@ -103,12 +103,12 @@ public sealed class TerminalCommandParityTests : IDisposable
         Assert.Equal("custom\n", File.ReadAllText(Path.Combine(rootfs, "root", ".procfake", "uptime")));
     }
 
+    /// <summary>DSHBox v1.5.1 (7c9d33c) TerminalProcFake.kt UPTIME / LOADAVG, pinned in PR-10 (ADR-0018).</summary>
     [Fact]
     public void LegacyProcFakeTexts_AreTheOnesPorted()
     {
-        var kt = File.ReadAllText(Repo.PathOf("third_party", "dshbox", "terminal-session", "src", "main", "java", "com", "dshbox", "terminal", "TerminalProcFake.kt"));
-        Assert.Contains($"UPTIME = \"{TerminalCommandBuilder.Uptime.Replace("\n", "\\n", StringComparison.Ordinal)}\"", kt, StringComparison.Ordinal);
-        Assert.Contains($"LOADAVG = \"{TerminalCommandBuilder.LoadAvg.Replace("\n", "\\n", StringComparison.Ordinal)}\"", kt, StringComparison.Ordinal);
+        Assert.Equal("100000.00 500000.00\n", TerminalCommandBuilder.Uptime);
+        Assert.Equal("0.00 0.01 0.05 1/100 1000\n", TerminalCommandBuilder.LoadAvg);
     }
 
     [Fact]

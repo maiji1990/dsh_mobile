@@ -14,6 +14,7 @@ public interface IBundledAssets
     /// <summary>Names directly under <paramref name="dir"/>; empty when the directory does not exist.</summary>
     IReadOnlyList<string> List(string dir);
 
+    /// <summary>Opens one asset; a missing or unreadable one throws an <see cref="IOException"/>.</summary>
     Stream Open(string path);
 }
 
@@ -158,7 +159,7 @@ public sealed record RuntimeInstallCheck(bool Installed, string Reason, IReadOnl
                 broken.Add($"{name}:profile-has-no-sha");
                 continue;
             }
-            var sentinel = Path.Combine(dir, ".dshbox", $"layer-{name}.sha256");
+            var sentinel = Path.Combine(dir, RuntimeConstants.LayerStateDir, $"layer-{name}.sha256");
             if (File.Exists(sentinel))
             {
                 if (!File.ReadAllText(sentinel, Encoding.UTF8).Trim().Equals(expected, StringComparison.OrdinalIgnoreCase))
@@ -168,7 +169,7 @@ public sealed record RuntimeInstallCheck(bool Installed, string Reason, IReadOnl
             }
             else
             {
-                heals.Add($"{name}/.dshbox/layer-{name}.sha256");
+                heals.Add($"{name}/.dshmobile/layer-{name}.sha256");
                 if (heal)
                 {
                     try

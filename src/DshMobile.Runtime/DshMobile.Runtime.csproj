@@ -1,8 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <!--
     C#-owned runtime (ADR-0007): layer layout and verification, PRoot lifecycle, DSH profiles, runtime state machine.
-    Replaces DSHBox sandbox-manager slice by slice; the legacy bridge implementation stays available under
-    DshMobile.Runtime.Legacy for shadow comparison until each slice passes on a real device.
+    Since PR-10 (ADR-0018) the only implementation: the DSHBox sandbox-manager it replaced is no longer in the app.
   -->
   <PropertyGroup>
     <TargetFramework>net11.0</TargetFramework>
@@ -19,14 +18,10 @@
     <!-- Byte-exact guest assets copied from DSHBox (GPL-3.0; Automation/Relay/Transport/Assets/README.md, docs/UPSTREAMS.md). -->
     <EmbeddedResource Include="Automation/Relay/Transport/Assets/relay-client.cjs" LogicalName="DshMobile.Relay.relay-client.cjs" />
     <EmbeddedResource Include="Automation/Relay/Transport/Assets/relay-usage.template.md" LogicalName="DshMobile.Relay.relay-usage.template.md" />
-    <!--
-      This repo's own ui_* guest scripts (UiFacadeAssets), embedded from their single source until PR-10 moves them out of
-      the transitional native-bridge tree (legacy still packages the same files as APK assets).
-    -->
-    <EmbeddedResource Include="../../native/native-bridge/src/main/guest-assets/dshmobile/ui-facade.mjs" LogicalName="DshMobile.UiTools.ui-facade.mjs" Link="Automation/Assets/ui-facade.mjs" />
-    <EmbeddedResource Include="../../native/native-bridge/src/main/guest-assets/dshmobile/ui-facade-check.mjs" LogicalName="DshMobile.UiTools.ui-facade-check.mjs" Link="Automation/Assets/ui-facade-check.mjs" />
-    <!-- The profile probe (GuestAssetProvisioner / DshProbe), same single source. -->
-    <EmbeddedResource Include="../../native/native-bridge/src/main/guest-assets/dshmobile/dsh-probe.mjs" LogicalName="DshMobile.Guest.dsh-probe.mjs" Link="Guest/Assets/dsh-probe.mjs" />
+    <!-- This repo's own guest scripts: ui_* facade + self-check (UiFacadeAssets) and the profile probe (DshProbe). -->
+    <EmbeddedResource Include="Automation/Assets/ui-facade.mjs" LogicalName="DshMobile.UiTools.ui-facade.mjs" />
+    <EmbeddedResource Include="Automation/Assets/ui-facade-check.mjs" LogicalName="DshMobile.UiTools.ui-facade-check.mjs" />
+    <EmbeddedResource Include="Guest/Assets/dsh-probe.mjs" LogicalName="DshMobile.Guest.dsh-probe.mjs" />
   </ItemGroup>
 
   <ItemGroup>

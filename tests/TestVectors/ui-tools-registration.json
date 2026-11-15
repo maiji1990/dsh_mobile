@@ -1,7 +1,7 @@
 {
   "description": "PR-07: ui_* tool registration patch layer. Legacy Kotlin UiToolsRegistration (LegacyUiToolsRegistrationParityTest) and C# DshMobile.Runtime.Automation.UiToolsRegistration (UiToolsRegistrationParityTests) run every case. 'initial' / 'after': null = path absent, '@dir' = a directory at the path, '@render' = exactly the rendered layer, '@initial' = unchanged, any other string = file content.",
-  "overlayRelativePath": ".dsh/dshbox/dsh-official-plugin/dsh-official-plugin-overlay.yml",
-  "render": "# dshmobile:ui-tools v1\n# Written by DSH Mobile while 手机操控 is on; deleted when it is turned off. ui_* tools (every write goes through Relay approval).\n- insert:\n    - id: dshmobile-ui\n      name: '@deepseek-ai/dsh-mcp-client'\n      config:\n        serverName: ui\n        transport: stdio\n        command: !!js process.execPath\n        args: ['/opt/dshbox-cache/dshmobile/ui-facade.mjs']\n        toolCallTimeoutMs: 120000\n        failOnStartupError: false\n",
+  "overlayRelativePath": ".dsh/dshmobile/dsh-official-plugin/dsh-official-plugin-overlay.yml",
+  "render": "# dshmobile:ui-tools v1\n# Written by DSH Mobile while 手机操控 is on; deleted when it is turned off. ui_* tools (every write goes through Relay approval).\n- insert:\n    - id: dshmobile-ui\n      name: '@deepseek-ai/dsh-mcp-client'\n      config:\n        serverName: ui\n        transport: stdio\n        command: !!js process.execPath\n        args: ['/opt/dshmobile-cache/dshmobile/ui-facade.mjs']\n        toolCallTimeoutMs: 120000\n        failOnStartupError: false\n",
   "cases": [
     {
       "name": "absent",

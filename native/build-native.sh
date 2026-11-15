@@ -1,15 +1,9 @@
 #!/usr/bin/env bash
-# Builds the native layer (Java facade + reused DSHBox modules), runs JVM unit tests,
-# and exports release AARs with SHA-256 sidecars to artifacts/native/.
+# Builds this repo's native layer with the pinned NDK (no Gradle, no DSHBox since PR-10 / ADR-0018):
+#   artifacts/native/dshmobile-native/<abi>/libdshmobile_native.so   (ADR-0007, own C source, 16 KB aligned)
+#   artifacts/native/proot/<abi>/*.so + SHA256SUMS                   (ADR-0014, pinned upstream PRoot sources)
+# Extra arguments go to native/proot/build.sh.
 set -euo pipefail
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-if [[ ! -f "$here/../third_party/dshbox/settings.gradle.kts" ]]; then
-  echo "DSHBox submodule missing. Run: git submodule update --init --depth 1" >&2
-  exit 1
-fi
-cd "$here"
-./gradlew --no-daemon :native-bridge:testDebugUnitTest exportAars "$@"
-# ADR-0007 minimal native layer (own C source, NDK, 16 KB aligned): artifacts/native/dshmobile-native/<abi>/
 bash "$here/dshmobile-native/build.sh"
-# ADR-0014 PRoot / loader / talloc / shmem from pinned sources: artifacts/native/proot/<abi>/ (used with DshProotSource=self)
-bash "$here/proot/build.sh"
+bash "$here/proot/build.sh" "$@"

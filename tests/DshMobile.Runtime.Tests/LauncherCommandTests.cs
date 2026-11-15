@@ -60,7 +60,7 @@ public sealed partial class LauncherCommandTests : IDisposable
         var b = new ProotCommandBuilder(layout);
         var first = b.DshCommand();
         var restart = b.DshCommand(inPlaceRestart: true);
-        Assert.Equal(first.Where(a => !a.EndsWith(":/opt/dshbox-cache", StringComparison.Ordinal)), restart);
+        Assert.Equal(first.Where(a => !a.EndsWith(":/opt/dshmobile-cache", StringComparison.Ordinal)), restart);
         Assert.Equal(first.Count - 1, restart.Count);
     }
 
@@ -70,7 +70,7 @@ public sealed partial class LauncherCommandTests : IDisposable
         var (layout, _, _) = DeviceLikeLayout();
         File.Delete(layout.ShimFile);
         var argv = new ProotCommandBuilder(layout).DshCommand();
-        Assert.DoesNotContain(argv, a => a.EndsWith(":/opt/dshbox", StringComparison.Ordinal));
+        Assert.DoesNotContain(argv, a => a.EndsWith(":/opt/dshmobile", StringComparison.Ordinal));
         Assert.DoesNotContain("--import", argv);
     }
 
@@ -84,12 +84,12 @@ public sealed partial class LauncherCommandTests : IDisposable
             Directory.CreateDirectory(Path.GetDirectoryName(p)!);
             File.WriteAllText(p, content);
         }
-        Overlay(".dsh/dshbox/safe-mode/absolute-safe-mode.yml", "x: 1");
-        Overlay(".dsh/dshbox/plugin-market/market-and-safe-mode-overlay.yml", ""); // empty: skipped
-        Overlay(".dsh/dshbox/dsh-official-plugin/dsh-official-plugin-overlay.yml", "y: 2");
+        Overlay(".dsh/dshmobile/safe-mode/absolute-safe-mode.yml", "x: 1");
+        Overlay(".dsh/dshmobile/plugin-market/market-and-safe-mode-overlay.yml", ""); // empty: skipped
+        Overlay(".dsh/dshmobile/dsh-official-plugin/dsh-official-plugin-overlay.yml", "y: 2");
         var argv = new ProotCommandBuilder(layout).DshCommand();
         var patches = argv.Select((a, i) => (a, i)).Where(t => t.a == "--patch").Select(t => argv[t.i + 1]).ToList();
-        Assert.Equal(["/root/projects/.dsh/dshbox/dsh-official-plugin/dsh-official-plugin-overlay.yml", "/root/projects/.dsh/dshbox/safe-mode/absolute-safe-mode.yml"], patches);
+        Assert.Equal(["/root/projects/.dsh/dshmobile/dsh-official-plugin/dsh-official-plugin-overlay.yml", "/root/projects/.dsh/dshmobile/safe-mode/absolute-safe-mode.yml"], patches);
     }
 
     [Fact]
@@ -102,17 +102,4 @@ public sealed partial class LauncherCommandTests : IDisposable
         Assert.Equal(["/usr/bin/bash", "-c", "echo a b; true"], ProcessTable.Read(Path.Combine(_dir, "proc"))!.Argv(42));
     }
 
-    [GeneratedRegex(@"val command = processRunner\.buildProotDshCommand\((?<args>.*?)\n\s*\)", RegexOptions.Singleline)]
-    private static partial Regex DshCallSite();
-
-    /// <summary>Pins the legacy inconsistency the restart variant models: if upstream fixes it, this fails first.</summary>
-    [Fact]
-    public void LegacyDshCallSites_FirstStartBindsGuestCache_RestartDoesNot()
-    {
-        var src = File.ReadAllText(Repo.PathOf("third_party", "dshbox", "sandbox-manager", "src", "main", "java", "com", "dshbox", "app", "sandbox", "DefaultSandboxManager.kt"));
-        var sites = DshCallSite().Matches(src).Select(m => m.Groups["args"].Value).ToList();
-        Assert.Equal(2, sites.Count);
-        Assert.Contains("guestCacheHostDir", sites[0], StringComparison.Ordinal);
-        Assert.DoesNotContain("guestCacheHostDir", sites[1], StringComparison.Ordinal);
-    }
 }

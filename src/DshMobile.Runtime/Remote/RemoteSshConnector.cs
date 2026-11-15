@@ -3,7 +3,7 @@
 // the ported RemoteConnectRules. Registered in docs/UPSTREAMS.md.
 
 using System.Net.Sockets;
-using DshMobile.Core.Bridge;
+using DshMobile.Core.Contracts;
 using Renci.SshNet;
 using Renci.SshNet.Common;
 using Renci.SshNet.Security;

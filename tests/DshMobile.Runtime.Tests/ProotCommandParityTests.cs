@@ -68,8 +68,8 @@ public sealed partial class ProotCommandParityTests : IDisposable
             "--bind=/system", "--bind=/apex", "--bind=/proc", "--bind=/dev",
             $"--bind={layout.LayerDir("node")}:/usr/local",
             $"--bind={layout.LayerDir("dsh")}:/opt/dshapp/runtime",
-            $"--bind={layout.ShimDir}:/opt/dshbox",
-            $"--bind={layout.GuestCacheDir}:/opt/dshbox-cache",
+            $"--bind={layout.ShimDir}:/opt/dshmobile",
+            $"--bind={layout.GuestCacheDir}:/opt/dshmobile-cache",
             $"--bind={layout.UserDataDir}:/root/projects",
             $"--bind={layout.NpmCacheDir}:/root/.npm",
             $"--bind={layout.PilotEntryDir}:/opt/pilot",
@@ -107,20 +107,17 @@ public sealed partial class ProotCommandParityTests : IDisposable
         Assert.Equal(new Dictionary<string, string> { ["A"] = "4", ["B"] = "2", ["C"] = "3" }, parsed);
     }
 
-    [GeneratedRegex("""val DIAGNOSTICS = linkedMapOf\((?<body>.*?)\n\s*\)""", RegexOptions.Singleline)]
-    private static partial Regex KotlinDiagnostics();
-
-    [GeneratedRegex("\"(?<k>[a-z]+)\" to \"(?<v>[^\"]+)\"")]
-    private static partial Regex KotlinPair();
-
+    /// <summary>The bridge RuntimeController.kt DIAGNOSTICS map at 128c2ea (pinned in PR-10, ADR-0018).</summary>
     [Fact]
-    public void Diagnostics_MatchLegacyRuntimeController()
+    public void Diagnostics_AreTheLegacyRuntimeControllerOnes()
     {
-        var src = File.ReadAllText(Repo.PathOf("native", "native-bridge", "src", "main", "java", "dshmobile", "nativebridge", "RuntimeController.kt"));
-        var legacy = KotlinPair().Matches(KotlinDiagnostics().Match(src).Groups["body"].Value)
-            .Select(m => (m.Groups["k"].Value, m.Groups["v"].Value.Replace("$GUEST_DSH_BIN", RuntimeConstants.GuestDshBin, StringComparison.Ordinal)))
-            .ToList();
-        Assert.Equal(4, legacy.Count);
+        (string, string)[] legacy =
+        [
+            ("arch", "uname -m"),
+            ("debian", "cat /etc/debian_version"),
+            ("node", "node --version"),
+            ("dsh", "node " + RuntimeConstants.GuestDshBin + " --version"),
+        ];
         Assert.Equal(legacy, GuestDiagnostics.Commands.Select(c => (c.Key, c.Command)));
     }
 

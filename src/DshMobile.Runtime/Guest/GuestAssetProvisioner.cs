@@ -22,10 +22,10 @@ public sealed record GuestAssetReport(IReadOnlyList<string> Written, IReadOnlyLi
 /// the first bridge call of every process, and every C# guest path (C# host, diagnostics, plugins, probe, Relay self-test,
 /// terminal) silently depended on that side effect. Same files, same places:
 /// <list type="bullet">
-/// <item><c>dshbox/link-shim.mjs</c> + <c>libdshbox-link.so</c> (APK assets) → <c>files/dshbox</c> (guest <c>/opt/dshbox</c>):
+/// <item><c>dshmobile/link-shim.mjs</c> + <c>libdshmobile-link.so</c> (APK assets) → <c>files/dshmobile</c> (guest <c>/opt/dshmobile</c>):
 /// DSH publishes with <c>link()</c>, which Android's data partition refuses; without the shim sessions, the write tool,
 /// attachments and plugin installs fail with EPERM;</item>
-/// <item>this repo's <c>dsh-probe.mjs</c> and the ui_* scripts → <c>guest-cache/dshmobile</c> (guest <c>/opt/dshbox-cache/dshmobile</c>);</item>
+/// <item>this repo's <c>dsh-probe.mjs</c> and the ui_* scripts → <c>guest-cache/dshmobile</c> (guest <c>/opt/dshmobile-cache/dshmobile</c>);</item>
 /// <item>the offline corepack cache and the <c>dsh</c> / <c>pnpm</c> wrappers (<see cref="GuestToolchain"/>).</item>
 /// </list>
 /// Each step stands alone like the legacy <c>runCatching</c> blocks: one failing does not stop the others, and the
@@ -35,9 +35,9 @@ public sealed record GuestAssetReport(IReadOnlyList<string> Written, IReadOnlyLi
 /// </summary>
 public static class GuestAssetProvisioner
 {
-    public const string ShimAssetDir = "dshbox";
+    public const string ShimAssetDir = "dshmobile";
     public const string LinkShimAsset = ShimAssetDir + "/link-shim.mjs";
-    public const string LinkShimSoName = "libdshbox-link.so";
+    public const string LinkShimSoName = "libdshmobile-link.so";
     public const string LinkShimSoAsset = ShimAssetDir + "/" + LinkShimSoName;
 
     public const string ProbeName = "dsh-probe.mjs";
@@ -47,7 +47,7 @@ public static class GuestAssetProvisioner
 
     private const string ProbeResource = "DshMobile.Guest.dsh-probe.mjs";
 
-    /// <summary>The embedded bytes of this repo's <c>dsh-probe.mjs</c> (single source: native-bridge guest assets).</summary>
+    /// <summary>The embedded bytes of this repo's <c>dsh-probe.mjs</c> (<c>Guest/Assets/</c>, moved from the bridge's guest assets in PR-10).</summary>
     public static byte[] ReadProbeScript()
     {
         using var stream = typeof(GuestAssetProvisioner).Assembly.GetManifestResourceStream(ProbeResource)

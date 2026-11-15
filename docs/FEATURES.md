@@ -3,6 +3,9 @@
 状态取值：`未开始` / `进行中` / `POC` / `通过（附证据）` / `受限（原因）` / `不可用（原因）`。
 **只有附真机证据的条目才能标“通过”。**
 
+> **PR-10（[ADR-0018](ADR/0018-remove-dshbox.md)）后**：App 只有 C# 实现。下表的真机证据大多采集于 PR-10 之前（旧桥 / DSHBox 实现，或当时开发者可选的
+> C# 路径）；C# 成为唯一实现后的真机复验按负责人决定跳过，只有单测与模拟器冒烟（见 [MIGRATION.md](MIGRATION.md) 第 6 节）。
+
 ## 引擎能力（方案 4.1）
 
 | 功能 | 状态 | 证据 / 备注 |
@@ -29,14 +32,14 @@
 | 功能 | 状态 | 证据 / 备注 |
 |---|---|---|
 | .NET 11 Android 空壳（TASK-002） | 通过（Android 17 真机） | Release（full trim，CoreCLR）在 Honor PTP-AN10 / Android 17 运行，冷启动约 220–290 ms；Android 10 未测。证据见 COMPATIBILITY.md 真机记录 |
-| C# ↔ Java ↔ DSHBox Kotlin Bridge（TASK-003） | 通过（Android 17 真机），旋转与 Android 10 未测 | 31 轮×1000 次全部成功、双端在途为 0；强制 GC 后 JNI GREF 恒为 37、Java 存活持平。证据见 COMPATIBILITY.md 真机记录 |
+| ~~C# ↔ Java ↔ DSHBox Kotlin Bridge（TASK-003）~~ | **已删除（ADR-0018）**；此前：通过（Android 17 真机），旋转与 Android 10 未测 | 31 轮×1000 次全部成功、双端在途为 0；强制 GC 后 JNI GREF 恒为 37、Java 存活持平。证据见 COMPATIBILITY.md 真机记录 |
 | DSH WebUI（System WebView，TASK-006） | 通过（Android 17 真机），部分未测 | 官方 WebUI 加载 0.3–0.5 s；launch token 只在原生侧；DSH 重启换 token 后重开可鉴权；返回键正常。未测：401 自动恢复路径、外链交给浏览器、旋转、文件选择/下载（TASK-007） |
 | 前台服务 | 通过（Android 17 真机） | `specialUse`，后台 90 s DSH 存活 |
-| Android 硬链接兼容垫片（link-shim） | 通过（Android 17 真机） | DSH 以 `node --expose-internals --import /opt/dshbox/link-shim.mjs … --profile web` 运行（与 DSHBox 一致）；TASK-004 初版缺失此垫片，已补 |
+| Android 硬链接兼容垫片（link-shim） | 通过（Android 17 真机） | DSH 以 `node --expose-internals --import /opt/dshmobile/link-shim.mjs … --profile web` 运行（与 DSHBox 一致；路径 ADR-0019 由 `/opt/dshbox` 改名）；TASK-004 初版缺失此垫片，已补 |
 | Runtime 层管理（TASK-004） | 通过（Android 17 真机），部分验收未测 | 磁盘不足 / 层缺失 / 更新失败未测；见 milestones/M2.md |
-| C# 运行时协调器 + 影子比对（ADR-0007，PR-00/01/02） | 通过（Android 17 真机） | Release full-trim：启停 / 重复启动 / 停止无孤儿 / 强杀后 journal 恢复为 `RUNTIME_INTERRUPTED`；导入时 `runtime.bundle-verify` 与 `runtime.layer-extract` 影子均 `Agree`（16,119 项逐项一致）。实现仍为旧桥；失败清理分支仅单测。见 COMPATIBILITY.md「ADR-0007 迁移」 |
-| C# 宿主（开发者可选：长按「启动 DSH」） | 通过（Android 17 真机） | 不经 DSHBox 代码：C# 启动沙箱 + DSH、取 launch token、C# WebView 加载官方 WebUI；10.1 s READY；停止 / 强杀无孤儿；token 不入日志。运行期间终端 / 手机操控 / 浏览器不可用。见 COMPATIBILITY.md「ADR-0007 里程碑」 |
-| C# 终端（开发者可选：长按「终端」→「C# 终端」） | 通过（Android 17 真机），部分未测 | 不经 DSHBox 终端代码：C# PTY + PRoot bash、Material 3 界面、本地 xterm.js 显示、原生键盘输入；多会话 / 重放 / resize / ^C / 大量输出 / 关闭与强杀无残留已验证；中文组合输入、vim 等应用光标模式、横屏未测。见 COMPATIBILITY.md「C# 终端界面」 |
+| C# 运行时协调器（ADR-0007，PR-00/01/02；影子比对已于 ADR-0018 删除） | 通过（Android 17 真机，PR-10 前） | Release full-trim：启停 / 重复启动 / 停止无孤儿 / 强杀后 journal 恢复为 `RUNTIME_INTERRUPTED`；导入时 `runtime.bundle-verify` 与 `runtime.layer-extract` 影子均 `Agree`（16,119 项逐项一致）。实现仍为旧桥；失败清理分支仅单测。见 COMPATIBILITY.md「ADR-0007 迁移」 |
+| C# 宿主（ADR-0015 起默认，ADR-0018 起唯一实现） | 通过（Android 17 真机，作为可选路径时） | 不经 DSHBox 代码：C# 启动沙箱 + DSH、取 launch token、C# WebView 加载官方 WebUI；10.1 s READY；停止 / 强杀无孤儿；token 不入日志。（当时运行期间终端 / 手机操控不可用；之后的版本已接通。）见 COMPATIBILITY.md「ADR-0007 里程碑」 |
+| C# 终端（ADR-0016 起默认，ADR-0018 起唯一实现） | 通过（Android 17 真机，作为可选路径时），部分未测 | 不经 DSHBox 终端代码：C# PTY + PRoot bash、Material 3 界面、本地 xterm.js 显示、原生键盘输入；多会话 / 重放 / resize / ^C / 大量输出 / 关闭与强杀无残留已验证；中文组合输入、vim 等应用光标模式、横屏未测。见 COMPATIBILITY.md「C# 终端界面」 |
 
 ## 可选模块（方案 4.3）
 
@@ -44,7 +47,7 @@
 |---|---|---|
 | `optional.mobile-automation`（TASK-010） | 只读部分通过（Android 17 真机） | Interlock Relay core（白名单 `ui.snapshot` / `ui.node`）+ 通知栏审批 + guest `ui_*` 门面：`ui_list_devices` online、`ui_snapshot` 40/69 节点、`ui_get_element` 实时回读（含 `nativeId` / `enabled`），exit 0；拒绝 / 未作答 / 无障碍关闭均映射为稳定错误码。写操作（点击 / 输入 / 滚动 / 按键）未开放，见 ADR-0004 第 8 条；Android 10 未测 |
 
-| `optional.browser`（TASK-011） | 部分通过（Android 17 真机） | DSHBox 浏览器栈原样复用（ADR-0005）：浏览器在独立 `:browser` 进程打开；只读自检经 browser-use 插件自带客户端 → guest CLI → broker → 命令服务，`status` OK、`observe` 读取百度首页（标题、正文、22 个元素）；安装 24 个 `browser_*` 工具 exit 0，DSH 重启后 `--dump-config` 含 `@local/browser-use`、无插件失败日志。未验证：模型实际调用 `browser_*`（需凭据）、控制请求审批流程、点击 / 输入 / 上传 / 下载 / 网络捕获、iframe、断网、Android 10 |
+| `optional.browser`（TASK-011） | **不提供（ADR-0018 删除，负责人决定「不需要浏览器」）** | 历史：DSHBox 浏览器栈原样复用（ADR-0005）：浏览器在独立 `:browser` 进程打开；只读自检经 browser-use 插件自带客户端 → guest CLI → broker → 命令服务，`status` OK、`observe` 读取百度首页（标题、正文、22 个元素）；安装 24 个 `browser_*` 工具 exit 0，DSH 重启后 `--dump-config` 含 `@local/browser-use`、无插件失败日志。未验证：模型实际调用 `browser_*`（需凭据）、控制请求审批流程、点击 / 输入 / 上传 / 下载 / 网络捕获、iframe、断网、Android 10 |
 
 | `optional.remote-host`（TASK-012） | 部分通过（Android 17 真机 → 本机 Windows PC） | ADR-0006：Keystore 硬件保护 ECDSA 密钥登录 Windows OpenSSH；首连 `HOST_KEY_UNKNOWN` → 核对固定 → 连接；探测远端 node v26.13.0 / dsh 0.2.1-rc.5；启动远端 `dsh web`（仅回环）、本地转发经 `GET /` 得 401、token 只在原生侧；停止 / 断开后远端端口释放；断线检出 `UNREACHABLE` 并作废 token，固定指纹免确认重连；与本机 DSH 同时运行互不影响。未做：远端 WebUI（需独立进程隔离 Cookie）、真实网络（经 `adb reverse`）、`HOST_KEY_CHANGED` 真机演练、Android 10 |
 

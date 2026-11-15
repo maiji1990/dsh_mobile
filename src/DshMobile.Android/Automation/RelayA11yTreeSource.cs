@@ -9,47 +9,13 @@ using DshMobile.Runtime.Automation.Relay.A11y;
 namespace DshMobile.App.Automation;
 
 /// <summary>
-/// PR-07 segment 7, read-only and transitional: the foreground accessibility tree as the C# reader sees it, read from
-/// the accessibility service that is running in this process. While the slice is LegacyWithShadow that service is still
-/// the legacy Relay's <c>interlock.relay.core.exec.a11y.RelayAccessibilityService</c> (the one the user enabled), reached
-/// through standard JNI (<c>RelayAccessibilityService.Companion.current()</c>); this class only reads its tree. When C#
-/// owns the service this source reads its own service instead and the JNI lookup goes away.
+/// The foreground accessibility tree as the C# reader sees it (PR-07 segment 7), read from this app's own accessibility
+/// service (<see cref="Relay.DshAccessibilityService"/>, ADR-0011) when the user enabled it.
 /// </summary>
 internal static class RelayA11yTreeSource
 {
-    private const string ServiceClass = "interlock/relay/core/exec/a11y/RelayAccessibilityService";
-    private const string CompanionClass = ServiceClass + "$Companion";
-
-    /// <summary>
-    /// The running service: this app's own C# service when the user enabled it, else the legacy Relay's (read through
-    /// JNI while that slice is LegacyWithShadow), else null.
-    /// </summary>
-    public static AccessibilityService? Current() => Relay.DshAccessibilityService.Instance ?? Legacy();
-
-    private static AccessibilityService? Legacy()
-    {
-        try
-        {
-            var cls = JNIEnv.FindClass(ServiceClass); // a global ref, cached by the runtime: never deleted here
-            var field = JNIEnv.GetStaticFieldID(cls, "Companion", "L" + CompanionClass + ";");
-            var companion = JNIEnv.GetStaticObjectField(cls, field);
-            try
-            {
-                var companionCls = JNIEnv.FindClass(CompanionClass);
-                var current = JNIEnv.GetMethodID(companionCls, "current", "()L" + ServiceClass + ";");
-                var handle = JNIEnv.CallObjectMethod(companion, current);
-                return handle == IntPtr.Zero ? null : Java.Lang.Object.GetObject<AccessibilityService>(handle, JniHandleOwnership.TransferLocalRef);
-            }
-            finally
-            {
-                JNIEnv.DeleteLocalRef(companion);
-            }
-        }
-        catch (Java.Lang.Throwable)
-        {
-            return null;
-        }
-    }
+    /// <summary>This app's own service while the user has it enabled and bound, else null.</summary>
+    public static AccessibilityService? Current() => Relay.DshAccessibilityService.Instance;
 
     /// <summary>Upstream <c>A11yBackend.hostTree</c>: the default display, its real pixel frame, the active window's root.</summary>
     public static A11yTree? HostTree(Context context)

@@ -16,8 +16,8 @@ namespace DshMobile.Runtime.Automation;
 /// </summary>
 public static class UiToolsRegistration
 {
-    /// <summary>Guest path of the facade (host: guest cache dir <c>dshmobile/</c>, bound at <c>/opt/dshbox-cache</c>).</summary>
-    public const string GuestFacade = "/opt/dshbox-cache/dshmobile/ui-facade.mjs";
+    /// <summary>Guest path of the facade (host: guest cache dir <c>dshmobile/</c>, bound at <c>/opt/dshmobile-cache</c>).</summary>
+    public const string GuestFacade = "/opt/dshmobile-cache/dshmobile/ui-facade.mjs";
 
     /// <summary>First line of the layer; only a file carrying it is ever replaced or deleted by us.</summary>
     public const string Marker = "# dshmobile:ui-tools v1";
@@ -29,7 +29,7 @@ public static class UiToolsRegistration
     public const string ServerName = "ui";
 
     /// <summary>Host path relative to user-data (DSHBox <c>DSH_OFFICIAL_PLUGIN_OVERLAY_RELATIVE_PATH</c>).</summary>
-    public const string OverlayRelativePath = ".dsh/dshbox/dsh-official-plugin/dsh-official-plugin-overlay.yml";
+    public const string OverlayRelativePath = ".dsh/dshmobile/dsh-official-plugin/dsh-official-plugin-overlay.yml";
 
     public static string OverlayFile(string userDataDir)
     {

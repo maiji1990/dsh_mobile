@@ -40,18 +40,8 @@ public class GuestPluginsTests
     {
         Assert.True(PluginCommand.TryBuild("add", "web", "pkg@>=1.0.0", out var argv, out _));
         Assert.Equal(
-            "export PATH=/opt/dshbox:/root/projects/.dsh/dshbox/bin:$PATH; cd /root/projects && '/root/projects/.dsh/dshbox/bin/dsh' 'plugin' '--profile' 'web' 'add' 'pkg@>=1.0.0'",
+            "export PATH=/opt/dshmobile:/root/projects/.dsh/dshmobile/bin:$PATH; cd /root/projects && '/root/projects/.dsh/dshmobile/bin/dsh' 'plugin' '--profile' 'web' 'add' 'pkg@>=1.0.0'",
             GuestPlugins.ShellLine(argv));
-    }
-
-    [Fact]
-    public void ShellLine_MatchesLegacyRuntimeControllerSource()
-    {
-        var src = File.ReadAllText(Repo.PathOf("native", "native-bridge", "src", "main", "java", "dshmobile", "nativebridge", "RuntimeController.kt"));
-        // runGuestScript's PATH (with Kotlin's ${'$'} for '$') and runPluginCommand's cd + quoted wrapper + shellJoin(argv).
-        Assert.Contains("val path = \"export PATH=/opt/dshbox:/root/projects/.dsh/dshbox/bin:${'$'}PATH\"", src, StringComparison.Ordinal);
-        Assert.Contains("runGuestScript(\"cd /root/projects && ${shellQuote(GUEST_DSH)} ${shellJoin(argv)}\")", src, StringComparison.Ordinal);
-        Assert.StartsWith(GuestPlugins.PathExport.Replace("$PATH", "", StringComparison.Ordinal), "export PATH=/opt/dshbox:/root/projects/.dsh/dshbox/bin:", StringComparison.Ordinal);
     }
 
     [Fact]

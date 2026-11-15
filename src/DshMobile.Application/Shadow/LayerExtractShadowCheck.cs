@@ -9,14 +9,17 @@ using DshMobile.Runtime.Layers;
 namespace DshMobile.Application.Shadow;
 
 /// <summary>
-/// PR-02 shadow for the LayerInstaller slice: after the legacy importer has installed a bundle, the C#
-/// <see cref="LayerExtractor"/> dry-runs every layer archive straight from the same ZIP (nothing written) and the
-/// result is compared with what the legacy code actually put in <c>runtime-current/&lt;layer&gt;</c>.
-/// Must run before anything else touches the layers (the coordinator holds its operation lock).
+/// Post-install check of the LayerInstaller (PR-02; a legacy-vs-C# shadow until PR-10): after a bundle is installed, the
+/// C# <see cref="LayerExtractor"/> dry-runs every layer archive straight from the same ZIP (nothing written) and the
+/// result is compared with what was actually put in <c>runtime-current/&lt;layer&gt;</c>. Must run before anything else
+/// touches the layers (the coordinator holds its operation lock).
 /// </summary>
 public static class LayerExtractShadowCheck
 {
     public const string Slice = "runtime.layer-extract";
+
+    /// <summary>The report name used for the check after a C# import (the only kind since PR-10).</summary>
+    public const string InstallSlice = "runtime.layer-install";
 
     public static async Task<ShadowReport> RunAsync(string zipPath, BundleInspection inspection, RuntimeLayout layout, Func<string, bool>? hostPathExists, TimeProvider time, CancellationToken ct)
     {
@@ -74,7 +77,7 @@ public static class LayerExtractShadowCheck
         return Report(diverged ? ShadowVerdict.Diverge : ShadowVerdict.Agree, string.Join(" | ", details), sw, time);
     }
 
-    /// <summary>Legacy writes <c>.dshbox/layer-&lt;name&gt;.sha256</c> (the recorded digest, no newline) after extracting.</summary>
+    /// <summary>Legacy writes <c>.dshmobile/layer-&lt;name&gt;.sha256</c> (the recorded digest, no newline) after extracting.</summary>
     internal static List<LayerEntry> WithSentinel(IReadOnlyList<LayerEntry> entries, LayerVerification layer)
     {
         var list = entries.ToList();
@@ -82,12 +85,12 @@ public static class LayerExtractShadowCheck
         {
             return list;
         }
-        if (!list.Any(e => e.Path == ".dshbox"))
+        if (!list.Any(e => e.Path == RuntimeConstants.LayerStateDir))
         {
-            list.Add(new LayerEntry(".dshbox", LayerEntryKind.Dir, null, 0, null, null));
+            list.Add(new LayerEntry(RuntimeConstants.LayerStateDir, LayerEntryKind.Dir, null, 0, null, null));
         }
         var bytes = Encoding.UTF8.GetBytes(recorded);
-        var path = $".dshbox/layer-{layer.Layer}.sha256";
+        var path = $"{RuntimeConstants.LayerStateDir}/layer-{layer.Layer}.sha256";
         list.RemoveAll(e => e.Path == path);
         list.Add(new LayerEntry(path, LayerEntryKind.File, null, bytes.Length, Convert.ToHexStringLower(SHA256.HashData(bytes)), null));
         return list;

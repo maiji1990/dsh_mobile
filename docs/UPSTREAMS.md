@@ -6,20 +6,24 @@
 
 | 上游 | 引入方式 | 固定版本 | Commit SHA | 许可证 | 用途 |
 |---|---|---|---|---|---|
-| [WSK-build/DSHBox](https://github.com/WSK-build/DSHBox) | git submodule `third_party/dshbox`（shallow） | `v1.5.1` | `7c9d33c1f29dd2c42dde6c7e2fcdf38814f491c4` | GPL-3.0（品牌资产保留，见其 `TRADEMARK.md`）；子模块各自许可见其 `licenses/` | 运行时、终端、Relay 等原生组件来源 |
+| [WSK-build/DSHBox](https://github.com/WSK-build/DSHBox) | PR-10（ADR-0018）起**不再引入源码**（子模块已删除）；仍使用：C# 移植的来源（下表）、Release 运行层（`runtime-bundle/runtime-assets.lock`）、原样复制的 guest 资产（`src/DshMobile.Android/Assets/README.md`、`native/link-shim/`） | `v1.5.1` | `7c9d33c1f29dd2c42dde6c7e2fcdf38814f491c4` | GPL-3.0（品牌资产保留，见其 `TRADEMARK.md`）；子模块各自许可见其 `licenses/` | 移植来源、运行层与 guest 资产 |
 | [deepseek-ai/deepseek-harness](https://github.com/deepseek-ai/deepseek-harness) | 运行时层（npm 包，TASK-004/005 引入） | 待定（最新 tag 观察到 `dsh-v0.2.2-rc.1`，尚无稳定 tag） | — | 见上游 | 原样运行的 DSH / Cordis |
 | [maiji1990/ui_mcp](https://github.com/maiji1990/ui_mcp) | 契约参考（TASK-010；不引入代码，guest 门面按其契约另行实现） | `main` @ `e098f91c7d34f27372ced17bea033861b63b681e`（工具名、错误码、ref 语义、`docs/p2-phone-facade-design.md`） | `e098f91c7d34f27372ced17bea033861b63b681e` | 见上游 | `ui_*` 统一契约 |
-| [termux/proot](https://github.com/termux/proot) | 源码归档，`native/proot/sources.lock` 钉 SHA-256，`native/proot/build.ps1` / `build.sh` 用 NDK 27.0.12077973 构建（ADR-0014） | `v5.1.107.90`（= DSHBox 所带 `libproot.so`；termux-packages proot 配方 commit `96385864cc0f32f3ce1c0c8eeeb97e5c13601762`，无补丁） | `894e5789cd982e53d644bb3a13332f1d35e907ac` | GPL-2.0-or-later（未修改源码） | `libproot.so` / `libproot-loader.so`（默认 `DshProotSource=self` 时进 APK） |
-| [talloc](https://www.samba.org/ftp/talloc/)（Samba） | 同上（`talloc-2.4.3.tar.gz`，SHA-256 `dc46c40b…d854dd`）；只编 `talloc.c`，waf 配置由 `native/proot/compat/talloc/config.h` 代替 | `2.4.3`（termux-packages libtalloc 配方 commit `fbc049451e7fc59cdf510732aad49bd45590b0bb`） | — | LGPL-3.0-or-later（动态链接、未修改源码） | `libtalloc.so` |
+| [termux/proot](https://github.com/termux/proot) | 源码归档，`native/proot/sources.lock` 钉 SHA-256，`native/proot/build.ps1` / `build.sh` 用 NDK 27.0.12077973 构建（ADR-0014） | `v5.1.107.90`（= DSHBox 所带 `libproot.so`；termux-packages proot 配方 commit `96385864cc0f32f3ce1c0c8eeeb97e5c13601762`，无补丁） | `894e5789cd982e53d644bb3a13332f1d35e907ac` | GPL-2.0-or-later（未修改源码） | `libproot.so` / `libproot-loader.so`（APK 中的唯一来源，ADR-0018） |
+| [talloc](https://www.samba.org/ftp/talloc/)（Samba） | 同上（`talloc-2.4.3.tar.gz`，SHA-256 `dc46c40b…d854dd`；samba.org 不可用时取 OSUOSL 镜像的同一文件，仍按该 SHA-256 校验）；只编 `talloc.c`，waf 配置由 `native/proot/compat/talloc/config.h` 代替 | `2.4.3`（termux-packages libtalloc 配方 commit `fbc049451e7fc59cdf510732aad49bd45590b0bb`） | — | LGPL-3.0-or-later（动态链接、未修改源码） | `libtalloc.so` |
 | [termux/libandroid-shmem](https://github.com/termux/libandroid-shmem) | 同上（`v0.7.tar.gz`，SHA-256 `1e5ff845…b98e867`） | `v0.7` | — | BSD-3-Clause（未修改源码） | `libandroid-shmem.so` |
 
 ## DSHBox 模块使用情况
+
+> **PR-10（ADR-0018）起下表全部为历史记录**：子模块、Gradle 构建与 Bridge AAR 已删除，App 不再包含任何 DSHBox 代码或预编译库。
+> 仍在使用的 DSHBox 产物只有：Release 运行层（`runtime-assets.lock`）、`link-shim.mjs`（ADR-0019 起在 `assets/dshmobile/`；同目录的 `libdshmobile-link.so` 改由本仓库从 DSHBox 源码改名后构建）与 corepack 缓存
+> （原样复制为 App 资产，哈希由 `UpstreamPinnedValuesTests` 钉住）、Relay guest 资产 `relay-client.cjs`（嵌入程序集）。
 
 | 模块 | 当前状态 | 引入位置 | 是否生成 C# 绑定 |
 |---|---|---|---|
 | `common` | **已引入**（TASK-003） | `native/settings.gradle.kts` 以 `:common`（与 DSHBox 同名，其脚本按此引用）引用源码目录，构建输出重定向到 `native/build/upstream/` | 否（`Bind="false"`） |
 | `app/src/main/jniLibs`（PRoot、talloc、android-shmem、zstd-jni 预编译 `.so`） | **已引入**（TASK-004）；PRoot / loader / talloc / shmem 四个文件已可由本仓库从源码构建（ADR-0014），由 `DshProotSource`（`dshbox` / `self`）选择进 APK 的一份，真机验收后默认为 `self`（自建），`dshbox` 为回退；zstd-jni 仍只来自这里 | `:native-bridge:exportRuntimeJars` 复制到 `artifacts/native/jniLibs/` | — |
-| Release 运行层（DSH `0.2.1-rc.5.tar.zst`、`dshapp-runtime-debian-arm64-0.1.0.zip`） | **已引入**（TASK-004） | `runtime-bundle/runtime-assets.lock`（GitHub 发布摘要 SHA-256）+ `fetch-runtime.ps1` | — |
+| Release 运行层（DSH `0.2.1-rc.5.tar.zst`、`dshapp-runtime-debian-arm64-0.1.0.zip`） | **已引入**（TASK-004）；ADR-0020 起由本仓库构建替代，本仓库 Release 发布后 lock 切换 | `runtime-bundle/runtime-assets.lock`（GitHub 发布摘要 SHA-256）+ `fetch-runtime.ps1` | — |
 | `plugin-manager/dshbox-plugins/assets/dshbox/{link-shim.mjs, libdshbox-link.so}` | **已引入**（TASK-005） | 构建时原样复制进 Bridge AAR 资产（仅这两个文件；`assets/plugins/*` 中只另取 `browser-use`（TASK-011，`browser_*` 独立命名空间），mobile-pilot / mobile-adapt 与 `ui_*` 单一契约冲突，不取） | — |
 | `dsh-renderer/api` | **已引入**（TASK-006） | `native/settings.gradle.kts` 以 `:dsh-renderer:api` 引用；使用 `DshOriginPolicy`、`DshTokenRevisionTracker` | 否（`Bind="false"`） |
 | `sandbox-manager` | **已引入**（TASK-004） | `native/settings.gradle.kts` 以 `:sandbox-manager` 引用源码目录 | 否（`Bind="false"`） |
@@ -33,20 +37,25 @@
 
 | 依赖 | 版本 | 许可证 | 用途 | 引入 |
 |---|---|---|---|---|
-| `com.github.mwiede:jsch` | 2.28.8（2026-10-10 发布） | Revised BSD / ISC | 远程主机 SSH 客户端（ADR-0006） | TASK-012；导出白名单 jar |
-| `Xamarin.AndroidX.WebKit`（NuGet） | 1.12.1.2 | MIT（绑定）/ Apache-2.0（androidx.webkit 1.12.1） | DSHBox browser-runtime 依赖 | TASK-011 |
-| `dev.rikka.shizuku:api` / `provider` / `shared` / `aidl`（Maven Central，`AndroidMavenLibrary`，`Bind="false"`） | 13.1.5 | MIT | C# Relay 的 Shizuku 后端与用户服务（ADR-0009）；旧 Relay（回退）共用同一份类 | ADR-0017（此前经 interlock-relay-core 的 Gradle 导出打包） |
+| ~~`com.github.mwiede:jsch`~~ | 2.28.8 | Revised BSD / ISC | 旧远程主机 SSH 客户端（ADR-0006）；C# 改用 SSH.NET（ADR-0012） | TASK-012；**PR-10 删除** |
+| ~~`Xamarin.AndroidX.WebKit`（NuGet）~~ | 1.12.1.2 | MIT / Apache-2.0 | DSHBox browser-runtime 依赖 | TASK-011；**PR-10 删除**（浏览器不迁移） |
+| `dev.rikka.shizuku:api` / `provider` / `shared` / `aidl`（Maven Central，`AndroidMavenLibrary`，`Bind="false"`） | 13.1.5 | MIT | C# Relay 的 Shizuku 后端与用户服务（ADR-0009）；`ShizukuProvider` 由 App 清单声明（ADR-0018） | ADR-0017（此前经 interlock-relay-core 的 Gradle 导出打包） |
 | `Xamarin.AndroidX.Annotation`（NuGet） | 1.11.0 | MIT（绑定）/ Apache-2.0 | 满足 Shizuku AAR 的 `androidx.annotation` 依赖（XA4242）；与 Material 已解析的版本相同 | ADR-0017 |
 
 ## 构建工具链来源
 
-- Gradle Wrapper 脚本与 `gradle-wrapper.jar` 复制自 DSHBox `v1.5.1`（Gradle 项目原件，Apache-2.0）；分发版本 `gradle-9.5.0-bin`。本仓库副本额外加了 `distributionSha256Sum=553c78f5…6b746`（与 services.gradle.org 官方 `.sha256` 一致，2026-11-09 核对）。
-- AGP / Kotlin / AndroidX 版本**直接读取** `third_party/dshbox/gradle/libs.versions.toml`（单一事实源，不复制第二份）。当前：AGP 9.3.1、Kotlin 2.4.20、compileSdk 36、minSdk 29。
+- PR-10 起不再使用 Gradle / AGP / Kotlin / JDK（ADR-0018）。原生部分只用 NDK `27.0.12077973`（`native/dshmobile-native`、`native/proot`），
+  其余由 .NET SDK（`global.json`）构建。
+- PR-10 之前：Gradle Wrapper 复制自 DSHBox `v1.5.1`（分发版本 `gradle-9.5.0-bin`，带 `distributionSha256Sum`），AGP / Kotlin 版本读取
+  `third_party/dshbox/gradle/libs.versions.toml`。
 
 ## 本仓库对上游的修改（patch 登记）
 
 | 日期 | 上游 | 文件 | 修改理由 |
 |---|---|---|---|
+| 2026-11-15 | DSHBox | `tools/build_arm64_runtime_bundle.sh`、`runtime-bundle/build_{base,node,android_side}.sh`、`tools/pack_runtime.sh`、`runtime-bundle/scripts/gen_profile.sh` → `runtime-bundle/build-runtime.sh`；DSH 层 `package-lock.json`（取自 v1.5.1 Release `0.2.1-rc.5.tar.zst`）→ `runtime-bundle/dsh/` | ADR-0020：运行层改由本仓库构建——mmdebstrap + snapshot.debian.org（可复现）、包清单与定制同 DSHBox、自建 PRoot 作 android-side、在 arm64 Node 下 `npm ci` DSH 层、`.dshmobile/env.d`、bundle 名 `dshmobile-runtime-debian-arm64`；`@deepseek-ai/dsh` 由 `^0.2.1-rc.5` 改钉精确版本（规则 10）；输入钉在 `runtime-build.lock`，`RuntimeBuildLockTests` 核对 |
+| 2026-11-15 | DSHBox | `plugin-manager/dshbox-plugins/tools/link-shim/libdshbox-link.c` → `native/link-shim/libdshmobile-link.c` | ADR-0019：文件名与停用开关改为 `libdshmobile-link` / `DSHMOBILE_LINK_SHIM_DISABLE`、构建说明改指 `build.sh`，拦截逻辑不变；DSHBox 的 chroot 构建脚本由 `native/link-shim/build.sh`（交叉编译）替换；产物 SHA-256 `400b9ba7…1730` 钉在 `UpstreamPinnedValuesTests` |
+| 2026-11-15 | DSHBox | guest / 宿主路径 `/opt/dshbox`、`/opt/dshbox-cache`、`.dsh/dshbox`、`files/dshbox`、层内 `.dshbox/` 哨兵 | ADR-0019：改名为 `dshmobile`，`DshboxNameMigration` 迁移旧数据；运行层自带的 `.dshbox/env.d` 不改（层内容） |
 | 2026-11-09 | DSHBox | （未修改子模块）`SandboxService.provisionBundledDsh` 逻辑移植进 `RuntimeController.kt` | 该函数位于 DSHBox `app` 模块（我们不引入 app）；同语义、去 UI 副作用，GPL-3.0 注明来源 |
 | 2026-11-09 | DSHBox | （未修改子模块）`SandboxService.provisionDshLinkShim` 语义移植进 `RuntimeController.provisionGuestAssets` | 每次进程启动覆写垫片到 `files/dshbox`，与 DSHBox 一致 |
 | 2026-11-09 | DSHBox | （未修改子模块）`app/.../webview/DshUrl.kt` 的 `dshUrlWithToken` 移植进 `WebUiController.urlWithToken` | 位于 DSHBox app 模块；同编码规则，加单测 |
@@ -58,7 +67,7 @@
 
 ## C# 移植登记（ADR-0007）
 
-从 DSHBox（GPL-3.0-or-later）**翻译**为 C# 的代码。文件头注明上游路径与 commit；行为以 `tests/TestVectors` 共享向量 + 上游源码契约扫描（`LegacySourceContractTests`）锁定，上游升级时两者先失败。
+从 DSHBox（GPL-3.0-or-later）**翻译**为 C# 的代码。文件头注明上游路径与 commit；行为以 `tests/TestVectors` 共享向量锁定。PR-10 之前另有上游源码契约扫描（`LegacySourceContractTests`）；子模块删除后改为钉住当时扫到的值（`UpstreamPinnedValuesTests` 等，注明 DSHBox `7c9d33c` / 旧桥 `128c2ea`），上游升级时先核对并更新这些值。文件头中「本仓库过渡实现 `native/native-bridge/…`」指向的源码可在 `128c2ea` 及之前的历史中查到。
 
 | 日期 | 上游文件（DSHBox `v1.5.1` `7c9d33c`） | C# 位置 | 移植范围 | 验证 |
 |---|---|---|---|---|
@@ -107,8 +116,9 @@
 | 2026-11-14 | `sandbox-manager/.../DshLayer.kt`（`installedVersion` / `installFromBundle` / `versionFromPackage`）、`BundleManager.verifySha256`、`BundledRuntimeInstaller.installIfAbsent`（仅槽位标记与资产识别）、`DefaultSandboxManager.kt` `isRuntimeInstalled` / `verifyLayersBroken` / `prootBinary`；本仓库过渡实现 `native/native-bridge/.../RuntimeController.kt` `runtime.prepare` / `provisionBundledDsh`（其本身移植自 DSHBox `SandboxService.provisionBundledDsh`） | `src/DshMobile.Runtime/Layers/{DshLayerInstaller, BundledDsh}.cs`（`DshLayerInstaller`、`BundledDsh`、`RuntimeInstallCheck`、`RuntimePreparer`） | DSH 层安装全流程（版本仲裁先于校验、staging 改用独立目录 `dshmobile-dsh-staging`、无 `previous/` 时旧层被删的继承行为）；资产直接流式读取两遍（校验 + 解包时重算），不再复制到 cache；APK 内置完整运行时（`runtime-profile.json` + `base.tar.*` / `.dshb`）**不移植**，遇到时返回 `NOT_IMPLEMENTED` | `dsh-layer.json`（14 例）、`runtime-installed.json`（10 例）新旧双跑（`LegacyDshLayerParityTest` / `DshLayerParityTests`）；模拟器影子 4 次 Agree |
 | 2026-11-15 | `sandbox-manager/.../DefaultSandboxManager.kt` `isRuntimeInstalled` / `isNodeLayerInstalled` / `dshVersion`（`dshLayer.installedVersion`）；本仓库过渡实现 `native/native-bridge/.../RuntimeController.kt` `status()` 的事实字段；@ `7c9d33c`（GPL-3.0） | `src/DshMobile.Runtime/Hosting/RuntimeStatusReader.cs`；协调器 `ReadStateAsync` / `RefreshStateAsync` | 安装检查（复用 `RuntimeInstallCheck`，含哨兵自愈）、node 层、DSH 层版本、链接垫片、可用空间；进程状态不在其中（由 C# 宿主给出）；ADR-0017 | `GuestAssetProvisionerTests`（未安装 / 已安装自愈 / 哨兵损坏）+ 协调器单测 + 模拟器状态行 |
 | 2026-11-15 | 本仓库过渡实现 `native/native-bridge/.../GuestToolchain.kt`（DSHBox `SandboxService.provisionCorepackCache`、`DSH_CLI_SHIM`、`PNPM_CLI_SHIM`，GPL-3.0，@ `7c9d33c`） | `src/DshMobile.Runtime/Guest/GuestToolchain.cs` | 包装文本逐字节照搬、权限位同 `setExecutable(true, false)`；corepack 缓存：旁车 SHA-256 核对、就绪标记、以 C# `LayerExtractor` 解到 staging 后改名就位（旧实现为 `BundleManager.extractTarGz`）；仍不移植 apt/dpkg 与 opencode 包装 | 单测：包装与 Kotlin 源码文本逐字节比较、常量源码契约、校验和不符、幂等 / 修复 |
-| 2026-11-15 | 本仓库过渡实现 `native/native-bridge/.../RuntimeController.kt` `provisionGuestAssets`（链接垫片部分移植自 DSHBox `SandboxService.provisionDshLinkShim`，GPL-3.0，@ `7c9d33c`） | `src/DshMobile.Runtime/Guest/GuestAssetProvisioner.cs`（`dsh-probe.mjs` 以本仓库 `native/native-bridge/src/main/guest-assets/dshmobile/` 源文件嵌入程序集） | 同一组文件、同一位置；内容不同才写、临时文件改名；各步独立并逐条报告；不供给 `browser-check.mjs`（浏览器不迁移）；ADR-0017 | 单测（首次写入 / 幂等 / 修复 / 无 APK 资产 / 路径与源码契约）+ 模拟器：删除旧文件后由 C# 重写 |
+| 2026-11-15 | 本仓库过渡实现 `native/native-bridge/.../RuntimeController.kt` `provisionGuestAssets`（链接垫片部分移植自 DSHBox `SandboxService.provisionDshLinkShim`，GPL-3.0，@ `7c9d33c`） | `src/DshMobile.Runtime/Guest/GuestAssetProvisioner.cs`（`dsh-probe.mjs` 嵌入程序集；PR-10 起源文件在 `src/DshMobile.Runtime/Guest/Assets/`） | 同一组文件、同一位置；内容不同才写、临时文件改名；各步独立并逐条报告；不供给 `browser-check.mjs`（浏览器不迁移）；ADR-0017 | 单测（首次写入 / 幂等 / 修复 / 无 APK 资产 / 路径与源码契约）+ 模拟器：删除旧文件后由 C# 重写 |
 | 2026-11-15 | 本仓库过渡实现 `native/native-bridge/.../RuntimeController.kt` `dsh.probe`（固定命令、`DSHPROBE` 结果行；`dsh-probe.mjs` 为本仓库自有 guest 资产） | `src/DshMobile.Runtime/Guest/DshProbe.cs`；协调器 `ProbeProfileAsync` | 命令改为 argv + 逐 token 引号（规则 11）；最后一行 `DSHPROBE` 为准；无结果 / 坏 JSON 返回稳定错误码（旧实现为 `INTERNAL`）；ADR-0017 | 单测（命令、解析、无结果、坏 JSON、profile 列表与脚本一致）+ 模拟器 6 个 profile `PROBE_NO_RESULT` |
+| 2026-11-15 | `plugin-manager/dshbox-plugins/assets/dshbox/{link-shim.mjs, libdshbox-link.so}`、`app/src/main/assets/toolchain-cache/corepack-pnpm-11.1.2.tar.zst(.sha256)`、`plugin-manager/dshbox-plugins/tools/link-shim/*`（@ `7c9d33c`，GPL-3.0；corepack 缓存内容为 pnpm，MIT） | `src/DshMobile.Android/Assets/{dshbox, toolchain-cache}/`、`native/link-shim/` | **原样复制**（非翻译）：PR-10 前由 Gradle 打进 Bridge AAR 的同一字节改由 App 打包（ADR-0018）；`libdshbox-link.so` 为 DSHBox 预编译的 aarch64 glibc 库，源码与构建脚本仅为追溯保存、不在本仓库构建 | `UpstreamPinnedValuesTests`（4 个文件 SHA-256 + 文件清单）+ 模拟器：删除后由 C# 写回、哈希一致 |
 | 2026-11-15 | `sandbox-manager/.../BundleManager.kt` `rollback`（@ `7c9d33c`，GPL-3.0）的规则，套用到 `swapRuntimeBody` / `LayerInstaller` 留在 `runtime-current/previous/` 的分层 body | `src/DshMobile.Runtime/Layers/LayerRollback.cs`；协调器 `RollbackAsync` | 无上一版不动任何东西；旧 `failed/` 先删、当前 body 移入 `failed/`、上一版就位；任一步失败按相反顺序撤销；DSH 层与 user-data 不动；ADR-0017 | 单测（无槽位、换回、注入 rename 失败撤销）+ 协调器单测 + 模拟器 `BUNDLE_NO_ROLLBACK_SLOT` |
 
 ## 前端资源（随 APK 打包，离线）
@@ -136,3 +146,4 @@ npm 包只取发布 tarball 中的必要文件，**逐字节**放入 `src/DshMob
 |---|---|---|---|---|
 | 2026-11-09 | DSHBox | — | `v1.5.1` (`7c9d33c`) | 初次引入；仅使用 `common` 模块 |
 | 2026-11-09 | DSHBox | `v1.5.1` | `v1.5.1` | 新增使用 `sandbox-manager`、预编译 `.so` 与 v1.5.1 Release 运行层；Maven 运行时依赖审计清单见 `artifacts/native/jars/MANIFEST.txt`（Kotlin/AndroidX 由 NuGet 提供） |
+| 2026-11-15 | DSHBox | `v1.5.1`（子模块） | `v1.5.1`（仅 Release 运行层 + 原样资产） | PR-10 / ADR-0018：删除子模块、Gradle 构建、Bridge AAR 与浏览器栈；guest 资产改由 App 打包；源码契约扫描改为钉值 |

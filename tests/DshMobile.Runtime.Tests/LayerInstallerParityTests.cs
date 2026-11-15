@@ -122,10 +122,10 @@ public sealed class LayerInstallerParityTests(ITestOutputHelper output) : IDispo
         {
             await using var s = await zip.GetEntry(layer.ZipEntryName!)!.OpenAsync();
             var dry = await LayerExtractor.ExtractAsync(s, DryRunExtractionTarget.Instance, CancellationToken.None, LayerExtractor.AndroidLikeHost);
-            var installed = await LayerTreeScanner.ScanAsync(layout.LayerDir(layer.Layer), new HashSet<string> { ".dshbox/layer-" + layer.Layer + ".sha256" }, CancellationToken.None);
-            var diff = LayerManifest.Diff(dry.Entries.Where(e => e.Path != ".dshbox" || dry.Entries.Any(x => x.Path == ".dshbox")), installed.Where(e => e.Path != ".dshbox" || dry.Entries.Any(x => x.Path == ".dshbox")));
+            var installed = await LayerTreeScanner.ScanAsync(layout.LayerDir(layer.Layer), new HashSet<string> { ".dshmobile/layer-" + layer.Layer + ".sha256" }, CancellationToken.None);
+            var diff = LayerManifest.Diff(dry.Entries.Where(e => e.Path != ".dshmobile" || dry.Entries.Any(x => x.Path == ".dshmobile")), installed.Where(e => e.Path != ".dshmobile" || dry.Entries.Any(x => x.Path == ".dshmobile")));
             Assert.True(diff.Count == 0, $"{layer.Layer}: {string.Join("; ", diff)}");
-            Assert.Equal(layer.ExpectedSha256, await File.ReadAllTextAsync(Path.Combine(layout.LayerDir(layer.Layer), ".dshbox", $"layer-{layer.Layer}.sha256")));
+            Assert.Equal(layer.ExpectedSha256, await File.ReadAllTextAsync(Path.Combine(layout.LayerDir(layer.Layer), ".dshmobile", $"layer-{layer.Layer}.sha256")));
         }
         output.WriteLine($"installed in {r.ElapsedMs} ms");
     }

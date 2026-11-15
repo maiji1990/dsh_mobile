@@ -1,0 +1,25 @@
+# Inputs of the self-built runtime layers (ADR-0020), read by runtime-bundle/build-runtime.sh.
+# KEY=VALUE, no spaces around '='. Changing a version here is an upstream upgrade: separate PR (AGENTS.md rule 8).
+
+BUNDLE_NAME=dshmobile-runtime-debian-arm64
+BUNDLE_VERSION=0.2.0
+ARCH=arm64
+
+# Debian base (mmdebstrap minbase). The snapshot fixes package versions and SOURCE_DATE_EPOCH.
+DEBIAN_SUITE=trixie
+DEBIAN_SNAPSHOT=20261110T000000Z
+# Same explicit package set as DSHBox v1.5.1 runtime-bundle/build_base.sh.
+DEBIAN_PACKAGES=ca-certificates,curl,wget,openssl,git,openssh-client,rsync,coreutils,util-linux,procps,findutils,grep,sed,gawk,diffutils,tar,gzip,bzip2,xz-utils,zip,unzip,file,less,python3,python3-pip,python3-venv,locales,tzdata,apt-utils
+# The guest's own apt source after the build (owner decision: keep the Tsinghua mirror, as DSHBox did).
+GUEST_APT_SOURCE=deb https://mirrors.tuna.tsinghua.edu.cn/debian trixie main
+
+# Node layer: official build, checksum from https://nodejs.org/dist/v24.19.0/SHASUMS256.txt
+NODE_VERSION=24.19.0
+NODE_SHA256=01443c1e1a29e531ccad5a46fefa6df490d2189c49f7955904aecdbb0fe86fdc
+
+# DSH layer: npm ci of runtime-bundle/dsh/{package.json,package-lock.json} (lock taken from the DSHBox v1.5.1 DSH layer).
+DSH_VERSION=0.2.1-rc.5
+DSH_PACKAGE_JSON_SHA256=1c9f212899dea0f19aab2ca3e24b27e8738315535bdd644222020c3542095cdc
+DSH_PACKAGE_LOCK_SHA256=663c9f4b2dcffa383a0b749caedebe5a4c195d99e90d7783086a50173fecbeb4
+
+ZSTD_LEVEL=19

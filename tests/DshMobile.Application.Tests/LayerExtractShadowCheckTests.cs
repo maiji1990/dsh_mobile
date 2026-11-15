@@ -60,7 +60,7 @@ public sealed class LayerExtractShadowCheckTests : IDisposable
         return (zipPath, new BundleInspection(true, null, null, null, verifications), layout);
     }
 
-    /// <summary>What the legacy importer leaves: extracted layer + `.dshbox/layer-NAME.sha256`.</summary>
+    /// <summary>What the legacy importer leaves: extracted layer + `.dshmobile/layer-NAME.sha256`.</summary>
     private static async Task InstallLikeLegacy(string zipPath, BundleInspection inspection, RuntimeLayout layout)
     {
         using var zip = ZipFile.OpenRead(zipPath);
@@ -69,8 +69,8 @@ public sealed class LayerExtractShadowCheckTests : IDisposable
             await using var s = await zip.GetEntry(l.ArchivePath)!.OpenAsync();
             var r = await LayerExtractor.ExtractAsync(s, new DiskExtractionTarget(layout.LayerDir(l.Layer)), CancellationToken.None, LayerExtractor.AndroidLikeHost);
             Assert.True(r.Ok, r.Message);
-            Directory.CreateDirectory(Path.Combine(layout.LayerDir(l.Layer), ".dshbox"));
-            await File.WriteAllTextAsync(Path.Combine(layout.LayerDir(l.Layer), ".dshbox", $"layer-{l.Layer}.sha256"), l.ExpectedSha256);
+            Directory.CreateDirectory(Path.Combine(layout.LayerDir(l.Layer), ".dshmobile"));
+            await File.WriteAllTextAsync(Path.Combine(layout.LayerDir(l.Layer), ".dshmobile", $"layer-{l.Layer}.sha256"), l.ExpectedSha256);
         }
     }
 
@@ -117,7 +117,7 @@ public sealed class LayerExtractShadowCheckTests : IDisposable
     {
         var (zip, inspection, layout) = Setup();
         await InstallLikeLegacy(zip, inspection, layout);
-        File.Delete(Path.Combine(layout.LayerDir("base"), ".dshbox", "layer-base.sha256"));
+        File.Delete(Path.Combine(layout.LayerDir("base"), ".dshmobile", "layer-base.sha256"));
         Assert.Equal(ShadowVerdict.Diverge, (await Run(zip, inspection, layout)).Verdict);
     }
 

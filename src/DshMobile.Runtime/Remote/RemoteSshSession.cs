@@ -6,7 +6,7 @@
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
-using DshMobile.Core.Bridge;
+using DshMobile.Core.Contracts;
 using Renci.SshNet;
 using Renci.SshNet.Common;
 

@@ -1,5 +1,7 @@
 # 跨语言契约（Provider Contracts）
 
+> **PR-10（[ADR-0018](ADR/0018-remove-dshbox.md)）后为历史文档**：本文描述的 `DshNativeFacade.execute` JSON 桥协议、方法表与错误码已随旧桥删除；C# 内部接口见 `docs/ARCHITECTURE.md`，仍在用的通用类型在 `DshMobile.Core.Contracts`。
+
 ## 1. Native Bridge 控制面协议 v1
 
 实现：Java `dshmobile.nativebridge.DshNativeFacade`（`native/native-bridge`）↔ C# `DshMobile.Core.Bridge`（DTO / 序列化）+ `DshMobile.Android` 中的 `NativeBridgeClient`（JNI 回调适配）。
