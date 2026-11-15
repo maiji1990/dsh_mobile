@@ -109,7 +109,7 @@ public sealed class ProotCommandBuilder(RuntimeLayout layout)
     /// <summary>
     /// <c>buildProotDshCommand</c> as <c>startDsh()</c> (first start) or the health loop's in-place restart calls it.
     /// The two legacy call sites differ: the restart omits the guest-cache bind (and extra binds), so a DSH that was
-    /// restarted automatically runs without <c>/opt/dshbox-cache</c> (recorded in docs/MIGRATION.md section 7).
+    /// restarted automatically runs without <c>/opt/dshmobile-cache</c> (recorded in docs/MIGRATION.md section 7).
     /// </summary>
     public IReadOnlyList<string> DshCommand(bool inPlaceRestart = false)
     {
@@ -145,9 +145,9 @@ public sealed class ProotCommandBuilder(RuntimeLayout layout)
     {
         (string Relative, string Guest)[] overlays =
         [
-            (".dsh/dshbox/dsh-official-plugin/dsh-official-plugin-overlay.yml", "/root/projects/.dsh/dshbox/dsh-official-plugin/dsh-official-plugin-overlay.yml"),
-            (".dsh/dshbox/plugin-market/market-and-safe-mode-overlay.yml", "/root/projects/.dsh/dshbox/plugin-market/market-and-safe-mode-overlay.yml"),
-            (".dsh/dshbox/safe-mode/absolute-safe-mode.yml", "/root/projects/.dsh/dshbox/safe-mode/absolute-safe-mode.yml"),
+            (".dsh/dshmobile/dsh-official-plugin/dsh-official-plugin-overlay.yml", "/root/projects/.dsh/dshmobile/dsh-official-plugin/dsh-official-plugin-overlay.yml"),
+            (".dsh/dshmobile/plugin-market/market-and-safe-mode-overlay.yml", "/root/projects/.dsh/dshmobile/plugin-market/market-and-safe-mode-overlay.yml"),
+            (".dsh/dshmobile/safe-mode/absolute-safe-mode.yml", "/root/projects/.dsh/dshmobile/safe-mode/absolute-safe-mode.yml"),
         ];
         return overlays.Where(o =>
         {

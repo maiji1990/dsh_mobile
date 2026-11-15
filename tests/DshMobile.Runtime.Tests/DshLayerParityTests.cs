@@ -243,7 +243,7 @@ public sealed class DshLayerParityTests : IDisposable
         Assert.Equal([RuntimePreparer.NoEmbeddedRuntime, "DSH 1.2.0 installed"], r.Steps);
         Assert.Equal("1.2.0", r.DshVersion);
         Assert.True(r.DshChanged);
-        Assert.Equal("aa", File.ReadAllText(Path.Combine(layout.LayerDir("base"), ".dshbox", "layer-base.sha256")));
+        Assert.Equal("aa", File.ReadAllText(Path.Combine(layout.LayerDir("base"), ".dshmobile", "layer-base.sha256")));
     }
 
     [Fact]

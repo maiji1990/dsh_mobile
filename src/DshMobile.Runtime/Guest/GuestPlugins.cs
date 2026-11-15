@@ -11,7 +11,7 @@ public sealed record GuestPluginResult(bool Ok, int? ExitCode, string Output, st
 public static class GuestPlugins
 {
     /// <summary>Same PATH the legacy runGuestScript exports (DSH's own role adds these: <c>dsh plugin</c> needs pnpm).</summary>
-    public const string PathExport = "export PATH=/opt/dshbox:/root/projects/.dsh/dshbox/bin:$PATH";
+    public const string PathExport = "export PATH=/opt/dshmobile:/root/projects/.dsh/dshmobile/bin:$PATH";
 
     public static readonly TimeSpan ListTimeout = TimeSpan.FromMinutes(3);
     public static readonly TimeSpan ChangeTimeout = TimeSpan.FromMinutes(15);

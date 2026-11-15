@@ -35,7 +35,7 @@
 | ~~C# ↔ Java ↔ DSHBox Kotlin Bridge（TASK-003）~~ | **已删除（ADR-0018）**；此前：通过（Android 17 真机），旋转与 Android 10 未测 | 31 轮×1000 次全部成功、双端在途为 0；强制 GC 后 JNI GREF 恒为 37、Java 存活持平。证据见 COMPATIBILITY.md 真机记录 |
 | DSH WebUI（System WebView，TASK-006） | 通过（Android 17 真机），部分未测 | 官方 WebUI 加载 0.3–0.5 s；launch token 只在原生侧；DSH 重启换 token 后重开可鉴权；返回键正常。未测：401 自动恢复路径、外链交给浏览器、旋转、文件选择/下载（TASK-007） |
 | 前台服务 | 通过（Android 17 真机） | `specialUse`，后台 90 s DSH 存活 |
-| Android 硬链接兼容垫片（link-shim） | 通过（Android 17 真机） | DSH 以 `node --expose-internals --import /opt/dshbox/link-shim.mjs … --profile web` 运行（与 DSHBox 一致）；TASK-004 初版缺失此垫片，已补 |
+| Android 硬链接兼容垫片（link-shim） | 通过（Android 17 真机） | DSH 以 `node --expose-internals --import /opt/dshmobile/link-shim.mjs … --profile web` 运行（与 DSHBox 一致；路径 ADR-0019 由 `/opt/dshbox` 改名）；TASK-004 初版缺失此垫片，已补 |
 | Runtime 层管理（TASK-004） | 通过（Android 17 真机），部分验收未测 | 磁盘不足 / 层缺失 / 更新失败未测；见 milestones/M2.md |
 | C# 运行时协调器（ADR-0007，PR-00/01/02；影子比对已于 ADR-0018 删除） | 通过（Android 17 真机，PR-10 前） | Release full-trim：启停 / 重复启动 / 停止无孤儿 / 强杀后 journal 恢复为 `RUNTIME_INTERRUPTED`；导入时 `runtime.bundle-verify` 与 `runtime.layer-extract` 影子均 `Agree`（16,119 项逐项一致）。实现仍为旧桥；失败清理分支仅单测。见 COMPATIBILITY.md「ADR-0007 迁移」 |
 | C# 宿主（ADR-0015 起默认，ADR-0018 起唯一实现） | 通过（Android 17 真机，作为可选路径时） | 不经 DSHBox 代码：C# 启动沙箱 + DSH、取 launch token、C# WebView 加载官方 WebUI；10.1 s READY；停止 / 强杀无孤儿；token 不入日志。（当时运行期间终端 / 手机操控不可用；之后的版本已接通。）见 COMPATIBILITY.md「ADR-0007 里程碑」 |

@@ -35,7 +35,7 @@ public sealed record DshLayerDecision(bool Install, string? Installed, string? I
 /// <item>swap: drop <c>previous/dsh</c>, rename <c>dsh</c> → <c>previous/dsh</c> (when <c>previous/</c> does not exist the
 /// rename fails and the old layer is <b>deleted</b> — inherited, pinned by the vectors), rename staging → <c>dsh</c>
 /// (copy as fallback; on failure the previous layer is put back);</item>
-/// <item><c>.dshbox/version</c> = incoming version, else the discovered package version, else <c>unknown</c>.</item>
+/// <item><c>.dshmobile/version</c> = incoming version, else the discovered package version, else <c>unknown</c>.</item>
 /// </list>
 /// Only <c>dsh</c>, <c>previous/dsh</c> and the staging directory are touched; never <c>user-data</c>. The caller makes
 /// sure no DSH process holds the layer. DSH's own files are never rewritten (Android link compatibility is the
@@ -43,7 +43,7 @@ public sealed record DshLayerDecision(bool Install, string? Installed, string? I
 /// </summary>
 public sealed class DshLayerInstaller(RuntimeLayout layout, Func<string, bool>? hostPathExists = null)
 {
-    public const string VersionFile = ".dshbox/version";
+    public const string VersionFile = RuntimeConstants.LayerStateDir + "/version";
     public const string BinJs = "node_modules/@deepseek-ai/dsh/lib/bin.js";
 
     public string DshDir => layout.LayerDir("dsh");
@@ -56,7 +56,7 @@ public sealed class DshLayerInstaller(RuntimeLayout layout, Func<string, bool>? 
     /// <summary>Legacy <c>isInstalled</c>: bin.js or a version record.</summary>
     public bool IsInstalled => File.Exists(Path.Combine(DshDir, BinJs)) || File.Exists(Path.Combine(DshDir, VersionFile));
 
-    /// <summary><c>.dshbox/version</c> (trimmed, non-empty), else the package version, else null.</summary>
+    /// <summary><c>.dshmobile/version</c> (trimmed, non-empty), else the package version, else null.</summary>
     public string? InstalledVersion()
     {
         var vf = Path.Combine(DshDir, VersionFile);
@@ -166,7 +166,7 @@ public sealed class DshLayerInstaller(RuntimeLayout layout, Func<string, bool>? 
             var version = !string.IsNullOrWhiteSpace(newVersion) ? newVersion : discovered ?? "unknown";
             try
             {
-                Directory.CreateDirectory(Path.Combine(dsh, ".dshbox"));
+                Directory.CreateDirectory(Path.Combine(dsh, RuntimeConstants.LayerStateDir));
                 File.WriteAllText(Path.Combine(dsh, VersionFile), version); // writeText: no newline, no BOM
             }
             catch (Exception e) when (e is IOException or UnauthorizedAccessException)

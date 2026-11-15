@@ -7,6 +7,7 @@ using DshMobile.Runtime.Automation;
 using DshMobile.Runtime.Guest;
 using DshMobile.Runtime.Hosting;
 using DshMobile.Runtime.Layers;
+using DshMobile.Runtime.Migration;
 using DshMobile.Runtime.Plugins;
 
 namespace DshMobile.Application.Runtime;
@@ -40,6 +41,8 @@ public sealed class RuntimeCoordinator : IDisposable
     private readonly IBundledAssets? _assets;
     private readonly Func<RuntimeLayout, Action<string>, TimeProvider, IDshHost> _hostFactory;
     private readonly SemaphoreSlim _op = new(1, 1);
+    private readonly Lock _migration = new();
+    private bool _namesMigrated;
     private IDshHost? _host;
 
     public RuntimeCoordinator(
@@ -160,12 +163,34 @@ public sealed class RuntimeCoordinator : IDisposable
     /// </summary>
     private async Task<GuestAssetReport> EnsureGuestAssetsAsync(CancellationToken ct)
     {
+        MigrateNamesOnce();
         var r = await GuestAssetProvisioner.EnsureAsync(_layout, _assets, ct).ConfigureAwait(false);
         if (r.Written.Count > 0 || !r.Ok)
         {
             _log.Note($"guest assets: {r.Describe()}");
         }
         return r;
+    }
+
+    /// <summary>
+    /// ADR-0019: moves DSHBox-era names (<c>dshbox</c>) to <c>dshmobile</c> once per process, before the first sync or
+    /// guest-asset staging, and only while no guest process is owned. A failed step is logged and retried next process.
+    /// </summary>
+    private void MigrateNamesOnce()
+    {
+        lock (_migration)
+        {
+            if (_namesMigrated || HostOwnsProcesses)
+            {
+                return;
+            }
+            _namesMigrated = true;
+            var r = DshboxNameMigration.Run(_layout);
+            if (r.Changed || !r.Ok)
+            {
+                _log.Note($"name migration (ADR-0019): {r.Describe()}");
+            }
+        }
     }
 
     /// <summary>
@@ -196,6 +221,7 @@ public sealed class RuntimeCoordinator : IDisposable
         {
             return;
         }
+        MigrateNamesOnce();
         var facts = await ReadFactsAsync(ct).ConfigureAwait(false);
         var actual = RuntimeStatusReader.Idle(facts, _time.GetUtcNow());
         State.Observe(actual.State, actual.Harness, actual.DshVersion, Implementation);

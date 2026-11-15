@@ -77,7 +77,7 @@ public static class LayerExtractShadowCheck
         return Report(diverged ? ShadowVerdict.Diverge : ShadowVerdict.Agree, string.Join(" | ", details), sw, time);
     }
 
-    /// <summary>Legacy writes <c>.dshbox/layer-&lt;name&gt;.sha256</c> (the recorded digest, no newline) after extracting.</summary>
+    /// <summary>Legacy writes <c>.dshmobile/layer-&lt;name&gt;.sha256</c> (the recorded digest, no newline) after extracting.</summary>
     internal static List<LayerEntry> WithSentinel(IReadOnlyList<LayerEntry> entries, LayerVerification layer)
     {
         var list = entries.ToList();
@@ -85,12 +85,12 @@ public static class LayerExtractShadowCheck
         {
             return list;
         }
-        if (!list.Any(e => e.Path == ".dshbox"))
+        if (!list.Any(e => e.Path == RuntimeConstants.LayerStateDir))
         {
-            list.Add(new LayerEntry(".dshbox", LayerEntryKind.Dir, null, 0, null, null));
+            list.Add(new LayerEntry(RuntimeConstants.LayerStateDir, LayerEntryKind.Dir, null, 0, null, null));
         }
         var bytes = Encoding.UTF8.GetBytes(recorded);
-        var path = $".dshbox/layer-{layer.Layer}.sha256";
+        var path = $"{RuntimeConstants.LayerStateDir}/layer-{layer.Layer}.sha256";
         list.RemoveAll(e => e.Path == path);
         list.Add(new LayerEntry(path, LayerEntryKind.File, null, bytes.Length, Convert.ToHexStringLower(SHA256.HashData(bytes)), null));
         return list;

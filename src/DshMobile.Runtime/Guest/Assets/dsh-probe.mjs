@@ -9,7 +9,7 @@
 //   plugin       `dsh plugin --profile web --help` and `... list` (pnpm forwarding)
 //
 // DSH is launched exactly like DSHBox launches the web profile: node --expose-internals
-// [--import /opt/dshbox/link-shim.mjs] bin.js --profile <p>, DSH_HOME=/root/projects/.dsh, cwd /root/projects.
+// [--import /opt/dshmobile/link-shim.mjs] bin.js --profile <p>, DSH_HOME=/root/projects/.dsh, cwd /root/projects.
 // No model API is ever called. Output: one line "DSHPROBE <json>" on stdout.
 
 import { spawn } from "node:child_process";
@@ -17,7 +17,7 @@ import { existsSync } from "node:fs";
 import http from "node:http";
 
 const DSH_BIN = "/opt/dshapp/runtime/node_modules/@deepseek-ai/dsh/lib/bin.js";
-const SHIM = "/opt/dshbox/link-shim.mjs";
+const SHIM = "/opt/dshmobile/link-shim.mjs";
 const DSH_HOME = "/root/projects/.dsh";
 const CWD = "/root/projects";
 const PROFILES = new Set(["web", "headless", "sdk", "sdk-minimal", "acp", "plugin"]);
@@ -38,7 +38,7 @@ function launch(args) {
   return spawn(process.execPath, nodeArgs(args), {
     cwd: CWD,
     // Same PATH head DSHBox gives the DSH role: link-shim dir + CLI wrappers (pnpm for `dsh plugin`).
-    env: { ...process.env, DSH_HOME, NO_COLOR: "1", PATH: `/opt/dshbox:/root/projects/.dsh/dshbox/bin:${process.env.PATH ?? ""}` },
+    env: { ...process.env, DSH_HOME, NO_COLOR: "1", PATH: `/opt/dshmobile:/root/projects/.dsh/dshmobile/bin:${process.env.PATH ?? ""}` },
     stdio: ["pipe", "pipe", "pipe"],
   });
 }

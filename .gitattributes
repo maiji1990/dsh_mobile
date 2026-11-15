@@ -10,7 +10,7 @@ src/DshMobile.Runtime/Automation/Assets/** text eol=lf
 src/DshMobile.Runtime/Guest/Assets/** text eol=lf
 tests/guest/** text eol=lf
 # APK assets vendored from DSHBox v1.5.1 (byte-exact; SHA-256 pinned in src/DshMobile.Android/Assets/README.md)
-src/DshMobile.Android/Assets/dshbox/** -text
+src/DshMobile.Android/Assets/dshmobile/** -text
 src/DshMobile.Android/Assets/toolchain-cache/** -text
 native/link-shim/** -text
 # Layer-archive parity fixtures (tooling/gen-layer-fixtures.py): byte-exact, never EOL-converted

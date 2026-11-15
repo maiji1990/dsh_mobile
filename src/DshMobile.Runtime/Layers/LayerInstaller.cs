@@ -22,7 +22,7 @@ public sealed record LayerInstallResult(
 /// <summary>
 /// Installs a runtime bundle ZIP into <c>runtime/runtime-current</c> with the legacy layout and semantics:
 /// inspect (layout, profile, per-layer SHA-256) → extract every layer into a private staging directory and record the
-/// <c>.dshbox/layer-&lt;name&gt;.sha256</c> sentinel → move the current body (layers + profile) to
+/// <c>.dshmobile/layer-&lt;name&gt;.sha256</c> sentinel → move the current body (layers + profile) to
 /// <c>runtime-current/previous/</c> → move the new layers in → write the profile atomically. The DSH layer
 /// (<c>runtime-current/dsh</c>, <c>previous/dsh</c>) and <c>user-data</c> are never touched. The caller guarantees that
 /// the sandbox is stopped. Staging is always removed.
@@ -128,7 +128,7 @@ public sealed class LayerInstaller(RuntimeLayout layout, Func<string, bool>? hos
         {
             try
             {
-                var sentinel = Path.Combine(dest, ".dshbox", $"layer-{layer.Layer}.sha256");
+                var sentinel = Path.Combine(dest, RuntimeConstants.LayerStateDir, $"layer-{layer.Layer}.sha256");
                 Directory.CreateDirectory(Path.GetDirectoryName(sentinel)!);
                 await File.WriteAllTextAsync(sentinel, recorded, ct).ConfigureAwait(false); // writeText: no newline
             }

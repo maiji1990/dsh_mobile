@@ -16,7 +16,7 @@
 ## DSHBox 模块使用情况
 
 > **PR-10（ADR-0018）起下表全部为历史记录**：子模块、Gradle 构建与 Bridge AAR 已删除，App 不再包含任何 DSHBox 代码或预编译库。
-> 仍在使用的 DSHBox 产物只有：Release 运行层（`runtime-assets.lock`）、`link-shim.mjs` / `libdshbox-link.so` 与 corepack 缓存
+> 仍在使用的 DSHBox 产物只有：Release 运行层（`runtime-assets.lock`）、`link-shim.mjs`（ADR-0019 起在 `assets/dshmobile/`；同目录的 `libdshmobile-link.so` 改由本仓库从 DSHBox 源码改名后构建）与 corepack 缓存
 > （原样复制为 App 资产，哈希由 `UpstreamPinnedValuesTests` 钉住）、Relay guest 资产 `relay-client.cjs`（嵌入程序集）。
 
 | 模块 | 当前状态 | 引入位置 | 是否生成 C# 绑定 |
@@ -53,6 +53,8 @@
 
 | 日期 | 上游 | 文件 | 修改理由 |
 |---|---|---|---|
+| 2026-11-15 | DSHBox | `plugin-manager/dshbox-plugins/tools/link-shim/libdshbox-link.c` → `native/link-shim/libdshmobile-link.c` | ADR-0019：文件名与停用开关改为 `libdshmobile-link` / `DSHMOBILE_LINK_SHIM_DISABLE`、构建说明改指 `build.sh`，拦截逻辑不变；DSHBox 的 chroot 构建脚本由 `native/link-shim/build.sh`（交叉编译）替换；产物 SHA-256 `400b9ba7…1730` 钉在 `UpstreamPinnedValuesTests` |
+| 2026-11-15 | DSHBox | guest / 宿主路径 `/opt/dshbox`、`/opt/dshbox-cache`、`.dsh/dshbox`、`files/dshbox`、层内 `.dshbox/` 哨兵 | ADR-0019：改名为 `dshmobile`，`DshboxNameMigration` 迁移旧数据；运行层自带的 `.dshbox/env.d` 不改（层内容） |
 | 2026-11-09 | DSHBox | （未修改子模块）`SandboxService.provisionBundledDsh` 逻辑移植进 `RuntimeController.kt` | 该函数位于 DSHBox `app` 模块（我们不引入 app）；同语义、去 UI 副作用，GPL-3.0 注明来源 |
 | 2026-11-09 | DSHBox | （未修改子模块）`SandboxService.provisionDshLinkShim` 语义移植进 `RuntimeController.provisionGuestAssets` | 每次进程启动覆写垫片到 `files/dshbox`，与 DSHBox 一致 |
 | 2026-11-09 | DSHBox | （未修改子模块）`app/.../webview/DshUrl.kt` 的 `dshUrlWithToken` 移植进 `WebUiController.urlWithToken` | 位于 DSHBox app 模块；同编码规则，加单测 |

@@ -4,7 +4,7 @@
 状态取值：`未开始` / `接口已定义` / `影子比对中`（旧实现决策、C# 只读比对）/ `C# 默认（待删旧）` / `已完成（旧依赖已删）`。
 “已验证”只写有证据的：`向量`（`tests/TestVectors` 新旧双跑）/ `单测` / `真机`（附日志位置）。
 
-最后更新：2026-11-15（**PR-10 / [ADR-0018](ADR/0018-remove-dshbox.md)：DSHBox 依赖已全部移除**——子模块 `third_party/dshbox`、Bridge AAR 与其 Gradle 构建、`DshNativeFacade` / Kotlin 旧桥、`DshMobile.NativeBinding`、所有长按回退与影子比对均已删除，App 只剩 C# 实现；浏览器 `browser_*` 按负责人决定不迁移、一并删除；真机验收按负责人决定跳过，以单测 + 模拟器冒烟为准，见 ADR-0018）。下文各行「长按回退」「影子」等描述是 PR-10 之前的历史记录。此前：**里程碑**：方案第 12 节「导入 → 启动 PRoot → READY → WebUI → 停止无孤儿」的每一步都已有不经 DSHBox 代码的 C# 实现并通过 Android 17 真机；**启动路径已切为 C# 宿主默认**（[ADR-0015](ADR/0015-csharp-host-default.md)，旧实现为长按回退）。**2026-11-15 起所有影子比对切片均为 C# 默认**（[ADR-0016](ADR/0016-csharp-default-all-shadow-slices.md)，负责人决定先于真机验收翻转；旧实现为逐次回退，回退时影子照常运行；真机验收逐切片待补，模拟器冒烟见 [证据](../migration/parity/2026-11-15-emulator-A17-x86_64-csharp-default-all.md)）。
+最后更新：2026-11-15（**[ADR-0019](ADR/0019-rename-dshbox-paths-data-migration.md)：本仓库自有名称不再用 `dshbox`**——guest / 宿主路径、层哨兵、APK 资产与链接垫片改为 `dshmobile`，旧数据由 `DshboxNameMigration` 一次性迁移；链接垫片改由本仓库构建。此前：**PR-10 / [ADR-0018](ADR/0018-remove-dshbox.md)：DSHBox 依赖已全部移除**——子模块 `third_party/dshbox`、Bridge AAR 与其 Gradle 构建、`DshNativeFacade` / Kotlin 旧桥、`DshMobile.NativeBinding`、所有长按回退与影子比对均已删除，App 只剩 C# 实现；浏览器 `browser_*` 按负责人决定不迁移、一并删除；真机验收按负责人决定跳过，以单测 + 模拟器冒烟为准，见 ADR-0018）。下文各行「长按回退」「影子」等描述是 PR-10 之前的历史记录。此前：**里程碑**：方案第 12 节「导入 → 启动 PRoot → READY → WebUI → 停止无孤儿」的每一步都已有不经 DSHBox 代码的 C# 实现并通过 Android 17 真机；**启动路径已切为 C# 宿主默认**（[ADR-0015](ADR/0015-csharp-host-default.md)，旧实现为长按回退）。**2026-11-15 起所有影子比对切片均为 C# 默认**（[ADR-0016](ADR/0016-csharp-default-all-shadow-slices.md)，负责人决定先于真机验收翻转；旧实现为逐次回退，回退时影子照常运行；真机验收逐切片待补，模拟器冒烟见 [证据](../migration/parity/2026-11-15-emulator-A17-x86_64-csharp-default-all.md)）。
 
 ## 1. 切片总表
 
@@ -57,7 +57,7 @@
 MainActivity ─▶ BridgeHost（类名沿用，纯 C#）─▶ RuntimeCoordinator (C#, 状态机 + journal + 状态来源)
                                    ├─▶ DshHost · ProotGuestProcess · RuntimeStatusReader ─▶ libproot.so（自建，ADR-0014）
                                    ├─▶ LayerInstaller（装后树核对 runtime.layer-install）· RuntimePreparer · LayerRollback
-                                   ├─▶ GuestAssetProvisioner ─▶ APK 资产 dshbox/* · toolchain-cache/*（App 自己打包）
+                                   ├─▶ GuestAssetProvisioner ─▶ APK 资产 dshmobile/* · toolchain-cache/*（App 自己打包）
                                    └─▶ C# Relay / 终端 / WebView / 插件 / 远程 SSH
 ```
 
@@ -81,6 +81,7 @@ corepack 缓存，见 `src/DshMobile.Android/Assets/README.md`）。Shizuku 客�
 | ui_* 执行层 C# 收口 | ADR-0016 补充：ui_* guest 脚本由 C# 写入（`UiFacadeAssets`）、`relay.selftest` 的 C# 版、停止态状态由 C#、默认路径不再调用旧桥（仅本进程启动过旧 Relay 回退时才停旧 Relay / 走旧状态）；页内审批卡到点经 `ExpireApproval` 收尾（修复 FLAG_SECURE 残留） | maiji1990/dsh_mobile#32；单测 Core 65 / Runtime 721 / Application 210 通过；模拟器冒烟（[证据](../migration/parity/2026-11-15-emulator-A17-x86_64-ui-exec-layer.md)）；真机验收待补 |
 | 其余切片 C# 默认 | [ADR-0017](ADR/0017-remaining-slices-csharp-default-lazy-legacy-facade.md)：解包 / 回滚 / 状态来源 / DSH 探测 / WebView / 插件安装卸载默认 C#；默认路径不调用旧桥，旧门面懒加载（第一次显式回退才初始化）；guest 资产由 C# 供给；Shizuku 改为 App 直接依赖（`AndroidMavenLibrary` 13.1.5） | maiji1990/dsh_mobile#33；单测 Core 65 / Runtime 739 / Application 216 通过；模拟器冒烟（[证据](../migration/parity/2026-11-15-emulator-A17-x86_64-remaining-slices.md)）；真机验收待补 |
 | PR-10 | [ADR-0018](ADR/0018-remove-dshbox.md)：移除 DSHBox 子模块、Bridge AAR / Gradle、旧门面与绑定、全部回退与影子；guest 资产与清单组件并入 App；浏览器删除；向上游源码扫描的测试改为钉值测试（`UpstreamPinnedValuesTests` 等）；CI 只用 .NET + NDK | maiji1990/dsh_mobile#34（堆叠在 #33 之上）；CRLF 检出复跑通过；单测 Core 35 / Runtime 728 / Application 82、guest node 37 全绿；模拟器冒烟（[证据](../migration/parity/2026-11-15-emulator-A17-x86_64-pr10-remove-dshbox.md)）；真机验收按负责人决定跳过 |
+| 命名迁移 | [ADR-0019](ADR/0019-rename-dshbox-paths-data-migration.md)：`/opt/dshbox` → `/opt/dshmobile`、`/opt/dshbox-cache` → `/opt/dshmobile-cache`、`.dsh/dshbox` → `.dsh/dshmobile`、`files/dshbox` → `files/dshmobile`、层内 `.dshbox/` 哨兵 → `.dshmobile/`、`libdshbox-link.so` → 本仓库构建的 `libdshmobile-link.so`；`DshboxNameMigration` 在协调器首次同步 / 供给前迁移旧数据（幂等、不覆盖、失败逐步报告、成功写标记） | 单测 Core 35 / Runtime 736 / Application 83、guest node 37 全绿；模拟器冒烟：PR-10 留下的真实旧布局经冷启动迁移、诊断写回新路径、再次启动不再扫描（[证据](../migration/parity/2026-11-15-emulator-A17-x86_64-adr0019-rename.md)）；真机验收按负责人决定跳过（ADR-0018 决策 4） |
 | PR-03 … PR-11（其余） | 见迁移方案第 6 节与切片总表 | 已由上列各 PR 覆盖；PR-11 不再需要（浏览器不迁移） |
 
 ## 4. 已修复的现有缺陷（迁移方案第 7 节）

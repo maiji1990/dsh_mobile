@@ -69,8 +69,8 @@ internal static class TestRuntime
     public static void Install(string files, string version = "1", string sha = "aa", string? body = null)
     {
         var rc = body ?? Path.Combine(files, "runtime", "runtime-current");
-        Directory.CreateDirectory(Path.Combine(rc, "base", ".dshbox"));
-        File.WriteAllText(Path.Combine(rc, "base", ".dshbox", "layer-base.sha256"), sha);
+        Directory.CreateDirectory(Path.Combine(rc, "base", ".dshmobile"));
+        File.WriteAllText(Path.Combine(rc, "base", ".dshmobile", "layer-base.sha256"), sha);
         Directory.CreateDirectory(Path.Combine(rc, "android-side", "bin"));
         File.WriteAllText(Path.Combine(rc, "android-side", "bin", "proot"), "elf");
         File.WriteAllText(Path.Combine(rc, "runtime-profile.json"),

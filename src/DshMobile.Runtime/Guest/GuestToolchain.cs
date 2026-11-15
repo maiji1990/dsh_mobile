@@ -6,9 +6,9 @@ namespace DshMobile.Runtime.Guest;
 
 /// <summary>
 /// Makes <c>dsh</c> and <c>pnpm</c> usable inside the guest (TASK-009): <c>dsh plugin …</c> forwards to pnpm and the device
-/// has no global pnpm, only Node's corepack. The wrappers live in <c>user-data/.dsh/dshbox/bin</c>, which the DSH role
+/// has no global pnpm, only Node's corepack. The wrappers live in <c>user-data/.dsh/dshmobile/bin</c>, which the DSH role
 /// and the plugin commands put on the guest PATH; the offline corepack cache (pnpm 11.1.2) is unpacked into guest
-/// <c>/opt/dshbox-cache/corepack</c>. Not ported (as legacy): DSHBox's apt/dpkg wrappers and the opencode wrapper.
+/// <c>/opt/dshmobile-cache/corepack</c>. Not ported (as legacy): DSHBox's apt/dpkg wrappers and the opencode wrapper.
 /// </summary>
 public static class GuestToolchain
 {
@@ -16,10 +16,10 @@ public static class GuestToolchain
     public const string CorepackAsset = "corepack-pnpm-11.1.2.tar.zst";
     public const string ReadyMarker = ".ready-sha256";
 
-    /// <summary>Host directory of the corepack cache (guest <c>/opt/dshbox-cache/corepack</c>).</summary>
+    /// <summary>Host directory of the corepack cache (guest <c>/opt/dshmobile-cache/corepack</c>).</summary>
     public static string CorepackDir(RuntimeLayout layout) => Path.Combine(layout.GuestCacheDir, "corepack");
 
-    /// <summary>Host directory of the wrappers (guest <c>/root/projects/.dsh/dshbox/bin</c>).</summary>
+    /// <summary>Host directory of the wrappers (guest <c>/root/projects/.dsh/dshmobile/bin</c>).</summary>
     public static string ShimBinDir(RuntimeLayout layout) => Path.Combine([layout.UserDataDir, .. RuntimeConstants.AssetsRelativeDir.Split('/'), "bin"]);
 
     /// <summary>Same as DSHBox's DSH_CLI_SHIM: official CLI from the managed DSH layer, with the hard-link shim preloaded.</summary>
@@ -32,7 +32,7 @@ public static class GuestToolchain
         export DSH_HOME
         BIN="${DSH_BIN:-/opt/dshapp/runtime/node_modules/@deepseek-ai/dsh/lib/bin.js}"
         SHIM=""
-        [ -f /opt/dshbox/link-shim.mjs ] && SHIM="--import /opt/dshbox/link-shim.mjs"
+        [ -f /opt/dshmobile/link-shim.mjs ] && SHIM="--import /opt/dshmobile/link-shim.mjs"
         exec /usr/local/bin/node --expose-internals $SHIM "$BIN" "$@"
         """;
 
@@ -44,8 +44,8 @@ public static class GuestToolchain
     public const string PnpmShim = """
         #!/bin/sh
         # DSH Mobile: `pnpm` via Node's bundled corepack (no global pnpm on device).
-        if [ -d /opt/dshbox-cache ]; then
-          export COREPACK_HOME=/opt/dshbox-cache/corepack
+        if [ -d /opt/dshmobile-cache ]; then
+          export COREPACK_HOME=/opt/dshmobile-cache/corepack
         fi
         STORE=""
         if [ -f ./.modules.yaml ]; then
@@ -61,8 +61,8 @@ public static class GuestToolchain
           fi
         fi
         if [ -z "$STORE" ]; then
-          if [ -d /opt/dshbox-cache ]; then
-            STORE=/opt/dshbox-cache/pnpm-store
+          if [ -d /opt/dshmobile-cache ]; then
+            STORE=/opt/dshmobile-cache/pnpm-store
           else
             STORE=/root/projects/.dsh/pnpm-store
           fi

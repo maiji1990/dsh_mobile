@@ -103,6 +103,24 @@ public sealed class RuntimeCoordinatorTests : IDisposable
         Assert.Empty(_calls);
     }
 
+    [Fact]
+    public async Task RefreshState_FirstMigratesDshboxNames_SoALegacyInstallStaysReady()
+    {
+        // A runtime installed before ADR-0019: the base sentinel sits in .dshbox and the workspace dir is .dsh/dshbox.
+        var files = Layout().FilesDir;
+        TestRuntime.Install(files);
+        var rc = Path.Combine(files, "runtime", "runtime-current");
+        Directory.Move(Path.Combine(rc, "base", ".dshmobile"), Path.Combine(rc, "base", ".dshbox"));
+        Directory.CreateDirectory(Path.Combine(files, "user-data", ".dsh", "dshbox", "bin"));
+
+        var c = Coordinator();
+        Assert.Equal(RuntimeState.Ready, (await c.RefreshStateAsync(CancellationToken.None)).State);
+
+        Assert.True(File.Exists(Path.Combine(rc, "base", ".dshmobile", "layer-base.sha256")));
+        Assert.True(Directory.Exists(Path.Combine(files, "user-data", ".dsh", "dshmobile", "bin")));
+        Assert.Contains(_log.Lines, l => l.StartsWith("name migration (ADR-0019): ", StringComparison.Ordinal));
+    }
+
     // ------------------------------------------------------------------ start / stop through the host (ADR-0015)
 
     [Fact]
@@ -409,8 +427,8 @@ public sealed class RuntimeCoordinatorTests : IDisposable
         TestRuntime.Install(layout.FilesDir);
         if (dshVersion is not null)
         {
-            Directory.CreateDirectory(Path.Combine(layout.LayerDir("dsh"), ".dshbox"));
-            File.WriteAllText(Path.Combine(layout.LayerDir("dsh"), ".dshbox", "version"), dshVersion);
+            Directory.CreateDirectory(Path.Combine(layout.LayerDir("dsh"), ".dshmobile"));
+            File.WriteAllText(Path.Combine(layout.LayerDir("dsh"), ".dshmobile", "version"), dshVersion);
         }
         return layout;
     }
@@ -439,7 +457,7 @@ public sealed class RuntimeCoordinatorTests : IDisposable
         Assert.Equal(RuntimeErrorCodes.InvalidTransition, refused.Code);
         Assert.Equal("1.0.0", new DshLayerInstaller(layout).InstalledVersion());
 
-        File.WriteAllText(Path.Combine(layout.LayerDir("dsh"), ".dshbox", "version"), "9.0.0");
+        File.WriteAllText(Path.Combine(layout.LayerDir("dsh"), ".dshmobile", "version"), "9.0.0");
         var kept = await c.PrepareAsync(CancellationToken.None);
         Assert.True(kept.Ok, kept.Message);
         Assert.EndsWith("DSH kept at 9.0.0", kept.Message, StringComparison.Ordinal);

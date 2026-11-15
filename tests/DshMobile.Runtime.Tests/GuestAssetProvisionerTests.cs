@@ -120,10 +120,10 @@ public sealed partial class GuestAssetProvisionerTests : IDisposable
     public void Paths_MatchTheLegacyBinds()
     {
         var layout = Layout();
-        Assert.Equal(Path.Combine(layout.FilesDir, "dshbox", "link-shim.mjs"), layout.ShimFile);
-        Assert.Equal(Path.Combine(layout.UserDataDir, ".dsh", "dshbox", "bin"), GuestToolchain.ShimBinDir(layout));
+        Assert.Equal(Path.Combine(layout.FilesDir, "dshmobile", "link-shim.mjs"), layout.ShimFile);
+        Assert.Equal(Path.Combine(layout.UserDataDir, ".dsh", "dshmobile", "bin"), GuestToolchain.ShimBinDir(layout));
         Assert.Equal(Path.Combine(layout.FilesDir, "guest-cache", "corepack"), GuestToolchain.CorepackDir(layout));
-        Assert.Equal("/opt/dshbox-cache/dshmobile/dsh-probe.mjs", GuestAssetProvisioner.GuestProbe);
+        Assert.Equal("/opt/dshmobile-cache/dshmobile/dsh-probe.mjs", GuestAssetProvisioner.GuestProbe);
     }
 
     // ------------------------------------------------------------------ pinned against the former GuestToolchain.kt
@@ -148,15 +148,15 @@ public sealed partial class GuestAssetProvisionerTests : IDisposable
 export DSH_HOME
 BIN="${DSH_BIN:-/opt/dshapp/runtime/node_modules/@deepseek-ai/dsh/lib/bin.js}"
 SHIM=""
-[ -f /opt/dshbox/link-shim.mjs ] && SHIM="--import /opt/dshbox/link-shim.mjs"
+[ -f /opt/dshmobile/link-shim.mjs ] && SHIM="--import /opt/dshmobile/link-shim.mjs"
 exec /usr/local/bin/node --expose-internals $SHIM "$BIN" "$@"
 """;
 
     private const string PnpmShim = """
 #!/bin/sh
 # DSH Mobile: `pnpm` via Node's bundled corepack (no global pnpm on device).
-if [ -d /opt/dshbox-cache ]; then
-  export COREPACK_HOME=/opt/dshbox-cache/corepack
+if [ -d /opt/dshmobile-cache ]; then
+  export COREPACK_HOME=/opt/dshmobile-cache/corepack
 fi
 STORE=""
 if [ -f ./.modules.yaml ]; then
@@ -172,8 +172,8 @@ if [ -f ./.modules.yaml ]; then
   fi
 fi
 if [ -z "$STORE" ]; then
-  if [ -d /opt/dshbox-cache ]; then
-    STORE=/opt/dshbox-cache/pnpm-store
+  if [ -d /opt/dshmobile-cache ]; then
+    STORE=/opt/dshmobile-cache/pnpm-store
   else
     STORE=/root/projects/.dsh/pnpm-store
   fi
@@ -205,9 +205,9 @@ exec /usr/local/bin/corepack pnpm "$@"
         Assert.Equal("toolchain-cache", GuestToolchain.AssetDir);
         Assert.Equal("corepack-pnpm-11.1.2.tar.zst", GuestToolchain.CorepackAsset);
         Assert.Equal(".ready-sha256", GuestToolchain.ReadyMarker);
-        Assert.Equal("dshbox/link-shim.mjs", GuestAssetProvisioner.LinkShimAsset);
-        Assert.Equal("dshbox/libdshbox-link.so", GuestAssetProvisioner.LinkShimSoAsset);
-        Assert.Equal("/opt/dshbox-cache/dshmobile/dsh-probe.mjs", GuestAssetProvisioner.GuestProbe);
+        Assert.Equal("dshmobile/link-shim.mjs", GuestAssetProvisioner.LinkShimAsset);
+        Assert.Equal("dshmobile/libdshmobile-link.so", GuestAssetProvisioner.LinkShimSoAsset);
+        Assert.Equal("/opt/dshmobile-cache/dshmobile/dsh-probe.mjs", GuestAssetProvisioner.GuestProbe);
     }
 
     // ------------------------------------------------------------------ probe
@@ -216,8 +216,8 @@ exec /usr/local/bin/corepack pnpm "$@"
     public void Probe_Command_IsTheLegacyFixedCommand_AndOnlyForShippedProfiles()
     {
         // Legacy `node $GUEST_PROBE $profile`, built from argv with every token quoted (AGENTS.md rule 11).
-        Assert.Equal("'node' '/opt/dshbox-cache/dshmobile/dsh-probe.mjs' 'web'", DshProbe.Command("web"));
-        Assert.Equal("'node' '/opt/dshbox-cache/dshmobile/dsh-probe.mjs' 'sdk-minimal'", DshProbe.Command("sdk-minimal"));
+        Assert.Equal("'node' '/opt/dshmobile-cache/dshmobile/dsh-probe.mjs' 'web'", DshProbe.Command("web"));
+        Assert.Equal("'node' '/opt/dshmobile-cache/dshmobile/dsh-probe.mjs' 'sdk-minimal'", DshProbe.Command("sdk-minimal"));
         Assert.Throws<ArgumentException>(() => DshProbe.Command("web; rm -rf /"));
     }
 
@@ -294,7 +294,7 @@ exec /usr/local/bin/corepack pnpm "$@"
         Assert.True(f.NodeLayerInstalled);
         Assert.False(f.LinkShim);
         Assert.Null(f.DshVersion);
-        Assert.Equal("aa", File.ReadAllText(Path.Combine(layout.LayerDir("base"), ".dshbox", "layer-base.sha256")));
+        Assert.Equal("aa", File.ReadAllText(Path.Combine(layout.LayerDir("base"), ".dshmobile", "layer-base.sha256")));
         var idle = RuntimeStatusReader.Idle(f, DateTimeOffset.UnixEpoch);
         Assert.Equal((RuntimeState.Ready, HarnessState.Stopped), (idle.State, idle.Harness));
         Assert.Contains("runtime=True node=True", f.Describe("Ready", "Stopped", false), StringComparison.Ordinal);
@@ -308,8 +308,8 @@ exec /usr/local/bin/corepack pnpm "$@"
         File.WriteAllText(Path.Combine(lib, "libproot.so"), "elf");
         var layout = Layout(lib);
         Installed(layout);
-        Directory.CreateDirectory(Path.Combine(layout.LayerDir("base"), ".dshbox"));
-        File.WriteAllText(Path.Combine(layout.LayerDir("base"), ".dshbox", "layer-base.sha256"), "bb");
+        Directory.CreateDirectory(Path.Combine(layout.LayerDir("base"), ".dshmobile"));
+        File.WriteAllText(Path.Combine(layout.LayerDir("base"), ".dshmobile", "layer-base.sha256"), "bb");
         var f = RuntimeStatusReader.Read(layout);
         Assert.False(f.RuntimeInstalled);
         Assert.Contains("base:sha-mismatch", f.InstallReason, StringComparison.Ordinal);

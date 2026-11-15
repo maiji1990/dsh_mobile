@@ -35,21 +35,27 @@ public static class RuntimeConstants
     /// <summary>Profile the host starts DSH with (<c>dsh --profile web</c>).</summary>
     public const string DshWebProfile = "web";
 
-    /// <summary>Guest dir of the Android hard-link compat shims (host <c>filesDir/dshbox</c>).</summary>
-    public const string LinkShimGuestDir = "/opt/dshbox";
-    public const string LinkShimGuestPath = "/opt/dshbox/link-shim.mjs";
-    public const string LinkShimSoGuestPath = "/opt/dshbox/libdshbox-link.so";
+    /// <summary>Guest dir of the Android hard-link compat shims (host <c>filesDir/dshmobile</c>).</summary>
+    public const string LinkShimGuestDir = "/opt/dshmobile";
+    public const string LinkShimGuestPath = "/opt/dshmobile/link-shim.mjs";
+    public const string LinkShimSoGuestPath = "/opt/dshmobile/libdshmobile-link.so";
 
     /// <summary>Guest toolchain cache mount (host <c>filesDir/guest-cache</c>): pnpm store, corepack.</summary>
-    public const string GuestCacheDir = "/opt/dshbox-cache";
+    public const string GuestCacheDir = "/opt/dshmobile-cache";
     public const string GuestCacheDirLeaf = "guest-cache";
 
     /// <summary>App-managed assets inside the workspace (relative to user-data / guest <c>/root/projects</c>).</summary>
-    public const string AssetsRelativeDir = ".dsh/dshbox";
-    public const string AssetsGuestDir = "/root/projects/.dsh/dshbox";
+    public const string AssetsRelativeDir = ".dsh/dshmobile";
+    public const string AssetsGuestDir = "/root/projects/.dsh/dshmobile";
 
     /// <summary>The <c>dsh</c> wrapper written into the workspace (GuestToolchain).</summary>
-    public const string GuestDshWrapper = "/root/projects/.dsh/dshbox/bin/dsh";
+    public const string GuestDshWrapper = "/root/projects/.dsh/dshmobile/bin/dsh";
+
+    /// <summary>
+    /// App-written state inside each installed layer (<c>layer-&lt;name&gt;.sha256</c> sentinels, the DSH layer's
+    /// <c>version</c>). DSHBox used <c>.dshbox</c> (ADR-0019; the bundle's own <c>.dshbox/env.d</c> is layer content).
+    /// </summary>
+    public const string LayerStateDir = ".dshmobile";
 
     /// <summary>Runtime layer names, in assembly order.</summary>
     public static IReadOnlyList<string> LayerNames { get; } = ["base", "node", "android-side"];

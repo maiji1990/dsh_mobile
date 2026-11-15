@@ -28,6 +28,7 @@ artifacts/native/jniLibs/
 artifacts/native/aars/
 artifacts/native/dshmobile-native/
 artifacts/native/proot/
+artifacts/native/link-shim/
 artifacts/*.log
 
 # Signing material must never be committed
