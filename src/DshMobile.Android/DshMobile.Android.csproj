@@ -57,6 +57,19 @@
     <ProguardConfiguration Include="relay-shell.pro" />
   </ItemGroup>
 
+  <!--
+    Shizuku client (MIT, Maven Central, exact version): a direct dependency of the app since the C# Relay's Shizuku
+    backend (AndroidShizuku / ShizukuClient, ADR-0009) and the user service above use it. It used to arrive only as a
+    transitive export of the DSHBox interlock-relay-core Gradle build (artifacts/native/aars), which PR-10 removes; the
+    legacy Relay (fallback) finds the same classes here. Not bound: C# reaches it through JNI by class name.
+  -->
+  <ItemGroup>
+    <AndroidMavenLibrary Include="dev.rikka.shizuku:api" Version="13.1.5" Bind="false" />
+    <AndroidMavenLibrary Include="dev.rikka.shizuku:provider" Version="13.1.5" Bind="false" />
+    <AndroidMavenLibrary Include="dev.rikka.shizuku:shared" Version="13.1.5" Bind="false" />
+    <AndroidMavenLibrary Include="dev.rikka.shizuku:aidl" Version="13.1.5" Bind="false" />
+  </ItemGroup>
+
   <ItemGroup>
     <ProjectReference Include="..\DshMobile.Core\DshMobile.Core.csproj" />
     <!-- C#-first layers (ADR-0007). -->
@@ -70,5 +83,7 @@
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.14" />
     <!-- Material 3 for C#-written screens (AGENTS.md rule 12); brings AndroidX AppCompat. Published 2026-07-29. -->
     <PackageReference Include="Xamarin.Google.Android.Material" Version="1.14.0.6" />
+    <!-- Satisfies the Shizuku AARs' androidx.annotation dependency (XA4242); the version Material already resolves. -->
+    <PackageReference Include="Xamarin.AndroidX.Annotation" Version="1.11.0" />
   </ItemGroup>
 </Project>

@@ -10,11 +10,14 @@ namespace DshMobile.App.Bridge;
 public sealed class NativeFacadeTransport : Java.Lang.Object, INativeCallback, IBridgeTransport
 {
     private readonly DshNativeFacade _facade;
+    private readonly Action _ensureInitialized;
     private IBridgeSink? _sink;
 
-    public NativeFacadeTransport(DshNativeFacade facade)
+    /// <param name="ensureInitialized">Creates the legacy facade on first use (BridgeHost: only explicit fallbacks call it).</param>
+    public NativeFacadeTransport(DshNativeFacade facade, Action ensureInitialized)
     {
         _facade = facade;
+        _ensureInitialized = ensureInitialized;
     }
 
     public void Attach(IBridgeSink sink)
@@ -23,7 +26,11 @@ public sealed class NativeFacadeTransport : Java.Lang.Object, INativeCallback, I
         _facade.Subscribe(this);
     }
 
-    public void Send(string requestJson) => _facade.Execute(requestJson, this);
+    public void Send(string requestJson)
+    {
+        _ensureInitialized();
+        _facade.Execute(requestJson, this);
+    }
 
     /// <summary>Called by Java on the bridge worker thread. Must not throw or block.</summary>
     public void OnEvent(string? json)

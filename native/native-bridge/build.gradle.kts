@@ -114,10 +114,13 @@ dependencies {
 // An unknown group fails the build: new transitive deps must be license-audited and classified.
 // ---------------------------------------------------------------------------------------------
 val providedByNuGet = listOf("org.jetbrains.kotlin", "org.jetbrains.kotlinx", "org.jetbrains", "androidx.", "com.google.guava")
+/**
+ * Groups the .NET app declares itself (exact versions, Maven Central): not exported. Shizuku client (MIT, 13.1.5),
+ * required by Interlock Relay core and by the C# Relay's Shizuku backend: DshMobile.Android AndroidMavenLibrary.
+ */
+val providedByApp = setOf("dev.rikka.shizuku")
 /** Groups whose artifacts are AARs (manifest/resources matter), exported whole instead of as classes jars. */
-val exportedAarGroups = setOf(
-    "dev.rikka.shizuku", // Shizuku client (MIT), required by Interlock Relay core; its Shizuku backend is not allowlisted
-)
+val exportedAarGroups = emptySet<String>()
 val exportedGroups = setOf(
     "org.apache.commons", "commons-io", "commons-codec", // commons-compress + its runtime deps
     "org.bouncycastle", // bcpg/bcprov/bcutil: Debian Release.gpg verification
@@ -154,6 +157,7 @@ val exportRuntimeJars by tasks.registering {
             val coord = "${id.group}:${id.module}:${id.version}"
             when {
                 providedByNuGet.any { id.group == it || (it.endsWith(".") && id.group.startsWith(it)) } -> Unit
+                id.group in providedByApp -> Unit // declared by the app (AndroidMavenLibrary)
                 id.group in exportedAarGroups -> Unit // exported whole above
                 id.group in exportedGroups -> {
                     val dst = jarsDir.resolve("${id.module}-${id.version}.jar")

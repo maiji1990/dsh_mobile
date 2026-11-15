@@ -46,8 +46,19 @@ public class MainActivity : Activity
 
         // Fire-and-forget is intentional: BridgeHost owns the task and reports through its log,
         // so an Activity recreated mid-run (rotation) still sees the result.
+        // C# by default; long-press = the legacy bridge's answer for comparison (explicit fallback, ADR-0016).
         info.Click += (_, _) => _ = _bridge.RunInfoAsync();
+        info.LongClick += (_, e) =>
+        {
+            e.Handled = true;
+            _ = _bridge.RunInfoAsync(legacy: true);
+        };
         kotlin.Click += (_, _) => _ = _bridge.RunKotlinCompareAsync();
+        kotlin.LongClick += (_, e) =>
+        {
+            e.Handled = true;
+            _ = _bridge.RunKotlinCompareAsync(legacy: true);
+        };
         stress.Click += (_, _) => _ = _bridge.RunStressAsync(1000);
         clear.Click += (_, _) => _bridge.ClearLog();
         // ADR-0016: the C# RuntimePreparer installs the bundled DSH layer by default (MIGRATION row 17).
@@ -73,6 +84,7 @@ public class MainActivity : Activity
                 .SetTitle("导入实现")!
                 .SetMessage("默认由 C# LayerInstaller 导入。改用旧实现（DSHBox）做这一次导入？C# 会做影子比对。")!
                 .SetPositiveButton("旧实现（回退）", (_, _) => PickRuntimeBundle(DshMobile.Application.SliceMode.LegacyWithShadow))!
+                .SetNeutralButton("回滚到上一版", (_, _) => ConfirmRollback())!
                 .SetNegativeButton("取消", (_, _) => { })!
                 .Show();
         };
@@ -102,7 +114,18 @@ public class MainActivity : Activity
                 .SetNegativeButton("取消", (_, _) => { })!
                 .Show();
         };
+        // MIGRATION row 24: the C# PRoot launcher probes every profile; long-press = the legacy dsh.probe (fallback).
         probe.Click += (_, _) => _ = _bridge.RunProbesAsync();
+        probe.LongClick += (_, e) =>
+        {
+            e.Handled = true;
+            new AlertDialog.Builder(this)
+                .SetTitle("探针实现")!
+                .SetMessage("默认由 C# PRoot 启动器逐个探测 DSH profile。改用旧实现（DSHBox）做这一次探测？")!
+                .SetPositiveButton("旧实现（回退）", (_, _) => _ = _bridge.RunProbesAsync(legacy: true))!
+                .SetNegativeButton("取消", (_, _) => { })!
+                .Show();
+        };
         openDsh.Click += (_, _) => StartActivity(new Android.Content.Intent(this, typeof(DshWebActivity)));
         files.Click += (_, _) => StartActivity(new Android.Content.Intent(this, typeof(FilesActivity)));
         // ADR-0016: the C# terminal (C#-owned PTY sessions + local xterm.js screen) is the default.
@@ -141,6 +164,15 @@ public class MainActivity : Activity
 
     /// <summary>Importer chosen for the pending picker result (null = the default; reset after each use).</summary>
     private DshMobile.Application.SliceMode? _importMode;
+
+    /// <summary>MIGRATION row 18: put the previous runtime body back (C#), after an explicit confirmation.</summary>
+    private void ConfirmRollback() =>
+        new AlertDialog.Builder(this)
+            .SetTitle("回滚运行时")!
+            .SetMessage("把 runtime-current/previous 里的上一版 base / node / android-side 与 runtime-profile.json 换回来（当前这一版移到 runtime-current/failed）。DSH 层与工作区（user-data）不动。运行时须已停止；没有上一版时会如实报 BUNDLE_NO_ROLLBACK_SLOT。")!
+            .SetPositiveButton("回滚", (_, _) => _ = _bridge.RunRollbackAsync())!
+            .SetNegativeButton("取消", (_, _) => { })!
+            .Show();
 
     private void PickRuntimeBundle(DshMobile.Application.SliceMode? mode)
     {

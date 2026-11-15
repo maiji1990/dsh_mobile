@@ -12,10 +12,10 @@ using Log = Android.Util.Log;
 namespace DshMobile.App.Bridge;
 
 /// <summary>
-/// Application-scoped owner of the native facade and the C# client. Survives Activity
-/// recreation (rotation, background/foreground) so in-flight work is not lost.
-/// Runtime start/stop/import go through the C# <see cref="RuntimeCoordinator"/> (ADR-0007); the implementation
-/// underneath is still the legacy DSHBox bridge until the C# runtime slice passes real-device acceptance.
+/// Application-scoped owner of the C# runtime (<see cref="RuntimeCoordinator"/>) and of the legacy facade. Survives
+/// Activity recreation (rotation, background/foreground) so in-flight work is not lost. Default paths are C#
+/// (ADR-0015 / ADR-0016); the legacy facade (DSHBox RuntimeController + sandbox-manager) is created only the first time
+/// an explicit legacy fallback uses it, so a process that never falls back runs no DSHBox code.
 /// </summary>
 public sealed class BridgeHost : IDisposable, IDiagnosticsLog
 {
@@ -35,11 +35,10 @@ public sealed class BridgeHost : IDisposable, IDiagnosticsLog
     {
         _context = context.ApplicationContext ?? context;
         _facade = new DshNativeFacade();
-        _transport = new NativeFacadeTransport(_facade);
+        _transport = new NativeFacadeTransport(_facade, EnsureLegacy);
         Client = new BridgeClient(_transport);
         Client.EventReceived += OnBridgeEvent;
-        _facade.Initialize(context);
-        Append($"facade initialized, bridge {DshNativeFacade.BridgeVersion}");
+        Append("legacy facade: not initialized (created on the first legacy fallback)");
 
         Layout = new RuntimeLayout(_context.FilesDir!.AbsolutePath, _context.CacheDir?.AbsolutePath, _context.ApplicationInfo!.NativeLibraryDir!);
         _services = new ServiceCollection()
@@ -67,6 +66,57 @@ public sealed class BridgeHost : IDisposable, IDiagnosticsLog
         Runtime.State.Changed += (_, _) => Changed?.Invoke(this, EventArgs.Empty);
         var s = Runtime.State.Current;
         Append($"runtime coordinator: impl={Runtime.Implementation} journal={s.State}/{s.Harness} gen={s.Generation}{(s.ErrorCode is null ? "" : " last error " + s.ErrorCode)}");
+        // The journal may still say what the previous process saw; align it with the disk (C#, no bridge call).
+        _ = Task.Run(async () =>
+        {
+            var now = await Runtime.RefreshStateAsync(CancellationToken.None).ConfigureAwait(false);
+            Append($"runtime (C#): journal={now.State}/{now.Harness}");
+        });
+    }
+
+    private readonly object _legacyGate = new();
+    private Task? _legacyInit;
+    private volatile bool _legacyReady;
+    private volatile bool _legacyTerminalUsed;
+
+    /// <summary>Whether the legacy facade was created in this process (only by an explicit legacy fallback).</summary>
+    public bool LegacyInitialized => _legacyReady;
+
+    /// <summary>
+    /// Creates the legacy facade on first use. <c>DshNativeFacade.initialize</c> builds the DSHBox RuntimeController and
+    /// sandbox-manager, which used to happen at app start; it runs on the main thread as before. A background caller
+    /// waits for the main thread (the main thread itself never waits on the bridge, so this cannot deadlock).
+    /// </summary>
+    private void EnsureLegacy()
+    {
+        if (_legacyReady)
+        {
+            return;
+        }
+        if (Android.OS.Looper.MyLooper() == Android.OS.Looper.MainLooper)
+        {
+            InitializeLegacyOnMain();
+            return;
+        }
+        LazyInitializer.EnsureInitialized(ref _legacyInit, () => OnMainThreadAsync(() =>
+        {
+            InitializeLegacyOnMain();
+            return true;
+        })).GetAwaiter().GetResult();
+    }
+
+    private void InitializeLegacyOnMain()
+    {
+        lock (_legacyGate) // only ever taken on the main thread
+        {
+            if (_legacyReady)
+            {
+                return;
+            }
+            _facade.Initialize(_context);
+            _legacyReady = true;
+        }
+        Append($"legacy facade initialized on first use, bridge {DshNativeFacade.BridgeVersion}");
     }
 
     private static readonly TimeSpan CompanionStopDeadline = TimeSpan.FromSeconds(30);
@@ -78,7 +128,8 @@ public sealed class BridgeHost : IDisposable, IDiagnosticsLog
     /// </summary>
     private async Task StopLegacyCompanionsAsync(CancellationToken ct)
     {
-        var closed = await OnMainThreadAsync(() =>
+        // Legacy terminal sessions exist only if the legacy terminal (fallback) was opened in this process.
+        var closed = !_legacyTerminalUsed ? 0 : await OnMainThreadAsync(() =>
         {
             var ids = new List<string>();
             using (var doc = JsonDocument.Parse(_facade.TerminalSessionsJson() ?? "[]"))
@@ -150,19 +201,23 @@ public sealed class BridgeHost : IDisposable, IDiagnosticsLog
     public bool IsBusy => Volatile.Read(ref _busy) != 0;
 
     /// <summary>
-    /// The C# host's state and the journal while it owns the processes (ADR-0015); otherwise the latest sandbox/DSH state
-    /// pushed by the legacy runtime.state event.
+    /// The journal (C#): with the C# host's state while it owns the processes (ADR-0015). Only while a fallback-started
+    /// legacy runtime may be running, the latest sandbox/DSH state pushed by the legacy runtime.state event.
     /// </summary>
     public string RuntimeState
     {
         get
         {
-            if (!Runtime.HostOwnsProcesses)
-            {
-                return Volatile.Read(ref _runtimeState);
-            }
             var s = Runtime.State.Current;
-            return $"C# host={Runtime.HostState} · runtime={s.State} · dsh={s.Harness}{(s.ErrorCode is null ? "" : " · " + s.ErrorCode)}";
+            if (Runtime.HostOwnsProcesses)
+            {
+                return $"C# host={Runtime.HostState} · runtime={s.State} · dsh={s.Harness}{(s.ErrorCode is null ? "" : " · " + s.ErrorCode)}";
+            }
+            if (Runtime.LegacyRuntimeActive)
+            {
+                return "legacy " + Volatile.Read(ref _runtimeState);
+            }
+            return $"runtime={s.State} · dsh={s.Harness}{(s.DshVersion is { } v ? " · " + v : "")}{(s.ErrorCode is null ? "" : " · " + s.ErrorCode)}";
         }
     }
 
@@ -189,7 +244,25 @@ public sealed class BridgeHost : IDisposable, IDiagnosticsLog
         Changed?.Invoke(this, EventArgs.Empty);
     }
 
-    public Task RunInfoAsync() => RunExclusive("bridge.info", async () =>
+    /// <summary>
+    /// Device / runtime facts. Default: C# only (Android APIs, the native library, the runtime on disk); with
+    /// <paramref name="legacy"/> the legacy <c>bridge.info</c> (bridge, Kotlin and DSHBox versions) for comparison.
+    /// </summary>
+    public Task RunInfoAsync(bool legacy = false) => legacy ? RunLegacyInfoAsync() : RunExclusive("info", async () =>
+    {
+        var app = _context.PackageManager!.GetPackageInfo(_context.PackageName!, 0);
+        Append($"app {_context.PackageName} {app?.VersionName ?? "?"} · .NET {Environment.Version} · runtime impl={Runtime.Implementation}");
+        Append($"device sdk={(int)Android.OS.Build.VERSION.SdkInt} abis=[{string.Join(",", Android.OS.Build.SupportedAbis ?? [])}] model={Android.OS.Build.Model}");
+        var native = DshNativeLibrary.Probe();
+        Append($"native={(native.Ok ? "abi " + native.Value : native.Code)} journal={Layout.JournalFile}");
+        if (await Runtime.ReadFactsAsync(CancellationToken.None).ConfigureAwait(false) is { } f)
+        {
+            Append("runtime (C#): " + f.Describe(Runtime.State.Current.State.ToString(), Runtime.State.Current.Harness.ToString(), Runtime.Host?.TokenRevision is not null));
+        }
+        Append($"legacy facade: {(LegacyInitialized ? "initialized (a fallback was used)" : "not initialized")} · long-press = legacy bridge.info");
+    });
+
+    private Task RunLegacyInfoAsync() => RunExclusive("bridge.info", async () =>
     {
         var resp = await Client.ExecuteAsync(BridgeMethods.Info).ConfigureAwait(false);
         if (!resp.Ok)
@@ -206,52 +279,124 @@ public sealed class BridgeHost : IDisposable, IDiagnosticsLog
         Append($"csharp runtime impl={Runtime.Implementation} native={(native.Ok ? "abi " + native.Value : native.Code)} journal={Layout.JournalFile}");
     });
 
-    public Task RunKotlinCompareAsync() => RunExclusive("dshbox.versions.compare", async () =>
+    private static readonly (string A, string B)[] VersionCases = [("0.1.1", "0.1.1-rc.2"), ("0.1.0-rc.9", "0.1.0-rc.10"), ("v1.5.1", "1.5.1")];
+
+    /// <summary>
+    /// DSH version ordering. Default: the C# <see cref="Versions.Compare"/> (the port the import and the DSH layer
+    /// arbitration use); with <paramref name="legacy"/> also the legacy Kotlin <c>Versions.compare</c> and whether they agree.
+    /// </summary>
+    public Task RunKotlinCompareAsync(bool legacy = false) => RunExclusive("versions.compare", async () =>
     {
-        (string A, string B)[] cases = [("0.1.1", "0.1.1-rc.2"), ("0.1.0-rc.9", "0.1.0-rc.10"), ("v1.5.1", "1.5.1")];
-        foreach (var (a, b) in cases)
+        foreach (var (a, b) in VersionCases)
         {
+            var cs = Math.Sign(Versions.Compare(a, b));
+            if (!legacy)
+            {
+                Append($"Versions.Compare(\"{a}\", \"{b}\") = {cs} (C#)");
+                continue;
+            }
             var payload = BridgeCodec.ToPayload(new VersionsCompareRequest(a, b), BridgeJsonContext.Default.VersionsCompareRequest);
             var resp = await Client.ExecuteAsync(BridgeMethods.DshboxVersionsCompare, payload).ConfigureAwait(false);
-            Append(resp.Ok
-                ? $"Versions.compare(\"{a}\", \"{b}\") = {BridgeCodec.ReadPayload(resp, BridgeJsonContext.Default.VersionsCompareResult)!.Result}"
-                : $"Versions.compare FAILED {resp.Code}: {resp.Message}");
+            if (!resp.Ok)
+            {
+                Append($"Versions.compare FAILED {resp.Code}: {resp.Message}");
+                continue;
+            }
+            var kt = Math.Sign(BridgeCodec.ReadPayload(resp, BridgeJsonContext.Default.VersionsCompareResult)!.Result);
+            Append($"Versions.compare(\"{a}\", \"{b}\") = {kt} (Kotlin) / {cs} (C#) {(kt == cs ? "Agree" : "DIVERGE")}");
         }
     });
 
     // ------------------------------------------------------------------ TASK-006 WebUI
 
     /// <summary>Main thread only. The launch token never reaches managed code (see native WebUiController).</summary>
-    public void AttachWebUi(Android.Webkit.WebView view, IWebUiListener listener) => _facade.AttachWebUi(view, listener);
+    public void AttachWebUi(Android.Webkit.WebView view, IWebUiListener listener)
+    {
+        EnsureLegacy();
+        _facade.AttachWebUi(view, listener);
+    }
 
-    public void DetachWebUi() => _facade.DetachWebUi();
+    public void DetachWebUi()
+    {
+        if (_legacyReady)
+        {
+            _facade.DetachWebUi();
+        }
+    }
 
-    public void ReloadWebUi() => _facade.ReloadWebUi();
+    public void ReloadWebUi()
+    {
+        EnsureLegacy();
+        _facade.ReloadWebUi();
+    }
 
     /// <summary>Answers a pending WebUI file chooser (null/empty = cancelled). Main thread only.</summary>
-    public void CompleteWebFileChooser(Android.Net.Uri[]? uris) => _facade.CompleteWebFileChooser(uris);
+    public void CompleteWebFileChooser(Android.Net.Uri[]? uris)
+    {
+        EnsureLegacy();
+        _facade.CompleteWebFileChooser(uris);
+    }
 
     // ------------------------------------------------------------------ TASK-008 terminal (main thread)
 
     /// <summary>Native TerminalView bound to the active shell session, or null when no runtime is installed.</summary>
-    public Android.Views.View? CreateTerminalView(Android.Content.Context activity, ITerminalListener listener) =>
-        _facade.CreateTerminalView(activity, listener);
+    public Android.Views.View? CreateTerminalView(Android.Content.Context activity, ITerminalListener listener)
+    {
+        EnsureLegacy();
+        _legacyTerminalUsed = true;
+        return _facade.CreateTerminalView(activity, listener);
+    }
 
-    public void ReleaseTerminalView() => _facade.ReleaseTerminalView();
+    public void ReleaseTerminalView()
+    {
+        if (_legacyReady)
+        {
+            _facade.ReleaseTerminalView();
+        }
+    }
 
-    public string? NewTerminalSession() => _facade.NewTerminalSession();
+    public string? NewTerminalSession()
+    {
+        EnsureLegacy();
+        _legacyTerminalUsed = true;
+        return _facade.NewTerminalSession();
+    }
 
-    public void ActivateTerminalSession(string id) => _facade.ActivateTerminalSession(id);
+    public void ActivateTerminalSession(string id)
+    {
+        EnsureLegacy();
+        _facade.ActivateTerminalSession(id);
+    }
 
-    public void CloseTerminalSession(string id) => _facade.CloseTerminalSession(id);
+    public void CloseTerminalSession(string id)
+    {
+        EnsureLegacy();
+        _facade.CloseTerminalSession(id);
+    }
 
-    public string? TerminalSessionsJson() => _facade.TerminalSessionsJson();
+    public string? TerminalSessionsJson()
+    {
+        EnsureLegacy();
+        return _facade.TerminalSessionsJson();
+    }
 
-    public bool TerminalSendKey(string key) => _facade.TerminalSendKey(key);
+    public bool TerminalSendKey(string key)
+    {
+        EnsureLegacy();
+        return _facade.TerminalSendKey(key);
+    }
 
-    public void SetTerminalCtrl(bool on) => _facade.SetTerminalCtrl(on);
+    public void SetTerminalCtrl(bool on)
+    {
+        EnsureLegacy();
+        _facade.SetTerminalCtrl(on);
+    }
 
-    public void TerminalPaste() => _facade.TerminalPaste();
+    public void TerminalPaste()
+    {
+        EnsureLegacy();
+        _facade.TerminalPaste();
+    }
 
     // ------------------------------------------------------------------ TASK-004 runtime
 
@@ -298,7 +443,14 @@ public sealed class BridgeHost : IDisposable, IDiagnosticsLog
             var r = await Runtime.InstallAsync(new RuntimePackage(zip), null, CancellationToken.None, mode).ConfigureAwait(false);
             Append($"import: took {sw.Elapsed.TotalSeconds:F1} s");
             Append(r.Ok ? "import: ok" : $"import FAILED {r.Code}{(r.UpstreamCode is null ? "" : "/" + r.UpstreamCode)}: {r.Message}");
-            LogStatus("status", await Client.ExecuteAsync(BridgeMethods.RuntimeStatus).ConfigureAwait(false));
+            if ((mode ?? Runtime.Options.BundleImport) == SliceMode.CSharp)
+            {
+                await LogCSharpStatusAsync("status").ConfigureAwait(false);
+            }
+            else
+            {
+                LogStatus("status", await Client.ExecuteAsync(BridgeMethods.RuntimeStatus).ConfigureAwait(false)); // legacy fallback import
+            }
         }
         finally
         {
@@ -307,6 +459,14 @@ public sealed class BridgeHost : IDisposable, IDiagnosticsLog
                 File.Delete(zip);
             }
         }
+    });
+
+    /// <summary>MIGRATION row 18: the C# rollback to the previous runtime body (refused while anything runs).</summary>
+    public Task RunRollbackAsync() => RunExclusive("runtime.rollback", async () =>
+    {
+        var r = await Runtime.RollbackAsync(CancellationToken.None).ConfigureAwait(false);
+        Append(r.Ok ? $"rollback: ok ({r.Message})" : $"rollback FAILED {r.Code}: {r.Message}");
+        await LogCSharpStatusAsync("status").ConfigureAwait(false);
     });
 
     /// <summary>Logs a host-side step that is not a bridge call (e.g. copying a picked file).</summary>
@@ -346,6 +506,19 @@ public sealed class BridgeHost : IDisposable, IDiagnosticsLog
             }
             Append("legacy status / health: skipped (the C# host owns the processes)");
             await Runtime.ShadowSupervisorAsync("", "", false, CancellationToken.None).ConfigureAwait(false);
+            await RunGuestDiagnosticsAsync().ConfigureAwait(false);
+            return;
+        }
+        if (!Runtime.LegacyRuntimeActive)
+        {
+            // MIGRATION row 23: nothing was started by the legacy runtime in this process, so C# reads the state itself.
+            await LogCSharpStatusAsync("status").ConfigureAwait(false);
+            var h = await DshMobile.Runtime.Supervision.HttpHealthProbe.CheckAsync().ConfigureAwait(false);
+            Append($"health (C#): port={h.PortOpen} webUi={h.WebUiReady} http={h.HttpStatus?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "-"}{(h.Error is null ? "" : " error=" + h.Error)}");
+            foreach (var line in await Runtime.DescribeHostAsync(CancellationToken.None).ConfigureAwait(false))
+            {
+                Append(line);
+            }
             await RunGuestDiagnosticsAsync().ConfigureAwait(false);
             return;
         }
@@ -418,8 +591,35 @@ public sealed class BridgeHost : IDisposable, IDiagnosticsLog
 
     private static readonly TimeSpan ProbeDeadline = TimeSpan.FromMinutes(10);
 
-    /// <summary>TASK-005: runs the guest probe for every shipped profile, in order, and logs each check.</summary>
-    public Task RunProbesAsync() => RunExclusive("dsh.probe", async () =>
+    /// <summary>
+    /// TASK-005: runs the guest probe for every shipped profile, in order, and logs each check. Default (MIGRATION row 24):
+    /// the C# PRoot launcher (<see cref="RuntimeCoordinator.ProbeProfileAsync"/>); <paramref name="legacy"/>: the legacy
+    /// <c>dsh.probe</c> (fallback).
+    /// </summary>
+    public Task RunProbesAsync(bool legacy = false) => legacy ? RunLegacyProbesAsync() : RunExclusive("dsh.probe (C#)", async () =>
+    {
+        var summary = new List<string>();
+        foreach (var profile in DshProfiles.All)
+        {
+            var sw = Stopwatch.StartNew();
+            var o = await Runtime.ProbeProfileAsync(profile, CancellationToken.None).ConfigureAwait(false);
+            if (o.Result is not { } r)
+            {
+                Append($"probe {profile} FAILED {o.ErrorCode}: {o.Error}");
+                summary.Add($"{profile}=ERROR");
+                continue;
+            }
+            Append($"probe {profile}: {r.Status.ToUpperInvariant()} shim={r.Shim} ({sw.Elapsed.TotalSeconds:F1} s, C#)");
+            foreach (var c in r.Checks)
+            {
+                Append($"  {(c.Ok ? "ok  " : "FAIL")} {c.Name}{(c.Ms is { } ms ? $" {ms} ms" : "")}: {c.Detail}");
+            }
+            summary.Add($"{profile}={r.Status}");
+        }
+        Append("probe summary (C#): " + string.Join(" ", summary));
+    });
+
+    private Task RunLegacyProbesAsync() => RunExclusive("dsh.probe", async () =>
     {
         var summary = new List<string>();
         foreach (var profile in DshProfiles.All)
@@ -443,6 +643,18 @@ public sealed class BridgeHost : IDisposable, IDiagnosticsLog
         }
         Append("probe summary: " + string.Join(" ", summary));
     });
+
+    /// <summary>The legacy status line, from what C# reads on disk (no bridge call).</summary>
+    private async Task LogCSharpStatusAsync(string what)
+    {
+        if (await Runtime.ReadFactsAsync(CancellationToken.None).ConfigureAwait(false) is not { } f)
+        {
+            Append($"{what} (C#): no runtime layout");
+            return;
+        }
+        var s = Runtime.State.Current;
+        Append($"{what} (C#): " + f.Describe(s.State.ToString(), s.Harness.ToString(), Runtime.Host?.TokenRevision is not null));
+    }
 
     private void LogStatus(string what, BridgeResponse resp)
     {
@@ -481,7 +693,10 @@ public sealed class BridgeHost : IDisposable, IDiagnosticsLog
         Append($"event {e.Event} {e.Payload}");
     }
 
-    /// <summary>M1 acceptance: N concurrent round-trips; afterwards both in-flight tables must be 0.</summary>
+    /// <summary>
+    /// M1 acceptance of the legacy bridge itself: N concurrent round-trips; afterwards both in-flight tables must be 0.
+    /// It tests the transitional JSON bridge, so it necessarily uses it (and goes away with it in PR-10).
+    /// </summary>
     public Task RunStressAsync(int count = 1000) => RunExclusive($"stress x{count}", async () =>
     {
         var sw = Stopwatch.StartNew();

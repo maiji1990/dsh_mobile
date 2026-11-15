@@ -67,3 +67,8 @@ C# 只读比对并写 `shadow-reports.jsonl`；C# 实现只能经长按 / 选择
 
 仍需真机补齐：经用户批准后的实际执行与经 DSH Agent 的端到端 `ui_*` 调用。Shizuku 客户端库（`dev.rikka.shizuku`，MIT）目前经 DSHBox AAR 打包，
 PR-10 移除 AAR 前须改为直接依赖。
+
+## 后续
+
+本 ADR 未覆盖的切片（解包开关、回滚、状态来源、DSH 探测、WebView、插件安装 / 卸载）、默认路径上剩余的旧桥调用、guest 资产供给与 Shizuku 依赖见
+[ADR-0017](0017-remaining-slices-csharp-default-lazy-legacy-facade.md)。

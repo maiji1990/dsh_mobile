@@ -40,12 +40,13 @@ public sealed class PluginsActivity : Activity
         _spec = new EditText(this) { Hint = GetString(Resource.String.plugins_spec_hint) };
         _spec.SetSingleLine(true);
         _add = new Button(this) { Text = GetString(Resource.String.plugins_add) };
-        _add.Click += (_, _) => ConfirmAdd(csharp: false);
-        // Developer opt-in (ADR-0007 PR-05): the C# PRoot launcher + ported install guard (verify, roll back), one change only.
+        // MIGRATION row 29: the C# PRoot launcher + ported install guard (verify, roll back) by default; long-press is
+        // the explicit legacy fallback (plugin.add through the bridge) for this one change.
+        _add.Click += (_, _) => ConfirmAdd(csharp: CsChanges);
         _add.LongClick += (_, e) =>
         {
             e.Handled = true;
-            ConfirmAdd(csharp: true);
+            ConfirmAdd(csharp: !CsChanges);
         };
         row.AddView(_spec, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WrapContent, 1f));
         row.AddView(_add);
@@ -58,17 +59,20 @@ public sealed class PluginsActivity : Activity
         root.AddView(statusScroll, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MatchParent, 0, 1f));
 
         _list = new ListView(this);
-        _list.ItemClick += (_, e) => ConfirmRemove(_plugins[e.Position].Name, csharp: false);
+        _list.ItemClick += (_, e) => ConfirmRemove(_plugins[e.Position].Name, csharp: CsChanges);
         _list.ItemLongClick += (_, e) =>
         {
             e.Handled = true;
-            ConfirmRemove(_plugins[e.Position].Name, csharp: true);
+            ConfirmRemove(_plugins[e.Position].Name, csharp: !CsChanges);
         };
         root.AddView(_list, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MatchParent, 0, 2f));
         SetContentView(root);
 
         _ = RefreshAsync();
     }
+
+    /// <summary>Add / remove default (MIGRATION row 29): C# unless the slice is set back to legacy.</summary>
+    private static bool CsChanges => DshMobileApplication.Current.Bridge.Runtime.Options.PluginChange == DshMobile.Application.SliceMode.CSharp;
 
     /// <summary>Re-reads the list; <paramref name="keepStatus"/> keeps the result of the change that was just made on screen.</summary>
     private async Task RefreshAsync(bool keepStatus = false)
@@ -98,8 +102,8 @@ public sealed class PluginsActivity : Activity
             return;
         }
         new AlertDialog.Builder(this)
-            .SetTitle(Fmt(Resource.String.plugins_add_confirm_title, spec) + (csharp ? CSharpTag : ""))!
-            .SetMessage(GetString(Resource.String.plugins_add_confirm_body) + (csharp ? "\n\n" + CSharpAddNote : ""))!
+            .SetTitle(Fmt(Resource.String.plugins_add_confirm_title, spec) + Tag(csharp))!
+            .SetMessage(GetString(Resource.String.plugins_add_confirm_body) + "\n\n" + (csharp ? CSharpAddNote : LegacyNote))!
             .SetNegativeButton(Android.Resource.String.Cancel, (_, _) => { })!
             .SetPositiveButton(Resource.String.plugins_add, async (_, _) =>
             {
@@ -109,45 +113,48 @@ public sealed class PluginsActivity : Activity
                 {
                     var r = await ChangeWithCSharpAsync("add", spec);
                     ok = r.Ok;
-                    SetBusy(false, Describe("add " + spec + CSharpTag, r));
+                    SetBusy(false, Describe("add " + spec + Tag(true), r));
                 }
                 else
                 {
                     var r = await RunAsync(BridgeMethods.PluginAdd, new PluginRequest(Profile, Spec: spec), ChangeDeadline);
                     ok = r is { Ok: true };
-                    SetBusy(false, r is null ? null : Describe("add " + spec, r));
+                    SetBusy(false, r is null ? null : Describe("add " + spec + Tag(false), r));
                 }
                 if (ok)
                 {
                     _spec.Text = "";
                 }
-                await RefreshAsync(keepStatus: csharp);
+                await RefreshAsync(keepStatus: true);
             })!
             .Show();
     }
 
     private void ConfirmRemove(string name, bool csharp) =>
         new AlertDialog.Builder(this)
-            .SetTitle(Fmt(Resource.String.plugins_remove_confirm, name) + (csharp ? CSharpTag : ""))!
+            .SetTitle(Fmt(Resource.String.plugins_remove_confirm, name) + Tag(csharp))!
             .SetNegativeButton(Android.Resource.String.Cancel, (_, _) => { })!
             .SetPositiveButton(Resource.String.plugins_remove, async (_, _) =>
             {
                 SetBusy(true, Fmt(Resource.String.plugins_removing, name));
                 if (csharp)
                 {
-                    SetBusy(false, Describe("remove " + name + CSharpTag, await ChangeWithCSharpAsync("remove", name)));
+                    SetBusy(false, Describe("remove " + name + Tag(true), await ChangeWithCSharpAsync("remove", name)));
                 }
                 else
                 {
                     var r = await RunAsync(BridgeMethods.PluginRemove, new PluginRequest(Profile, Name: name), ChangeDeadline);
-                    SetBusy(false, r is null ? null : Describe("remove " + name, r));
+                    SetBusy(false, r is null ? null : Describe("remove " + name + Tag(false), r));
                 }
-                await RefreshAsync(keepStatus: csharp);
+                await RefreshAsync(keepStatus: true);
             })!
             .Show();
 
-    private const string CSharpTag = "（C#）";
-    private const string CSharpAddNote = "C# 实现（实验）：安装后核对新增的包是否为可加载的 DSH 插件，不是则自动卸载（回滚）。";
+    /// <summary>Marks the path that is not the default, so a fallback result is never mistaken for the default one.</summary>
+    private static string Tag(bool csharp) => csharp == CsChanges ? "" : csharp ? "（C#）" : "（旧实现）";
+
+    private const string CSharpAddNote = "安装后核对新增的包是否为可加载的 DSH 插件，不是则自动卸载（回滚）。长按「安装」= 旧实现（回退）。";
+    private const string LegacyNote = "旧实现（回退）：只看 dsh plugin 的退出码，不核对新增的包。";
 
     /// <summary>C# <c>dsh plugin list</c>, in the legacy result shape so the page renders it the same way.</summary>
     private async Task<PluginCommandResult> ListWithCSharpAsync()

@@ -25,7 +25,13 @@ public sealed class RuntimeCoordinatorTests : IDisposable
 
         private RuntimeStartResult Ok() => new(true, "OK", null, Snap());
 
-        public Task<RuntimeSnapshot> GetStateAsync(CancellationToken ct = default) => Task.FromResult(Snap());
+        public int StatusReads;
+
+        public Task<RuntimeSnapshot> GetStateAsync(CancellationToken ct = default)
+        {
+            StatusReads++;
+            return Task.FromResult(Snap());
+        }
 
         public Task<RuntimeInstallResult> InstallAsync(RuntimePackage package, IProgress<RuntimeProgress>? progress, CancellationToken ct)
         {
@@ -322,7 +328,7 @@ public sealed class RuntimeCoordinatorTests : IDisposable
     [Fact]
     public async Task Install_CSharpMode_InstallsVerifiesAndPreparesWithoutLegacyImport()
     {
-        var layout = new DshMobile.Runtime.RuntimeLayout(Path.Combine(_dir, "files"), null, "/lib");
+        var layout = new DshMobile.Runtime.RuntimeLayout(Path.Combine(_dir, "files"), null, LibDirWithProot());
         var r = await CSharpCoordinator(layout).InstallAsync(new RuntimePackage(FixtureBundle("good.zip")), null, CancellationToken.None, SliceMode.CSharp);
         Assert.True(r.Ok, r.Message);
         Assert.DoesNotContain("install", _runtime.Calls); // the legacy importer never ran
@@ -360,6 +366,7 @@ public sealed class RuntimeCoordinatorTests : IDisposable
     public async Task Start_CSharpHost_FailingPreconditions_IsFailedAndReleasesService()
     {
         var layout = new DshMobile.Runtime.RuntimeLayout(Path.Combine(_dir, "files"), null, Path.Combine(_dir, "nolibs"));
+        InstalledRuntime(layout.FilesDir); // installed (guest PRoot in android-side), but no PRoot in nativeLibraryDir
         var r = await CSharpCoordinator(layout).StartAsync(DshProfile.Web, CancellationToken.None, SliceMode.CSharp);
         Assert.False(r.Ok);
         Assert.Equal("EXECUTABLE_NOT_ALLOWED", r.Code);
@@ -439,11 +446,33 @@ public sealed class RuntimeCoordinatorTests : IDisposable
 
     private FakeHost? _host;
 
+    /// <summary>A nativeLibraryDir holding <c>libproot.so</c>, as on a device (the install check looks for it).</summary>
+    private string LibDirWithProot()
+    {
+        var lib = Path.Combine(_dir, "lib");
+        Directory.CreateDirectory(lib);
+        File.WriteAllText(Path.Combine(lib, "libproot.so"), "elf");
+        return lib;
+    }
+
+    /// <summary>The smallest tree the C# install check accepts (PRoot, base, a profile whose layer sentinel matches).</summary>
+    private static void InstalledRuntime(string files)
+    {
+        var rc = Path.Combine(files, "runtime", "runtime-current");
+        Directory.CreateDirectory(Path.Combine(rc, "base", ".dshbox"));
+        File.WriteAllText(Path.Combine(rc, "base", ".dshbox", "layer-base.sha256"), "aa");
+        Directory.CreateDirectory(Path.Combine(rc, "android-side", "bin"));
+        File.WriteAllText(Path.Combine(rc, "android-side", "bin", "proot"), "elf");
+        File.WriteAllText(Path.Combine(rc, "runtime-profile.json"),
+            """{"bundle":{"version":"1"},"layers":[{"name":"base","sha256":"aa"}],"assembly":["base"]}""");
+    }
+
     /// <summary>Default options (C# host is the default start path) with the fake host behind the factory.</summary>
     private RuntimeCoordinator HostCoordinator()
     {
         _host ??= new FakeHost(_runtime.Calls);
         var layout = new DshMobile.Runtime.RuntimeLayout(Path.Combine(_dir, "files"), null, Path.Combine(_dir, "nolibs"));
+        InstalledRuntime(layout.FilesDir); // C# reads the runtime state from disk (MIGRATION row 23)
         return _coordinator ??= new RuntimeCoordinator(_runtime, new RuntimeStateMachine(_journal, "fake"), _fg, _log, _log,
             new MigrationOptions(), null, layout, hostFactory: (_, _, _) => _host);
     }
@@ -468,6 +497,91 @@ public sealed class RuntimeCoordinatorTests : IDisposable
         var again = await c.StartAsync(DshProfile.Web, CancellationToken.None);
         Assert.True(again.Ok);
         Assert.Equal(["host.start"], _runtime.Calls);
+    }
+
+    [Fact]
+    public async Task DefaultPath_ReadsTheStateInCSharp_AndNeverCallsLegacyStatus()
+    {
+        var c = HostCoordinator();
+        _runtime.State = RuntimeState.Failed; // what a legacy status would say; C# must not ask it
+        Assert.Equal(RuntimeState.Ready, (await c.RefreshStateAsync(CancellationToken.None)).State);
+        Assert.Equal(RuntimeCoordinator.CSharpImplementation, c.Implementation);
+        Assert.True((await c.StartAsync(DshProfile.Web, CancellationToken.None)).Ok);
+        Assert.True((await c.StopAsync(CancellationToken.None)).Ok);
+        Assert.Equal(0, _runtime.StatusReads);
+        Assert.False(c.LegacyRuntimeActive);
+    }
+
+    [Fact]
+    public async Task LegacyFallbackStart_MakesLegacyStatusDecide_UntilItsStopSucceeds()
+    {
+        var c = HostCoordinator();
+        Assert.True((await c.StartAsync(DshProfile.Web, CancellationToken.None, SliceMode.Legacy)).Ok);
+        Assert.True(c.LegacyRuntimeActive);
+        Assert.Equal("fake", c.Implementation);
+        var reads = _runtime.StatusReads;
+        Assert.True(reads > 0);
+        // A legacy event is journaled while the legacy runtime may run ...
+        c.Observe(new RuntimeSnapshot(RuntimeState.Running, HarnessState.Ready, 0, null, null, null, DateTimeOffset.UnixEpoch));
+        Assert.Equal(HarnessState.Ready, c.State.Current.Harness);
+        Assert.True((await c.StopAsync(CancellationToken.None)).Ok);
+        Assert.False(c.LegacyRuntimeActive);
+        Assert.Equal(RuntimeCoordinator.CSharpImplementation, c.Implementation);
+        // ... and ignored afterwards: C# reads the disk again.
+        c.Observe(new RuntimeSnapshot(RuntimeState.Running, HarnessState.Ready, 0, null, null, null, DateTimeOffset.UnixEpoch));
+        Assert.Equal(RuntimeState.Ready, c.State.Current.State);
+        await c.RefreshStateAsync(CancellationToken.None);
+        Assert.Equal(reads + 1, _runtime.StatusReads); // only the legacy stop's own sync, none after it
+    }
+
+    [Fact]
+    public async Task Rollback_WithoutPreviousBody_IsReportedAndJournalUntouched()
+    {
+        var c = HostCoordinator();
+        var r = await c.RollbackAsync(CancellationToken.None);
+        Assert.False(r.Ok);
+        Assert.Equal(DshMobile.Runtime.Layers.LayerRollback.NoRollbackSlot, r.Code);
+        Assert.Equal(RuntimeState.Ready, c.State.Current.State);
+        Assert.Empty(_runtime.Calls);
+    }
+
+    [Fact]
+    public async Task Rollback_WhileTheHostRuns_IsRefused()
+    {
+        var c = HostCoordinator();
+        Assert.True((await c.StartAsync(DshProfile.Web, CancellationToken.None)).Ok);
+        var r = await c.RollbackAsync(CancellationToken.None);
+        Assert.False(r.Ok);
+        Assert.Equal(RuntimeErrorCodes.InvalidTransition, r.Code);
+    }
+
+    [Fact]
+    public async Task Rollback_RestoresThePreviousBody_AndEndsReady()
+    {
+        var c = HostCoordinator();
+        var layout = new DshMobile.Runtime.RuntimeLayout(Path.Combine(_dir, "files"), null, Path.Combine(_dir, "nolibs"));
+        var previous = Path.Combine(layout.RuntimeCurrentDir, "previous");
+        Directory.CreateDirectory(Path.Combine(previous, "base", ".dshbox"));
+        File.WriteAllText(Path.Combine(previous, "base", ".dshbox", "layer-base.sha256"), "bb");
+        Directory.CreateDirectory(Path.Combine(previous, "android-side", "bin"));
+        File.WriteAllText(Path.Combine(previous, "android-side", "bin", "proot"), "elf");
+        File.WriteAllText(Path.Combine(previous, "runtime-profile.json"),
+            """{"bundle":{"version":"0"},"layers":[{"name":"base","sha256":"bb"}],"assembly":["base"]}""");
+        var r = await c.RollbackAsync(CancellationToken.None);
+        Assert.True(r.Ok, r.Message);
+        Assert.Equal(RuntimeState.Ready, c.State.Current.State);
+        Assert.Contains("\"version\":\"0\"", File.ReadAllText(Path.Combine(layout.RuntimeCurrentDir, "runtime-profile.json")), StringComparison.Ordinal);
+        Assert.Contains(_journal.ReadTail(20), e => e.Reason == "rolled back (csharp)");
+    }
+
+    [Fact]
+    public async Task Probe_UnknownProfile_AndNoLayout_AreErrors_NotPasses()
+    {
+        Assert.Equal(DshMobile.Runtime.Guest.DshProbe.UnknownProfile, (await HostCoordinator().ProbeProfileAsync("web;id", CancellationToken.None)).ErrorCode);
+        using var noLayout = new RuntimeCoordinator(_runtime, new RuntimeStateMachine(_journal, "fake"), _fg, _log, _log, new MigrationOptions());
+        var o = await noLayout.ProbeProfileAsync("web", CancellationToken.None);
+        Assert.Null(o.Result);
+        Assert.Equal(RuntimeErrorCodes.NotImplemented, o.ErrorCode);
     }
 
     [Fact]
@@ -706,8 +820,8 @@ public sealed class RuntimeCoordinatorTests : IDisposable
             [o.BundleImport, o.DshProvision, o.GuestExec, o.PluginList, o.UiTools, o.RelayEnvelopeCodec, o.RelayAdmission, o.RelaySurface,
              o.RelayGate, o.RelayA11yRead, o.RelayA11yWaitFor, o.RelayHost, o.RemoteHosts, o.RemoteConnect, o.RemoteDsh, o.RuntimeHost, o.Terminal],
             m => Assert.Equal(SliceMode.CSharp, m));
-        // Only consulted when an import runs legacy (fallback): it then still shadows the extraction.
-        Assert.Equal(SliceMode.LegacyWithShadow, o.LayerExtract);
+        // MIGRATION row 15: the C# extractor is what the C# import installs with; on a legacy import it still shadows.
+        Assert.Equal(SliceMode.CSharp, o.LayerExtract);
     }
 
     [Fact]

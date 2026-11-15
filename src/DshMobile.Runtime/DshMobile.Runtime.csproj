@@ -25,6 +25,8 @@
     -->
     <EmbeddedResource Include="../../native/native-bridge/src/main/guest-assets/dshmobile/ui-facade.mjs" LogicalName="DshMobile.UiTools.ui-facade.mjs" Link="Automation/Assets/ui-facade.mjs" />
     <EmbeddedResource Include="../../native/native-bridge/src/main/guest-assets/dshmobile/ui-facade-check.mjs" LogicalName="DshMobile.UiTools.ui-facade-check.mjs" Link="Automation/Assets/ui-facade-check.mjs" />
+    <!-- The profile probe (GuestAssetProvisioner / DshProbe), same single source. -->
+    <EmbeddedResource Include="../../native/native-bridge/src/main/guest-assets/dshmobile/dsh-probe.mjs" LogicalName="DshMobile.Guest.dsh-probe.mjs" Link="Guest/Assets/dsh-probe.mjs" />
   </ItemGroup>
 
   <ItemGroup>

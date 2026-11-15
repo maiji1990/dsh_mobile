@@ -47,10 +47,13 @@ public sealed class DshWebActivity : Activity
 
         var runtime = DshMobileApplication.Current.Bridge.Runtime;
         // ADR-0015: whenever the C# host owns the processes (DSH given up included), the legacy WebView path knows nothing.
-        if (runtime.Host is { } host && runtime.HostOwnsProcesses)
+        // MIGRATION row 25: the C# WebView is also the default when nothing runs; only a DSH started by the legacy runtime
+        // (fallback, in this process) is shown through the legacy WebUiController.
+        if (runtime.HostOwnsProcesses || !runtime.LegacyRuntimeActive)
         {
-            Log.Info(BridgeHost.LogTag, "webui: C# WebView on the C#-hosted DSH");
-            _csharp = new CSharpWebUiController(host,
+            DshMobile.Runtime.Hosting.IDshTokenSource tokens = runtime.Host is { } host ? host : NoDshToken.Instance;
+            Log.Info(BridgeHost.LogTag, runtime.HostOwnsProcesses ? "webui: C# WebView on the C#-hosted DSH" : "webui: C# WebView (DSH not running)");
+            _csharp = new CSharpWebUiController(tokens,
                 (state, detail) => RunOnUiThread(() =>
                 {
                     // detail is token-free by construction (paths, hosts, error codes only).
@@ -202,6 +205,22 @@ public sealed class DshWebActivity : Activity
                     owner.OpenFileChooser(acceptTypes ?? [], allowMultiple);
                 }
             });
+    }
+
+    /// <summary>No C# host yet in this process: no token, so the page says DSH is not running.</summary>
+    private sealed class NoDshToken : DshMobile.Runtime.Hosting.IDshTokenSource
+    {
+        public static NoDshToken Instance { get; } = new();
+
+        public string? Token => null;
+
+        public long? TokenRevision => null;
+
+        public event EventHandler? TokenChanged
+        {
+            add { }
+            remove { }
+        }
     }
 
     private sealed class BackCallback(DshWebActivity owner) : Java.Lang.Object, Android.Window.IOnBackInvokedCallback
