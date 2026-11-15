@@ -1,95 +1,115 @@
 using Android.Content;
 using Android.Views;
+using AndroidX.Core.Widget;
 using DshMobile.App.Bridge;
+using DshMobile.App.Ui;
 using DshMobile.Runtime.Automation;
 using DshMobile.Runtime.Automation.Relay;
 using DshMobile.Runtime.Automation.Relay.Interlock;
 using DshMobile.Runtime.Automation.Relay.Shizuku;
+using Google.Android.Material.Button;
+using Google.Android.Material.Dialog;
+using Google.Android.Material.MaterialSwitch;
 
 namespace DshMobile.App.Automation;
 
 /// <summary>
 /// Mobile automation (TASK-010, ADR-0004 / ADR-0010), experimental and off by default. Starts/stops the C# Relay on the
 /// guest mailbox, links to system accessibility settings (the user enables the service; the app never does) and runs a
-/// fixed read-only self-test (relay doctor + the ui_* facade over MCP) through the real guest mailbox.
+/// fixed read-only self-test (relay doctor + the ui_* facade over MCP) through the real guest mailbox. ADR-0021: the
+/// same actions as Material 3 rows; the relay is a switch, each permission row opens the system page that grants it.
 /// </summary>
 [Activity(Label = "@string/automation_title", Exported = false)]
-public sealed class AutomationActivity : Activity
+public sealed class AutomationActivity : DshActivity
 {
     private BridgeHost _bridge = null!;
-    private TextView _status = null!;
+    private NestedScrollView _page = null!;
+    private FrameLayout _cardSlot = null!;
+    private Rows.Row _relay = null!;
+    private MaterialSwitch _relaySwitch = null!;
+    private bool _settingSwitch;
+    private Rows.Row _a11y = null!;
+    private Rows.Row _overlay = null!;
+    private Rows.Row _shizuku = null!;
+    private Rows.Row _tools = null!;
+    private Rows.Row _details = null!;
+    private Rows.Row _selftest = null!;
+    private Rows.Row? _surfacePref;
     private TextView _output = null!;
-    private Button[] _buttons = [];
-    private Button _surfacePref = null!;
+    private View _outputCard = null!;
+    private View[] _actions = [];
 
     protected override void OnCreate(Bundle? savedInstanceState)
     {
         base.OnCreate(savedInstanceState);
+        SetScreen(Resource.Layout.fragment_list, Resource.String.automation_title);
         _bridge = DshMobileApplication.Current.Bridge;
+        _page = FindViewById<NestedScrollView>(Resource.Id.list_scroll)!;
+        var content = FindViewById<LinearLayout>(Resource.Id.list_content)!;
 
-        var root = new LinearLayout(this) { Orientation = Orientation.Vertical };
-        root.SetPadding(24, 16, 24, 16);
         // ADR-0011: the C# Relay's approval card sits at the top of this page while the page is in front.
         _cardSlot = new FrameLayout(this) { Visibility = ViewStates.Gone };
-        _cardSlot.SetPadding(0, 0, 0, 16);
-        root.AddView(_cardSlot);
-        root.AddView(new TextView(this) { Text = GetString(Resource.String.automation_explain) });
-        _status = new TextView(this) { AccessibilityLiveRegion = AccessibilityLiveRegion.Polite };
-        _status.SetPadding(0, 16, 0, 16);
-        root.AddView(_status);
+        var m = Rows.Dp(this, 16);
+        _cardSlot.SetPadding(m, m, m, 0);
+        content.AddView(_cardSlot);
 
-        var row1 = new LinearLayout(this) { Orientation = Orientation.Horizontal };
+        IntroCard(content);
+
+        Rows.Header(content, GetString(Resource.String.automation_section_status));
         // ADR-0010: the C# Relay serves the guest mailbox.
-        var start = Make(Resource.String.automation_start, () => _ = StartRelayAsync());
-        var stop = Make(Resource.String.automation_stop, () => _ = StopRelayAsync());
-        row1.AddView(start, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WrapContent, 1f));
-        row1.AddView(stop, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WrapContent, 1f));
-        root.AddView(row1);
-        var row2 = new LinearLayout(this) { Orientation = Orientation.Horizontal };
-        var settings = Make(Resource.String.automation_a11y_settings, OpenAccessibilitySettings);
-        var selftest = Make(Resource.String.automation_selftest, () => _ = SelfTestAsync());
-        row2.AddView(settings, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WrapContent, 1f));
-        row2.AddView(selftest, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WrapContent, 1f));
-        root.AddView(row2);
+        _relay = Rows.Add(content, Resource.Drawable.ic_phone, GetString(Resource.String.automation_relay), null, () => _relaySwitch.Toggle());
+        _relaySwitch = new MaterialSwitch(this);
+        _relaySwitch.ContentDescription = GetString(Resource.String.automation_relay);
+        _relaySwitch.CheckedChange += (_, e) =>
+        {
+            if (_settingSwitch)
+            {
+                return;
+            }
+            _ = e.IsChecked ? StartRelayAsync() : StopRelayAsync();
+        };
+        _relay.SetTrailing(_relaySwitch);
+        _a11y = Rows.Add(content, Resource.Drawable.ic_lock, GetString(Resource.String.automation_a11y), null, OpenAccessibilitySettings);
+        _a11y.SetTrailing(OpenIcon());
+        // ADR-0011: opens the system "display over other apps" page for this app; the user grants it there (or not: the
+        // floating card is then skipped and the notification card asks instead).
+        _overlay = Rows.Add(content, Resource.Drawable.ic_open_in_new, GetString(Resource.String.automation_overlay), null, OpenOverlaySettings);
+        _overlay.SetTrailing(OpenIcon());
         // ADR-0008: asks Shizuku to show its own grant dialog (the user answers it in Shizuku); never starts Shizuku.
-        var shizuku = Make(Resource.String.automation_shizuku_connect, ConnectShizuku);
-        root.AddView(shizuku);
-        // ADR-0011: opens the system "display over other apps" page for this app; the user grants it there (or not:
-        // the floating card is then skipped and the notification card asks instead).
-        _overlayPerm = Make(Resource.String.automation_overlay_not_granted, OpenOverlaySettings);
-        root.AddView(_overlayPerm);
-        // PR-07 segment 4, developer action: Relay's own stored surface preference (the setting upstream's UI writes). It
-        // never grants anything: without Shizuku and a trusted display, "background preferred" falls back to the
-        // foreground and Relay says so.
-        _surfacePref = new Button(this);
-        _surfacePref.SetMinHeight((int)(48 * Resources!.DisplayMetrics!.Density));
-        _surfacePref.Click += (_, _) => ToggleSurfacePreference();
-        ShowSurfacePreference();
-        root.AddView(_surfacePref);
-        _csPhase = new TextView(this) { AccessibilityLiveRegion = AccessibilityLiveRegion.Polite };
-        root.AddView(_csPhase);
-        ShowCsRelay();
-        _buttons = [start, stop, selftest, shizuku, _surfacePref];
+        _shizuku = Rows.Add(content, Resource.Drawable.ic_key, GetString(Resource.String.automation_shizuku), null, ConnectShizuku);
+        _tools = Rows.Add(content, Resource.Drawable.ic_extension, GetString(Resource.String.automation_tools));
+        _details = Rows.Add(content, Resource.Drawable.ic_info, GetString(Resource.String.automation_details));
+        _details.View.Visibility = ViewStates.Gone;
 
-        // The page scrolls as a whole: the controls alone are taller than a phone screen, and a fixed layout pushed
-        // the last buttons off it.
-        _output = new TextView(this) { TextSize = 11 };
-        _output.SetTextIsSelectable(true);
-        _output.SetPadding(0, 16, 0, 0);
-        root.AddView(_output);
-        var page = _page = new ScrollView(this) { FillViewport = true };
-        page.SetFitsSystemWindows(true);
-        // The selectable output is focusable in touch mode, so it used to take the window's initial focus; the
-        // ScrollView then kept that focused view on screen as the output grew and scrolled the page by itself
-        // while a self-test ran, which hid the top of the page under the app bar (the guest's ui_get_element
-        // then correctly saw that node as not visible). The page itself takes focus first; tapping the output
-        // still focuses it for selection.
-        page.Focusable = true;
-        page.FocusableInTouchMode = true;
-        page.DescendantFocusability = DescendantFocusability.BeforeDescendants;
-        page.AddView(root);
-        SetContentView(page);
-        page.RequestFocus();
+        Rows.Header(content, GetString(Resource.String.automation_section_check));
+        _selftest = Rows.Add(content, Resource.Drawable.ic_check_circle, GetString(Resource.String.automation_selftest),
+            GetString(Resource.String.automation_selftest_sub), () => _ = SelfTestAsync());
+        _output = Rows.MonoCard(content, out _outputCard);
+        _output.AccessibilityLiveRegion = AccessibilityLiveRegion.Polite;
+        _outputCard.Visibility = ViewStates.Gone;
+
+        if (UiPrefs.DeveloperEnabled(this))
+        {
+            // PR-07 segment 4, developer action: Relay's own stored surface preference (the setting upstream's UI writes).
+            // It never grants anything: without Shizuku and a trusted display, "background preferred" falls back to the
+            // foreground and Relay says so.
+            Rows.Header(content, GetString(Resource.String.automation_section_developer));
+            _surfacePref = Rows.Add(content, Resource.Drawable.ic_build, "", null, ToggleSurfacePreference);
+            ShowSurfacePreference();
+        }
+        _actions = _surfacePref is { } sp
+            ? [_relay.View, _relaySwitch, _selftest.View, _shizuku.View, sp.View]
+            : [_relay.View, _relaySwitch, _selftest.View, _shizuku.View];
+
+        // The selectable output is focusable in touch mode, so it used to take the window's initial focus; the scroll view
+        // then kept that focused view on screen as the output grew and scrolled the page by itself while a self-test ran,
+        // which hid the top of the page under the app bar (the guest's ui_get_element then correctly saw that node as not
+        // visible). The page itself takes focus first; tapping the output still focuses it for selection.
+        _page.Focusable = true;
+        _page.FocusableInTouchMode = true;
+        _page.DescendantFocusability = DescendantFocusability.BeforeDescendants;
+        _page.RequestFocus();
+        ShowCsRelay();
     }
 
     protected override void OnResume()
@@ -111,17 +131,43 @@ public sealed class AutomationActivity : Activity
         base.OnPause();
     }
 
-    private TextView _csPhase = null!;
-    private Button _overlayPerm = null!;
-    private ScrollView _page = null!;
-    private FrameLayout _cardSlot = null!;
     private Relay.ApprovalCardView? _card;
     private int _cardRequestId;
-    private AlertDialog? _gapDialog;
+    private AndroidX.AppCompat.App.AlertDialog? _gapDialog;
     private RelayHost.AccessibilityNoticeInfo? _gapShown;
     private Relay.RelayHostWatch? _csWatch;
     private RelayHost? _watchedHost;
     private Action? _unwatchHost;
+
+    /// <summary>The intro text, with the full approval / permission explanation behind a text button.</summary>
+    private void IntroCard(LinearLayout content)
+    {
+        var box = new LinearLayout(this) { Orientation = Orientation.Vertical };
+        var text = new TextView(this) { Text = GetString(Resource.String.automation_intro) };
+        text.SetTextAppearance(Resource.Style.TextAppearance_Material3_BodyMedium);
+        text.SetTextColor(Android.Content.Res.ColorStateList.ValueOf(new Android.Graphics.Color(Rows.Color(_page, Resource.Attribute.colorOnSurfaceVariant))));
+        box.AddView(text);
+        var more = new MaterialButton(this, null, Resource.Attribute.borderlessButtonStyle) { Text = GetString(Resource.String.automation_more) };
+        var expanded = false;
+        more.Click += (_, _) =>
+        {
+            expanded = !expanded;
+            text.Text = GetString(expanded ? Resource.String.automation_explain : Resource.String.automation_intro);
+            more.Text = GetString(expanded ? Resource.String.automation_less : Resource.String.automation_more);
+        };
+        var lp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WrapContent, ViewGroup.LayoutParams.WrapContent) { Gravity = GravityFlags.Start };
+        box.AddView(more, lp);
+        var card = Rows.Card(content, box);
+        ((ViewGroup.MarginLayoutParams)card.LayoutParameters!).TopMargin = Rows.Dp(this, 16);
+    }
+
+    private ImageView OpenIcon()
+    {
+        var icon = new ImageView(this);
+        icon.SetImageResource(Resource.Drawable.ic_chevron_right);
+        icon.ImportantForAccessibility = ImportantForAccessibility.No;
+        return icon;
+    }
 
     /// <summary>
     /// ADR-0010: the C# host serves files/pilot, stages the ui_* guest scripts and registers the ui_* layer.
@@ -131,9 +177,9 @@ public sealed class AutomationActivity : Activity
         Enable(false);
         var (registered, stageError) = Relay.CsRelay.StartGuest(this, _bridge.Layout);
         _bridge.Note($"c# relay (guest) start: ui_* scripts {(stageError is null ? "staged" : "NOT staged")}, ui_* layer {(registered ? "registered" : stageError is null ? "conflict" : "not registered")}");
-        _output.Text = stageError is { } se
+        ShowOutput(stageError is { } se
             ? GetString(Resource.String.automation_cs_guest_stage_failed, new Java.Lang.String(se))
-            : registered ? "" : GetString(Resource.String.automation_cs_guest_conflict);
+            : registered ? "" : GetString(Resource.String.automation_cs_guest_conflict));
         WatchCsRelay(true);
         ShowCsRelay();
         Enable(true);
@@ -264,7 +310,8 @@ public sealed class AutomationActivity : Activity
         _gapShown = notice;
         var message = GetString(notice.Gap == AccessibilityGap.NotBound ? Resource.String.relay_gap_not_bound : Resource.String.relay_gap_revoked,
             new Java.Lang.String(notice.Capability));
-        _gapDialog = new AlertDialog.Builder(this)
+        _gapDialog = new MaterialAlertDialogBuilder(this)
+            .SetIcon(Resource.Drawable.ic_lock)!
             .SetTitle(Resource.String.relay_gap_title)!
             .SetMessage(message)!
             .SetCancelable(false)!
@@ -318,9 +365,9 @@ public sealed class AutomationActivity : Activity
     }
 
     private void ShowOverlayPermission() =>
-        _overlayPerm.SetText(Android.Provider.Settings.CanDrawOverlays(this)
+        _overlay.SetSubtitle(Rows.AfterLabel(GetString(Android.Provider.Settings.CanDrawOverlays(this)
             ? Resource.String.automation_overlay_granted
-            : Resource.String.automation_overlay_not_granted);
+            : Resource.String.automation_overlay_not_granted)));
 
     /// <summary>The accessibility line, from this app's own service (ADR-0011).</summary>
     private string A11yLine(AccessibilityGap? gap) => GetString(gap switch
@@ -342,46 +389,46 @@ public sealed class AutomationActivity : Activity
         return listed ? AccessibilityGap.NotBound : AccessibilityGap.Revoked;
     }
 
-    /// <summary>The status line while the C# host runs: the host's own.</summary>
+    /// <summary>The status rows while the C# host runs: the host's own.</summary>
     private async Task ShowCsStatusAsync(RelayHost host)
     {
         // Status() reads the system facts (Shizuku binder included): off the main thread.
         var s = await Task.Run(host.Status);
         var registered = UiToolsRegistration.IsRegistered(_bridge.Layout.UserDataDir);
-        _status.Text = string.Join('\n',
-            $"C# Relay: {s.Phase}{(s.ChannelRunning ? " · 信箱运行中" : "")}{(s.DegradedReason is { } r ? " · " + r : "")}",
-            A11yLine(s.AccessibilityGap),
-            $"允许的能力：{string.Join(", ", s.Allowed)}",
-            $"guest CLI：{s.GuestEntry}",
-            ShizukuLine(ShizukuClient.Probe()),
-            CsToolsLine(registered));
+        if (IsDestroyed)
+        {
+            return;
+        }
+        _relay.SetSubtitle($"{s.Phase}{(s.ChannelRunning ? " · 信箱运行中" : "")}{(s.DegradedReason is { } r ? " · " + r : "")}");
+        _a11y.SetSubtitle(Rows.AfterLabel(A11yLine(s.AccessibilityGap)));
+        _shizuku.SetSubtitle(Rows.AfterLabel(ShizukuLine(ShizukuClient.Probe())));
+        _tools.SetSubtitle(Rows.AfterLabel(CsToolsLine(registered)));
+        _details.SetSubtitle(string.Join('\n', $"允许的能力：{string.Join(", ", s.Allowed)}", $"guest CLI：{s.GuestEntry}"));
+        _details.View.Visibility = ViewStates.Visible;
     }
 
     private void ShowCsRelay()
     {
         var host = Relay.CsRelay.Host;
         var phase = Relay.CsRelay.Phase;
-        var detail = phase.ToString()
-            + (host?.IsChannelRunning == true ? " · 信箱运行中" : "")
-            + (host?.DegradedReason is { } r ? " · " + r : "")
-            + (host is not null && phase is not RelayRuntimePhase.Stopped ? " · " + host.Paths.Policy.GuestEntry : "");
-        _csPhase.Text = GetString(Resource.String.automation_cs_guest_line, new Java.Lang.String(detail));
+        var on = phase is not RelayRuntimePhase.Stopped;
+        _settingSwitch = true;
+        _relaySwitch.Checked = on;
+        _settingSwitch = false;
+        _relay.SetSubtitle(on
+            ? phase + (host?.IsChannelRunning == true ? " · 信箱运行中" : "") + (host?.DegradedReason is { } r ? " · " + r : "")
+            : GetString(Resource.String.automation_relay_off));
+        if (!on)
+        {
+            _details.View.Visibility = ViewStates.Gone;
+        }
         if (Relay.CsRelay.GuestFacing && host is not null)
         {
             _ = ShowCsStatusAsync(host);
         }
     }
 
-    private Button Make(int text, Action onClick)
-    {
-        var b = new Button(this);
-        b.SetText(text);
-        b.SetMinHeight((int)(48 * Resources!.DisplayMetrics!.Density));
-        b.Click += (_, _) => onClick();
-        return b;
-    }
-
-    /// <summary>The status lines: the C# host's while it serves the guest mailbox, else the stopped state read by C#.</summary>
+    /// <summary>The status rows: the C# host's while it serves the guest mailbox, else the stopped state read by C#.</summary>
     private async Task RefreshAsync()
     {
         if (Relay.CsRelay.GuestFacing && Relay.CsRelay.Host is { } host)
@@ -399,11 +446,14 @@ public sealed class AutomationActivity : Activity
         var gap = LocalA11yGap();
         var shizuku = await Task.Run(ShizukuClient.Probe);
         var registered = UiToolsRegistration.IsRegistered(_bridge.Layout.UserDataDir);
-        _status.Text = string.Join('\n',
-            $"C# Relay: {RelayRuntimePhase.Stopped}",
-            A11yLine(gap),
-            ShizukuLine(shizuku),
-            CsToolsLine(registered));
+        if (IsDestroyed)
+        {
+            return;
+        }
+        _a11y.SetSubtitle(Rows.AfterLabel(A11yLine(gap)));
+        _shizuku.SetSubtitle(Rows.AfterLabel(ShizukuLine(shizuku)));
+        _tools.SetSubtitle(Rows.AfterLabel(CsToolsLine(registered)));
+        _details.View.Visibility = ViewStates.Gone;
         _bridge.Note($"relay status (C#): stopped, ui_* layer {(registered ? "registered" : "absent")}");
     }
 
@@ -425,8 +475,17 @@ public sealed class AutomationActivity : Activity
             ? Resource.String.automation_surface_pref_bg
             : Resource.String.automation_surface_pref_fg);
 
-    private void ShowSurfacePreference() =>
-        _surfacePref.Text = GetString(Resource.String.automation_surface_pref, new Java.Lang.String(SurfacePreferenceLabel(CurrentSurfacePreference())));
+    private void ShowSurfacePreference()
+    {
+        if (_surfacePref is null)
+        {
+            return;
+        }
+        var text = GetString(Resource.String.automation_surface_pref, new Java.Lang.String(SurfacePreferenceLabel(CurrentSurfacePreference())));
+        var i = text.IndexOf('：', StringComparison.Ordinal);
+        _surfacePref.Title.Text = i < 0 ? text : text[..i];
+        _surfacePref.SetSubtitle(Rows.AfterLabel(text));
+    }
 
     private void ToggleSurfacePreference()
     {
@@ -439,7 +498,7 @@ public sealed class AutomationActivity : Activity
         // The C# host re-reads its preferences now instead of at the next heartbeat.
         Relay.CsRelay.Host?.OnPreferencesChanged();
         ShowSurfacePreference();
-        _output.Text = GetString(Resource.String.automation_surface_pref_changed, new Java.Lang.String(SurfacePreferenceLabel(next)));
+        ShowOutput(GetString(Resource.String.automation_surface_pref_changed, new Java.Lang.String(SurfacePreferenceLabel(next))));
         _bridge.Note($"relay surface preference -> {next.Name()} (developer)");
     }
 
@@ -456,7 +515,9 @@ public sealed class AutomationActivity : Activity
     private void ConnectShizuku()
     {
         var state = ShizukuClient.RequestIfNeeded(out var probe);
-        _output.Text = state == ShizukuConnectState.CanRequest ? GetString(Resource.String.automation_shizuku_requested) : ShizukuLine(probe);
+        var line = ShizukuLine(probe);
+        _shizuku.SetSubtitle(Rows.AfterLabel(line));
+        ShowOutput(state == ShizukuConnectState.CanRequest ? GetString(Resource.String.automation_shizuku_requested) : line);
         _bridge.Note($"shizuku connect: {state} (v{probe.Version}, uid {probe.Uid})");
     }
 
@@ -502,22 +563,34 @@ public sealed class AutomationActivity : Activity
     private async Task SelfTestAsync()
     {
         Enable(false);
-        _output.Text = GetString(Resource.String.automation_selftest_running);
+        ShowOutput(GetString(Resource.String.automation_selftest_running));
         var runtime = _bridge.Runtime;
         var r = await Task.Run(() => runtime.RunRelaySelfTestAsync(TimeSpan.FromSeconds(115), CancellationToken.None));
         Enable(true);
         var exit = r.ExitCode?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "?";
-        _output.Text = r.ExitCode is null && r.Error is { } e
+        ShowOutput(r.ExitCode is null && r.Error is { } e
             ? $"selftest FAILED {e}"
-            : $"exit={exit}{(r.Ok || r.Error is null ? "" : " · " + r.Error)}\n\n{r.Output}";
+            : $"exit={exit}{(r.Ok || r.Error is null ? "" : " · " + r.Error)}\n\n{r.Output}");
         _bridge.Note($"relay selftest exit={exit}");
+    }
+
+    private void ShowOutput(string text)
+    {
+        if (IsDestroyed)
+        {
+            return;
+        }
+        _output.Text = text.TrimEnd();
+        _outputCard.Visibility = text.Length == 0 ? ViewStates.Gone : ViewStates.Visible;
     }
 
     private void Enable(bool on)
     {
-        foreach (var b in _buttons)
+        FindViewById(Resource.Id.list_progress)!.Visibility = on ? ViewStates.Gone : ViewStates.Visible;
+        foreach (var v in _actions)
         {
-            b.Enabled = on;
+            v.Enabled = on;
+            v.Alpha = on ? 1f : 0.38f;
         }
     }
 }

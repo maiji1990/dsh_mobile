@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using DshMobile.Application;
 using DshMobile.Application.Runtime;
+using DshMobile.Application.Ui;
 using DshMobile.Core.Contracts;
 using DshMobile.Native;
 using DshMobile.Runtime;
@@ -23,6 +24,9 @@ public sealed class BridgeHost : IDisposable, IDiagnosticsLog
     private readonly object _logGate = new();
     private readonly LinkedList<string> _log = new();
     private int _busy;
+    private string? _operation;
+    private OperationOutcome? _lastOutcome;
+    private RuntimeProgress? _progress;
 
     public BridgeHost(Android.Content.Context context)
     {
@@ -63,6 +67,18 @@ public sealed class BridgeHost : IDisposable, IDiagnosticsLog
     public RuntimeCoordinator Runtime { get; }
 
     public bool IsBusy => Volatile.Read(ref _busy) != 0;
+
+    /// <summary>The user-started operation running now (<c>start</c>, <c>runtime.import</c>, …), or null.</summary>
+    public string? CurrentOperation => Volatile.Read(ref _operation);
+
+    /// <summary>How the last operation ended, for the UI (ADR-0021); the log keeps the details.</summary>
+    public OperationOutcome? LastOutcome => Volatile.Read(ref _lastOutcome);
+
+    /// <summary>Progress of a running import (step and bytes), or null.</summary>
+    public RuntimeProgress? Progress => Volatile.Read(ref _progress);
+
+    /// <summary>What the home screen shows: the journal, the running operation and the last outcome.</summary>
+    public HomeStatus Status => HomeStatus.From(Runtime.State.Current, CurrentOperation, LastOutcome);
 
     /// <summary>The journal, with the C# host's state while it owns the processes (ADR-0015).</summary>
     public string RuntimeState
@@ -119,6 +135,7 @@ public sealed class BridgeHost : IDisposable, IDiagnosticsLog
     public Task RunPrepareAsync() => RunExclusive("runtime.prepare", async () =>
     {
         var r = await Runtime.PrepareAsync(CancellationToken.None).ConfigureAwait(false);
+        Report(r.Ok, r.Code, r.Message);
         if (!r.Ok)
         {
             Append($"prepare FAILED {r.Code}: {r.Message}"); // the coordinator already logged the steps on success
@@ -139,6 +156,7 @@ public sealed class BridgeHost : IDisposable, IDiagnosticsLog
             .FirstOrDefault(z => z is not null));
         if (zip is null)
         {
+            Report(false, RuntimeErrorCodes.BundleNotFound, "no runtime bundle");
             Append($"import: no dshmobile-runtime-*.zip (or dshapp-runtime-*.zip) in {dir ?? "(external files dir unavailable)"}");
             return;
         }
@@ -146,7 +164,13 @@ public sealed class BridgeHost : IDisposable, IDiagnosticsLog
         var sw = Stopwatch.StartNew();
         try
         {
-            var r = await Runtime.InstallAsync(new RuntimePackage(zip), null, CancellationToken.None).ConfigureAwait(false);
+            var progress = new Progress<RuntimeProgress>(p =>
+            {
+                Volatile.Write(ref _progress, p);
+                Changed?.Invoke(this, EventArgs.Empty);
+            });
+            var r = await Runtime.InstallAsync(new RuntimePackage(zip), progress, CancellationToken.None).ConfigureAwait(false);
+            Report(r.Ok, r.Code, r.Message);
             Append($"import: took {sw.Elapsed.TotalSeconds:F1} s");
             Append(r.Ok ? "import: ok" : $"import FAILED {r.Code}{(r.UpstreamCode is null ? "" : "/" + r.UpstreamCode)}: {r.Message}");
             await LogStatusAsync("status").ConfigureAwait(false);
@@ -164,12 +188,20 @@ public sealed class BridgeHost : IDisposable, IDiagnosticsLog
     public Task RunRollbackAsync() => RunExclusive("runtime.rollback", async () =>
     {
         var r = await Runtime.RollbackAsync(CancellationToken.None).ConfigureAwait(false);
+        Report(r.Ok, r.Code, r.Message);
         Append(r.Ok ? $"rollback: ok ({r.Message})" : $"rollback FAILED {r.Code}: {r.Message}");
         await LogStatusAsync("status").ConfigureAwait(false);
     });
 
     /// <summary>Logs a host-side step (e.g. copying a picked file).</summary>
     public void Note(string line) => Append(line);
+
+    /// <summary>A host-side step of <paramref name="operation"/> that failed before the operation itself could run.</summary>
+    public void Fail(string operation, string code, string message)
+    {
+        Volatile.Write(ref _lastOutcome, new OperationOutcome(operation, false, code, message, DateTimeOffset.Now));
+        Append($"{operation} FAILED {code}: {message}");
+    }
 
     /// <summary>
     /// Foreground service, sandbox, then DSH, by the C# host and supervised by <see cref="RuntimeCoordinator"/>: a failed
@@ -178,6 +210,7 @@ public sealed class BridgeHost : IDisposable, IDiagnosticsLog
     public Task RunStartAsync() => RunExclusive("start", async () =>
     {
         var r = await Runtime.StartAsync(DshProfile.Web, CancellationToken.None).ConfigureAwait(false);
+        Report(r.Ok, r.Code, r.Message);
         var s = r.Snapshot;
         Append(r.Ok
             ? $"start: ok sandbox={s.State} dsh={s.Harness} version={s.DshVersion ?? "-"} gen={s.Generation}"
@@ -187,6 +220,7 @@ public sealed class BridgeHost : IDisposable, IDiagnosticsLog
     public Task RunStopAsync() => RunExclusive("stop", async () =>
     {
         var r = await Runtime.StopAsync(CancellationToken.None).ConfigureAwait(false);
+        Report(r.Ok, r.Code, r.Message);
         Append(r.Ok ? $"stop: ok ({r.Snapshot.State})" : $"stop FAILED {r.Code}: {r.Message} (state={r.Snapshot.State})");
     });
 
@@ -270,6 +304,8 @@ public sealed class BridgeHost : IDisposable, IDiagnosticsLog
             Append($"{name}: skipped, another operation is running");
             return;
         }
+        Volatile.Write(ref _operation, name);
+        Volatile.Write(ref _progress, null);
         Changed?.Invoke(this, EventArgs.Empty);
         try
         {
@@ -277,13 +313,25 @@ public sealed class BridgeHost : IDisposable, IDiagnosticsLog
         }
         catch (Exception e)
         {
+            Report(false, "EXCEPTION", $"{e.GetType().Name}: {e.Message}");
             Append($"{name}: EXCEPTION {e.GetType().Name}: {e.Message}");
             Log.Error(LogTag, e.ToString());
         }
         finally
         {
+            Volatile.Write(ref _operation, null);
+            Volatile.Write(ref _progress, null);
             Volatile.Write(ref _busy, 0);
             Changed?.Invoke(this, EventArgs.Empty);
+        }
+    }
+
+    /// <summary>Records how the running operation ended (<see cref="LastOutcome"/>).</summary>
+    private void Report(bool ok, string code, string? message)
+    {
+        if (CurrentOperation is { } op)
+        {
+            Volatile.Write(ref _lastOutcome, new OperationOutcome(op, ok, code, message, DateTimeOffset.Now));
         }
     }
 

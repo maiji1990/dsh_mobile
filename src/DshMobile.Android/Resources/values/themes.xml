@@ -1,0 +1,81 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+  <!--
+    App-wide Material 3 theme (AGENTS.md rule 12, ADR-0021): light / dark follows the system (DayNight), brand colour
+    roles from colors.xml, replaced by wallpaper-based dynamic colour on Android 12+ (DshMobileApplication). Windows are
+    edge-to-edge; every screen pads itself with the system-bar and keyboard insets (Ui/EdgeToEdge).
+  -->
+  <style name="Theme.DshMobile" parent="Theme.Material3.DayNight.NoActionBar">
+    <item name="colorPrimary">@color/dshm_primary</item>
+    <item name="colorOnPrimary">@color/dshm_on_primary</item>
+    <item name="colorPrimaryContainer">@color/dshm_primary_container</item>
+    <item name="colorOnPrimaryContainer">@color/dshm_on_primary_container</item>
+    <item name="colorSecondary">@color/dshm_secondary</item>
+    <item name="colorOnSecondary">@color/dshm_on_secondary</item>
+    <item name="colorSecondaryContainer">@color/dshm_secondary_container</item>
+    <item name="colorOnSecondaryContainer">@color/dshm_on_secondary_container</item>
+    <item name="colorTertiary">@color/dshm_tertiary</item>
+    <item name="colorOnTertiary">@color/dshm_on_tertiary</item>
+    <item name="colorTertiaryContainer">@color/dshm_tertiary_container</item>
+    <item name="colorOnTertiaryContainer">@color/dshm_on_tertiary_container</item>
+    <item name="colorError">@color/dshm_error</item>
+    <item name="colorOnError">@color/dshm_on_error</item>
+    <item name="colorErrorContainer">@color/dshm_error_container</item>
+    <item name="colorOnErrorContainer">@color/dshm_on_error_container</item>
+    <item name="android:colorBackground">@color/dshm_background</item>
+    <item name="colorOnBackground">@color/dshm_on_background</item>
+    <item name="colorSurface">@color/dshm_surface</item>
+    <item name="colorOnSurface">@color/dshm_on_surface</item>
+    <item name="colorSurfaceVariant">@color/dshm_surface_variant</item>
+    <item name="colorOnSurfaceVariant">@color/dshm_on_surface_variant</item>
+    <item name="colorOutline">@color/dshm_outline</item>
+    <item name="colorOutlineVariant">@color/dshm_outline_variant</item>
+    <item name="colorSurfaceInverse">@color/dshm_inverse_surface</item>
+    <item name="colorOnSurfaceInverse">@color/dshm_inverse_on_surface</item>
+    <item name="colorPrimaryInverse">@color/dshm_inverse_primary</item>
+    <item name="colorSurfaceDim">@color/dshm_surface_dim</item>
+    <item name="colorSurfaceBright">@color/dshm_surface_bright</item>
+    <item name="colorSurfaceContainerLowest">@color/dshm_surface_container_lowest</item>
+    <item name="colorSurfaceContainerLow">@color/dshm_surface_container_low</item>
+    <item name="colorSurfaceContainer">@color/dshm_surface_container</item>
+    <item name="colorSurfaceContainerHigh">@color/dshm_surface_container_high</item>
+    <item name="colorSurfaceContainerHighest">@color/dshm_surface_container_highest</item>
+    <item name="android:statusBarColor">@android:color/transparent</item>
+    <item name="android:navigationBarColor">@android:color/transparent</item>
+    <item name="android:windowLightStatusBar">@bool/dshm_light_bars</item>
+    <item name="android:windowLightNavigationBar">@bool/dshm_light_bars</item>
+    <item name="android:enforceNavigationBarContrast">false</item>
+    <item name="android:enforceStatusBarContrast">false</item>
+  </style>
+
+  <!-- Section heading above a group of rows or cards. -->
+  <style name="Widget.DshMobile.SectionHeader" parent="">
+    <item name="android:layout_width">match_parent</item>
+    <item name="android:layout_height">wrap_content</item>
+    <item name="android:paddingStart">16dp</item>
+    <item name="android:paddingEnd">16dp</item>
+    <item name="android:paddingTop">24dp</item>
+    <item name="android:paddingBottom">8dp</item>
+    <item name="android:textAppearance">?attr/textAppearanceTitleSmall</item>
+    <item name="android:textColor">?attr/colorPrimary</item>
+    <item name="android:accessibilityHeading">true</item>
+  </style>
+
+  <!-- Top app bar of every screen. -->
+  <style name="Widget.DshMobile.Toolbar" parent="Widget.Material3.Toolbar.Surface">
+    <item name="navigationIconTint">?attr/colorOnSurface</item>
+  </style>
+
+  <!-- Monospace output (command results, keys, logs), selectable. -->
+  <style name="Widget.DshMobile.Mono" parent="">
+    <item name="android:fontFamily">monospace</item>
+    <item name="android:textSize">12sp</item>
+    <item name="android:textIsSelectable">true</item>
+    <item name="android:textColor">?attr/colorOnSurfaceVariant</item>
+  </style>
+
+  <!-- Card that groups a screen's content (status, settings group, form). -->
+  <style name="Widget.DshMobile.Card" parent="Widget.Material3.CardView.Filled">
+    <item name="cardBackgroundColor">?attr/colorSurfaceContainerLow</item>
+  </style>
+</resources>

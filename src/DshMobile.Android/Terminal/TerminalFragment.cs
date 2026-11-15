@@ -2,34 +2,28 @@ using System.Text;
 using System.Text.Json;
 using System.Threading.Channels;
 using Android.Content;
-using Android.Content.PM;
 using Android.Views;
+using Android.Views.InputMethods;
 using Android.Webkit;
-using AndroidX.AppCompat.App;
 using DshMobile.App.Bridge;
+using DshMobile.App.Ui;
 using DshMobile.Application.Terminal;
 using DshMobile.Runtime.Guest;
 using Google.Android.Material.AppBar;
 using Google.Android.Material.Button;
 using Google.Android.Material.Tabs;
+using Fragment = AndroidX.Fragment.App.Fragment;
 using Log = Android.Util.Log;
 
 namespace DshMobile.App.Terminal;
 
 /// <summary>
-/// PR-06 C# terminal screen (developer opt-in: long-press 「终端」). Sessions are C#-owned PTYs
-/// (<see cref="TerminalSessions"/>, guest login shell via libdshmobile_native); the emulator is xterm.js running from
-/// local assets in a locked-down WebView. PTY bytes go over a dedicated WebMessagePort as base64 batches, never the JSON
-/// bridge. Sessions outlive the screen: closing it only detaches the view.
+/// Terminal tab (PR-06, ADR-0021). Sessions are C#-owned PTYs (<see cref="TerminalSessions"/>, guest login shell via
+/// libdshmobile_native); the emulator is xterm.js running from local assets in a locked-down WebView. PTY bytes go over a
+/// dedicated WebMessagePort as base64 batches, never the JSON bridge. Sessions outlive the screen: leaving the tab or the
+/// app only detaches the view.
 /// </summary>
-[Activity(
-    Label = "@string/terminal_csharp_title",
-    Theme = "@style/Theme.DshMobile.Material3",
-    Exported = false,
-    ConfigurationChanges = ConfigChanges.Orientation | ConfigChanges.ScreenSize | ConfigChanges.ScreenLayout
-        | ConfigChanges.SmallestScreenSize | ConfigChanges.Keyboard | ConfigChanges.KeyboardHidden | ConfigChanges.UiMode,
-    WindowSoftInputMode = SoftInput.AdjustResize)]
-public sealed class CSharpTerminalActivity : AppCompatActivity
+public sealed class TerminalFragment : Fragment, ITabRoot
 {
     private const string Origin = "https://appassets.androidplatform.net";
     private const string PageUrl = Origin + "/terminal/index.html";
@@ -47,6 +41,7 @@ public sealed class CSharpTerminalActivity : AppCompatActivity
     private MaterialButton _ctrl = null!;
     private IMenuItem? _closeItem;
     private WebMessagePort? _port;
+    private bool _destroyed;
     private bool _ready;
     private bool _autoCreated;
     private bool _rendering;
@@ -62,22 +57,24 @@ public sealed class CSharpTerminalActivity : AppCompatActivity
     private string? _attachedId;
 
     // Input: one writer task so a full PTY never blocks the UI thread and keystrokes keep their order.
-    private readonly Channel<(string Id, byte[] Data)> _input = Channel.CreateUnbounded<(string, byte[])>(new UnboundedChannelOptions { SingleReader = true });
+    private Channel<(string Id, byte[] Data)> _input = null!;
 
-    protected override void OnCreate(Bundle? savedInstanceState)
+    public override View OnCreateView(LayoutInflater inflater, ViewGroup? container, Bundle? savedInstanceState)
     {
-        base.OnCreate(savedInstanceState);
+        var ctx = RequireContext();
+        _destroyed = false;
         _bridge = DshMobileApplication.Current.Bridge;
         _sessions = _bridge.Runtime.Terminals;
-        var dp = Resources!.DisplayMetrics!.Density;
+        _input = Channel.CreateUnbounded<(string, byte[])>(new UnboundedChannelOptions { SingleReader = true });
 
-        var root = new LinearLayout(this) { Orientation = Orientation.Vertical };
-        root.SetFitsSystemWindows(true);
+        var root = new LinearLayout(ctx) { Orientation = Orientation.Vertical };
 
-        var toolbar = new MaterialToolbar(this) { Title = GetString(Resource.String.terminal_csharp_title) };
+        var toolbar = (MaterialToolbar)inflater.Inflate(Resource.Layout.view_toolbar, root, false)!;
+        toolbar.SetTitle(Resource.String.terminal_title);
         var menu = toolbar.Menu!;
-        menu.Add(0, MenuNew, 0, GetString(Resource.String.terminal_new))!.SetShowAsAction(ShowAsAction.Always);
+        menu.Add(0, MenuNew, 0, GetString(Resource.String.terminal_new))!.SetIcon(Resource.Drawable.ic_add)!.SetShowAsAction(ShowAsAction.Always);
         _closeItem = menu.Add(0, MenuClose, 1, GetString(Resource.String.terminal_close))!;
+        _closeItem.SetIcon(Resource.Drawable.ic_close);
         _closeItem.SetShowAsAction(ShowAsAction.Always);
         toolbar.MenuItemClick += (_, e) =>
         {
@@ -92,7 +89,7 @@ public sealed class CSharpTerminalActivity : AppCompatActivity
         };
         root.AddView(toolbar);
 
-        _tabs = new TabLayout(this) { TabMode = TabLayout.ModeScrollable };
+        _tabs = new TabLayout(ctx) { TabMode = TabLayout.ModeScrollable };
         _tabs.TabSelected += (_, e) =>
         {
             if (!_rendering && e.Tab?.Tag?.ToString() is { } id)
@@ -102,55 +99,62 @@ public sealed class CSharpTerminalActivity : AppCompatActivity
         };
         root.AddView(_tabs);
 
-        var body = new FrameLayout(this);
+        var body = new FrameLayout(ctx);
+        body.SetBackgroundColor(new Android.Graphics.Color(ctx.GetColor(Resource.Color.dshm_terminal_background)));
         // Keyboard input goes to a native view (see TerminalInputView); it only needs to exist and hold focus.
-        _keyboard = new TerminalInputView(this);
+        _keyboard = new TerminalInputView(ctx);
         _keyboard.Typed += OnTyped;
         _keyboard.Key += (name, alt) => SendKey(name, alt);
         body.AddView(_keyboard, new FrameLayout.LayoutParams(1, 1, GravityFlags.Bottom | GravityFlags.Start));
-        _web = CreateWebView();
+        _web = CreateWebView(ctx);
         body.AddView(_web, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MatchParent, ViewGroup.LayoutParams.MatchParent));
-        var overlay = new LinearLayout(this) { Orientation = Orientation.Vertical };
-        overlay.SetGravity(GravityFlags.Center);
-        overlay.SetPadding((int)(24 * dp), (int)(24 * dp), (int)(24 * dp), (int)(24 * dp));
-        _message = new TextView(this) { Text = GetString(Resource.String.terminal_no_session), Gravity = GravityFlags.Center };
+        var overlay = inflater.Inflate(Resource.Layout.view_empty_state, body, false)!;
+        overlay.SetBackgroundColor(new Android.Graphics.Color(Rows.Color(body, Resource.Attribute.colorSurface)));
+        overlay.FindViewById<ImageView>(Resource.Id.empty_icon)!.SetImageResource(Resource.Drawable.ic_terminal);
+        _message = overlay.FindViewById<TextView>(Resource.Id.empty_text)!;
+        _message.SetText(Resource.String.terminal_no_session);
         _message.SetTextIsSelectable(true);
-        overlay.AddView(_message);
-        var create = new MaterialButton(this) { Text = GetString(Resource.String.terminal_new_session) };
+        var create = overlay.FindViewById<MaterialButton>(Resource.Id.empty_action)!;
+        create.SetText(Resource.String.terminal_new_session);
+        create.SetIconResource(Resource.Drawable.ic_add);
+        create.Visibility = ViewStates.Visible;
         create.Click += (_, _) => _ = CreateSessionAsync();
-        overlay.AddView(create);
         _overlay = overlay;
         body.AddView(overlay, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MatchParent, ViewGroup.LayoutParams.MatchParent));
         root.AddView(body, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MatchParent, 0, 1f));
 
-        var keys = new LinearLayout(this) { Orientation = Orientation.Horizontal };
-        _ctrl = KeyButton("CTRL", () => SetCtrl(!_ctrlOn));
+        var keys = new LinearLayout(ctx) { Orientation = Orientation.Horizontal };
+        var pad = Rows.Dp(ctx, 4);
+        keys.SetPadding(pad, pad, pad, pad);
+        _ctrl = KeyButton(ctx, "CTRL", () => SetCtrl(!_ctrlOn));
         _ctrl.Checkable = true;
         keys.AddView(_ctrl);
         foreach (var (label, key) in TerminalKeys.Bar)
         {
-            keys.AddView(KeyButton(label, () => SendKey(key, alt: false)));
+            keys.AddView(KeyButton(ctx, label, () => SendKey(key, alt: false)));
         }
-        keys.AddView(KeyButton(GetString(Resource.String.terminal_paste), Paste));
-        var keysScroll = new HorizontalScrollView(this);
+        keys.AddView(KeyButton(ctx, GetString(Resource.String.terminal_paste), Paste));
+        var keysScroll = new HorizontalScrollView(ctx) { HorizontalScrollBarEnabled = false };
+        keysScroll.SetBackgroundColor(new Android.Graphics.Color(Rows.Color(body, Resource.Attribute.colorSurfaceContainer)));
         keysScroll.AddView(keys);
         root.AddView(keysScroll);
 
-        SetContentView(root);
         _ = Task.Run(WriteInputAsync);
 
         if (_sessions is null)
         {
-            ShowMessage(GetString(Resource.String.terminal_open_failed, new Java.Lang.String("RUNTIME_NOT_INSTALLED: " + GetString(Resource.String.terminal_no_runtime))));
-            return;
+            ShowMessage(Rows.Fmt(ctx, Resource.String.terminal_open_failed, "RUNTIME_NOT_INSTALLED: " + GetString(Resource.String.terminal_no_runtime)));
+            return root;
         }
         _sessions.Changed += OnSessionsChanged;
         _web.LoadUrl(PageUrl);
         Render();
+        return root;
     }
 
-    protected override void OnDestroy()
+    public override void OnDestroyView()
     {
+        _destroyed = true;
         if (_sessions is not null)
         {
             _sessions.Changed -= OnSessionsChanged;
@@ -159,15 +163,39 @@ public sealed class CSharpTerminalActivity : AppCompatActivity
         _input.Writer.TryComplete();
         _port?.Close();
         _port = null;
+        ((ViewGroup?)_web.Parent)?.RemoveView(_web);
         _web.Destroy();
-        base.OnDestroy();
+        base.OnDestroyView();
     }
+
+    public override void OnHiddenChanged(bool hidden)
+    {
+        base.OnHiddenChanged(hidden);
+        if (hidden)
+        {
+            // Leaving the tab takes the keyboard down with it.
+            var imm = (InputMethodManager?)RequireContext().GetSystemService(Context.InputMethodService);
+            imm?.HideSoftInputFromWindow(_keyboard.WindowToken, HideSoftInputFlags.None);
+        }
+        else if (_attachedId is not null)
+        {
+            _keyboard.RequestFocus();
+        }
+    }
+
+    private void RunOnUi(Action action) => Activity?.RunOnUiThread(() =>
+    {
+        if (!_destroyed)
+        {
+            action();
+        }
+    });
 
     // ── WebView ───────────────────────────────────────────────────────────
 
-    private WebView CreateWebView()
+    private WebView CreateWebView(Context ctx)
     {
-        var web = new WebView(this);
+        var web = new WebView(ctx);
         var s = web.Settings!;
         s.JavaScriptEnabled = true;
         s.AllowFileAccess = false;
@@ -183,7 +211,7 @@ public sealed class CSharpTerminalActivity : AppCompatActivity
         web.Focusable = false;
         web.FocusableInTouchMode = false;
         float downX = 0, downY = 0;
-        var slop = Android.Views.ViewConfiguration.Get(this)!.ScaledTouchSlop;
+        var slop = ViewConfiguration.Get(ctx)!.ScaledTouchSlop;
         web.Touch += (_, e) =>
         {
             e.Handled = false; // the page still scrolls / selects
@@ -192,7 +220,7 @@ public sealed class CSharpTerminalActivity : AppCompatActivity
             {
                 (downX, downY) = (ev.GetX(), ev.GetY());
             }
-            else if (ev.Action == MotionEventActions.Up && System.Math.Abs(ev.GetX() - downX) < slop && System.Math.Abs(ev.GetY() - downY) < slop)
+            else if (ev.Action == MotionEventActions.Up && Math.Abs(ev.GetX() - downX) < slop && Math.Abs(ev.GetY() - downY) < slop)
             {
                 _keyboard.ShowKeyboard();
             }
@@ -275,17 +303,11 @@ public sealed class CSharpTerminalActivity : AppCompatActivity
         catch (GuestPtyException e)
         {
             _bridge.Note($"{TerminalSessions.Slice}: open FAILED {e.Message}");
-            RunOnUiThread(() => ShowMessage(GetString(Resource.String.terminal_open_failed, new Java.Lang.String(e.Message))));
+            RunOnUi(() => ShowMessage(Rows.Fmt(RequireContext(), Resource.String.terminal_open_failed, e.Message)));
         }
     }
 
-    private void OnSessionsChanged() => RunOnUiThread(() =>
-    {
-        if (!IsDestroyed)
-        {
-            Render();
-        }
-    });
+    private void OnSessionsChanged() => RunOnUi(Render);
 
     private void Render()
     {
@@ -350,7 +372,10 @@ public sealed class CSharpTerminalActivity : AppCompatActivity
         {
             _ = _sessions.ResizeAsync(id, _cols, _rows, CancellationToken.None);
         }
-        _keyboard.RequestFocus();
+        if (!IsHidden)
+        {
+            _keyboard.RequestFocus();
+        }
         _bridge.Note($"{TerminalSessions.Slice}: view attached to session {id}");
     }
 
@@ -398,9 +423,9 @@ public sealed class CSharpTerminalActivity : AppCompatActivity
         Post("{\"t\":\"out\",\"b\":\"" + b64 + "\"}", gen);
     }
 
-    private void Post(string json, int gen) => RunOnUiThread(() =>
+    private void Post(string json, int gen) => RunOnUi(() =>
     {
-        if (gen == _generation && _port is not null && !IsDestroyed)
+        if (gen == _generation && _port is not null)
         {
             _port.PostMessage(new WebMessage(json));
         }
@@ -455,8 +480,9 @@ public sealed class CSharpTerminalActivity : AppCompatActivity
 
     private void Paste()
     {
-        var clipboard = (ClipboardManager?)GetSystemService(ClipboardService);
-        var text = clipboard?.PrimaryClip is { ItemCount: > 0 } clip ? clip.GetItemAt(0)?.CoerceToText(this) : null;
+        var ctx = RequireContext();
+        var clipboard = (ClipboardManager?)ctx.GetSystemService(Context.ClipboardService);
+        var text = clipboard?.PrimaryClip is { ItemCount: > 0 } clip ? clip.GetItemAt(0)?.CoerceToText(ctx) : null;
         if (!string.IsNullOrEmpty(text) && _port is not null)
         {
             // xterm.js applies bracketed paste when the shell enabled it, then hands the text back as input.
@@ -466,19 +492,19 @@ public sealed class CSharpTerminalActivity : AppCompatActivity
 
     // ── views ─────────────────────────────────────────────────────────────
 
-    private MaterialButton KeyButton(string label, Action onClick)
+    private static MaterialButton KeyButton(Context ctx, string label, Action onClick)
     {
-        var b = new MaterialButton(this, null, Resource.Attribute.materialButtonOutlinedStyle)
+        var b = new MaterialButton(ctx, null, Resource.Attribute.materialButtonOutlinedStyle)
         {
             Text = label,
             Focusable = false, // keep keyboard focus in the terminal
         };
         b.SetAllCaps(false);
         b.SetMinWidth(0);
-        b.SetMinimumWidth((int)(56 * Resources!.DisplayMetrics!.Density));
-        b.SetPadding((int)(8 * Resources.DisplayMetrics.Density), 0, (int)(8 * Resources.DisplayMetrics.Density), 0);
+        b.SetMinimumWidth(Rows.Dp(ctx, 52));
+        b.SetPadding(Rows.Dp(ctx, 8), 0, Rows.Dp(ctx, 8), 0);
         var lp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WrapContent, ViewGroup.LayoutParams.WrapContent);
-        lp.SetMargins((int)(2 * Resources.DisplayMetrics.Density), 0, (int)(2 * Resources.DisplayMetrics.Density), 0);
+        lp.SetMargins(Rows.Dp(ctx, 2), 0, Rows.Dp(ctx, 2), 0);
         b.LayoutParameters = lp;
         b.Click += (_, _) => onClick();
         return b;
@@ -491,8 +517,10 @@ public sealed class CSharpTerminalActivity : AppCompatActivity
     }
 
     /// <summary>Serves only <c>assets/terminal/**</c> at <see cref="Origin"/>; refuses every other request and navigation.</summary>
-    private sealed class LocalPageClient(CSharpTerminalActivity owner) : WebViewClient
+    private sealed class LocalPageClient(TerminalFragment owner) : WebViewClient
     {
+        private readonly Android.Content.Res.AssetManager _assets = owner.RequireContext().Assets!;
+
         public override WebResourceResponse? ShouldInterceptRequest(WebView? view, IWebResourceRequest? request)
         {
             var url = request?.Url;
@@ -502,7 +530,7 @@ public sealed class CSharpTerminalActivity : AppCompatActivity
             {
                 try
                 {
-                    var stream = owner.Assets!.Open(path.TrimStart('/'));
+                    var stream = _assets.Open(path.TrimStart('/'));
                     return new WebResourceResponse(MimeOf(path), "utf-8", stream);
                 }
                 catch (Java.IO.IOException)
@@ -519,7 +547,7 @@ public sealed class CSharpTerminalActivity : AppCompatActivity
         public override void OnPageFinished(WebView? view, string? url)
         {
             base.OnPageFinished(view, url);
-            if (url == PageUrl)
+            if (url == PageUrl && !owner._destroyed)
             {
                 owner.ConnectPort();
             }
@@ -537,11 +565,11 @@ public sealed class CSharpTerminalActivity : AppCompatActivity
         };
     }
 
-    private sealed class PortCallback(CSharpTerminalActivity owner) : WebMessagePort.WebMessageCallback
+    private sealed class PortCallback(TerminalFragment owner) : WebMessagePort.WebMessageCallback
     {
         public override void OnMessage(WebMessagePort? port, WebMessage? message)
         {
-            if (!owner.IsDestroyed)
+            if (!owner._destroyed)
             {
                 owner.OnPageMessage(message?.Data);
             }
