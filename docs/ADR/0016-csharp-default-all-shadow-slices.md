@@ -46,3 +46,24 @@ C# 只读比对并写 `shadow-reports.jsonl`；C# 实现只能经长按 / 选择
   `remote.host-key` Agree）。限制：模拟器的 guest 运行时是 arm64，guest 内命令在 x86_64 上以 signal 4 退出（旧 / C# 相同），
   因此诊断 / 插件 / 终端只验证了「C# 路径被调用且如实报错」；C# 导入需系统文件选择器，未在模拟器复测（此前已在真机以可选方式通过）。
 - 回退仍可用，出问题时用户可逐次切回旧实现；影子报告继续积累。
+
+## 补充（2026-11-15）：ui_* 执行层收口
+
+`MIGRATION.md`「手机操控 `ui_*` · 执行层（其余）」所列内容（无障碍写路径与服务、Direct / Shizuku / 录屏 / 音频 / 通知后端、协调器与容器、
+信箱接设备、`relay` CLI）已在 PR-07 第九段、切换切片（ADR-0010）与 ADR-0011 中移植到 C#；39 项能力在 C# 三个后端均有实现。本补充把默认路径上
+剩下的旧桥调用去掉，并修一处 C# 缺陷：
+
+1. **ui_* guest 脚本由 C# 写入**（`UiFacadeAssets`）。`ui-facade.mjs` / `ui-facade-check.mjs` 原本靠旧桥每个进程首次调用时从 APK 资产复制，
+   C# Relay 路径隐式依赖这一副作用。现在 C# 在登记 `ui_*` 层与自检前自己写入（内容不同才写、临时文件改名）；写不进去就**不登记**该层，返回
+   `UI_FACADE_NOT_STAGED`。两个脚本以本仓库 `native/native-bridge/src/main/guest-assets/dshmobile/` 为唯一来源嵌入，PR-10 时迁出。
+2. **`relay.selftest` 的 C# 版**（`RuntimeCoordinator.RunRelaySelfTestAsync`）：同一条固定命令（`relay doctor` + facade 自检）经 C# PRoot 启动器运行，
+   与旧实现一样在运行时操作锁内串行；结果取进程退出码，不推断。
+3. **默认路径不再调用旧桥**：只有本进程里经长按回退启动过旧 Relay（`CsRelay.LegacyFallbackActive`；旧 Relay 只活在本进程、进程结束后不会自行恢复）时，
+   短按「开启中继」才先 `relay.stop`（失败即不接管，安全语义不变）、状态 / 自检 / 旧 Relay 比对按钮才走旧实现；否则停止态状态由 C# 给出，
+   沙箱停止时也不再调用旧 `relay.stop`。
+4. **页内审批卡到点收尾**：上游页内卡 / 悬浮卡 / 通知卡到点都经同一 `expireApproval` 关闭这一问；C# 页内卡的倒计时到 0 只停表，卡与 `FLAG_SECURE`
+   会一直留着（模拟器复现：超时 20 s 后窗口仍为 secure）。现在倒计时到点即撤卡并调用 `RelayHost.ExpireApproval`，与通知卡一致；审批语义不变
+   （到点即未批准，`E_GATE_APPROVAL_TIMEOUT`）。
+
+仍需真机补齐：经用户批准后的实际执行与经 DSH Agent 的端到端 `ui_*` 调用。Shizuku 客户端库（`dev.rikka.shizuku`，MIT）目前经 DSHBox AAR 打包，
+PR-10 移除 AAR 前须改为直接依赖。

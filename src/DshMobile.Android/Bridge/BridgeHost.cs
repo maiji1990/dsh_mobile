@@ -101,10 +101,15 @@ public sealed class BridgeHost : IDisposable, IDiagnosticsLog
         {
             Append($"legacy terminal: closed {closed} session(s) with the C# host");
         }
-        if (!Automation.Relay.CsRelay.GuestFacing)
+        // Only a legacy Relay started on the fallback from this process can be running (ADR-0016).
+        if (!Automation.Relay.CsRelay.GuestFacing && Automation.Relay.CsRelay.LegacyFallbackActive)
         {
             var relay = await Client.ExecuteAsync(BridgeMethods.RelayStop, deadline: CompanionStopDeadline, cancellationToken: ct).ConfigureAwait(false);
             Append(relay.Ok ? "legacy relay: stopped with the C# host (ui_* layer removed if ours)" : $"legacy relay: stop FAILED {relay.Code}: {relay.Message}");
+            if (relay.Ok)
+            {
+                Automation.Relay.CsRelay.LegacyFallbackActive = false;
+            }
         }
     }
 

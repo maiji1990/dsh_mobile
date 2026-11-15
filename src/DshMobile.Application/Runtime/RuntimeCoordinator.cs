@@ -3,6 +3,7 @@ using DshMobile.Application.Shadow;
 using DshMobile.Application.Terminal;
 using DshMobile.Core.Bridge;
 using DshMobile.Runtime;
+using DshMobile.Runtime.Automation;
 using DshMobile.Runtime.Bundle;
 using DshMobile.Runtime.Guest;
 using DshMobile.Runtime.Hosting;
@@ -474,6 +475,42 @@ public sealed class RuntimeCoordinator : IDisposable
     /// <see cref="SliceMode.CSharp"/> plugin list (ADR-0016): <c>dsh plugin list --json --depth 0</c> through the C#
     /// PRoot launcher; the same command and parser the PR-05 shadow verified against the legacy <c>plugin.list</c>.
     /// </summary>
+    /// <summary>
+    /// The C# <c>relay.selftest</c> (ADR-0016, ui_* execution layer): stages the ui_* guest scripts, then runs
+    /// <see cref="UiFacadeAssets.SelfTestCommand"/> through the C# PRoot launcher, serialized with the other runtime
+    /// operations as the legacy one was (opLock). It talks to whichever Relay serves <c>/opt/pilot</c>; the result is the
+    /// check's own exit code and output (last 400 lines), never inferred.
+    /// </summary>
+    public async Task<GuestProcessResult> RunRelaySelfTestAsync(TimeSpan timeout, CancellationToken ct)
+    {
+        if (_layout is null)
+        {
+            return new GuestProcessResult(false, null, "", $"{RuntimeErrorCodes.NotImplemented}: no runtime layout");
+        }
+        await _op.WaitAsync(ct).ConfigureAwait(false);
+        try
+        {
+            try
+            {
+                UiFacadeAssets.Stage(_layout.GuestCacheDir);
+            }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+            {
+                return new GuestProcessResult(false, null, "", $"{UiFacadeAssets.NotStaged}: {e.Message}");
+            }
+            var sw = Stopwatch.StartNew();
+            var result = await new ProotGuestProcess(_layout)
+                .RunShellAsync(UiFacadeAssets.SelfTestCommand, new GuestExecutionOptions(Timeout: timeout, MaxOutputLines: UiFacadeAssets.SelfTestMaxLines), ct)
+                .ConfigureAwait(false);
+            _log.Note($"relay selftest: C# PRoot launcher, exit={result.ExitCode?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "-"} in {sw.ElapsedMilliseconds} ms");
+            return result;
+        }
+        finally
+        {
+            _op.Release();
+        }
+    }
+
     public async Task<GuestPluginResult> ListPluginsAsync(string profile, CancellationToken ct)
     {
         if (_layout is null)

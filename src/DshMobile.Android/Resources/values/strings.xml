@@ -46,12 +46,13 @@
     <string name="automation_host_probe_running">正在向旧中继与 C# 中继发送同一组请求。每项能力两边各弹一张审批卡（旧中继的卡、C# 中继的通知卡），请逐一作答；只作用于测试目标应用。</string>
     <string name="automation_host_probe_needs_cs">请先启动 C# 中继。</string>
     <string name="automation_start_choice_title">由谁服务 guest 信箱</string>
-    <string name="automation_start_choice_message">C# Relay 是默认实现（短按「开启中继」即用它）：先停止旧 Relay，再接管 /opt/pilot 信箱、发布 relay 命令 / capabilities.json / USAGE.md 并登记 ui_* 工具；审批走本页卡片 / 悬浮卡 / 通知卡。旧 Relay 只作回退：旧的无障碍服务已不再声明，它的 ui_* 读取与操作会报无障碍未开启（其余能力照旧）。两者不会同时服务同一信箱。</string>
+    <string name="automation_start_choice_message">C# Relay 是默认实现（短按「开启中继」即用它）：旧 Relay 若在运行先停止它，再接管 /opt/pilot 信箱、发布 relay 命令 / capabilities.json / USAGE.md 并登记 ui_* 工具；审批走本页卡片 / 悬浮卡 / 通知卡。旧 Relay 只作回退：旧的无障碍服务已不再声明，它的 ui_* 读取与操作会报无障碍未开启（其余能力照旧）。两者不会同时服务同一信箱。</string>
     <string name="automation_start_legacy">旧 Relay（回退）</string>
     <string name="automation_start_cs">C# Relay</string>
     <string name="plugins_list_failed">（插件列表读取失败，见上方原因）</string>
-    <string name="automation_probe_needs_legacy">这项比对针对旧 Relay，而 guest 信箱现在由 C# Relay 服务。要比对，先停止中继，再长按「开启中继」选「旧 Relay（回退）」。</string>
+    <string name="automation_probe_needs_legacy">这项比对只针对旧 Relay（回退），而现在服务 guest 信箱的不是它。要比对，先停止中继，再长按「开启中继」选「旧 Relay（回退）」。</string>
     <string name="automation_cs_guest_line">guest 信箱由 C# Relay 服务：%1$s</string>
+    <string name="automation_cs_guest_stage_failed">ui_* guest 脚本写入失败（%1$s），未登记 ui_* 工具层；guest 的 relay 命令仍可用。</string>
     <string name="automation_cs_guest_conflict">ui_* 工具层路径上已有不是本应用写的文件，未覆盖；guest 的 relay 命令仍可用，ui_* 工具不会登记。</string>
     <string name="automation_cs_guest_legacy_stop_failed">旧 Relay 未能停止（%1$s），C# Relay 不接管信箱。</string>
     <string name="automation_cs_shadow_blocked">C# Relay 正在服务 guest 信箱；先「关闭中继」，再启动独立信箱的 C# 中继。</string>

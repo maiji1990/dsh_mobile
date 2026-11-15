@@ -17,6 +17,7 @@
 using Android.App;
 using Android.Content;
 using Android.Content.PM;
+using DshMobile.Runtime;
 using DshMobile.Runtime.Automation;
 using DshMobile.Runtime.Automation.Relay;
 using DshMobile.Runtime.Automation.Relay.Exec.Direct;
@@ -135,11 +136,29 @@ public static class CsRelay
     /// <c>relay.start</c> does after <c>MobileAutomation.start</c>). The caller has stopped the legacy Relay. False when
     /// the layer path holds someone else's file (nothing overwritten; the host still serves the CLI).
     /// </summary>
-    public static bool StartGuest(Context context, string userDataDir)
+    /// The ui_* guest scripts are staged by C# first (they used to appear as a side effect of the legacy bridge's first
+    /// call); if they cannot be written the layer is not registered (DSH would load a facade that is not there).
+    public static (bool Registered, string? StageError) StartGuest(Context context, RuntimeLayout layout)
     {
+        ArgumentNullException.ThrowIfNull(layout);
         Start(context, CsRelayMode.Guest);
-        return UiToolsRegistration.Register(userDataDir);
+        try
+        {
+            UiFacadeAssets.Stage(layout.GuestCacheDir);
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            return (false, $"{UiFacadeAssets.NotStaged}: {e.Message}");
+        }
+        return (UiToolsRegistration.Register(layout.UserDataDir), null);
     }
+
+    /// <summary>
+    /// The legacy Relay was started from this process (long-press fallback) and not stopped since. Process-wide: the legacy
+    /// Relay lives in this process and does not come back on its own after the process dies (its sticky service stops
+    /// itself when no channel runs), so false means only a C# Relay can be serving the guest mailbox.
+    /// </summary>
+    public static bool LegacyFallbackActive { get; set; }
 
     /// <summary>The legacy <c>relay.stop</c> / <c>sandbox.stop</c> pair for the guest-facing host: stop, then remove our layer.</summary>
     public static bool StopGuest(string userDataDir)

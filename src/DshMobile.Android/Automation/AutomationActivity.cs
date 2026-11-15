@@ -158,10 +158,14 @@ public sealed class AutomationActivity : Activity
         }
     }
 
-    /// <summary>The legacy-Relay shadows write into the guest mailbox: with the C# Relay on it they would test C# against itself.</summary>
+    /// <summary>
+    /// The legacy-Relay shadows write into the guest mailbox: with the C# Relay on it they would test C# against itself,
+    /// and with the C# default and no legacy fallback running nobody would answer them. They run only against a legacy
+    /// Relay started on the fallback (or with the slice set back to legacy).
+    /// </summary>
     private bool NeedsLegacyRelay()
     {
-        if (!Relay.CsRelay.GuestFacing)
+        if (!Relay.CsRelay.GuestFacing && (Relay.CsRelay.LegacyFallbackActive || !CsDefault))
         {
             return false;
         }
@@ -186,26 +190,37 @@ public sealed class AutomationActivity : Activity
             _bridge.Note("c# relay (guest) stopped: legacy relay takes the mailbox");
         }
         ShowCsRelay();
-        await Run(BridgeMethods.RelayStart);
+        if (await Run(BridgeMethods.RelayStart))
+        {
+            Relay.CsRelay.LegacyFallbackActive = true;
+        }
     }
 
     /// <summary>
-    /// ADR-0010: stop the legacy Relay (fail closed: if it does not stop, the C# host does not take the mailbox), then the
-    /// C# host serves files/pilot and registers the ui_* layer.
+    /// ADR-0010: if the legacy Relay was started from this process, stop it first (fail closed: if it does not stop, the
+    /// C# host does not take the mailbox); then the C# host serves files/pilot, stages the ui_* guest scripts and registers
+    /// the ui_* layer. With no legacy fallback running, the legacy bridge is not involved at all (ADR-0016).
     /// </summary>
     private async Task StartCsGuestRelayAsync()
     {
         Enable(false);
-        var stopped = await _bridge.Client.ExecuteAsync(BridgeMethods.RelayStop, deadline: TimeSpan.FromSeconds(30));
-        if (!stopped.Ok)
+        if (Relay.CsRelay.LegacyFallbackActive)
         {
-            Enable(true);
-            _output.Text = GetString(Resource.String.automation_cs_guest_legacy_stop_failed, new Java.Lang.String($"{stopped.Code}: {stopped.Message}"));
-            return;
+            var stopped = await _bridge.Client.ExecuteAsync(BridgeMethods.RelayStop, deadline: TimeSpan.FromSeconds(30));
+            if (!stopped.Ok)
+            {
+                Enable(true);
+                _output.Text = GetString(Resource.String.automation_cs_guest_legacy_stop_failed, new Java.Lang.String($"{stopped.Code}: {stopped.Message}"));
+                return;
+            }
+            Relay.CsRelay.LegacyFallbackActive = false;
+            _bridge.Note("c# relay (guest): legacy fallback relay stopped first");
         }
-        var registered = Relay.CsRelay.StartGuest(this, _bridge.Layout.UserDataDir);
-        _bridge.Note($"c# relay (guest) start: legacy stopped, ui_* layer {(registered ? "registered" : "conflict")}");
-        _output.Text = registered ? "" : GetString(Resource.String.automation_cs_guest_conflict);
+        var (registered, stageError) = Relay.CsRelay.StartGuest(this, _bridge.Layout);
+        _bridge.Note($"c# relay (guest) start: ui_* scripts {(stageError is null ? "staged" : "NOT staged")}, ui_* layer {(registered ? "registered" : stageError is null ? "conflict" : "not registered")}");
+        _output.Text = stageError is { } se
+            ? GetString(Resource.String.automation_cs_guest_stage_failed, new Java.Lang.String(se))
+            : registered ? "" : GetString(Resource.String.automation_cs_guest_conflict);
         WatchCsRelay(true);
         ShowCsRelay();
         Enable(true);
@@ -222,7 +237,10 @@ public sealed class AutomationActivity : Activity
             await RefreshAsync();
             return;
         }
-        await Run(BridgeMethods.RelayStop);
+        if (await Run(BridgeMethods.RelayStop))
+        {
+            Relay.CsRelay.LegacyFallbackActive = false;
+        }
     }
 
     private void ToggleCsRelay()
@@ -305,6 +323,17 @@ public sealed class AutomationActivity : Activity
             HideCard();
             var taken = host.ResolveApproval(choice, id);
             _bridge.Note($"c# relay page card: {capability} -> {choice.Wire()} (request {id}{(taken ? "" : ", already settled")})");
+        }, onDeadline: () =>
+        {
+            // Time is up: take the card (and FLAG_SECURE) down and close this question in the queue, which routes the next
+            // one if any (upstream expireApproval). Card first: the routing callback runs inline on this thread.
+            if (_cardRequestId != id)
+            {
+                return;
+            }
+            HideCard();
+            var expired = host.ExpireApproval(id);
+            _bridge.Note($"c# relay page card: {capability} expired (request {id}{(expired ? "" : ", already settled")})");
         });
         _cardRequestId = id;
         Window!.AddFlags(WindowManagerFlags.Secure);
@@ -441,9 +470,7 @@ public sealed class AutomationActivity : Activity
             $"允许的能力：{string.Join(", ", s.Allowed)}",
             $"guest CLI：{s.GuestEntry}",
             ShizukuLine(ShizukuClient.Probe()),
-            _bridge.Runtime.HostUiToolsAtStart is not null
-                ? UiToolsLine(WithHostView(new UiToolsStatus(registered, null, false, false, UiToolsRegistration.ServerName)))
-                : GetString(registered ? Resource.String.automation_tools_cs_registered : Resource.String.automation_tools_off));
+            CsToolsLine(registered));
     }
 
     private void ShowCsRelay()
@@ -474,10 +501,48 @@ public sealed class AutomationActivity : Activity
         return b;
     }
 
-    private Task RefreshAsync() =>
-        Relay.CsRelay.GuestFacing && Relay.CsRelay.Host is { } host ? ShowCsStatusAsync(host) : Run(BridgeMethods.RelayStatus);
+    /// <summary>
+    /// The status lines come from whoever can be serving the guest mailbox: the C# host when it does; the legacy Relay
+    /// only when it was started on the fallback (or the slice is set back to legacy); otherwise C# reports the stopped
+    /// state itself without asking the legacy bridge (ADR-0016).
+    /// </summary>
+    private async Task RefreshAsync()
+    {
+        if (Relay.CsRelay.GuestFacing && Relay.CsRelay.Host is { } host)
+        {
+            await ShowCsStatusAsync(host);
+        }
+        else if (CsDefault && !Relay.CsRelay.LegacyFallbackActive)
+        {
+            await ShowCsStoppedStatusAsync();
+        }
+        else
+        {
+            await Run(BridgeMethods.RelayStatus);
+        }
+    }
 
-    private async Task Run(string method)
+    private bool CsDefault => _bridge.Runtime.Options.RelayHost == DshMobile.Application.SliceMode.CSharp;
+
+    private async Task ShowCsStoppedStatusAsync()
+    {
+        var gap = LocalA11yGap();
+        var shizuku = await Task.Run(ShizukuClient.Probe);
+        var registered = UiToolsRegistration.IsRegistered(_bridge.Layout.UserDataDir);
+        _status.Text = string.Join('\n',
+            $"C# Relay: {RelayRuntimePhase.Stopped}",
+            A11yLine(gap),
+            ShizukuLine(shizuku),
+            CsToolsLine(registered));
+        _bridge.Note($"relay status (C#): stopped, ui_* layer {(registered ? "registered" : "absent")}");
+    }
+
+    private string CsToolsLine(bool registered) =>
+        _bridge.Runtime.HostUiToolsAtStart is not null
+            ? UiToolsLine(WithHostView(new UiToolsStatus(registered, null, false, false, UiToolsRegistration.ServerName)))
+            : GetString(registered ? Resource.String.automation_tools_cs_registered : Resource.String.automation_tools_off);
+
+    private async Task<bool> Run(string method)
     {
         Enable(false);
         var resp = await _bridge.Client.ExecuteAsync(method, deadline: TimeSpan.FromSeconds(30));
@@ -485,7 +550,7 @@ public sealed class AutomationActivity : Activity
         if (!resp.Ok)
         {
             _status.Text = $"{method} FAILED {resp.Code}: {resp.Message}";
-            return;
+            return false;
         }
         var s = BridgeCodec.ReadPayload(resp, BridgeJsonContext.Default.RelayStatus)!;
         _status.Text = string.Join('\n',
@@ -517,6 +582,7 @@ public sealed class AutomationActivity : Activity
             var readPref = RelayPrefReader();
             _ = Task.Run(() => runtime.ShadowRelayGate(device, readPref));
         }
+        return true;
     }
 
     /// <summary>
@@ -640,8 +706,17 @@ public sealed class AutomationActivity : Activity
         return GetString(t.Registered ? Resource.String.automation_tools_registered : Resource.String.automation_tools_off);
     }
 
+    /// <summary>
+    /// The same fixed guest check as the legacy <c>relay.selftest</c> (relay doctor + the ui_* facade over MCP), run by the
+    /// C# PRoot launcher unless the legacy Relay is the one serving the mailbox (fallback), whose own bridge call stays.
+    /// </summary>
     private async Task SelfTestAsync()
     {
+        if (Relay.CsRelay.GuestFacing || (CsDefault && !Relay.CsRelay.LegacyFallbackActive))
+        {
+            await CsSelfTestAsync();
+            return;
+        }
         Enable(false);
         _output.Text = GetString(Resource.String.automation_selftest_running);
         var resp = await _bridge.Client.ExecuteAsync(BridgeMethods.RelaySelftest, deadline: TimeSpan.FromMinutes(2));
@@ -654,6 +729,20 @@ public sealed class AutomationActivity : Activity
         var r = BridgeCodec.ReadPayload(resp, BridgeJsonContext.Default.PluginCommandResult)!;
         _output.Text = $"exit={r.ExitCode?.ToString() ?? "?"}\n\n{r.Output}";
         _bridge.Note($"relay.selftest exit={r.ExitCode}");
+    }
+
+    private async Task CsSelfTestAsync()
+    {
+        Enable(false);
+        _output.Text = GetString(Resource.String.automation_selftest_running);
+        var runtime = _bridge.Runtime;
+        var r = await Task.Run(() => runtime.RunRelaySelfTestAsync(TimeSpan.FromSeconds(115), CancellationToken.None));
+        Enable(true);
+        var exit = r.ExitCode?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "?";
+        _output.Text = r.ExitCode is null && r.Error is { } e
+            ? $"selftest (C#) FAILED {e}"
+            : $"exit={exit}{(r.Ok || r.Error is null ? "" : " · " + r.Error)}\n\n{r.Output}";
+        _bridge.Note($"relay selftest (C#) exit={exit}");
     }
 
     private async Task EnvelopeProbeAsync()
