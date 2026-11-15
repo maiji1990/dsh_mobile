@@ -69,10 +69,10 @@ public sealed class TerminalCommandBuilder(RuntimeLayout layout)
         }
         if (Directory.Exists(layout.ShimDir))
         {
-            argv.Add($"--bind={layout.ShimDir}:/opt/dshbox");
+            argv.Add($"--bind={layout.ShimDir}:/opt/dshmobile");
         }
         Directory.CreateDirectory(layout.GuestCacheDir);
-        argv.Add($"--bind={layout.GuestCacheDir}:/opt/dshbox-cache");
+        argv.Add($"--bind={layout.GuestCacheDir}:/opt/dshmobile-cache");
         Directory.CreateDirectory(layout.PilotEntryDir);
         argv.Add($"--bind={layout.PilotEntryDir}:/opt/pilot");
         Directory.CreateDirectory(layout.BrowserEntryDir);
@@ -116,7 +116,7 @@ public sealed class TerminalCommandBuilder(RuntimeLayout layout)
     }
 
     /// <summary><c>buildGuestPath</c> with no capability entries.</summary>
-    public const string GuestPath = "/root/projects/.dsh/dshbox/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/system/bin:/system/xbin";
+    public const string GuestPath = "/root/projects/.dsh/dshmobile/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/system/bin:/system/xbin";
 
     /// <summary>
     /// <c>TerminalProcFake.ensureBindArgs</c>: Android denies /proc/stat, /proc/uptime, /proc/loadavg to apps, which

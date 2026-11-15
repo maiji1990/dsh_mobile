@@ -1,5 +1,5 @@
 /*
- * libdshbox-link.so — LD_PRELOAD 垫片：把 link(2) / linkat(2) 实现为「复制」。
+ * libdshmobile-link.so — LD_PRELOAD 垫片：把 link(2) / linkat(2) 实现为「复制」。
  *
  * 背景：Android 应用数据文件系统不支持硬链接（真机实测：同目录 `ln` 亦返回
  * Permission denied，而 `cp` / `mv` 正常）。dpkg 在事务末尾创建 status-old 备份时
@@ -10,9 +10,14 @@
  * 反而更贴切——得到的是独立副本，而不是同一 inode 的第二个名字。
  *
  * 注入方式：仅由 apt/dpkg 包装脚本按需设置 LD_PRELOAD（不做全局注入，避免影响
- * Node/DSH 等其它程序）。设 DSHBOX_LINK_SHIM_DISABLE=1 可整体停用以做对照排查。
+ * Node/DSH 等其它程序）。设 DSHMOBILE_LINK_SHIM_DISABLE=1 可整体停用以做对照排查。
  *
- * 构建见 tools/link-shim/build_link_shim.sh（WSL2 内、用项目自己的 arm64 rootfs 交叉编译）。
+ * 构建见本目录 build.sh（DSH Mobile，ADR-0019）。
+ *
+ * 来源：DSHBox v1.5.1（7c9d33c1f29dd2c42dde6c7e2fcdf38814f491c4）
+ *       plugin-manager/dshbox-plugins/tools/link-shim/libdshbox-link.c，GPL-3.0-or-later。
+ * DSH Mobile 修改（2026-11-15，ADR-0019）：文件名与停用开关改名为 libdshmobile-link / DSHMOBILE_LINK_SHIM_DISABLE，
+ * 构建说明改指 build.sh；拦截逻辑未改。
  */
 #define _GNU_SOURCE
 #include <dlfcn.h>
@@ -28,7 +33,7 @@
 #define PATHBUF 4096
 
 static int shim_disabled(void) {
-    const char *v = getenv("DSHBOX_LINK_SHIM_DISABLE");
+    const char *v = getenv("DSHMOBILE_LINK_SHIM_DISABLE");
     return v != NULL && v[0] == '1';
 }
 

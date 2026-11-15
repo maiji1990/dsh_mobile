@@ -11,6 +11,8 @@ namespace DshMobile.Runtime.Tests;
 /// <c>sandbox-manager/.../SandboxConfig.kt</c>) and from this repository's bridge at <c>128c2ea</c>
 /// (<c>native/native-bridge/.../RuntimeController.kt</c>, <c>RemoteHosts.kt</c>, <c>SshKeys.kt</c>). A C# change that
 /// drifts from what DSHBox did fails here; a deliberate change updates the literal and says why.
+/// ADR-0019 renamed the <c>dshbox</c> names (DSHBox values: <c>/opt/dshbox</c>, <c>/opt/dshbox-cache</c>, <c>.dsh/dshbox</c>,
+/// <c>libdshbox-link.so</c>, asset dir <c>dshbox/</c>) to <c>dshmobile</c>; <see cref="Migration.DshboxNameMigration"/> moves old data.
 /// </summary>
 public sealed class UpstreamPinnedValuesTests
 {
@@ -23,14 +25,14 @@ public sealed class UpstreamPinnedValuesTests
         Assert.Equal("dshapp-sandbox-keepalive", RuntimeConstants.SandboxKeepaliveMarker);
         Assert.Equal("@deepseek-ai/dsh/lib/bin.js", RuntimeConstants.DshStartScript);
         Assert.Equal("web", RuntimeConstants.DshWebProfile);
-        Assert.Equal("/opt/dshbox", RuntimeConstants.LinkShimGuestDir);
-        Assert.Equal("/opt/dshbox-cache", RuntimeConstants.GuestCacheDir);
+        Assert.Equal("/opt/dshmobile", RuntimeConstants.LinkShimGuestDir); // ADR-0019 (DSHBox: /opt/dshbox, likewise below)
+        Assert.Equal("/opt/dshmobile-cache", RuntimeConstants.GuestCacheDir);
         Assert.Equal("guest-cache", RuntimeConstants.GuestCacheDirLeaf);
-        Assert.Equal(".dsh/dshbox", RuntimeConstants.AssetsRelativeDir);
+        Assert.Equal(".dsh/dshmobile", RuntimeConstants.AssetsRelativeDir);
         Assert.Equal(29, RuntimeConstants.MinSupportedSdk);
         Assert.Equal(3, RuntimeConstants.MaxAutoRestartAttempts);
         Assert.Equal(RuntimeConstants.LinkShimGuestDir + "/link-shim.mjs", RuntimeConstants.LinkShimGuestPath);
-        Assert.Equal(RuntimeConstants.LinkShimGuestDir + "/libdshbox-link.so", RuntimeConstants.LinkShimSoGuestPath);
+        Assert.Equal(RuntimeConstants.LinkShimGuestDir + "/libdshmobile-link.so", RuntimeConstants.LinkShimSoGuestPath);
         Assert.Equal(RuntimeConstants.SandboxWorkspace + "/" + RuntimeConstants.AssetsRelativeDir, RuntimeConstants.AssetsGuestDir);
     }
 
@@ -62,7 +64,7 @@ public sealed class UpstreamPinnedValuesTests
     public void GuestPaths_AreTheBridgesRuntimeController()
     {
         Assert.Equal("/opt/dshapp/runtime/node_modules/@deepseek-ai/dsh/lib/bin.js", RuntimeConstants.GuestDshBin);
-        Assert.Equal("/root/projects/.dsh/dshbox/bin/dsh", RuntimeConstants.GuestDshWrapper);
+        Assert.Equal("/root/projects/.dsh/dshmobile/bin/dsh", RuntimeConstants.GuestDshWrapper);
     }
 
     [Fact]
@@ -85,30 +87,31 @@ public sealed class UpstreamPinnedValuesTests
     }
 
     /// <summary>
-    /// The APK assets copied unmodified from DSHBox v1.5.1 (<c>src/DshMobile.Android/Assets/README.md</c>): any change to
-    /// them must be deliberate and update that table.
+    /// The guest APK assets (<c>src/DshMobile.Android/Assets/README.md</c>): copied unmodified from DSHBox v1.5.1, except the
+    /// link shim, which ADR-0019 rebuilds here (<c>native/link-shim/build.sh</c>; DSHBox's prebuilt one was 7d880b83…1973a).
+    /// Any change to them must be deliberate and update that table.
     /// </summary>
     [Theory]
-    [InlineData("dshbox/link-shim.mjs", "c34505677976141016d7ceffb7fc255f8e4de1ac6c232eb6cd7b4d6d0db9b497")]
-    [InlineData("dshbox/libdshbox-link.so", "7d880b83ee456e93c91b52aa5df1be0dc35e4ded4ed9718bac942c3d61e1973a")]
+    [InlineData("dshmobile/link-shim.mjs", "c34505677976141016d7ceffb7fc255f8e4de1ac6c232eb6cd7b4d6d0db9b497")]
+    [InlineData("dshmobile/libdshmobile-link.so", "400b9ba76c9f60b502a8add61e9c6e1bf3e5e3f3bebe7bf56c78012e482a1730")]
     [InlineData("toolchain-cache/corepack-pnpm-11.1.2.tar.zst", "d9f9677d89a9027df3f5c8d70922789a0c00cdd15b4dece8b36f0d07b0f02498")]
     [InlineData("toolchain-cache/corepack-pnpm-11.1.2.tar.zst.sha256", "c1dcec1a5cf41a8bebdf87cab32ca127c9588772632b7b7f60d5202f07d57dba")]
-    public void VendoredApkAssets_AreTheDshboxBytes(string asset, string sha256)
+    public void GuestApkAssets_AreThePinnedBytes(string asset, string sha256)
     {
         var path = Repo.PathOf(["src", "DshMobile.Android", "Assets", .. asset.Split('/')]);
         Assert.Equal(sha256, Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(File.ReadAllBytes(path))));
     }
 
     [Fact]
-    public void VendoredApkAssets_AreExactlyTheRegisteredOnes()
+    public void GuestApkAssets_AreExactlyTheRegisteredOnes()
     {
         var root = Repo.PathOf("src", "DshMobile.Android", "Assets");
-        var found = new[] { "dshbox", "toolchain-cache" }
+        var found = new[] { "dshmobile", "toolchain-cache" }
             .SelectMany(d => Directory.EnumerateFiles(Path.Combine(root, d), "*", SearchOption.AllDirectories))
             .Select(f => Path.GetRelativePath(root, f).Replace('\\', '/'))
             .Order(StringComparer.Ordinal);
         Assert.Equal(
-            ["dshbox/libdshbox-link.so", "dshbox/link-shim.mjs", "toolchain-cache/corepack-pnpm-11.1.2.tar.zst", "toolchain-cache/corepack-pnpm-11.1.2.tar.zst.sha256"],
+            ["dshmobile/libdshmobile-link.so", "dshmobile/link-shim.mjs", "toolchain-cache/corepack-pnpm-11.1.2.tar.zst", "toolchain-cache/corepack-pnpm-11.1.2.tar.zst.sha256"],
             found);
     }
 

@@ -18,7 +18,7 @@ public static class UiFacadeAssets
     public const string FacadeName = "ui-facade.mjs";
     public const string CheckName = "ui-facade-check.mjs";
 
-    /// <summary>Host sub-directory of the guest cache dir (guest <c>/opt/dshbox-cache/dshmobile</c>).</summary>
+    /// <summary>Host sub-directory of the guest cache dir (guest <c>/opt/dshmobile-cache/dshmobile</c>).</summary>
     public const string HostSubDir = "dshmobile";
 
     /// <summary>Guest path of the self-check (legacy <c>GUEST_UI_CHECK</c>).</summary>

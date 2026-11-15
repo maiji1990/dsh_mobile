@@ -159,7 +159,7 @@ public sealed record RuntimeInstallCheck(bool Installed, string Reason, IReadOnl
                 broken.Add($"{name}:profile-has-no-sha");
                 continue;
             }
-            var sentinel = Path.Combine(dir, ".dshbox", $"layer-{name}.sha256");
+            var sentinel = Path.Combine(dir, RuntimeConstants.LayerStateDir, $"layer-{name}.sha256");
             if (File.Exists(sentinel))
             {
                 if (!File.ReadAllText(sentinel, Encoding.UTF8).Trim().Equals(expected, StringComparison.OrdinalIgnoreCase))
@@ -169,7 +169,7 @@ public sealed record RuntimeInstallCheck(bool Installed, string Reason, IReadOnl
             }
             else
             {
-                heals.Add($"{name}/.dshbox/layer-{name}.sha256");
+                heals.Add($"{name}/.dshmobile/layer-{name}.sha256");
                 if (heal)
                 {
                     try

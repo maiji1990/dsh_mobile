@@ -57,7 +57,7 @@ public sealed class UiFacadeAssetsTests : IDisposable
     {
         Assert.Equal(UiToolsRegistration.GuestFacade,
             $"{RuntimeConstants.GuestCacheDir}/{UiFacadeAssets.HostSubDir}/{UiFacadeAssets.FacadeName}");
-        Assert.Equal("/opt/dshbox-cache/dshmobile/ui-facade-check.mjs", UiFacadeAssets.GuestCheck);
+        Assert.Equal("/opt/dshmobile-cache/dshmobile/ui-facade-check.mjs", UiFacadeAssets.GuestCheck);
     }
 
     /// <summary>
@@ -68,8 +68,8 @@ public sealed class UiFacadeAssetsTests : IDisposable
     [Fact]
     public void SelfTestCommand_IsTheLegacyRelaySelftestCommand()
     {
-        Assert.Equal("/opt/dshbox-cache/dshmobile/ui-facade-check.mjs", UiFacadeAssets.GuestCheck);
-        Assert.Equal("/opt/pilot/bin/relay doctor; echo; node /opt/dshbox-cache/dshmobile/ui-facade-check.mjs --approval-wait-ms 50000",
+        Assert.Equal("/opt/dshmobile-cache/dshmobile/ui-facade-check.mjs", UiFacadeAssets.GuestCheck);
+        Assert.Equal("/opt/pilot/bin/relay doctor; echo; node /opt/dshmobile-cache/dshmobile/ui-facade-check.mjs --approval-wait-ms 50000",
             UiFacadeAssets.SelfTestCommand);
         Assert.Equal(400, UiFacadeAssets.SelfTestMaxLines);
     }

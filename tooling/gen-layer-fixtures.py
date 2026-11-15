@@ -287,11 +287,11 @@ def write_install_scenarios():
     rc = "runtime/runtime-current"
     new_body = {
         f"{rc}/base": "dir", f"{rc}/base/etc": "dir", f"{rc}/base/etc/os-release": "new-base\n",
-        f"{rc}/base/.dshbox": "dir", f"{rc}/base/.dshbox/layer-base.sha256": sha["base"],
+        f"{rc}/base/.dshmobile": "dir", f"{rc}/base/.dshmobile/layer-base.sha256": sha["base"],
         f"{rc}/node": "dir", f"{rc}/node/bin": "dir", f"{rc}/node/bin/node": "new-node\n",
-        f"{rc}/node/.dshbox": "dir", f"{rc}/node/.dshbox/layer-node.sha256": sha["node"],
+        f"{rc}/node/.dshmobile": "dir", f"{rc}/node/.dshmobile/layer-node.sha256": sha["node"],
         f"{rc}/android-side": "dir", f"{rc}/android-side/proot": "dir", f"{rc}/android-side/proot/README": "new-side\n",
-        f"{rc}/android-side/.dshbox": "dir", f"{rc}/android-side/.dshbox/layer-android-side.sha256": sha["android-side"],
+        f"{rc}/android-side/.dshmobile": "dir", f"{rc}/android-side/.dshmobile/layer-android-side.sha256": sha["android-side"],
         f"{rc}/runtime-profile.json": profile,
     }
     common = {"runtime": "dir", rc: "dir", "user-data": "dir", "user-data/keep.txt": "user\n"}
@@ -386,14 +386,14 @@ def write_dsh_layer_scenarios():
     def layer(archive, version_record, root=f"{rc}/dsh"):
         t = {f"{root}/{k}": v for k, v in archives[archive].items()}
         if version_record is not None:
-            t[f"{root}/.dshbox/version"] = version_record
+            t[f"{root}/.dshmobile/version"] = version_record
         return t
 
-    old = {f"{rc}/dsh/old.txt": "old-dsh\n", f"{rc}/dsh/.dshbox/version": "1.0.0"}
-    old_as_previous = {f"{rc}/previous/dsh/old.txt": "old-dsh\n", f"{rc}/previous/dsh/.dshbox/version": "1.0.0"}
-    newer = {f"{rc}/dsh/old.txt": "old-dsh\n", f"{rc}/dsh/.dshbox/version": "2.0.0"}
+    old = {f"{rc}/dsh/old.txt": "old-dsh\n", f"{rc}/dsh/.dshmobile/version": "1.0.0"}
+    old_as_previous = {f"{rc}/previous/dsh/old.txt": "old-dsh\n", f"{rc}/previous/dsh/.dshmobile/version": "1.0.0"}
+    newer = {f"{rc}/dsh/old.txt": "old-dsh\n", f"{rc}/dsh/.dshmobile/version": "2.0.0"}
     older_previous = {f"{rc}/previous/dsh/prev.txt": "older\n", f"{rc}/previous/keep.txt": "previous body\n"}
-    pkg_only = {f"{rc}/dsh/{pkg}/package.json": '{"version":"3.0.0"}', f"{rc}/dsh/.dshbox/version": "  \n"}
+    pkg_only = {f"{rc}/dsh/{pkg}/package.json": '{"version":"3.0.0"}', f"{rc}/dsh/.dshmobile/version": "  \n"}
 
     def sc(name, bundle, sha, new_version, before, result, changed, version, after, allow_downgrade=False):
         return {"name": name, "bundle": bundle,
@@ -466,7 +466,7 @@ def write_install_check_scenarios():
     base = {f"{rc}/base/etc/os-release": "base\n"}
     node = {f"{rc}/node/bin/node": "node\n"}
     good_profile = {f"{rc}/runtime-profile.json": profile([("base", sha["base"]), ("node", sha["node"])], ["base", "node"])}
-    sentinels = {f"{rc}/base/.dshbox/layer-base.sha256": sha["base"], f"{rc}/node/.dshbox/layer-node.sha256": sha["node"]}
+    sentinels = {f"{rc}/base/.dshmobile/layer-base.sha256": sha["base"], f"{rc}/node/.dshmobile/layer-node.sha256": sha["node"]}
 
     def sc(name, tree, installed, healed=None):
         return {"name": name, "before": with_parents(tree), "installed": installed,
@@ -479,11 +479,11 @@ def write_install_check_scenarios():
         sc("empty assembly", {**proot, **base, f"{rc}/runtime-profile.json": profile([("base", sha["base"])], [])}, False),
         sc("intact layers", {**proot, **base, **node, **good_profile, **sentinels}, True),
         sc("sentinel compare is case-insensitive", {**proot, **base, **node, **good_profile,
-           f"{rc}/base/.dshbox/layer-base.sha256": sha["base"].upper(), f"{rc}/node/.dshbox/layer-node.sha256": sha["node"]}, True),
+           f"{rc}/base/.dshmobile/layer-base.sha256": sha["base"].upper(), f"{rc}/node/.dshmobile/layer-node.sha256": sha["node"]}, True),
         sc("sentinel mismatch", {**proot, **base, **node, **good_profile,
-           f"{rc}/base/.dshbox/layer-base.sha256": sha["base"], f"{rc}/node/.dshbox/layer-node.sha256": "c" * 64}, False),
+           f"{rc}/base/.dshmobile/layer-base.sha256": sha["base"], f"{rc}/node/.dshmobile/layer-node.sha256": "c" * 64}, False),
         sc("missing sentinels are healed from the profile", {**proot, **base, **node, **good_profile}, True, sentinels),
-        sc("assembly layer directory missing", {**proot, **base, **good_profile, f"{rc}/base/.dshbox/layer-base.sha256": sha["base"]}, False),
+        sc("assembly layer directory missing", {**proot, **base, **good_profile, f"{rc}/base/.dshmobile/layer-base.sha256": sha["base"]}, False),
         sc("profile layer without sha", {**proot, **base, f"{rc}/runtime-profile.json": profile([("base", "")], ["base"])}, False),
     ]
     doc = {

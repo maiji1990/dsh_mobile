@@ -17,7 +17,7 @@
 4. **品牌**：禁止复制 DSHBox 名称、Logo、图标、Splash 等品牌资产（见上游 DSHBox `v1.5.1` 的 `TRADEMARK.md`）；从 DSHBox 翻译或原样复制的代码 / 文件保留上游路径 / commit / GPL-3.0 声明并登记到 `docs/UPSTREAMS.md`。
 5. **不伪造成功**：系统限制返回稳定错误码（`RuntimeErrorCodes`、`NativeErrorCodes`、上游 `BUNDLE_*` 等）并在 UI 可见；禁止为“看似支持”返回假成功；测试 0 用例不算通过。
 6. **`ui_*` 单一契约**：手机自动化沿用 `maiji1990/ui_mcp` 契约与单写者规则，不并行造第二套工具。`ui_*` 是唯一对 Agent 暴露的设备工具命名空间（`browser_*` 已随 ADR-0018 删除）。
-7. **上游文件**：仓库不再包含上游源码树；生产代码与测试都不得引用上游仓库路径。原样复制进本仓库的上游文件（`src/DshMobile.Android/Assets/dshbox`、`toolchain-cache`、`native/link-shim`、Relay guest 资产等）只放在已登记位置，并由测试钉住 SHA-256；原先向上游源码扫描的契约改为钉值测试（`UpstreamPinnedValuesTests` 等），注明来源 commit。
+7. **上游文件**：仓库不再包含上游源码树；生产代码与测试都不得引用上游仓库路径。原样复制进本仓库的上游文件（`src/DshMobile.Android/Assets/dshmobile/link-shim.mjs`、`toolchain-cache`、Relay guest 资产等）只放在已登记位置，并由测试钉住 SHA-256；原先向上游源码扫描的契约改为钉值测试（`UpstreamPinnedValuesTests` 等），注明来源 commit。本仓库自有名称不再用 `dshbox`（ADR-0019：`dshmobile`，旧数据由 `DshboxNameMigration` 迁移）；指向上游源码的来源注释保留原名。
 8. **上游升级**：先做兼容性对照与变更日志，单独 PR；更新 `docs/UPSTREAMS.md` 与相应钉值。
 9. **真机证据**：Android 17 / 厂商 ROM 兼容性不能仅凭单元测试或模拟器宣称通过，必须附真机日志或报告；没有真机证据的切片在 `docs/MIGRATION.md` 中必须如实标注（ADR-0018 记录了负责人决定跳过的部分）。
 10. **版本锁定**：.NET SDK/workload 由 `global.json` 锁定；NDK 固定 `27.0.12077973`；NuGet / Maven（`AndroidMavenLibrary`）固定精确版本；原生上游源码由 `native/proot/sources.lock` 钉 SHA-256；禁止在发布环节使用 `latest`。

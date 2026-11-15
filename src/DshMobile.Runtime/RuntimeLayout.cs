@@ -43,7 +43,7 @@ public sealed class RuntimeLayout
 
     public string GuestCacheDir => Path.Combine(FilesDir, RuntimeConstants.GuestCacheDirLeaf);
 
-    public string ShimDir => Path.Combine(FilesDir, "dshbox");
+    public string ShimDir => Path.Combine(FilesDir, "dshmobile");
 
     public string ShimFile => Path.Combine(ShimDir, "link-shim.mjs");
 

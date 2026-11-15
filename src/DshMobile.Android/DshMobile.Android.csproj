@@ -64,8 +64,8 @@
   </Target>
 
   <!--
-    Guest files copied unmodified from DSHBox v1.5.1 (link shim, offline corepack cache; Assets/README.md has the
-    provenance and hashes). The link shim is a guest (aarch64 glibc) library copied into the sandbox, not an app native
+    Guest files (link shim built in native/link-shim, link-shim.mjs and the offline corepack cache from DSHBox v1.5.1;
+    Assets/README.md has the provenance and hashes). The link shim is a guest (aarch64 glibc) library copied into the sandbox, not an app native
     library, so it must stay an asset. The README itself is not an asset.
   -->
   <ItemGroup>
