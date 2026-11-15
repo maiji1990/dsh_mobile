@@ -13,7 +13,10 @@ using DshMobile.Runtime.Plugins;
 namespace DshMobile.Application.Runtime;
 
 /// <summary>
-/// Supervises runtime operations on top of an <see cref="IRuntimeManager"/> (legacy bridge today). Fixes the PR-00
+/// Supervises runtime operations. Default (ADR-0015 / ADR-0016 / MIGRATION row 23): the C# <see cref="DshHost"/> starts and
+/// owns the processes and the runtime state is read by C# from disk (<see cref="RuntimeStatusReader"/>); the
+/// <see cref="IRuntimeManager"/> passed in (the legacy bridge) decides only on the explicit per-call fallback, and its
+/// status is consulted only while a runtime it started may still be running in this process. Fixes the PR-00
 /// defect in the former BridgeHost flow: the foreground service was started first and never released when the
 /// sandbox failed to start, and was stopped even when stopping failed (leaving PRoot children without it).
 /// <list type="bullet">
@@ -60,6 +63,7 @@ public sealed class RuntimeCoordinator : IDisposable
             : layout is null ? null : new TerminalSessions(
             async (rows, columns, ct) =>
             {
+                await EnsureGuestAssetsAsync(ct).ConfigureAwait(false);
                 // Like the legacy TerminalController.newSession: make the app uid known to the guest first.
                 var user = GuestUser.Provision(Path.Combine(layout.RuntimeCurrentDir, "base"));
                 if (user == GuestUser.Outcome.Updated)
@@ -112,6 +116,58 @@ public sealed class RuntimeCoordinator : IDisposable
     /// <summary>The APK assets (bundled DSH layer); required for the C# preparer and its shadow.</summary>
     private readonly IBundledAssets? _assets;
 
+    /// <summary>Implementation name reported while C# decides the runtime state (<see cref="Implementation"/>).</summary>
+    public const string CSharpImplementation = "csharp";
+
+    /// <summary>
+    /// Set when the legacy runtime is asked to start (explicit fallback) and cleared once a legacy stop leaves nothing
+    /// running. The legacy sandbox-manager only lives in this process, so a new process starts with nothing of it.
+    /// </summary>
+    private bool _legacyRuntimeStarted;
+
+    /// <summary>Whether processes started by the legacy runtime (fallback) may be alive in this process.</summary>
+    public bool LegacyRuntimeActive => _legacyRuntimeStarted;
+
+    /// <summary>
+    /// Whether the legacy <c>runtime.status</c> decides the journal: without a runtime layout (C# cannot read the disk),
+    /// with the host slice set back to legacy, or while a fallback-started legacy runtime may be running. Otherwise C#
+    /// reads the installed runtime itself (MIGRATION row 23) and the legacy bridge is not called.
+    /// </summary>
+    private bool LegacyDecidesState => _layout is null || _options.RuntimeHost != SliceMode.CSharp || _legacyRuntimeStarted;
+
+    /// <summary>The runtime as C# reads it from disk (legacy <c>runtime.status</c> facts); null without a layout.</summary>
+    public async Task<RuntimeFacts?> ReadFactsAsync(CancellationToken ct) =>
+        _layout is null ? null : await Task.Run(() => RuntimeStatusReader.Read(_layout), ct).ConfigureAwait(false);
+
+    private async Task<RuntimeSnapshot> ReadStateAsync(bool legacy, CancellationToken ct)
+    {
+        if (legacy || _layout is null)
+        {
+            return await _runtime.GetStateAsync(ct).ConfigureAwait(false);
+        }
+        var facts = await Task.Run(() => RuntimeStatusReader.Read(_layout), ct).ConfigureAwait(false);
+        return RuntimeStatusReader.Idle(facts, _time.GetUtcNow());
+    }
+
+    /// <summary>
+    /// Stages the host files every guest path expects (link shim, probe / ui_* scripts, corepack cache, dsh / pnpm
+    /// wrappers), which legacy wrote on the first bridge call of each process. Failures are logged and do not stop the
+    /// caller (legacy runCatching); they show up as the guest command's own failure.
+    /// </summary>
+    private async Task<GuestAssetReport?> EnsureGuestAssetsAsync(CancellationToken ct)
+    {
+        if (_layout is null)
+        {
+            return null;
+        }
+        var r = await GuestAssetProvisioner.EnsureAsync(_layout, _assets, ct).ConfigureAwait(false);
+        if (r.Written.Count > 0 || !r.Ok)
+        {
+            _log.Note($"guest assets (C#): {r.Describe()}");
+        }
+        return r;
+    }
+
     /// <summary>
     /// <c>runtime.prepare</c>: installs the APK-bundled DSH layer when base/node are installed (MIGRATION row 17).
     /// </summary>
@@ -152,8 +208,7 @@ public sealed class RuntimeCoordinator : IDisposable
             var r = await RuntimePreparer.PrepareAsync(_layout, _assets, ct, _options.HostPathExists).ConfigureAwait(false);
             var text = string.Join("; ", r.Steps);
             _log.Note(r.Ok ? $"runtime.prepare (csharp): ok ({text})" : $"runtime.prepare (csharp) FAILED {r.Code}: {r.Message}");
-            // The journal's DSH version keeps following the legacy status, which caches it until the app restarts
-            // (documented limitation of the opt-in path; the result text carries the installed version).
+            // The journal's DSH version follows the next state read (C#: the installed layer's version record).
             return new RuntimeInstallResult(r.Ok, r.Code, r.Ok ? text : r.Message);
         }
 
@@ -182,7 +237,8 @@ public sealed class RuntimeCoordinator : IDisposable
 
     public RuntimeStateMachine State { get; }
 
-    public string Implementation => _runtime.Implementation;
+    /// <summary><c>csharp</c> while C# decides the runtime state, else the legacy implementation's name.</summary>
+    public string Implementation => LegacyDecidesState ? _runtime.Implementation : CSharpImplementation;
 
     /// <summary>
     /// Feeds an externally observed snapshot (legacy runtime.state event) into the journal. Ignored while the C# host
@@ -191,7 +247,7 @@ public sealed class RuntimeCoordinator : IDisposable
     public void Observe(RuntimeSnapshot snapshot)
     {
         ArgumentNullException.ThrowIfNull(snapshot);
-        if (HostOwnsProcesses)
+        if (HostOwnsProcesses || !LegacyDecidesState)
         {
             return;
         }
@@ -207,8 +263,9 @@ public sealed class RuntimeCoordinator : IDisposable
         await _op.WaitAsync(ct).ConfigureAwait(false);
         try
         {
-            await SyncAsync(ct).ConfigureAwait(false);
-            if ((mode ?? _options.RuntimeHost) == SliceMode.CSharp)
+            var csharp = (mode ?? _options.RuntimeHost) == SliceMode.CSharp;
+            await SyncAsync(ct, legacy: csharp ? null : true).ConfigureAwait(false);
+            if (csharp)
             {
                 return await StartWithCSharpHostAsync(profile, ct).ConfigureAwait(false);
             }
@@ -234,6 +291,7 @@ public sealed class RuntimeCoordinator : IDisposable
             }
             _foreground.Acquire();
             var sw = Stopwatch.StartNew();
+            _legacyRuntimeStarted = true;
             var sandbox = await _runtime.StartSandboxAsync(ct).ConfigureAwait(false);
             _log.Note($"sandbox.start ({sw.ElapsedMilliseconds} ms): {Describe(sandbox)}");
             // Legacy sandbox.start answers ok=true even when the sandbox ended in ERROR: the reported state decides.
@@ -245,6 +303,7 @@ public sealed class RuntimeCoordinator : IDisposable
                 if (cleanup.Ok)
                 {
                     _foreground.Release();
+                    _legacyRuntimeStarted = false;
                 }
                 _log.Note($"sandbox.start cleanup: {Describe(cleanup)}{(cleanup.Ok ? "; foreground service released" : "; foreground service KEPT (stop failed)")}");
                 State.TryTransition(RuntimeState.Failed, "sandbox start failed", HarnessState.Stopped,
@@ -314,6 +373,7 @@ public sealed class RuntimeCoordinator : IDisposable
                 return failed with { Ok = false, Snapshot = State.Current };
             }
             _foreground.Release();
+            _legacyRuntimeStarted = false;
             State.TryTransition(RuntimeState.Ready, "stopped", HarnessState.Stopped);
             return sandbox with { Snapshot = State.Current };
         }
@@ -336,7 +396,7 @@ public sealed class RuntimeCoordinator : IDisposable
         await _op.WaitAsync(ct).ConfigureAwait(false);
         try
         {
-            await SyncAsync(ct).ConfigureAwait(false);
+            await SyncAsync(ct, legacy: effective == SliceMode.CSharp ? null : true).ConfigureAwait(false);
             var before = State.Current.State;
             if (!State.TryTransition(RuntimeState.Staging, effective == SliceMode.CSharp ? "import requested (csharp)" : "import requested"))
             {
@@ -373,7 +433,7 @@ public sealed class RuntimeCoordinator : IDisposable
                 _log.Note($"shadow {report.Slice}: {report.Verdict} ({report.Detail}; csharp {ms} ms)");
 
                 // LayerInstaller shadow: still under the operation lock, so nothing has touched the fresh layers yet.
-                if (legacy.Ok && inspection.Ok && _layout is not null && _options.LayerExtract == SliceMode.LegacyWithShadow)
+                if (legacy.Ok && inspection.Ok && _layout is not null && _options.LayerExtract != SliceMode.Legacy)
                 {
                     _log.Note("shadow runtime.layer-extract: comparing C# dry-run extraction with the installed layers ...");
                     var layers = await LayerExtractShadowCheck.RunAsync(package.Path, inspection, _layout, _options.HostPathExists, _time, ct).ConfigureAwait(false);
@@ -430,17 +490,36 @@ public sealed class RuntimeCoordinator : IDisposable
 
         var prepare = await PrepareCoreAsync(_options.DshProvision, ct).ConfigureAwait(false);
 
-        var after = await _runtime.GetStateAsync(ct).ConfigureAwait(false);
+        var after = await ReadStateAsync(LegacyDecidesState, ct).ConfigureAwait(false);
         if (verify.Verdict != ShadowVerdict.Agree || !prepare.Ok || after.State == RuntimeState.NotInstalled)
         {
             var why = verify.Verdict != ShadowVerdict.Agree ? $"installed tree check {verify.Verdict}"
                 : !prepare.Ok ? $"runtime.prepare failed: {prepare.Message}"
-                : "legacy runtime does not recognize the installed layers";
+                : LegacyDecidesState ? "legacy runtime does not recognize the installed layers"
+                : $"runtime install check: {(await ReadFactsAsync(ct).ConfigureAwait(false))?.InstallReason ?? "not installed"}";
             State.TryTransition(RuntimeState.Failed, "csharp import incomplete", after.Harness, "RUNTIME_IMPORT_UNVERIFIED", why);
             return new RuntimeInstallResult(false, "RUNTIME_IMPORT_UNVERIFIED", why);
         }
         State.TryTransition(RuntimeState.Ready, "import done (csharp)", after.Harness, dshVersion: after.DshVersion);
         return new RuntimeInstallResult(true, RuntimeErrorCodes.Ok, null);
+    }
+
+    /// <summary>
+    /// Aligns the journal with the runtime as it is now (C# reads the disk unless a fallback-started legacy runtime may be
+    /// running) and returns it; used at app start so the status line does not show what the previous process saw.
+    /// </summary>
+    public async Task<RuntimeSnapshot> RefreshStateAsync(CancellationToken ct)
+    {
+        await _op.WaitAsync(ct).ConfigureAwait(false);
+        try
+        {
+            await SyncAsync(ct).ConfigureAwait(false);
+            return State.Current;
+        }
+        finally
+        {
+            _op.Release();
+        }
     }
 
     /// <summary>The per-slice choices (ADR-0016: C# by default); pages read them to pick their default path.</summary>
@@ -459,6 +538,7 @@ public sealed class RuntimeCoordinator : IDisposable
         await _op.WaitAsync(ct).ConfigureAwait(false);
         try
         {
+            await EnsureGuestAssetsAsync(ct).ConfigureAwait(false);
             var exec = new ProotGuestProcess(_layout);
             var sw = Stopwatch.StartNew();
             var results = await exec.RunDiagnosticsAsync(ct).ConfigureAwait(false);
@@ -471,10 +551,6 @@ public sealed class RuntimeCoordinator : IDisposable
         }
     }
 
-    /// <summary>
-    /// <see cref="SliceMode.CSharp"/> plugin list (ADR-0016): <c>dsh plugin list --json --depth 0</c> through the C#
-    /// PRoot launcher; the same command and parser the PR-05 shadow verified against the legacy <c>plugin.list</c>.
-    /// </summary>
     /// <summary>
     /// The C# <c>relay.selftest</c> (ADR-0016, ui_* execution layer): stages the ui_* guest scripts, then runs
     /// <see cref="UiFacadeAssets.SelfTestCommand"/> through the C# PRoot launcher, serialized with the other runtime
@@ -498,6 +574,7 @@ public sealed class RuntimeCoordinator : IDisposable
             {
                 return new GuestProcessResult(false, null, "", $"{UiFacadeAssets.NotStaged}: {e.Message}");
             }
+            await EnsureGuestAssetsAsync(ct).ConfigureAwait(false);
             var sw = Stopwatch.StartNew();
             var result = await new ProotGuestProcess(_layout)
                 .RunShellAsync(UiFacadeAssets.SelfTestCommand, new GuestExecutionOptions(Timeout: timeout, MaxOutputLines: UiFacadeAssets.SelfTestMaxLines), ct)
@@ -511,6 +588,10 @@ public sealed class RuntimeCoordinator : IDisposable
         }
     }
 
+    /// <summary>
+    /// <see cref="SliceMode.CSharp"/> plugin list (ADR-0016): <c>dsh plugin list --json --depth 0</c> through the C#
+    /// PRoot launcher; the same command and parser the PR-05 shadow verified against the legacy <c>plugin.list</c>.
+    /// </summary>
     public async Task<GuestPluginResult> ListPluginsAsync(string profile, CancellationToken ct)
     {
         if (_layout is null)
@@ -520,6 +601,7 @@ public sealed class RuntimeCoordinator : IDisposable
         await _op.WaitAsync(ct).ConfigureAwait(false);
         try
         {
+            await EnsureGuestAssetsAsync(ct).ConfigureAwait(false);
             return await GuestPlugins.RunAsync(new ProotGuestProcess(_layout), "list", profile, null, ct).ConfigureAwait(false);
         }
         finally
@@ -872,6 +954,7 @@ public sealed class RuntimeCoordinator : IDisposable
         await _op.WaitAsync(ct).ConfigureAwait(false);
         try
         {
+            await EnsureGuestAssetsAsync(ct).ConfigureAwait(false);
             var sw = Stopwatch.StartNew();
             var guard = new PluginInstallGuard(new GuestPluginOps(new ProotGuestProcess(_layout), profile), new PluginProfileReader(_layout, profile));
             var r = verb == "add"
@@ -970,6 +1053,7 @@ public sealed class RuntimeCoordinator : IDisposable
         await _op.WaitAsync(ct).ConfigureAwait(false);
         try
         {
+            await EnsureGuestAssetsAsync(ct).ConfigureAwait(false);
             var exec = new ProotGuestProcess(_layout);
             var report = await PtyProbe.RunAsync(
                 c => exec.OpenPtyAsync(new GuestExecutionOptions(), 24, 80, c),
@@ -1093,6 +1177,7 @@ public sealed class RuntimeCoordinator : IDisposable
         _host ??= CreateHost(_layout);
         _foreground.Acquire();
         var sw = Stopwatch.StartNew();
+        await EnsureGuestAssetsAsync(ct).ConfigureAwait(false);
         _log.Note("start: C# DshHost (legacy runtime not used)");
         var r = await _host.StartAsync(ct).ConfigureAwait(false);
         _log.Note(r.Ok ? $"csharp host: ready in {sw.Elapsed.TotalSeconds:F1} s" : $"csharp host: FAILED {r.Code}: {r.Message}");
@@ -1156,18 +1241,106 @@ public sealed class RuntimeCoordinator : IDisposable
         return lines;
     }
 
-    /// <summary>Aligns the journal with what the runtime actually reports before deciding a transition.</summary>
-    private async Task SyncAsync(CancellationToken ct)
+    /// <summary>
+    /// Aligns the journal with what the runtime actually is before deciding a transition. <paramref name="legacy"/> = true:
+    /// the caller is about to use the legacy runtime (fallback), so its status decides; null: <see cref="LegacyDecidesState"/>.
+    /// </summary>
+    private async Task SyncAsync(CancellationToken ct, bool? legacy = null)
     {
         if (HostOwnsProcesses)
         {
             return; // the legacy runtime does not know about C#-hosted processes; the journal follows the host
         }
-        var actual = await _runtime.GetStateAsync(ct).ConfigureAwait(false);
+        var useLegacy = legacy ?? LegacyDecidesState;
+        var actual = await ReadStateAsync(useLegacy, ct).ConfigureAwait(false);
         // A failed status read is itself reported as Failed; keep the journal's own error in that case.
         if (actual.ErrorCode is null || actual.State != RuntimeState.Failed)
         {
-            State.Observe(actual.State, actual.Harness, actual.DshVersion, _runtime.Implementation);
+            State.Observe(actual.State, actual.Harness, actual.DshVersion, useLegacy ? _runtime.Implementation : CSharpImplementation);
+        }
+    }
+
+    /// <summary>
+    /// TASK-005 / MIGRATION row 24: probes one shipped DSH profile through the C# PRoot launcher (<see cref="DshProbe"/>),
+    /// serialized with the other runtime operations like the legacy <c>dsh.probe</c>. Independent of who owns the
+    /// sandbox: the probe launches DSH itself in a fresh guest.
+    /// </summary>
+    public async Task<DshProbeOutcome> ProbeProfileAsync(string profile, CancellationToken ct)
+    {
+        if (!DshProfiles.All.Contains(profile))
+        {
+            return new DshProbeOutcome(profile, null, DshProbe.UnknownProfile, $"profile must be one of {string.Join(", ", DshProfiles.All)}");
+        }
+        if (_layout is null)
+        {
+            return new DshProbeOutcome(profile, null, RuntimeErrorCodes.NotImplemented, "no runtime layout");
+        }
+        await _op.WaitAsync(ct).ConfigureAwait(false);
+        try
+        {
+            await EnsureGuestAssetsAsync(ct).ConfigureAwait(false);
+            var run = await new ProotGuestProcess(_layout)
+                .RunShellAsync(DshProbe.Command(profile), new GuestExecutionOptions(Timeout: DshProbe.Timeout, MaxOutputLines: DshProbe.MaxLines), ct)
+                .ConfigureAwait(false);
+            return DshProbe.Parse(profile, run);
+        }
+        finally
+        {
+            _op.Release();
+        }
+    }
+
+    /// <summary>
+    /// MIGRATION row 18: puts the previous runtime body (<c>runtime-current/previous</c>) back with
+    /// <see cref="LayerRollback"/>. Refused while any runtime process may be running; the journal goes through
+    /// <see cref="RuntimeState.Staging"/> and ends in what C# then reads from disk (or Failed with the rollback code).
+    /// </summary>
+    public async Task<RuntimeInstallResult> RollbackAsync(CancellationToken ct)
+    {
+        if (_layout is null)
+        {
+            return new RuntimeInstallResult(false, RuntimeErrorCodes.NotImplemented, "rollback needs the runtime layout");
+        }
+        await _op.WaitAsync(ct).ConfigureAwait(false);
+        try
+        {
+            await SyncAsync(ct).ConfigureAwait(false);
+            var before = State.Current.State;
+            if (HostOwnsProcesses || _legacyRuntimeStarted || before is RuntimeState.Running or RuntimeState.Starting or RuntimeState.Stopping)
+            {
+                _log.Note("rollback: refused, stop the runtime first");
+                return new RuntimeInstallResult(false, RuntimeErrorCodes.InvalidTransition, $"stop the runtime before rolling back (runtime {before})");
+            }
+            if (!LayerRollback.Available(_layout))
+            {
+                _log.Note($"rollback: {LayerRollback.NoRollbackSlot} (no previous runtime body)");
+                return new RuntimeInstallResult(false, LayerRollback.NoRollbackSlot, "no previous runtime body to roll back to");
+            }
+            if (!State.TryTransition(RuntimeState.Staging, "rollback requested (csharp)"))
+            {
+                return new RuntimeInstallResult(false, RuntimeErrorCodes.InvalidTransition, $"cannot roll back while {before}");
+            }
+            var r = await Task.Run(() => LayerRollback.Rollback(_layout), ct).ConfigureAwait(false);
+            var facts = await Task.Run(() => RuntimeStatusReader.Read(_layout), ct).ConfigureAwait(false);
+            _log.Note(r.Ok
+                ? $"rollback (csharp): restored {string.Join(", ", r.Restored)}; runtime={facts.RuntimeInstalled} ({facts.InstallReason})"
+                : $"rollback (csharp) FAILED {r.Code}: {r.Message}");
+            if (!r.Ok)
+            {
+                State.TryTransition(RuntimeState.Failed, "rollback failed", errorCode: r.Code, errorMessage: r.Message);
+                return new RuntimeInstallResult(false, r.Code, r.Message, r.Code);
+            }
+            if (!facts.RuntimeInstalled)
+            {
+                State.TryTransition(RuntimeState.Failed, "rollback incomplete", errorCode: "RUNTIME_ROLLBACK_UNVERIFIED", errorMessage: facts.InstallReason);
+                return new RuntimeInstallResult(false, "RUNTIME_ROLLBACK_UNVERIFIED", $"restored body fails the install check: {facts.InstallReason}");
+            }
+            State.TryTransition(RuntimeState.Ready, "rolled back (csharp)", HarnessState.Stopped, dshVersion: facts.DshVersion);
+            return new RuntimeInstallResult(true, RuntimeErrorCodes.Ok, $"restored {string.Join(", ", r.Restored)}");
+        }
+        finally
+        {
+            _op.Release();
         }
     }
 

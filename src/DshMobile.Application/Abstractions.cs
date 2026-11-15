@@ -50,10 +50,12 @@ public sealed class MigrationOptions
     public SliceMode BundleImport { get; set; } = SliceMode.CSharp;
 
     /// <summary>
-    /// LayerInstaller extraction shadow on a legacy import: the C# extractor dry-runs each layer and is compared with the
-    /// installed tree. Only used when the import itself runs legacy (fallback).
+    /// LayerInstaller extraction (MIGRATION row 15). <see cref="SliceMode.CSharp"/> (default): the C# extractor is what the
+    /// C# import installs with (checked after install as <c>runtime.layer-install</c>); on a legacy import (fallback) it
+    /// still dry-runs each layer and is compared with the installed tree. <see cref="SliceMode.Legacy"/> turns that
+    /// comparison off.
     /// </summary>
-    public SliceMode LayerExtract { get; set; } = SliceMode.LegacyWithShadow;
+    public SliceMode LayerExtract { get; set; } = SliceMode.CSharp;
 
     /// <summary>
     /// Guest command execution (PR-03). <see cref="SliceMode.CSharp"/> (default): the fixed diagnostics commands run
@@ -68,6 +70,13 @@ public sealed class MigrationOptions
     /// (<c>dsh plugin list --json --depth 0</c>); otherwise legacy <c>plugin.list</c> with the C# list shadowing it.
     /// </summary>
     public SliceMode PluginList { get; set; } = SliceMode.CSharp;
+
+    /// <summary>
+    /// Plugin install / uninstall (MIGRATION row 29). <see cref="SliceMode.CSharp"/> (default): <c>dsh plugin add/remove</c>
+    /// through the C# PRoot launcher with the ported install guard (a package that cannot load is rolled back); any other
+    /// value makes the legacy <c>plugin.add/remove</c> the default. Long-press on the plugin page picks the other one.
+    /// </summary>
+    public SliceMode PluginChange { get; set; } = SliceMode.CSharp;
 
     /// <summary>
     /// Mobile automation (PR-07, segments 1–9 and the guest switch of ADR-0010): <see cref="RelayHost"/> =

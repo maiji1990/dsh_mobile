@@ -23,9 +23,11 @@
     <AndroidLibrary Include="$(NativeArtifactsDir)dshbox-terminal-emulator-release.aar" Bind="false" />
     <AndroidLibrary Include="$(NativeArtifactsDir)dshbox-terminal-view-release.aar" Bind="false" />
     <AndroidLibrary Include="$(NativeArtifactsDir)dshbox-terminal-session-release.aar" Bind="false" />
-    <!-- Mobile automation (ADR-0004): Interlock Relay core (Apache-2.0) + its Shizuku client AARs (MIT). -->
+    <!--
+      Mobile automation (ADR-0004): Interlock Relay core (Apache-2.0). Its Shizuku client (MIT) is a direct Maven
+      dependency of DshMobile.Android now (AndroidMavenLibrary, same 13.1.5), so the Gradle export no longer ships it.
+    -->
     <AndroidLibrary Include="$(NativeArtifactsDir)dshbox-interlock-relay-core-release.aar" Bind="false" />
-    <AndroidLibrary Include="$(NativeArtifactsDir)aars\*.aar" Bind="false" />
     <!-- Browser automation (ADR-0005): DSHBox browser stack; runtime components run in the `:browser` process. -->
     <AndroidLibrary Include="$(NativeArtifactsDir)dshbox-browser-api-release.aar" Bind="false" />
     <AndroidLibrary Include="$(NativeArtifactsDir)dshbox-browser-devtools-release.aar" Bind="false" />

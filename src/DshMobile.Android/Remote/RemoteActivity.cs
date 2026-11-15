@@ -67,7 +67,15 @@ public sealed class RemoteActivity : Activity
         var disconnect = Make(Resource.String.remote_disconnect, () =>
         {
             CsRemoteConnection.Clear();
-            _ = Status(BridgeMethods.RemoteDisconnect, null, TimeSpan.FromSeconds(30));
+            if (CsRemoteConnection.LegacyFallbackActive)
+            {
+                _ = LegacyDisconnectAsync();
+            }
+            else
+            {
+                _status.Text = GetString(Resource.String.remote_cs_disconnected);
+                _bridge.Note("remote disconnect (C#)");
+            }
         });
         var remove = Make(Resource.String.remote_remove, ConfirmRemove);
         root.AddView(Row(copy, save));
@@ -175,10 +183,21 @@ public sealed class RemoteActivity : Activity
         {
             ShowCs(cs);
         }
-        else
+        else if (CsRemoteConnection.LegacyFallbackActive)
         {
-            await Status(BridgeMethods.RemoteStatus, null, TimeSpan.FromSeconds(10)); // a legacy fallback connection, if any
+            await Status(BridgeMethods.RemoteStatus, null, TimeSpan.FromSeconds(10)); // the legacy fallback connection
         }
+    }
+
+    /// <summary>Closes the legacy fallback connection; the flag is cleared only when the legacy side confirmed it.</summary>
+    private async Task<bool> LegacyDisconnectAsync()
+    {
+        var s = await Status(BridgeMethods.RemoteDisconnect, null, TimeSpan.FromSeconds(30));
+        if (s is not null)
+        {
+            CsRemoteConnection.LegacyFallbackActive = false;
+        }
+        return s is not null;
     }
 
     private void Select(RemoteHost h)
@@ -240,6 +259,7 @@ public sealed class RemoteActivity : Activity
         var hostId = _selected.Id;
         // The profile (and its pin) the legacy connect is about to use: the C# shadow connection uses the same one.
         var profile = RemoteHostProfile.ParseStored(StoredHosts()).FirstOrDefault(p => p.Id == hostId);
+        CsRemoteConnection.LegacyFallbackActive = true; // any attempt may leave a legacy session behind
         var s = await Status(BridgeMethods.RemoteConnect, HostId(hostId), TimeSpan.FromMinutes(3));
         if (s is not null)
         {
@@ -269,7 +289,11 @@ public sealed class RemoteActivity : Activity
             return;
         }
         var hostId = _selected.Id;
-        await Call(BridgeMethods.RemoteDisconnect, null, BridgeJsonContext.Default.RemoteStatusInfo, TimeSpan.FromSeconds(30));
+        // One remote at a time: a legacy fallback connection (only possible if one was made in this process) goes first.
+        if (CsRemoteConnection.LegacyFallbackActive && !await LegacyDisconnectAsync())
+        {
+            return;
+        }
         CsRemoteConnection.Clear();
         var profile = RemoteHostProfile.ParseStored(StoredHosts()).FirstOrDefault(p => p.Id == hostId);
         if (profile is null)
@@ -314,6 +338,11 @@ public sealed class RemoteActivity : Activity
             _ = CsDshAsync(cs, start: true);
             return;
         }
+        if (!CsRemoteConnection.LegacyFallbackActive)
+        {
+            _status.Text = GetString(Resource.String.remote_not_connected);
+            return;
+        }
         _ = LegacyDshAsync(BridgeMethods.RemoteStart, TimeSpan.FromMinutes(3));
     }
 
@@ -322,6 +351,11 @@ public sealed class RemoteActivity : Activity
         if (CsRemoteConnection.Session is { } cs)
         {
             _ = CsDshAsync(cs, start: false);
+            return;
+        }
+        if (!CsRemoteConnection.LegacyFallbackActive)
+        {
+            _status.Text = GetString(Resource.String.remote_not_connected);
             return;
         }
         _ = LegacyDshAsync(BridgeMethods.RemoteStop, TimeSpan.FromMinutes(1));
@@ -447,10 +481,11 @@ public sealed class RemoteActivity : Activity
                 {
                     CsRemoteHosts.Remove(this, h.Id);
                     // A legacy fallback connection to this host goes too (legacy remove disconnected its current host).
-                    if (await Call(BridgeMethods.RemoteStatus, null, BridgeJsonContext.Default.RemoteStatusInfo, TimeSpan.FromSeconds(10)) is { HostId: { } connected }
+                    if (CsRemoteConnection.LegacyFallbackActive
+                        && await Call(BridgeMethods.RemoteStatus, null, BridgeJsonContext.Default.RemoteStatusInfo, TimeSpan.FromSeconds(10)) is { HostId: { } connected }
                         && connected == h.Id)
                     {
-                        await Call(BridgeMethods.RemoteDisconnect, null, BridgeJsonContext.Default.RemoteStatusInfo, TimeSpan.FromSeconds(30));
+                        await LegacyDisconnectAsync();
                     }
                     _bridge.Note("remote.hosts.remove (C#)");
                     _selected = null;

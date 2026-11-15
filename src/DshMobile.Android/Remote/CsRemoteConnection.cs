@@ -16,6 +16,19 @@ internal static class CsRemoteConnection
 
     public static RemoteSshConnector Connector() => new(new AndroidSshKeySource());
 
+    private static volatile bool _legacyFallbackActive;
+
+    /// <summary>
+    /// Set when the legacy (JSch) connect was used on the fallback in this process, cleared after a legacy disconnect
+    /// succeeded. The legacy connection only lives in this process, so without it the page never calls the legacy
+    /// remote.* methods (ADR-0016: nothing on the default path goes through the bridge).
+    /// </summary>
+    public static bool LegacyFallbackActive
+    {
+        get => _legacyFallbackActive;
+        set => _legacyFallbackActive = value;
+    }
+
     /// <summary>True while a C# attempt is the page's current connection state (also after it failed, until cleared).</summary>
     public static bool Current
     {

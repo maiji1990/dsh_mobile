@@ -1,9 +1,9 @@
 <resources>
     <string name="app_name">DSH Mobile</string>
     <string name="home_title">DSH Mobile · Native Bridge POC</string>
-    <string name="action_info">bridge.info</string>
-    <string name="action_kotlin">调用 DSHBox Kotlin</string>
-    <string name="action_stress">1000 次压测</string>
+    <string name="action_info">信息（长按：旧 bridge.info）</string>
+    <string name="action_kotlin">版本比较（长按：对照 Kotlin）</string>
+    <string name="action_stress">旧桥 1000 次压测</string>
     <string name="action_clear">清空日志</string>
     <string name="status_idle">空闲</string>
     <string name="status_running">运行中…</string>
@@ -124,6 +124,8 @@
     <string name="remote_key_unavailable">本机 SSH 密钥不可用：%1$s</string>
     <string name="remote_key_selftest_failed">密钥自检签名未通过：%1$s</string>
     <string name="remote_cs_failed">C# 连接出错：%1$s</string>
+    <string name="remote_cs_disconnected">已断开（C#）</string>
+    <string name="remote_not_connected">未连接：先点「连接」</string>
     <string name="dm_browser_title">浏览器（实验）</string>
     <string name="dm_browser_explain">网页自动化：DSH 通过 browser_* 工具读取与操作 App 内置浏览器（独立进程，Cookie / 存储与 DSH 界面分离）。AI 只有在你于浏览器内批准「控制请求」后才能点击、输入或导航；读取页面也需要你先打开浏览器并开启其中的 AI 开关。browser_* 工具默认不安装。</string>
     <string name="dm_browser_open">打开浏览器</string>
