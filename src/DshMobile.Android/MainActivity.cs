@@ -50,29 +50,29 @@ public class MainActivity : Activity
         kotlin.Click += (_, _) => _ = _bridge.RunKotlinCompareAsync();
         stress.Click += (_, _) => _ = _bridge.RunStressAsync(1000);
         clear.Click += (_, _) => _bridge.ClearLog();
-        // Default: the legacy runtime.prepare installs the bundled DSH layer, C# shadows it (MIGRATION row 17).
+        // ADR-0016: the C# RuntimePreparer installs the bundled DSH layer by default (MIGRATION row 17).
         prepare.Click += (_, _) => _ = _bridge.RunPrepareAsync();
-        // Developer opt-in: the C# RuntimePreparer decides for this one call (no DSHBox code).
+        // Explicit fallback: the legacy runtime.prepare for this one call, shadowed by C#.
         prepare.LongClick += (_, e) =>
         {
             e.Handled = true;
             new AlertDialog.Builder(this)
                 .SetTitle("准备实现")!
-                .SetMessage("用 C# RuntimePreparer 做这一次准备（安装 APK 内置的 DSH 层，按版本仲裁，实验）？默认仍由旧实现准备并做影子比对。运行中只允许“保留现有版本”，需要替换 DSH 层时会拒绝。")!
-                .SetPositiveButton("C# 准备", (_, _) => _ = _bridge.RunPrepareAsync(DshMobile.Application.SliceMode.CSharp))!
+                .SetMessage("默认由 C# RuntimePreparer 安装 APK 内置的 DSH 层（按版本仲裁）。改用旧实现（DSHBox）做这一次准备？C# 会做影子比对。")!
+                .SetPositiveButton("旧实现（回退）", (_, _) => _ = _bridge.RunPrepareAsync(DshMobile.Application.SliceMode.LegacyWithShadow))!
                 .SetNegativeButton("取消", (_, _) => { })!
                 .Show();
         };
-        // Runtime bundle comes from the system picker (no storage permission, no adb needed).
-        import.Click += (_, _) => PickRuntimeBundle(csharpImporter: false);
-        // Developer opt-in for device acceptance of the C# LayerInstaller (ADR-0007): one import only, explicit choice.
+        // Runtime bundle comes from the system picker (no storage permission, no adb needed). ADR-0016: C# importer.
+        import.Click += (_, _) => PickRuntimeBundle(null);
+        // Explicit fallback: the legacy importer for this one import, shadowed by the C# inspector / extractor.
         import.LongClick += (_, e) =>
         {
             e.Handled = true;
             new AlertDialog.Builder(this)
                 .SetTitle("导入实现")!
-                .SetMessage("用 C# LayerInstaller 做这一次导入（实验，用于真机验收）？默认导入仍使用旧实现并做影子比对。")!
-                .SetPositiveButton("C# 导入器", (_, _) => PickRuntimeBundle(csharpImporter: true))!
+                .SetMessage("默认由 C# LayerInstaller 导入。改用旧实现（DSHBox）做这一次导入？C# 会做影子比对。")!
+                .SetPositiveButton("旧实现（回退）", (_, _) => PickRuntimeBundle(DshMobile.Application.SliceMode.LegacyWithShadow))!
                 .SetNegativeButton("取消", (_, _) => { })!
                 .Show();
         };
@@ -97,7 +97,7 @@ public class MainActivity : Activity
             e.Handled = true;
             new AlertDialog.Builder(this)
                 .SetTitle("终端 PTY 自检")!
-                .SetMessage("用 C# + libdshmobile_native 打开一个 guest 登录 shell，自动执行 tty / stty / 调整窗口大小 / Ctrl-C / exit 并检查无残留进程（实验，用于真机验收）。终端界面仍使用旧实现。")!
+                .SetMessage("用 C# + libdshmobile_native 打开一个 guest 登录 shell，自动执行 tty / stty / 调整窗口大小 / Ctrl-C / exit 并检查无残留进程（用于真机验收）。")!
                 .SetPositiveButton("开始自检", (_, _) => _ = _bridge.RunCSharpPtyProbeAsync())!
                 .SetNegativeButton("取消", (_, _) => { })!
                 .Show();
@@ -105,15 +105,19 @@ public class MainActivity : Activity
         probe.Click += (_, _) => _ = _bridge.RunProbesAsync();
         openDsh.Click += (_, _) => StartActivity(new Android.Content.Intent(this, typeof(DshWebActivity)));
         files.Click += (_, _) => StartActivity(new Android.Content.Intent(this, typeof(FilesActivity)));
-        terminal.Click += (_, _) => StartActivity(new Android.Content.Intent(this, typeof(DshMobile.App.Terminal.TerminalActivity)));
-        // Developer opt-in (ADR-0007 PR-06): C#-owned PTY sessions + xterm.js screen; the legacy TerminalView stays the default.
+        // ADR-0016: the C# terminal (C#-owned PTY sessions + local xterm.js screen) is the default.
+        terminal.Click += (_, _) => StartActivity(new Android.Content.Intent(this,
+            _bridge.Runtime.Options.Terminal == DshMobile.Application.SliceMode.CSharp
+                ? typeof(DshMobile.App.Terminal.CSharpTerminalActivity)
+                : typeof(DshMobile.App.Terminal.TerminalActivity)));
+        // Explicit fallback: the legacy TerminalView (its sessions are independent of the C# ones).
         terminal.LongClick += (_, e) =>
         {
             e.Handled = true;
             new AlertDialog.Builder(this)
                 .SetTitle("终端实现")!
-                .SetMessage("打开 C# 终端（实验，用于真机验收）？会话由 C# 经 libdshmobile_native 持有、界面为本地 xterm.js；与旧终端的会话互相独立。默认终端仍使用旧实现。")!
-                .SetPositiveButton("C# 终端", (_, _) => StartActivity(new Android.Content.Intent(this, typeof(DshMobile.App.Terminal.CSharpTerminalActivity))))!
+                .SetMessage("默认打开 C# 终端（会话由 C# 经 libdshmobile_native 持有）。改为打开旧终端（DSHBox TerminalView）？两边的会话互相独立。")!
+                .SetPositiveButton("旧终端（回退）", (_, _) => StartActivity(new Android.Content.Intent(this, typeof(DshMobile.App.Terminal.TerminalActivity))))!
                 .SetNegativeButton("取消", (_, _) => { })!
                 .Show();
         };
@@ -135,20 +139,20 @@ public class MainActivity : Activity
 
     private const int RequestRuntimeBundle = 61;
 
-    /// <summary>Importer chosen for the pending picker result (reset after each use).</summary>
-    private bool _csharpImporter;
+    /// <summary>Importer chosen for the pending picker result (null = the default; reset after each use).</summary>
+    private DshMobile.Application.SliceMode? _importMode;
 
-    private void PickRuntimeBundle(bool csharpImporter)
+    private void PickRuntimeBundle(DshMobile.Application.SliceMode? mode)
     {
-        _csharpImporter = csharpImporter;
+        _importMode = mode;
         StartActivityForResult(DocumentPicker.OpenIntent(["application/zip", ".zip"], multiple: false), RequestRuntimeBundle);
     }
 
     protected override async void OnActivityResult(int requestCode, Result resultCode, Intent? data)
     {
         base.OnActivityResult(requestCode, resultCode, data);
-        var csharpImporter = _csharpImporter;
-        _csharpImporter = false;
+        var importMode = _importMode;
+        _importMode = null;
         if (requestCode != RequestRuntimeBundle || resultCode != Result.Ok || data?.Data is not { } uri)
         {
             return;
@@ -169,7 +173,7 @@ public class MainActivity : Activity
                 await input.CopyToAsync(output);
             });
             _bridge.Note($"import: copied {new FileInfo(dest).Length / 1024 / 1024} MiB in {sw.Elapsed.TotalSeconds:F1} s");
-            await _bridge.RunImportAsync(dest, deleteAfter: true, csharpImporter);
+            await _bridge.RunImportAsync(dest, deleteAfter: true, importMode);
         }
         catch (Exception e) when (e is IOException or Java.Lang.Exception or UnauthorizedAccessException)
         {

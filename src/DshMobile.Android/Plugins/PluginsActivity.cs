@@ -74,16 +74,18 @@ public sealed class PluginsActivity : Activity
     private async Task RefreshAsync(bool keepStatus = false)
     {
         SetBusy(true, keepStatus ? null : GetString(Resource.String.plugins_loading));
-        var r = await RunAsync(BridgeMethods.PluginList, new PluginRequest(Profile), ListDeadline);
+        var runtime = DshMobileApplication.Current.Bridge.Runtime;
+        var csharpList = runtime.Options.PluginList == DshMobile.Application.SliceMode.CSharp;
+        // ADR-0016: the list runs through the C# PRoot launcher by default; otherwise legacy plugin.list + C# shadow.
+        var r = csharpList ? await ListWithCSharpAsync() : await RunAsync(BridgeMethods.PluginList, new PluginRequest(Profile), ListDeadline);
         _plugins = r is { Ok: true } ? GuestPlugins.ParseList(r.Output).ToList() : [];
-        if (r is not null)
+        if (r is not null && !csharpList)
         {
             // PR-05 shadow (read-only): the same list through the C# PRoot launcher, compared in the background.
-            var runtime = DshMobileApplication.Current.Bridge.Runtime;
             _ = Task.Run(() => runtime.ShadowPluginListAsync(Profile, r.Ok, r.Output, CancellationToken.None));
         }
         _list.Adapter = new ArrayAdapter<string>(this, Android.Resource.Layout.SimpleListItem1,
-            _plugins.Count == 0 ? [GetString(Resource.String.plugins_none)] : _plugins.Select(p => $"{p.Name}  {p.Version}").ToList());
+            _plugins.Count == 0 ? [GetString(r is { Ok: true } ? Resource.String.plugins_none : Resource.String.plugins_list_failed)] : _plugins.Select(p => $"{p.Name}  {p.Version}").ToList());
         _list.Enabled = _plugins.Count > 0;
         SetBusy(false, r is null || keepStatus ? null : Describe("list", r));
     }
@@ -146,6 +148,23 @@ public sealed class PluginsActivity : Activity
 
     private const string CSharpTag = "（C#）";
     private const string CSharpAddNote = "C# 实现（实验）：安装后核对新增的包是否为可加载的 DSH 插件，不是则自动卸载（回滚）。";
+
+    /// <summary>C# <c>dsh plugin list</c>, in the legacy result shape so the page renders it the same way.</summary>
+    private async Task<PluginCommandResult> ListWithCSharpAsync()
+    {
+        var runtime = DshMobileApplication.Current.Bridge.Runtime;
+        try
+        {
+            using var cts = new CancellationTokenSource(ListDeadline);
+            var r = await Task.Run(() => runtime.ListPluginsAsync(Profile, cts.Token));
+            _bridge.Note($"plugin list (C#) exit={r.ExitCode}");
+            return new PluginCommandResult(r.Ok, r.ExitCode, r.Output, r.Error);
+        }
+        catch (OperationCanceledException)
+        {
+            return new PluginCommandResult(false, null, "", $"TIMEOUT: no result within {ListDeadline.TotalMinutes:F0} min");
+        }
+    }
 
     private async Task<PluginChangeResult> ChangeWithCSharpAsync(string verb, string operand)
     {

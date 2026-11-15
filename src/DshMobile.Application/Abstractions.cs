@@ -16,7 +16,9 @@ public interface IDiagnosticsLog
 
 /// <summary>
 /// Which implementation runs a migrated slice. Only modes that exist are listed: a C# mode is added together with
-/// its implementation, and becomes the default only after real-device acceptance (ADR-0007).
+/// its implementation. ADR-0007 made a C# default wait for real-device acceptance; ADR-0016 (owner's decision) made
+/// every shadowed slice C# by default ahead of it, with the legacy path kept as an explicit per-call fallback and
+/// the real-device acceptance still owed per slice.
 /// </summary>
 public enum SliceMode
 {
@@ -26,108 +28,99 @@ public enum SliceMode
     LegacyWithShadow,
 
     /// <summary>
-    /// The C# implementation decides and the legacy one does not run. Opt-in per operation until the slice has passed
-    /// real-device acceptance; never a default before that (ADR-0007).
+    /// The C# implementation decides and the legacy one does not run (the default of every shadowed slice since
+    /// ADR-0016). Shadows that compare a legacy run still fire when the user falls back to the legacy path.
     /// </summary>
     CSharp,
 }
 
+/// <summary>
+/// Per-slice implementation choice. Since ADR-0016 every slice that had a C# shadow defaults to
+/// <see cref="SliceMode.CSharp"/>; the legacy bridge stays reachable as an explicit per-call fallback (long-press /
+/// choice dialog), and a legacy run on that fallback is still shadowed by C# where a shadow exists.
+/// </summary>
 public sealed class MigrationOptions
 {
-    /// <summary>Runtime bundle import (PR-02 slice: RuntimeManifest / LayerInstaller verification).</summary>
-    public SliceMode BundleImport { get; set; } = SliceMode.LegacyWithShadow;
+    /// <summary>
+    /// Runtime bundle import (PR-02: RuntimeManifest verification + LayerInstaller). <see cref="SliceMode.CSharp"/>
+    /// (default): the C# <c>LayerInstaller</c> verifies, extracts and swaps, then the installed tree is checked against a
+    /// fresh dry-run (<c>runtime.layer-install</c>). A per-call <see cref="SliceMode.LegacyWithShadow"/> is the legacy
+    /// fallback, with the C# inspector / extractor shadowing it.
+    /// </summary>
+    public SliceMode BundleImport { get; set; } = SliceMode.CSharp;
 
     /// <summary>
-    /// LayerInstaller extraction (PR-02 second half): after a legacy import, the C# extractor dry-runs each layer
-    /// and is compared with the installed tree. Needs <see cref="BundleImport"/> shadowing (it reuses the inspection).
+    /// LayerInstaller extraction shadow on a legacy import: the C# extractor dry-runs each layer and is compared with the
+    /// installed tree. Only used when the import itself runs legacy (fallback).
     /// </summary>
     public SliceMode LayerExtract { get; set; } = SliceMode.LegacyWithShadow;
 
     /// <summary>
-    /// Guest command execution (PR-03 first slice): after the legacy diagnostics, the same fixed commands run through
-    /// the C# PRoot launcher and the outputs are compared.
+    /// Guest command execution (PR-03). <see cref="SliceMode.CSharp"/> (default): the fixed diagnostics commands run
+    /// through the C# PRoot launcher only; <see cref="SliceMode.LegacyWithShadow"/>: legacy <c>runtime.diagnostics</c>
+    /// with the C# run compared. The supervisor / launcher-argv shadow of legacy-started processes runs unless
+    /// <see cref="SliceMode.Legacy"/>.
     /// </summary>
-    public SliceMode GuestExec { get; set; } = SliceMode.LegacyWithShadow;
+    public SliceMode GuestExec { get; set; } = SliceMode.CSharp;
 
     /// <summary>
-    /// Plugin management (PR-05): after the legacy <c>plugin.list</c>, the same list runs through the C# PRoot launcher
-    /// and the parsed plugin lists are compared. Add / remove stay legacy until list parity holds on a device.
+    /// Plugin list (PR-05). <see cref="SliceMode.CSharp"/> (default): the plugin page lists through the C# PRoot launcher
+    /// (<c>dsh plugin list --json --depth 0</c>); otherwise legacy <c>plugin.list</c> with the C# list shadowing it.
     /// </summary>
-    public SliceMode PluginList { get; set; } = SliceMode.LegacyWithShadow;
+    public SliceMode PluginList { get; set; } = SliceMode.CSharp;
 
     /// <summary>
-    /// Mobile automation, ui_* registration and status (PR-07 first segment): after each legacy <c>relay.*</c> call the
-    /// C# port reads the same patch layer and accessibility setting and is compared. Writing stays legacy.
+    /// Mobile automation (PR-07, segments 1–9 and the guest switch of ADR-0010): <see cref="RelayHost"/> =
+    /// <see cref="SliceMode.CSharp"/> (default) makes "start relay" stop the legacy Relay and let the C# Relay host serve
+    /// the guest mailbox, publish the guest files and register the ui_* layer. The per-segment options below only gate
+    /// the shadows that compare a legacy Relay run (on the legacy fallback); <see cref="SliceMode.Legacy"/> turns one off.
     /// </summary>
-    public SliceMode UiTools { get; set; } = SliceMode.LegacyWithShadow;
+    public SliceMode UiTools { get; set; } = SliceMode.CSharp;
+
+    /// <summary>PR-07 segment 2 (mailbox envelope decoding); shadow of a legacy Relay only (see <see cref="UiTools"/>).</summary>
+    public SliceMode RelayEnvelopeCodec { get; set; } = SliceMode.CSharp;
+
+    /// <summary>PR-07 segment 3 (admission + response encoding); shadow of a legacy Relay only.</summary>
+    public SliceMode RelayAdmission { get; set; } = SliceMode.CSharp;
+
+    /// <summary>PR-07 segment 4 (execution surface + quota); shadow of a legacy Relay only.</summary>
+    public SliceMode RelaySurface { get; set; } = SliceMode.CSharp;
+
+    /// <summary>PR-07 segment 5 (approval gate decision); shadow of a legacy Relay only.</summary>
+    public SliceMode RelayGate { get; set; } = SliceMode.CSharp;
+
+    /// <summary>PR-07 segment 7 (accessibility read path); shadow of a legacy Relay only.</summary>
+    public SliceMode RelayA11yRead { get; set; } = SliceMode.CSharp;
+
+    /// <summary>PR-07 segment 8 (<c>ui.waitFor</c>); shadow of a legacy Relay only.</summary>
+    public SliceMode RelayA11yWaitFor { get; set; } = SliceMode.CSharp;
 
     /// <summary>
-    /// Relay mailbox envelope decoding (PR-07 second segment): a developer-run probe writes always-rejected requests into
-    /// the live legacy Relay's mailbox and compares its answers with the C# decoder. Decoding stays legacy.
+    /// Who serves the guest mailbox when the user starts the relay (ADR-0010 / ADR-0016). <see cref="SliceMode.CSharp"/>
+    /// (default): the C# Relay host (approval on the C# page / floating / notification card); anything else: the legacy
+    /// Relay. Long-press "start relay" offers both. Also gates the dual-relay developer shadow (unless Legacy).
     /// </summary>
-    public SliceMode RelayEnvelopeCodec { get; set; } = SliceMode.LegacyWithShadow;
+    public SliceMode RelayHost { get; set; } = SliceMode.CSharp;
 
     /// <summary>
-    /// Relay admission before the approval gate and response encoding (PR-07 third segment): a developer-run probe
-    /// sends well-formed requests that admission must reject and compares Relay's answers byte for byte with C#.
-    /// Admission stays legacy.
+    /// PR-09 first segment (host profiles, host-key pin, SSH identity). <see cref="SliceMode.CSharp"/> (default): the
+    /// remote page reads and writes the profile list (same SharedPreferences file and format as the legacy
+    /// <c>RemoteHosts</c>), pins only the key the C# connection last presented, and creates the non-exportable Keystore
+    /// key (same alias and parameters as the legacy <c>SshKeys</c>). Otherwise legacy <c>remote.*</c> + C# shadow.
     /// </summary>
-    public SliceMode RelayAdmission { get; set; } = SliceMode.LegacyWithShadow;
+    public SliceMode RemoteHosts { get; set; } = SliceMode.CSharp;
 
     /// <summary>
-    /// PR-07 segment 4 (execution surface and execution quota): shadow reads the live Relay's published surface
-    /// decision (<c>files/pilot/capabilities.json</c>) and compares it with the C# surface policy. Read-only; the
-    /// decision and the quota stay legacy.
+    /// PR-09 second segment (SSH connection, ADR-0012). <see cref="SliceMode.CSharp"/> (default): "connect" is the C#
+    /// SSH.NET connection; long-press is the legacy JSch fallback, which the C# connection still shadows (unless Legacy).
     /// </summary>
-    public SliceMode RelaySurface { get; set; } = SliceMode.LegacyWithShadow;
+    public SliceMode RemoteConnect { get; set; } = SliceMode.CSharp;
 
     /// <summary>
-    /// PR-07 segment 5 (approval gate decision, not the prompt): shadow compares the live Relay's published system state,
-    /// tier and ceiling per capability with the C# probe / tier store, and a developer-run probe sends two read-only calls
-    /// the gate must refuse for a missing system permission (only when accessibility is off). The gate stays legacy.
+    /// PR-09 third segment (remote dsh web start / stop, ADR-0013): on a C# connection start / stop run in C#; after a
+    /// legacy start / stop (fallback connection) the C# check still shadows it (unless Legacy).
     /// </summary>
-    public SliceMode RelayGate { get; set; } = SliceMode.LegacyWithShadow;
-
-    /// <summary>
-    /// PR-07 segment 7 (accessibility read path: ui.snapshot / ui.node): a developer-run shadow sends read calls through
-    /// the normal approval and compares the legacy Relay's data with the C# reader on the same live tree. Reading,
-    /// every write and the service stay legacy.
-    /// </summary>
-    public SliceMode RelayA11yRead { get; set; } = SliceMode.LegacyWithShadow;
-
-    /// <summary>
-    /// PR-07 segment 8 (ui.waitFor): the same developer-run shadow sends wait calls that all answer at the first poll and
-    /// compares the legacy Relay's answers with the C# port (all bytes but <c>waitedMs</c>). Waiting stays legacy.
-    /// </summary>
-    public SliceMode RelayA11yWaitFor { get; set; } = SliceMode.LegacyWithShadow;
-
-    /// <summary>
-    /// PR-07 steps 1–4 (write path, Direct, Shizuku, host / coordinator / services): an opt-in C# Relay host serves its
-    /// own mailbox (files/pilot-cs/run); a developer-run shadow sends the same requests to both mailboxes, each through
-    /// its own approval, and compares the normalized answers. The guest keeps talking to the legacy Relay.
-    /// </summary>
-    public SliceMode RelayHost { get; set; } = SliceMode.LegacyWithShadow;
-
-    /// <summary>
-    /// PR-09 first segment (remote host profiles, host-key pin, SSH identity): after each legacy <c>remote.*</c> call of
-    /// the remote page, the C# port reads the same SharedPreferences list and Keystore key and is compared. SSH stays
-    /// legacy (JSch); C# never writes the list or creates the key.
-    /// </summary>
-    public SliceMode RemoteHosts { get; set; } = SliceMode.LegacyWithShadow;
-
-    /// <summary>
-    /// PR-09 second segment (SSH connection, ADR-0012): after each legacy <c>remote.connect</c>, C# opens its own SSH.NET
-    /// connection to the same stored profile (same pin, same Keystore key), runs the same probe, disconnects and is
-    /// compared. Read-only: never pins, never starts the remote DSH. Long-press "connect" is the opt-in C# connect.
-    /// </summary>
-    public SliceMode RemoteConnect { get; set; } = SliceMode.LegacyWithShadow;
-
-    /// <summary>
-    /// PR-09 third segment (remote dsh web start / stop, ADR-0013): after each legacy <c>remote.start</c> /
-    /// <c>remote.stop</c>, C# checks through its own SSH.NET connection and forward what the remote DSH port answers
-    /// without the token and must reach the legacy verdict. It never starts or stops a remote process.
-    /// </summary>
-    public SliceMode RemoteDsh { get; set; } = SliceMode.LegacyWithShadow;
+    public SliceMode RemoteDsh { get; set; } = SliceMode.CSharp;
 
     /// <summary>
     /// Who starts and owns the sandbox + DSH processes (ADR-0015). <see cref="SliceMode.CSharp"/> (default): the C#
@@ -137,13 +130,19 @@ public sealed class MigrationOptions
     public SliceMode RuntimeHost { get; set; } = SliceMode.CSharp;
 
     /// <summary>
-    /// Bundled DSH layer provisioning (<c>runtime.prepare</c>, MIGRATION row 17): the APK's <c>assets/dsh</c> layer is
-    /// installed into <c>runtime-current/dsh</c> with version arbitration. <see cref="SliceMode.LegacyWithShadow"/>
-    /// (default): the legacy bridge decides; C# predicts the steps beforehand and dry-runs the same asset against the
-    /// installed layer. <see cref="SliceMode.CSharp"/>: the C# <c>RuntimePreparer</c> decides (no DSHBox code). A per-call
-    /// mode passed to <c>RuntimeCoordinator.PrepareAsync</c> overrides this.
+    /// Bundled DSH layer provisioning (<c>runtime.prepare</c>, MIGRATION row 17). <see cref="SliceMode.CSharp"/>
+    /// (default, ADR-0016): the C# <c>RuntimePreparer</c> decides (no DSHBox code); <see cref="SliceMode.LegacyWithShadow"/>:
+    /// the legacy bridge decides and C# predicts the steps and dry-runs the same asset. A per-call mode passed to
+    /// <c>RuntimeCoordinator.PrepareAsync</c> overrides this.
     /// </summary>
-    public SliceMode DshProvision { get; set; } = SliceMode.LegacyWithShadow;
+    public SliceMode DshProvision { get; set; } = SliceMode.CSharp;
+
+    /// <summary>
+    /// Terminal (PR-06, MIGRATION rows 30–31): <see cref="SliceMode.CSharp"/> (default, ADR-0016) opens the C#
+    /// multi-session terminal on <c>libdshmobile_native</c> PTYs; any other value opens the legacy TerminalView (whose
+    /// sessions the <c>terminal.launcher-argv</c> shadow still compares). Long-press "terminal" is the explicit fallback.
+    /// </summary>
+    public SliceMode Terminal { get; set; } = SliceMode.CSharp;
 
     /// <summary>Host-path probe for the extractor; null = the real filesystem (the right choice on a device).</summary>
     public Func<string, bool>? HostPathExists { get; set; }

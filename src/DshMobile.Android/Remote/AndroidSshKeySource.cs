@@ -1,5 +1,5 @@
-// Ported from this repo's native/native-bridge/src/main/java/dshmobile/nativebridge/SshKeys.kt (keyStore, publicKey,
-// hardwareBacked, signSsh; transition code for ADR-0006). Registered in docs/UPSTREAMS.md.
+// Ported from this repo's native/native-bridge/src/main/java/dshmobile/nativebridge/SshKeys.kt (keyStore, ensure,
+// publicKey, hardwareBacked, signSsh; transition code for ADR-0006). Registered in docs/UPSTREAMS.md.
 
 using Android.Runtime;
 using Android.Security.Keystore;
@@ -11,12 +11,32 @@ namespace DshMobile.App.Remote;
 
 /// <summary>
 /// The phone's SSH key in Android Keystore through standard .NET for Android interop (ADR-0007: platform API, not a
-/// bridge). Same alias as the legacy <c>SshKeys</c>. Read-only towards the key store: it never generates, imports,
-/// deletes or exports a key — the private key is used only through <see cref="Signature"/> inside Keystore.
+/// bridge). Same alias as the legacy <c>SshKeys</c>. <see cref="Ensure"/> creates the key on first use exactly like the
+/// legacy <c>SshKeys.ensure()</c> (EC secp256r1, sign only, SHA-256) inside Keystore; it never imports, deletes or exports
+/// a key — the private key is used only through <see cref="Signature"/> inside Keystore.
 /// </summary>
 internal sealed class AndroidSshKeySource : ISshKeySource
 {
     private const string Provider = "AndroidKeyStore";
+    private static readonly Lock EnsureGate = new();
+
+    /// <summary>Creates the Keystore key on first use (idempotent; an existing key — the legacy one included — is kept).</summary>
+    public static void Ensure()
+    {
+        lock (EnsureGate)
+        {
+            if (Open().ContainsAlias(SshIdentity.KeystoreAlias))
+            {
+                return;
+            }
+            var gen = KeyPairGenerator.GetInstance(KeyProperties.KeyAlgorithmEc, Provider)!;
+            gen.Initialize(new KeyGenParameterSpec.Builder(SshIdentity.KeystoreAlias, KeyStorePurpose.Sign)
+                .SetAlgorithmParameterSpec(new Java.Security.Spec.ECGenParameterSpec("secp256r1"))!
+                .SetDigests(KeyProperties.DigestSha256)!
+                .Build());
+            gen.GenerateKeyPair();
+        }
+    }
 
     private static KeyStore Open()
     {
