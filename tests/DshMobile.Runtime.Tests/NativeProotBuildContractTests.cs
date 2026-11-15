@@ -32,10 +32,16 @@ public partial class NativeProotBuildContractTests
         foreach (var e in entries)
         {
             Assert.Equal(6, e.Length);
-            var (name, version, url, sha, top, license) = (e[0], e[1], e[2], e[3], e[4], e[5]);
+            var (name, version, urls, sha, top, license) = (e[0], e[1], e[2], e[3], e[4], e[5]);
             Assert.Matches(ExactVersion(), version);
-            Assert.StartsWith("https://", url, StringComparison.Ordinal);
-            Assert.Contains(version, url, StringComparison.Ordinal);
+            // Upstream first, optionally followed by byte-identical mirrors; every one https and of this exact version.
+            var list = urls.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            Assert.NotEmpty(list);
+            foreach (var url in list)
+            {
+                Assert.StartsWith("https://", url, StringComparison.Ordinal);
+                Assert.Contains(version, url, StringComparison.Ordinal);
+            }
             Assert.Matches(Sha256(), sha);
             Assert.Equal($"{name}-{version}", top);
             Assert.False(string.IsNullOrWhiteSpace(license));

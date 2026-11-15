@@ -34,14 +34,21 @@ work="$repo/native/.generated/proot"
 cache="${PROOT_SOURCE_CACHE:-$work/src-cache}"
 mkdir -p "$cache"
 declare -A src
-while IFS='|' read -r name version url sha top license; do
+while IFS='|' read -r name version urls sha top license; do
   [[ -z "$name" || "$name" == \#* ]] && continue
-  case "$url" in *.zip) ext=.zip ;; *) ext=.tar.gz ;; esac
+  read -r -a url_list <<< "$urls"
+  case "${url_list[0]}" in *.zip) ext=.zip ;; *) ext=.tar.gz ;; esac
   archive="$cache/$name-$version$ext"
   if [[ ! -f "$archive" ]]; then
     [[ "${PROOT_OFFLINE:-}" == 1 ]] && die "$archive missing and PROOT_OFFLINE=1"
-    echo "download $url"
-    curl -fsSL --retry 3 -o "$archive.part" "$url"; mv -f "$archive.part" "$archive"
+    # Upstream first, then the mirrors (sources.lock); the SHA-256 check below applies to whichever answered.
+    got=0
+    for url in "${url_list[@]}"; do
+      echo "download $url"
+      if curl -fsSL --retry 3 -o "$archive.part" "$url"; then got=1; break; fi
+    done
+    [[ $got == 1 ]] || die "$name $version: no source URL answered ($urls)"
+    mv -f "$archive.part" "$archive"
   fi
   actual="$(sha256 "$archive")"
   [[ "$actual" == "$sha" ]] || die "$name $version: sha256 $actual != pinned $sha ($archive)"

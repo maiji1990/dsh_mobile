@@ -1,7 +1,9 @@
 # Pinned upstream sources for native/proot/build.ps1 / build.sh (ADR-0014). One source per line:
-# name|version|archive url|sha256|top-level directory in the archive|license
+# name|version|archive url(s)|sha256|top-level directory in the archive|license
+# Several URLs (space-separated) are tried in order; the first is the upstream, the rest byte-identical mirrors. Whatever
+# is downloaded must match the pinned SHA-256, so a mirror can only make a download available, never change it.
 # Versions = the binaries DSHBox ships in app/src/main/jniLibs (termux-packages builds). Upgrading is its own PR
 # (AGENTS.md rule 8): change the line, rebuild, compare, and record it in docs/UPSTREAMS.md.
-talloc|2.4.3|https://www.samba.org/ftp/talloc/talloc-2.4.3.tar.gz|dc46c40b9f46bb34dd97fe41f548b0e8b247b77a918576733c528e83abd854dd|talloc-2.4.3|LGPL-3.0-or-later
+talloc|2.4.3|https://www.samba.org/ftp/talloc/talloc-2.4.3.tar.gz https://ftp.osuosl.org/pub/blfs/conglomeration/talloc/talloc-2.4.3.tar.gz|dc46c40b9f46bb34dd97fe41f548b0e8b247b77a918576733c528e83abd854dd|talloc-2.4.3|LGPL-3.0-or-later
 libandroid-shmem|0.7|https://github.com/termux/libandroid-shmem/archive/refs/tags/v0.7.tar.gz|1e5ff8459bc0a8c229dd8a94b27d119987e09ef3414331c2b5ebfff20b98e867|libandroid-shmem-0.7|BSD-3-Clause
 proot|5.1.107.90|https://github.com/termux/proot/archive/v5.1.107.90.zip|b7e4da1ed53fa4c1fa8dc3645f91f9d95ccfc559a1c5f68d084f93d8f0670a25|proot-5.1.107.90|GPL-2.0-or-later

@@ -10,7 +10,7 @@
 | [deepseek-ai/deepseek-harness](https://github.com/deepseek-ai/deepseek-harness) | 运行时层（npm 包，TASK-004/005 引入） | 待定（最新 tag 观察到 `dsh-v0.2.2-rc.1`，尚无稳定 tag） | — | 见上游 | 原样运行的 DSH / Cordis |
 | [maiji1990/ui_mcp](https://github.com/maiji1990/ui_mcp) | 契约参考（TASK-010；不引入代码，guest 门面按其契约另行实现） | `main` @ `e098f91c7d34f27372ced17bea033861b63b681e`（工具名、错误码、ref 语义、`docs/p2-phone-facade-design.md`） | `e098f91c7d34f27372ced17bea033861b63b681e` | 见上游 | `ui_*` 统一契约 |
 | [termux/proot](https://github.com/termux/proot) | 源码归档，`native/proot/sources.lock` 钉 SHA-256，`native/proot/build.ps1` / `build.sh` 用 NDK 27.0.12077973 构建（ADR-0014） | `v5.1.107.90`（= DSHBox 所带 `libproot.so`；termux-packages proot 配方 commit `96385864cc0f32f3ce1c0c8eeeb97e5c13601762`，无补丁） | `894e5789cd982e53d644bb3a13332f1d35e907ac` | GPL-2.0-or-later（未修改源码） | `libproot.so` / `libproot-loader.so`（APK 中的唯一来源，ADR-0018） |
-| [talloc](https://www.samba.org/ftp/talloc/)（Samba） | 同上（`talloc-2.4.3.tar.gz`，SHA-256 `dc46c40b…d854dd`）；只编 `talloc.c`，waf 配置由 `native/proot/compat/talloc/config.h` 代替 | `2.4.3`（termux-packages libtalloc 配方 commit `fbc049451e7fc59cdf510732aad49bd45590b0bb`） | — | LGPL-3.0-or-later（动态链接、未修改源码） | `libtalloc.so` |
+| [talloc](https://www.samba.org/ftp/talloc/)（Samba） | 同上（`talloc-2.4.3.tar.gz`，SHA-256 `dc46c40b…d854dd`；samba.org 不可用时取 OSUOSL 镜像的同一文件，仍按该 SHA-256 校验）；只编 `talloc.c`，waf 配置由 `native/proot/compat/talloc/config.h` 代替 | `2.4.3`（termux-packages libtalloc 配方 commit `fbc049451e7fc59cdf510732aad49bd45590b0bb`） | — | LGPL-3.0-or-later（动态链接、未修改源码） | `libtalloc.so` |
 | [termux/libandroid-shmem](https://github.com/termux/libandroid-shmem) | 同上（`v0.7.tar.gz`，SHA-256 `1e5ff845…b98e867`） | `v0.7` | — | BSD-3-Clause（未修改源码） | `libandroid-shmem.so` |
 
 ## DSHBox 模块使用情况

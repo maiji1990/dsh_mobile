@@ -52,17 +52,24 @@ $src = @{}
 $tar = if ($hostTag -eq 'windows-x86_64') { Join-Path $env:SystemRoot 'System32\tar.exe' } else { 'tar' }
 foreach ($line in Get-Content (Join-Path $here 'sources.lock')) {
     if ($line -match '^\s*(#|$)') { continue }
-    $name, $version, $url, $sha, $top, $license = $line.Split('|')
-    $ext = if ($url.EndsWith('.zip')) { '.zip' } else { '.tar.gz' }
+    $name, $version, $urls, $sha, $top, $license = $line.Split('|')
+    $urls = $urls.Split(' ', [System.StringSplitOptions]::RemoveEmptyEntries)
+    $ext = if ($urls[0].EndsWith('.zip')) { '.zip' } else { '.tar.gz' }
     $archive = Join-Path $SourceCache "$name-$version$ext"
     if (-not (Test-Path $archive)) {
         if ($Offline) { throw "$archive missing and -Offline given" }
-        Write-Host "download $url"
         $tmp = "$archive.part"
-        for ($try = 1; ; $try++) {
-            try { Invoke-WebRequest -Uri $url -OutFile $tmp -UseBasicParsing; break }
-            catch { if ($try -ge 3) { throw }; Write-Host "  retry ${try}: $($_.Exception.Message)"; Start-Sleep -Seconds (5 * $try) }
+        $got = $false
+        # Upstream first, then the mirrors (sources.lock); the SHA-256 check below applies to whichever answered.
+        foreach ($url in $urls) {
+            Write-Host "download $url"
+            for ($try = 1; $try -le 3 -and -not $got; $try++) {
+                try { Invoke-WebRequest -Uri $url -OutFile $tmp -UseBasicParsing; $got = $true }
+                catch { Write-Host "  try ${try}: $($_.Exception.Message)"; if ($try -lt 3) { Start-Sleep -Seconds (5 * $try) } }
+            }
+            if ($got) { break }
         }
+        if (-not $got) { throw "${name} ${version}: no source URL answered ($($urls -join ', '))" }
         Move-Item -Force $tmp $archive
     }
     $actual = (Get-FileHash $archive -Algorithm SHA256).Hash.ToLowerInvariant()
