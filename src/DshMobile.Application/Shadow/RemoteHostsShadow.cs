@@ -32,7 +32,7 @@ public sealed class RemoteHostsShadow(IShadowReportSink sink, IDiagnosticsLog lo
     private readonly Lock _gate = new();
     private (string HostId, string Fingerprint)? _lastUnknown;
 
-    public bool Enabled => options.RemoteHosts == SliceMode.LegacyWithShadow;
+    public bool Enabled => options.RemoteHosts != SliceMode.Legacy;
 
     /// <summary>The (host, fingerprint) of the last HOST_KEY_UNKNOWN this shadow observed; mirrors legacy memory.</summary>
     public (string HostId, string Fingerprint)? LastUnknown
@@ -279,7 +279,7 @@ public sealed class RemoteHostsShadow(IShadowReportSink sink, IDiagnosticsLog lo
             $"after {method}: {status.Code} ↔ {csDecision} (pin {(profile.PinnedFingerprint is null ? "none" : "set")}{(fp is null ? "" : ", key " + fp)})");
     }
 
-    public bool ConnectEnabled => options.RemoteConnect == SliceMode.LegacyWithShadow;
+    public bool ConnectEnabled => options.RemoteConnect != SliceMode.Legacy;
 
     /// <summary>
     /// After a legacy <c>remote.connect</c> (PR-09 second segment): C# connects on its own to <paramref name="profile"/>
@@ -358,7 +358,7 @@ public sealed class RemoteHostsShadow(IShadowReportSink sink, IDiagnosticsLog lo
         return FromChecks(ConnectSlice, at, checks, true, detail);
     }
 
-    public bool DshEnabled => options.RemoteDsh == SliceMode.LegacyWithShadow;
+    public bool DshEnabled => options.RemoteDsh != SliceMode.Legacy;
 
     /// <summary>
     /// After a legacy <c>remote.start</c> / <c>remote.stop</c> (PR-09 third segment, ADR-0013): C# checks on its own —

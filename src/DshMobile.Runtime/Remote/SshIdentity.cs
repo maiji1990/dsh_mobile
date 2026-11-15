@@ -11,8 +11,9 @@ namespace DshMobile.Runtime.Remote;
 public sealed record SshPublicKey(byte[] X, byte[] Y, bool? HardwareBacked);
 
 /// <summary>
-/// The phone's SSH key in Android Keystore, as the platform exposes it. Implementations never export the private key
-/// and never create the key: in this migration segment the legacy <c>SshKeys.ensure()</c> owns creation.
+/// The phone's SSH key in Android Keystore, as the platform exposes it. Implementations never export the private key.
+/// Creation (first use) is the platform side's job (Android <c>AndroidSshKeySource.Ensure</c>, same parameters as the
+/// legacy <c>SshKeys.ensure()</c>).
 /// </summary>
 public interface ISshKeySource
 {

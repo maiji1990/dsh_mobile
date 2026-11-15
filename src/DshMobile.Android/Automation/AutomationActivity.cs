@@ -42,8 +42,14 @@ public sealed class AutomationActivity : Activity
         root.AddView(_status);
 
         var row1 = new LinearLayout(this) { Orientation = Orientation.Horizontal };
-        // ADR-0010: the user picks who serves the guest mailbox; never both at once.
-        var start = Make(Resource.String.automation_start, ChooseRelayStart);
+        // ADR-0010 / ADR-0016: the C# Relay serves the guest mailbox by default; long-press picks (legacy = fallback).
+        // Never both at once.
+        var start = Make(Resource.String.automation_start, StartDefaultRelay);
+        start.LongClick += (_, e) =>
+        {
+            e.Handled = true;
+            ChooseRelayStart();
+        };
         var stop = Make(Resource.String.automation_stop, () => _ = StopRelayAsync());
         row1.AddView(start, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WrapContent, 1f));
         row1.AddView(stop, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WrapContent, 1f));
@@ -139,6 +145,29 @@ public sealed class AutomationActivity : Activity
     private Relay.RelayHostWatch? _csWatch;
     private RelayHost? _watchedHost;
     private Action? _unwatchHost;
+
+    private void StartDefaultRelay()
+    {
+        if (_bridge.Runtime.Options.RelayHost == DshMobile.Application.SliceMode.CSharp)
+        {
+            _ = StartCsGuestRelayAsync();
+        }
+        else
+        {
+            _ = StartLegacyRelayAsync();
+        }
+    }
+
+    /// <summary>The legacy-Relay shadows write into the guest mailbox: with the C# Relay on it they would test C# against itself.</summary>
+    private bool NeedsLegacyRelay()
+    {
+        if (!Relay.CsRelay.GuestFacing)
+        {
+            return false;
+        }
+        _output.Text = GetString(Resource.String.automation_probe_needs_legacy);
+        return true;
+    }
 
     private void ChooseRelayStart() =>
         new AlertDialog.Builder(this)
@@ -629,6 +658,10 @@ public sealed class AutomationActivity : Activity
 
     private async Task EnvelopeProbeAsync()
     {
+        if (NeedsLegacyRelay())
+        {
+            return;
+        }
         Enable(false);
         _output.Text = GetString(Resource.String.automation_envelope_probe_running);
         var runtime = _bridge.Runtime;
@@ -653,6 +686,10 @@ public sealed class AutomationActivity : Activity
 
     private async Task A11yReadProbeAsync()
     {
+        if (NeedsLegacyRelay())
+        {
+            return;
+        }
         // The user leaves this page to answer the cards; coming back refreshes the status, which must not re-enable
         // the buttons (a second tap would start an overlapping check) until this one has finished.
         _longProbe = true;

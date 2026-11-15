@@ -442,6 +442,55 @@ public sealed class RuntimeCoordinator : IDisposable
         return new RuntimeInstallResult(true, RuntimeErrorCodes.Ok, null);
     }
 
+    /// <summary>The per-slice choices (ADR-0016: C# by default); pages read them to pick their default path.</summary>
+    public MigrationOptions Options => _options;
+
+    /// <summary>
+    /// <see cref="SliceMode.CSharp"/> guest diagnostics (ADR-0016): the fixed <see cref="GuestDiagnostics.Commands"/>
+    /// through the C# PRoot launcher only, each in its own PRoot (independent of who owns the sandbox).
+    /// </summary>
+    public async Task<IReadOnlyList<(string Key, GuestProcessResult Result)>> RunGuestDiagnosticsAsync(CancellationToken ct)
+    {
+        if (_layout is null)
+        {
+            return [("csharp", new GuestProcessResult(false, null, "", $"{RuntimeErrorCodes.NotImplemented}: no runtime layout"))];
+        }
+        await _op.WaitAsync(ct).ConfigureAwait(false);
+        try
+        {
+            var exec = new ProotGuestProcess(_layout);
+            var sw = Stopwatch.StartNew();
+            var results = await exec.RunDiagnosticsAsync(ct).ConfigureAwait(false);
+            _log.Note($"guest diagnostics: C# PRoot launcher, {results.Count} commands in {sw.ElapsedMilliseconds} ms");
+            return results;
+        }
+        finally
+        {
+            _op.Release();
+        }
+    }
+
+    /// <summary>
+    /// <see cref="SliceMode.CSharp"/> plugin list (ADR-0016): <c>dsh plugin list --json --depth 0</c> through the C#
+    /// PRoot launcher; the same command and parser the PR-05 shadow verified against the legacy <c>plugin.list</c>.
+    /// </summary>
+    public async Task<GuestPluginResult> ListPluginsAsync(string profile, CancellationToken ct)
+    {
+        if (_layout is null)
+        {
+            return new GuestPluginResult(false, null, "", $"{RuntimeErrorCodes.NotImplemented}: no runtime layout");
+        }
+        await _op.WaitAsync(ct).ConfigureAwait(false);
+        try
+        {
+            return await GuestPlugins.RunAsync(new ProotGuestProcess(_layout), "list", profile, null, ct).ConfigureAwait(false);
+        }
+        finally
+        {
+            _op.Release();
+        }
+    }
+
     /// <summary>
     /// Shadow for the guest-exec slice: runs <see cref="GuestDiagnostics.Commands"/> through the C# PRoot launcher and
     /// compares with the legacy diagnostics results the caller just obtained. Null when the slice is not shadowed.
@@ -506,7 +555,7 @@ public sealed class RuntimeCoordinator : IDisposable
     public ShadowReport? ShadowUiTools(UiToolsLegacyView legacy, string? enabledAccessibilityServices, string packageName)
     {
         ArgumentNullException.ThrowIfNull(legacy);
-        if (_options.UiTools != SliceMode.LegacyWithShadow || _layout is null)
+        if (_options.UiTools == SliceMode.Legacy || _layout is null)
         {
             return null;
         }
@@ -534,7 +583,7 @@ public sealed class RuntimeCoordinator : IDisposable
     /// </summary>
     public async Task<ShadowReport?> ShadowRelayEnvelopeAsync(TimeSpan timeout, CancellationToken ct)
     {
-        if (_options.RelayEnvelopeCodec != SliceMode.LegacyWithShadow || _layout is null)
+        if (_options.RelayEnvelopeCodec == SliceMode.Legacy || _layout is null)
         {
             return null;
         }
@@ -559,7 +608,7 @@ public sealed class RuntimeCoordinator : IDisposable
     /// </summary>
     public async Task<ShadowReport?> ShadowRelayAdmissionAsync(string selfPackage, TimeSpan timeout, CancellationToken ct)
     {
-        if (_options.RelayAdmission != SliceMode.LegacyWithShadow || _layout is null)
+        if (_options.RelayAdmission == SliceMode.Legacy || _layout is null)
         {
             return null;
         }
@@ -586,7 +635,7 @@ public sealed class RuntimeCoordinator : IDisposable
     /// </summary>
     public ShadowReport? ShadowRelaySurface(string? preferenceRaw, int sdkInt)
     {
-        if (_options.RelaySurface != SliceMode.LegacyWithShadow || _layout is null)
+        if (_options.RelaySurface == SliceMode.Legacy || _layout is null)
         {
             return null;
         }
@@ -614,7 +663,7 @@ public sealed class RuntimeCoordinator : IDisposable
     /// </summary>
     public ShadowReport? ShadowRelayGate(RelayDeviceFacts device, Func<string, string?> readRelayPref)
     {
-        if (_options.RelayGate != SliceMode.LegacyWithShadow || _layout is null)
+        if (_options.RelayGate == SliceMode.Legacy || _layout is null)
         {
             return null;
         }
@@ -640,7 +689,7 @@ public sealed class RuntimeCoordinator : IDisposable
     public async Task<ShadowReport?> ShadowRelayGateProbeAsync(RelayDeviceFacts device, Func<string, string?> readRelayPref, string selfPackage,
         TimeSpan timeout, CancellationToken ct)
     {
-        if (_options.RelayGate != SliceMode.LegacyWithShadow || _layout is null)
+        if (_options.RelayGate == SliceMode.Legacy || _layout is null)
         {
             return null;
         }
@@ -669,7 +718,7 @@ public sealed class RuntimeCoordinator : IDisposable
     public async Task<ShadowReport?> ShadowRelayA11yReadAsync(Func<DshMobile.Runtime.Automation.Relay.A11y.A11yTree?> hostTree, TimeSpan timeout,
         CancellationToken ct)
     {
-        if (_options.RelayA11yRead != SliceMode.LegacyWithShadow || _layout is null)
+        if (_options.RelayA11yRead == SliceMode.Legacy || _layout is null)
         {
             return null;
         }
@@ -683,7 +732,7 @@ public sealed class RuntimeCoordinator : IDisposable
     public async Task<ShadowReport?> ShadowRelayA11yWaitForAsync(Func<DshMobile.Runtime.Automation.Relay.A11y.A11yTree?> hostTree, TimeSpan timeout,
         CancellationToken ct)
     {
-        if (_options.RelayA11yWaitFor != SliceMode.LegacyWithShadow || _layout is null)
+        if (_options.RelayA11yWaitFor == SliceMode.Legacy || _layout is null)
         {
             return null;
         }
@@ -699,7 +748,7 @@ public sealed class RuntimeCoordinator : IDisposable
     public async Task<ShadowReport?> ShadowRelayHostAsync(string csEntryDir, TimeSpan timeout, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(csEntryDir);
-        if (_options.RelayHost != SliceMode.LegacyWithShadow || _layout is null)
+        if (_options.RelayHost == SliceMode.Legacy || _layout is null)
         {
             return null;
         }
@@ -727,7 +776,7 @@ public sealed class RuntimeCoordinator : IDisposable
     {
         ArgumentNullException.ThrowIfNull(csEntryDir);
         ArgumentNullException.ThrowIfNull(csGuestEntry);
-        if (_options.RelayHost != SliceMode.LegacyWithShadow || _layout is null)
+        if (_options.RelayHost == SliceMode.Legacy || _layout is null)
         {
             return null;
         }
@@ -814,7 +863,7 @@ public sealed class RuntimeCoordinator : IDisposable
     /// </summary>
     public async Task<ShadowReport?> ShadowSupervisorAsync(string legacySandboxState, string legacyDshState, bool legacyHealthOk, CancellationToken ct)
     {
-        if (_options.GuestExec != SliceMode.LegacyWithShadow)
+        if (_options.GuestExec == SliceMode.Legacy)
         {
             return null;
         }

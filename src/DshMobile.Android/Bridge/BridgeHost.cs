@@ -254,12 +254,14 @@ public sealed class BridgeHost : IDisposable, IDiagnosticsLog
     private static readonly TimeSpan DiagnosticsDeadline = TimeSpan.FromMinutes(3);
 
     /// <summary>
-    /// Installs the APK-bundled DSH layer when base/node exist (MIGRATION row 17). Default: the legacy
-    /// <c>runtime.prepare</c> decides and C# shadows it; <paramref name="mode"/> = CSharp is the developer opt-in.
+    /// Installs the APK-bundled DSH layer when base/node exist (MIGRATION row 17). Default (ADR-0016): the C#
+    /// <c>RuntimePreparer</c>; <paramref name="mode"/> = LegacyWithShadow is the explicit legacy fallback.
     /// </summary>
     public Task RunPrepareAsync(SliceMode? mode = null) => RunExclusive("runtime.prepare", async () =>
     {
-        Append(mode == SliceMode.CSharp ? "prepare: C# RuntimePreparer (this call only)" : "prepare: legacy runtime.prepare (C# shadow)");
+        Append((mode ?? Runtime.Options.DshProvision) == SliceMode.CSharp
+            ? "prepare: C# RuntimePreparer"
+            : "prepare: legacy runtime.prepare (fallback, C# shadow)");
         var r = await Runtime.PrepareAsync(CancellationToken.None, mode).ConfigureAwait(false);
         if (!r.Ok)
         {
@@ -272,7 +274,7 @@ public sealed class BridgeHost : IDisposable, IDiagnosticsLog
     /// system picker copy (MainActivity); without it, falls back to the app-specific external directory
     /// where a developer can `adb push` the bundle.
     /// </summary>
-    public Task RunImportAsync(string? zipPath = null, bool deleteAfter = false, bool csharpImporter = false) => RunExclusive("runtime.importBundle", async () =>
+    public Task RunImportAsync(string? zipPath = null, bool deleteAfter = false, SliceMode? mode = null) => RunExclusive("runtime.importBundle", async () =>
     {
         var dir = _context.GetExternalFilesDir(null)?.AbsolutePath;
         var zip = zipPath ?? (dir is null ? null : Directory.EnumerateFiles(dir, "dshapp-runtime-*.zip").OrderDescending().FirstOrDefault());
@@ -285,9 +287,9 @@ public sealed class BridgeHost : IDisposable, IDiagnosticsLog
         var sw = Stopwatch.StartNew();
         try
         {
-            // Default: legacy installer decides, the C# inspector / extractor shadow-check the same zip (PR-02).
-            // csharpImporter: developer opt-in, the C# LayerInstaller decides for this one import (device acceptance).
-            var mode = csharpImporter ? SliceMode.CSharp : (SliceMode?)null;
+            // Default (ADR-0016): the C# LayerInstaller decides. mode = LegacyWithShadow: the legacy installer decides
+            // for this import and the C# inspector / extractor shadow-check the same zip (PR-02).
+            Append((mode ?? Runtime.Options.BundleImport) == SliceMode.CSharp ? "import: C# LayerInstaller" : "import: legacy installer (fallback, C# shadow)");
             var r = await Runtime.InstallAsync(new RuntimePackage(zip), null, CancellationToken.None, mode).ConfigureAwait(false);
             Append($"import: took {sw.Elapsed.TotalSeconds:F1} s");
             Append(r.Ok ? "import: ok" : $"import FAILED {r.Code}{(r.UpstreamCode is null ? "" : "/" + r.UpstreamCode)}: {r.Message}");
@@ -362,9 +364,21 @@ public sealed class BridgeHost : IDisposable, IDiagnosticsLog
         await RunGuestDiagnosticsAsync().ConfigureAwait(false);
     });
 
-    /// <summary>The fixed guest commands (each in its own PRoot, independent of who owns the sandbox) + guest-exec shadow.</summary>
+    /// <summary>
+    /// The fixed guest commands, each in its own PRoot (independent of who owns the sandbox). Default (ADR-0016): the C#
+    /// PRoot launcher only; otherwise legacy <c>runtime.diagnostics</c> + the guest-exec shadow.
+    /// </summary>
     private async Task RunGuestDiagnosticsAsync()
     {
+        if (Runtime.Options.GuestExec == SliceMode.CSharp)
+        {
+            foreach (var (key, r) in await Runtime.RunGuestDiagnosticsAsync(CancellationToken.None).ConfigureAwait(false))
+            {
+                var output = r.Output.Trim();
+                Append($"diag {key}: {(r.Ok ? output : "FAILED " + (r.Error ?? $"exit={r.ExitCode}") + (output.Length > 0 ? " | " + output[..Math.Min(output.Length, 400)] : ""))}");
+            }
+            return;
+        }
         var diag = await Client.ExecuteAsync(BridgeMethods.RuntimeDiagnostics, deadline: DiagnosticsDeadline).ConfigureAwait(false);
         if (!diag.Ok)
         {

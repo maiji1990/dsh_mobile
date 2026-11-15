@@ -317,7 +317,7 @@ public sealed class RuntimeCoordinatorTests : IDisposable
 
     private RuntimeCoordinator CSharpCoordinator(DshMobile.Runtime.RuntimeLayout layout) =>
         _coordinator ??= new RuntimeCoordinator(_runtime, new RuntimeStateMachine(_journal, "fake"), _fg, _log, _log,
-            new MigrationOptions { HostPathExists = LayerExtractor.AndroidLikeHost }, null, layout);
+            new MigrationOptions { HostPathExists = LayerExtractor.AndroidLikeHost, DshProvision = SliceMode.LegacyWithShadow }, null, layout);
 
     [Fact]
     public async Task Install_CSharpMode_InstallsVerifiesAndPreparesWithoutLegacyImport()
@@ -692,15 +692,41 @@ public sealed class RuntimeCoordinatorTests : IDisposable
 
     private RuntimeCoordinator PrepareCoordinator(DshMobile.Runtime.RuntimeLayout layout, IBundledAssets? assets) =>
         _coordinator ??= new RuntimeCoordinator(_runtime, new RuntimeStateMachine(_journal, "fake"), _fg, _log, _log,
-            new MigrationOptions { HostPathExists = LayerExtractor.AndroidLikeHost, RuntimeHost = SliceMode.Legacy }, null, layout,
-            bundledAssets: assets);
+            new MigrationOptions { HostPathExists = LayerExtractor.AndroidLikeHost, RuntimeHost = SliceMode.Legacy, DshProvision = SliceMode.LegacyWithShadow },
+            null, layout, bundledAssets: assets);
 
     private const string Step1 = "no full layered runtime in APK (expected; base/node come from import)";
 
     [Fact]
-    public async Task Prepare_DefaultsToLegacyWithShadow_KeptLayerAgrees()
+    public void ShadowedSlices_DefaultToCSharp()
     {
-        Assert.Equal(SliceMode.LegacyWithShadow, new MigrationOptions().DshProvision);
+        // ADR-0016: every slice that had a C# shadow decides in C# by default; the legacy path is a per-call fallback.
+        var o = new MigrationOptions();
+        Assert.All(
+            [o.BundleImport, o.DshProvision, o.GuestExec, o.PluginList, o.UiTools, o.RelayEnvelopeCodec, o.RelayAdmission, o.RelaySurface,
+             o.RelayGate, o.RelayA11yRead, o.RelayA11yWaitFor, o.RelayHost, o.RemoteHosts, o.RemoteConnect, o.RemoteDsh, o.RuntimeHost, o.Terminal],
+            m => Assert.Equal(SliceMode.CSharp, m));
+        // Only consulted when an import runs legacy (fallback): it then still shadows the extraction.
+        Assert.Equal(SliceMode.LegacyWithShadow, o.LayerExtract);
+    }
+
+    [Fact]
+    public async Task Install_Defaults_CSharpImportAndCSharpPrepare_NoLegacyInstallOrPrepare()
+    {
+        var layout = new DshMobile.Runtime.RuntimeLayout(Path.Combine(_dir, "files"), null, "/lib");
+        var c = _coordinator ??= new RuntimeCoordinator(_runtime, new RuntimeStateMachine(_journal, "fake"), _fg, _log, _log,
+            new MigrationOptions { HostPathExists = LayerExtractor.AndroidLikeHost, RuntimeHost = SliceMode.Legacy }, null, layout,
+            bundledAssets: DshAssets());
+        var r = await c.InstallAsync(new RuntimePackage(FixtureBundle("good.zip")), null, CancellationToken.None);
+        Assert.True(r.Ok, r.Message);
+        Assert.DoesNotContain("install", _runtime.Calls);
+        Assert.DoesNotContain("prepare", _runtime.Calls);
+        Assert.True(File.Exists(Path.Combine(layout.LayerDir("base"), "etc", "os-release")));
+    }
+
+    [Fact]
+    public async Task Prepare_LegacyFallbackWithShadow_KeptLayerAgrees()
+    {
         var layout = InstalledLayout("9.0.0");
         _runtime.OnPrepare = () => new RuntimeInstallResult(true, "OK", $"{Step1}; DSH kept at 9.0.0");
         var r = await PrepareCoordinator(layout, DshAssets()).PrepareAsync(CancellationToken.None);

@@ -4,6 +4,7 @@ using Android.Content;
 using Android.Text;
 using Android.Views;
 using DshMobile.App.Bridge;
+using DshMobile.Application;
 using DshMobile.Application.Shadow;
 using DshMobile.Core.Bridge;
 using DshMobile.Runtime.Remote;
@@ -49,9 +50,18 @@ public sealed class RemoteActivity : Activity
         _dshPort.Text = "3091";
 
         var save = Make(Resource.String.remote_save, () => _ = SaveAsync());
-        var connect = Make(Resource.String.remote_connect, () => _ = ConnectAsync());
-        // PR-09 second segment (ADR-0012): long-press = opt-in C# (SSH.NET) connect; short press stays legacy.
-        connect.LongClick += (_, _) => _ = CsConnectAsync();
+        // ADR-0016: "connect" is the C# SSH.NET connection by default; long-press = the legacy JSch fallback.
+        var connect = Make(Resource.String.remote_connect, () => _ = (CsConnectDefault ? CsConnectAsync() : ConnectAsync()));
+        connect.LongClick += (_, e) =>
+        {
+            e.Handled = true;
+            new AlertDialog.Builder(this)
+                .SetTitle(Resource.String.remote_legacy_connect_title)!
+                .SetMessage(Resource.String.remote_legacy_connect_message)!
+                .SetPositiveButton(Resource.String.remote_legacy_connect_yes, (_, _) => _ = ConnectAsync())!
+                .SetNegativeButton(Android.Resource.String.Cancel, (_, _) => { })!
+                .Show();
+        };
         var start = Make(Resource.String.remote_start, StartDsh);
         var stop = Make(Resource.String.remote_stop, StopDsh);
         var disconnect = Make(Resource.String.remote_disconnect, () =>
@@ -83,8 +93,18 @@ public sealed class RemoteActivity : Activity
         _ = LoadAsync();
     }
 
+    /// <summary>ADR-0016: profiles, pins and the identity are C#'s (same storage / key as the legacy RemoteHosts / SshKeys).</summary>
+    private bool CsHosts => _bridge.Runtime.Options.RemoteHosts == SliceMode.CSharp;
+
+    private bool CsConnectDefault => _bridge.Runtime.Options.RemoteConnect == SliceMode.CSharp;
+
     private async Task LoadAsync()
     {
+        if (CsHosts)
+        {
+            await LoadCsAsync();
+            return;
+        }
         var id = await Call(BridgeMethods.RemoteIdentity, null, BridgeJsonContext.Default.RemoteIdentityInfo, TimeSpan.FromSeconds(30));
         if (id is not null)
         {
@@ -110,6 +130,57 @@ public sealed class RemoteActivity : Activity
         }
     }
 
+    /// <summary>C# identity (created on first use, as legacy) + C# profile list; the legacy status only if no C# attempt is current.</summary>
+    private async Task LoadCsAsync()
+    {
+        Enable(false);
+        SshIdentityFacts id;
+        try
+        {
+            id = await Task.Run(() =>
+            {
+                try
+                {
+                    AndroidSshKeySource.Ensure();
+                }
+                catch (Java.Lang.Exception e)
+                {
+                    return new SshIdentityFacts(false, null, null, null, null, $"create key: {e.GetType().Name}: {e.Message}");
+                }
+                return SshIdentity.Probe(new AndroidSshKeySource());
+            });
+        }
+        finally
+        {
+            Enable(true);
+        }
+        if (id is { PublicKeyLine: { } line, Fingerprint: { } fp })
+        {
+            var hw = id.HardwareBacked switch { true => GetString(Resource.String.remote_key_hw), false => GetString(Resource.String.remote_key_sw), null => "?" };
+            _identity.Text = $"{GetString(Resource.String.remote_key_heading)}（{hw}）\n{line}\n{fp}"
+                + (id.SelfTestVerified == false ? "\n" + Fmt(Resource.String.remote_key_selftest_failed, id.Error ?? "?") : "");
+        }
+        else
+        {
+            _identity.Text = Fmt(Resource.String.remote_key_unavailable, id.Error ?? "no key");
+        }
+        // The public line is what the user copies into authorized_keys anyway (not a secret).
+        _bridge.Note($"remote identity (C#): present={id.KeyPresent} hw={id.HardwareBacked?.ToString() ?? "?"} selftest={id.SelfTestVerified?.ToString() ?? "-"} key={id.PublicKeyLine ?? "-"} {id.Fingerprint ?? ""}");
+        var hosts = CsRemoteHosts.List(this);
+        if (hosts.Count > 0)
+        {
+            Select(CsRemoteHosts.ToDto(hosts[^1]));
+        }
+        if (CsRemoteConnection.Status() is { } cs)
+        {
+            ShowCs(cs);
+        }
+        else
+        {
+            await Status(BridgeMethods.RemoteStatus, null, TimeSpan.FromSeconds(10)); // a legacy fallback connection, if any
+        }
+    }
+
     private void Select(RemoteHost h)
     {
         _selected = h;
@@ -128,6 +199,21 @@ public sealed class RemoteActivity : Activity
             return;
         }
         var req = new RemoteHostRequest(_selected?.Id, _label.Text ?? "", (_host.Text ?? "").Trim(), port, (_user.Text ?? "").Trim(), dshPort);
+        if (CsHosts)
+        {
+            try
+            {
+                var cs = CsRemoteHosts.Save(this, req);
+                _bridge.Note($"remote.hosts.save (C#): {(req.Id is null ? "new" : "updated")} host, pin {(cs.PinnedFingerprint is null ? "none" : "kept")}");
+                Select(CsRemoteHosts.ToDto(cs));
+                _status.Text = GetString(cs.PinnedFingerprint is null ? Resource.String.remote_saved_unpinned : Resource.String.remote_saved_pinned);
+            }
+            catch (RemoteProfileException e)
+            {
+                _status.Text = $"remote.hosts.save FAILED {RemoteHostsShadow.BadRequest}: {e.Message}";
+            }
+            return;
+        }
         var payload = BridgeCodec.ToPayload(req, BridgeJsonContext.Default.RemoteHostRequest);
         var before = StoredHosts();
         var (resp, saved) = await CallRaw(BridgeMethods.RemoteHostsSave, payload, BridgeJsonContext.Default.RemoteHost, TimeSpan.FromSeconds(10));
@@ -166,14 +252,14 @@ public sealed class RemoteActivity : Activity
         }
         if (s is { Code: RemoteCodes.HostKeyUnknown, Fingerprint: { } fp })
         {
-            ConfirmFingerprint(_selected, fp, s.KeyType);
+            ConfirmFingerprint(_selected, fp, s.KeyType, csharp: false);
         }
     }
 
     /// <summary>
-    /// Opt-in C# connect (ADR-0012): the legacy connection is closed first (one remote at a time), then SSH.NET connects
-    /// to the stored profile with the same pin and Keystore key and runs the same probe. C# never pins: an unknown key is
-    /// only shown, and confirming it stays with the legacy flow (short press).
+    /// C# connect (ADR-0012; default since ADR-0016): the legacy connection is closed first (one remote at a time), then
+    /// SSH.NET connects to the stored profile with the same pin and Keystore key and runs the same probe. An unknown key
+    /// is refused and shown; the user may pin exactly that key (C# store) after comparing it, then C# connects again.
     /// </summary>
     private async Task CsConnectAsync()
     {
@@ -198,10 +284,16 @@ public sealed class RemoteActivity : Activity
             var connector = CsRemoteConnection.Connector();
             var attempt = await Task.Run(() => connector.ConnectAsync(profile));
             CsRemoteConnection.Set(profile, attempt);
+            // The key this C# attempt was shown is the only one a following trust may pin (legacy rule).
+            CsRemoteHosts.Presented(profile, attempt);
             _bridge.Note($"remote C# connect: state={attempt.State} code={attempt.Code}");
             if (CsRemoteConnection.Status() is { } st)
             {
                 ShowCs(st);
+            }
+            if (attempt is { Code: RemoteCodes.HostKeyUnknown, Fingerprint: { } fp } && CsHosts)
+            {
+                ConfirmFingerprint(CsRemoteHosts.ToDto(profile), fp, attempt.KeyType, csharp: true);
             }
         }
         catch (Exception e)
@@ -291,14 +383,36 @@ public sealed class RemoteActivity : Activity
         _status.Text = extra + "\n" + _status.Text;
     }
 
-    /// <summary>The user compares the fingerprint with the server's own (ssh-keygen -lf) before trusting it.</summary>
-    private void ConfirmFingerprint(RemoteHost host, string fingerprint, string? keyType)
+    /// <summary>
+    /// The user compares the fingerprint with the server's own (ssh-keygen -lf) before trusting it. <paramref name="csharp"/>:
+    /// the key came from the C# connection, so the C# store pins it (only if it is the key that attempt was shown) and C#
+    /// connects again; otherwise the legacy bridge pins what its own connection saw.
+    /// </summary>
+    private void ConfirmFingerprint(RemoteHost host, string fingerprint, string? keyType, bool csharp)
     {
         new AlertDialog.Builder(this)
             .SetTitle(Resource.String.remote_trust_title)!
             .SetMessage(Fmt(Resource.String.remote_trust_message, $"{host.User}@{host.Host}:{host.Port}", keyType ?? "?", fingerprint))!
             .SetPositiveButton(Resource.String.remote_trust_yes, async (_, _) =>
             {
+                if (csharp)
+                {
+                    try
+                    {
+                        var all = CsRemoteHosts.Trust(this, host.Id, fingerprint);
+                        _bridge.Note("remote.trust (C#): pinned the key the C# connection was shown");
+                        if (all.FirstOrDefault(p => p.Id == host.Id) is { } pinned)
+                        {
+                            Select(CsRemoteHosts.ToDto(pinned));
+                            await CsConnectAsync();
+                        }
+                    }
+                    catch (RemoteProfileException e)
+                    {
+                        _status.Text = $"remote.trust FAILED {RemoteHostsShadow.BadRequest}: {e.Message}";
+                    }
+                    return;
+                }
                 var before = StoredHosts();
                 var (resp, trusted) = await CallRaw(BridgeMethods.RemoteTrust,
                     BridgeCodec.ToPayload(new RemoteTrustRequest(host.Id, fingerprint), BridgeJsonContext.Default.RemoteTrustRequest),
@@ -329,6 +443,20 @@ public sealed class RemoteActivity : Activity
             .SetPositiveButton(Resource.String.remote_remove, async (_, _) =>
             {
                 CsRemoteConnection.Clear(); // legacy remove also disconnects the removed host
+                if (CsHosts)
+                {
+                    CsRemoteHosts.Remove(this, h.Id);
+                    // A legacy fallback connection to this host goes too (legacy remove disconnected its current host).
+                    if (await Call(BridgeMethods.RemoteStatus, null, BridgeJsonContext.Default.RemoteStatusInfo, TimeSpan.FromSeconds(10)) is { HostId: { } connected }
+                        && connected == h.Id)
+                    {
+                        await Call(BridgeMethods.RemoteDisconnect, null, BridgeJsonContext.Default.RemoteStatusInfo, TimeSpan.FromSeconds(30));
+                    }
+                    _bridge.Note("remote.hosts.remove (C#)");
+                    _selected = null;
+                    _status.Text = GetString(Resource.String.remote_removed);
+                    return;
+                }
                 var before = StoredHosts();
                 var (resp, left) = await CallRaw(BridgeMethods.RemoteHostsRemove, HostId(h.Id), BridgeJsonContext.Default.RemoteHostList, TimeSpan.FromSeconds(30));
                 if (resp is not null)
@@ -371,9 +499,8 @@ public sealed class RemoteActivity : Activity
         return s;
     }
 
-    /// <summary>The profile list exactly as the legacy RemoteHosts stores it (same SharedPreferences instance).</summary>
-    private string? StoredHosts() =>
-        GetSharedPreferences(RemoteHostProfile.PreferencesName, FileCreationMode.Private)!.GetString(RemoteHostProfile.PreferencesKey, null);
+    /// <summary>The profile list exactly as stored (the legacy RemoteHosts and the C# store share the SharedPreferences file).</summary>
+    private string? StoredHosts() => CsRemoteHosts.Stored(this);
 
     /// <summary>PR-09 shadow comparisons run off the UI thread; inputs are captured by the caller.</summary>
     private void Shadow(Action<RemoteHostsShadow> compare)
