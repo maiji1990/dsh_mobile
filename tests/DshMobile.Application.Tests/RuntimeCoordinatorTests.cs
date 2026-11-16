@@ -151,6 +151,32 @@ public sealed class RuntimeCoordinatorTests : IDisposable
     }
 
     [Fact]
+    public async Task Start_FirstRecoversAnInterruptedDshLayerInstall()
+    {
+        var c = HostCoordinator();
+        var dsh = new DshLayerInstaller(Layout());
+        // The process died mid-swap: the old layer is aside, half a new one sits at dsh, the journal says "begin".
+        Directory.CreateDirectory(Path.Combine(dsh.AsideDir, "node_modules", "@deepseek-ai", "dsh", "lib"));
+        File.WriteAllText(Path.Combine(dsh.AsideDir, DshLayerInstaller.BinJs), "bin");
+        Directory.CreateDirectory(Path.Combine(dsh.AsideDir, ".dshmobile"));
+        File.WriteAllText(Path.Combine(dsh.AsideDir, DshLayerInstaller.VersionFile), "1.0.0");
+        if (Directory.Exists(dsh.DshDir))
+        {
+            Directory.Delete(dsh.DshDir, recursive: true);
+        }
+        Directory.CreateDirectory(Path.Combine(dsh.DshDir, "node_modules"));
+        File.WriteAllText(dsh.JournalFile, "phase=begin\nhadOld=true\n");
+
+        var r = await c.StartAsync(DshProfile.Web, CancellationToken.None);
+        Assert.True(r.Ok, r.Message);
+        Assert.Contains("start: interrupted DSH layer install restored", _log.Lines);
+        Assert.Equal("1.0.0", dsh.InstalledVersion());
+        Assert.False(File.Exists(dsh.JournalFile));
+        Assert.False(Directory.Exists(dsh.AsideDir));
+        Assert.Equal(["host.start"], _calls);
+    }
+
+    [Fact]
     public async Task Start_OtherProfile_IsRefused()
     {
         var r = await HostCoordinator().StartAsync(new DshProfile("headless"), CancellationToken.None);
