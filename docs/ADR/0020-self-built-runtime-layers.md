@@ -34,6 +34,12 @@ App 的运行层来自 DSHBox `v1.5.1` Release 的两个文件（`runtime-bundle
      `SOURCE_DATE_EPOCH` 取 snapshot 时间点。
 2. **发布**：`.github/workflows/runtime-layers.yml` 手动触发（`workflow_dispatch`），x86_64 作业用 NDK 构建 PRoot，arm64（`ubuntu-24.04-arm`）
    作业构建各层并上传为工作流产物；输入 `release_tag` 非空时以该 tag 创建 GitHub Release（`runtime-<版本>`）。发布由负责人确认后执行。
+   **2026-11-16 起（vNext PR-03）改为**：runtime（base / node / android-side bundle）与 dsh（DSH 层）是两个独立作业、两个产品，
+   各构建两次比对可复现性；arm64 上由 App 自己的导入器与 DSH 安装器验收（`SelfBuiltRuntimeBundleTests`，`DSHM_REQUIRE_SELF_BUILT=1`
+   时缺产物即失败），并在 chroot 的 guest 布局里用 App 的 `dsh-probe.mjs` 跑 web / headless / sdk / sdk-minimal / acp（`tooling/runtime-smoke.sh`；
+   plugin 需 APK 的 pnpm 工具链，仍为真机项）；DSH 层附 `provenance.json`（npm integrity + 上游 tag `dsh-v<版本>` 的 commit）。
+   PR 改动构建相关文件时自动跑到验收为止；手动触发时可分别发布不可覆盖的 `runtime-<BUNDLE_VERSION>`、`dsh-<DSH_VERSION>` Release
+   （本仓库已公开，可匿名下载），发布作业不执行任何第三方安装脚本。设备只经签名通道清单获得它们（ADR-0022）。
 3. **锁定**：发布后 `runtime-assets.lock` 改指本仓库 Release 的 URL 与 SHA-256；`fetch-runtime.ps1` 同时认 `dshmobile-runtime-*.zip`
    与旧的 `dshapp-runtime-*.zip`（用户手里的旧包仍可导入）。App 的导入入口同样两种名字都认。
 4. **兼容**：已安装 DSHBox 层的设备照常运行（`env_file` 按 profile 读取）；导入新 bundle 即替换为自建层（旧的进 `previous/` 可回滚）。

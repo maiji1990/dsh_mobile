@@ -157,3 +157,16 @@ FEATURES.md 各行的状态列已按上表改写（证据列保留原始记录�
 
 PR-02 验收门禁（方案）：匿名拉取两文件并正确验签（工作流 verify job）；伪造 / 篡改 / 过期 / 回放 / preview 冒充 stable 全部拒绝（单测已覆盖，
 真机待公钥就绪后用开发者选项复核）；私钥不进 APK 或 Actions artifact（签名只在一个步骤以 secret 注入）。
+
+## 7. PR-03 状态（运行层 / DSH 层分开构建与发布）
+
+| 切片 | 状态 |
+|---|---|
+| 两个独立作业（runtime：base / node / android-side；dsh：DSH 层） | 已实现（`runtime-layers.yml`）；锁定值与 SHA 校验沿用 `runtime-build.lock` |
+| 可复现性 | 每个产品构建两次比对 `SHA256SUMS`，结果写入验收报告（不一致只告警，不宣称可复现） |
+| 验收 | arm64：`SelfBuiltRuntimeBundleTests`（App 导入器 + DSH 安装器，缺产物即失败）；chroot guest 布局 + App 的 `dsh-probe.mjs`：web / sdk / sdk-minimal / acp 须 pass，headless pass 或 limited；plugin 留给真机 |
+| 来源 | DSH 层 `provenance.json`：npm integrity（来自锁文件）+ 上游 tag `dsh-v<版本>` 的 commit（`git ls-remote`，CI 中解析）；没有 commit 时拒绝发布 |
+| 发布 | 手动：`publish_runtime` / `publish_dsh` 分别创建不可覆盖的 `runtime-<v>` / `dsh-<v>` Release；发布作业不跑 `npm ci` |
+| `runtime-assets.lock` | **未改**：仍指 DSHBox v1.5.1；自有 Release 发布并真机验收后单独改 |
+| DSH `0.2.2-rc.3`（preview） | **未做**：上游升级，按规则 8 另起 PR（新 `package.json` / lockfile、Node `>=24.9.0` 已满足、兼容性对照） |
+| 真机 | **未做**：chroot 不是 Android / PRoot |

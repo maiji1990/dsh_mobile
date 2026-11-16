@@ -6,7 +6,8 @@ namespace DshMobile.Runtime.Tests;
 
 /// <summary>
 /// ADR-0020: a bundle built by <c>runtime-bundle/build-runtime.sh</c> goes through the app's own importer. Runs only when
-/// the build output exists (<c>artifacts/runtime-build/dist</c>); reports NOT RUN otherwise instead of passing silently.
+/// the build output exists (<c>artifacts/runtime-build/dist</c>); reports NOT RUN otherwise instead of passing silently,
+/// and fails when <c>DSHM_REQUIRE_SELF_BUILT=1</c> (runtime-layers.yml verify job).
 /// </summary>
 public sealed class SelfBuiltRuntimeBundleTests(ITestOutputHelper output) : IDisposable
 {
@@ -20,6 +21,8 @@ public sealed class SelfBuiltRuntimeBundleTests(ITestOutputHelper output) : IDis
         var zip = Directory.Exists(dist) ? Directory.EnumerateFiles(dist, "dshmobile-runtime-*.zip").OrderDescending().FirstOrDefault() : null;
         if (zip is null)
         {
+            // The runtime-layers workflow sets this so a missing build output fails instead of passing as "NOT RUN".
+            Assert.True(Environment.GetEnvironmentVariable("DSHM_REQUIRE_SELF_BUILT") != "1", $"DSHM_REQUIRE_SELF_BUILT=1 but no dshmobile-runtime-*.zip in {dist}");
             output.WriteLine($"NOT RUN: no dshmobile-runtime-*.zip in {dist} (bash runtime-bundle/build-runtime.sh)");
         }
         return zip;

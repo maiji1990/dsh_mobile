@@ -9,15 +9,16 @@
   "artifacts": [
     { "kind": "runtime", "version": "0.2.0", "abi": "arm64", "file": "dshmobile-runtime-debian-arm64-0.2.0.zip",
       "releaseTag": "runtime-0.2.0", "minAppVersion": "0.1.0" },
-    { "kind": "dsh", "version": "0.2.1-rc.5", "abi": "arm64", "file": "0.2.1-rc.5.tar.zst", "releaseTag": "runtime-0.2.0",
+    { "kind": "dsh", "version": "0.2.1-rc.5", "abi": "arm64", "file": "0.2.1-rc.5.tar.zst", "releaseTag": "dsh-0.2.1-rc.5",
       "requiresNode": "24.x", "sourceRepo": "deepseek-ai/deepseek-harness", "sourceTag": "dsh-v0.2.1-rc.5",
-      "sourceCommit": "<上游该 tag 的完整 commit>" }
+      "sourceCommit": "<dsh-0.2.1-rc.5 Release 的 provenance.json 里的 sourceCommit>" }
   ]
 }
 ```
 
 - `kind`：`runtime` / `node` / `dsh` / `app`；`dsh` 必须钉 `sourceRepo` / `sourceTag` / `sourceCommit`（完整 40 或 64 位）。
-- `file` 必须是 `releaseTag` 那个 Release 里已有的资产（例如 `runtime-layers.yml` 填 `release_tag` 时创建）。
+- `file` 必须是 `releaseTag` 那个 Release 里已有的资产：`runtime-layers.yml` 手动发布的 `runtime-<BUNDLE_VERSION>`（bundle zip）或
+  `dsh-<DSH_VERSION>`（`<版本>.tar.zst`，`provenance.json` 里有 `sourceCommit`）。
 - 规则与 App 的 `ReleaseManifestParser` 一致（`tooling/release-manifest-build.mjs`，测试互相钉住）。
 
 **目前没有任何通道规格**：本仓库还没有发布过运行层 Release（vNext PR-03），也还没有发布公钥
