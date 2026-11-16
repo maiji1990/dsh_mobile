@@ -24,4 +24,17 @@ public static class UiPrefs
         editor.PutBoolean(DeveloperKey, on);
         editor.Apply();
     }
+
+    private const string ChannelKey = "update_channel";
+
+    /// <summary>The release channel the user follows (vNext PR-06): <c>stable</c> (default) or <c>preview</c>.</summary>
+    public static string UpdateChannel(Context context) =>
+        context.GetSharedPreferences(File, FileCreationMode.Private)!.GetString(ChannelKey, null) is "preview" ? "preview" : "stable";
+
+    public static void SetUpdateChannel(Context context, string channel)
+    {
+        var editor = context.GetSharedPreferences(File, FileCreationMode.Private)!.Edit()!;
+        editor.PutString(ChannelKey, channel == "preview" ? "preview" : "stable");
+        editor.Apply();
+    }
 }

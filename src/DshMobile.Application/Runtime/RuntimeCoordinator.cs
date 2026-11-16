@@ -47,6 +47,9 @@ public sealed class RuntimeCoordinator : IDisposable
     /// <summary>The last <see cref="SyncAsync"/>'s settling of an interrupted body import; null when it did not run (host owns processes).</summary>
     private RuntimeBodyRecovery? _bodyRecovery;
 
+    /// <summary>This process holds a DSH layer install at <c>probing</c> (its update health check is running).</summary>
+    private bool _dshProbeHeld;
+
     private IDshHost? _host;
 
     public RuntimeCoordinator(
@@ -230,6 +233,12 @@ public sealed class RuntimeCoordinator : IDisposable
         // An import interrupted by process death leaves the old body aside: settle it before the disk is read, so the
         // state is that of a whole body (the old one, or the new one once it was committed).
         _bodyRecovery = RecoverRuntimeBody();
+        // Same for the DSH layer: an update killed during its health check comes back as the old layer (PR-05).
+        var dshRecovery = new DshLayerInstaller(_layout, _options.HostPathExists).Recover(keepProbing: _dshProbeHeld);
+        if (dshRecovery.Action is not ("none" or "held"))
+        {
+            _log.Note($"dsh layer: interrupted install {dshRecovery.Action}{(dshRecovery.Message is { } dm ? ": " + dm : "")}");
+        }
         var facts = await ReadFactsAsync(ct).ConfigureAwait(false);
         var actual = RuntimeStatusReader.Idle(facts, _time.GetUtcNow());
         State.Observe(actual.State, actual.Harness, actual.DshVersion, Implementation);
@@ -311,8 +320,8 @@ public sealed class RuntimeCoordinator : IDisposable
                 return Refused($"cannot start while the runtime is {State.Current.State}");
             }
             // An install interrupted by process death leaves a journal: finish or undo it before DSH runs on the layer.
-            var recovery = new DshLayerInstaller(_layout, _options.HostPathExists).Recover();
-            if (recovery.Action != "none")
+            var recovery = new DshLayerInstaller(_layout, _options.HostPathExists).Recover(keepProbing: _dshProbeHeld);
+            if (recovery.Action is not ("none" or "held"))
             {
                 _log.Note($"start: interrupted DSH layer install {recovery.Action}{(recovery.Message is { } m ? ": " + m : "")}");
             }
@@ -544,6 +553,68 @@ public sealed class RuntimeCoordinator : IDisposable
             }
             State.TryTransition(RuntimeState.Ready, "rolled back", HarnessState.Stopped, dshVersion: facts.DshVersion);
             return new RuntimeInstallResult(true, RuntimeErrorCodes.Ok, $"restored {string.Join(", ", r.Restored)}");
+        }
+        finally
+        {
+            _op.Release();
+        }
+    }
+
+    /// <summary>
+    /// vNext PR-05: installs a downloaded, verified DSH layer and <b>holds</b> it for the update health check (old layer kept
+    /// aside). Refused while DSH runs (the update flow stops it first, after the user confirmed). The file is re-hashed here,
+    /// at the last moment before it is used. Finish with <see cref="FinishDshUpdateAsync"/>; a process killed in between
+    /// comes back as the old layer (the next <see cref="SyncAsync"/> undoes a hold nobody owns).
+    /// </summary>
+    public async Task<DshLayerResult> InstallDshUpdateAsync(DshMobile.Runtime.Updates.VerifiedArtifact file, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(file);
+        await _op.WaitAsync(ct).ConfigureAwait(false);
+        try
+        {
+            await SyncAsync(ct).ConfigureAwait(false);
+            var installer = new DshLayerInstaller(_layout, _options.HostPathExists);
+            if (HostOwnsProcesses || State.Current.State is RuntimeState.Running or RuntimeState.Starting or RuntimeState.Stopping)
+            {
+                return new DshLayerResult(false, RuntimeErrorCodes.InvalidTransition, "stop DSH before the DSH layer is updated", installer.InstalledVersion(), false, 0);
+            }
+            if (file.Artifact.Kind != DshMobile.Runtime.Updates.ReleaseKinds.Dsh)
+            {
+                return new DshLayerResult(false, RuntimeErrorCodes.BadRequest, $"not a DSH layer: {file.Artifact.Kind}", installer.InstalledVersion(), false, 0);
+            }
+            if (!DshMobile.Runtime.Updates.ArtifactStore.Matches(file.FilePath, file.Artifact, ct))
+            {
+                return new DshLayerResult(false, DshMobile.Runtime.Updates.DownloadErrorCodes.Sha256Mismatch, "the downloaded layer changed after verification", installer.InstalledVersion(), false, 0);
+            }
+            var r = await installer.InstallFromFileAsync(file.FilePath, file.Artifact.Sha256, file.Artifact.Version, allowDowngrade: false, ct, holdForProbe: true)
+                .ConfigureAwait(false);
+            _dshProbeHeld = r.Ok && r.Changed;
+            _log.Note(r.Ok ? $"dsh update: {(r.Changed ? "installed " + r.Version + ", held for the health check" : "kept " + r.Version)}" : $"dsh update FAILED {r.Code}: {r.Message}");
+            await SyncAsync(ct).ConfigureAwait(false);
+            return r;
+        }
+        finally
+        {
+            _op.Release();
+        }
+    }
+
+    /// <summary>Commits (health check passed) or aborts (failed) the DSH layer held by <see cref="InstallDshUpdateAsync"/>.</summary>
+    public async Task<DshLayerRecovery> FinishDshUpdateAsync(bool commit, CancellationToken ct)
+    {
+        await _op.WaitAsync(ct).ConfigureAwait(false);
+        try
+        {
+            if (HostOwnsProcesses)
+            {
+                return new DshLayerRecovery(false, "failed", "stop DSH before the held DSH layer is committed or restored");
+            }
+            var installer = new DshLayerInstaller(_layout, _options.HostPathExists);
+            var r = commit ? installer.CommitProbed() : installer.AbortProbed();
+            _dshProbeHeld = false; // a failed commit / abort is retried (as an undo) by the next sync
+            _log.Note(r.Ok ? $"dsh update: {(commit ? "committed" : "previous layer restored")} ({installer.InstalledVersion() ?? "-"})" : $"dsh update: finish FAILED: {r.Message}");
+            await SyncAsync(ct).ConfigureAwait(false);
+            return r;
         }
         finally
         {

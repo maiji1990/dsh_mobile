@@ -169,7 +169,8 @@ public sealed class RuntimeCoordinatorTests : IDisposable
 
         var r = await c.StartAsync(DshProfile.Web, CancellationToken.None);
         Assert.True(r.Ok, r.Message);
-        Assert.Contains("start: interrupted DSH layer install restored", _log.Lines);
+        // Since vNext PR-05 the sync at the start of every operation settles it, before StartAsync looks.
+        Assert.Contains("dsh layer: interrupted install restored", _log.Lines);
         Assert.Equal("1.0.0", dsh.InstalledVersion());
         Assert.False(File.Exists(dsh.JournalFile));
         Assert.False(Directory.Exists(dsh.AsideDir));

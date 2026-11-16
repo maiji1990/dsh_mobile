@@ -199,3 +199,18 @@ chroot 探测未覆盖终端 / 子进程工具，**真机上自建 DSH 层从未
 | 验收：失败不碰 `runtime-current` / `user-data`；SHA 不符不得安装；续传不绕过完整性 | `NothingOutsideTheUpdateStore_IsEverWritten`；整文件哈希；安装（PR-05）只接受 `VerifiedArtifact` 且应在安装前再次校验 |
 
 未做：接入 App / UI（PR-06）、安装事务（PR-05）、真机（Android 上 `AndroidMessageHandler` 的跳转与 Range 行为需真机确认）。
+
+## 9. PR-05 + PR-06 状态（更新事务与在线更新界面，ADR-0024）
+
+| 方案要求 | 实现 / 证据 |
+|---|---|
+| 目标组合选择，缺兼容组合则拒绝 | `UpdatePlanner`：只在线安装 DSH 层；被 Node 要求挡住的新版 DSH 列出原因，不乱序安装；Runtime / Node / App 行标 `UPDATE_KIND_NOT_SUPPORTED` 并说明（Runtime 离线导入、Node 随 Runtime、App 需 PackageInstaller） |
+| 下载与换层分开；preflight（已停止、空间、签名、ABI/版本、旧层保留） | 下载阶段（PR-04：签名令牌、ABI 过滤、空间）→ 换层前协调器检查 DSH 未运行、再整文件校验；旧层以 probing 阶段保留 |
+| 复用 `DshLayerInstaller` 事务；备份失败拒绝，不删唯一正常层 | 复用并扩展（`holdForProbe` / `CommitProbed` / `AbortProbed`）；P0-02 的 aside 机制不变 |
+| 顺序：下载 → 校验 → 用户确认停止 → 保留旧层 → staging → swap → 探测 → 提交；不达标自动恢复 | `UpdateCoordinator`；探测 = 宿主 READY（端口 + WebUI + HTTP 401）+ 版本记录为目标 + 停止（`node --version` / `dsh --dump-config` 未纳入：需 PRoot，待真机切片补） |
+| journal 阶段 DOWNLOADING/VERIFIED/STOPPING/STAGING/SWAPPING/PROBING/COMMITTED/ROLLING_BACK/FAILED；按 journal 恢复 | `UpdateStateStore`（STAGING 并入 SWAPPING）；磁盘恢复由层日志负责：probing 被杀 → 下一个进程首次同步即回旧层；记录报告为 `UPDATE_INTERRUPTED` |
+| 测试：无槽位、首次安装、容量不足、半写入、权限、跨文件系统 rename、坏包、断电、用户取消 | 端到端 7 例 + 层 6 例（hold 安装每一步进程死亡后恢复为旧层）+ PR-04 下载器 12 例 + P0-02 故障注入；**跨文件系统 rename** 未单测（copy 回退由 P0-02 覆盖） |
+| UI：四行、检查 / 下载 / 安装 / 取消 / 重试 / 回滚 / 复制诊断；进度分阶段；停止前提示；App 走 PackageInstaller | 运行环境页「在线更新」：通道、检查、四行、安装（确认框）、下载中取消、重试（再点续传）、上次更新、复制诊断；进度显示阶段与字节；**回滚按钮未做**（ADR-0024 后果）；App 更新未做 |
+
+验收（方案）：无网络 / 无公钥 / 无 Release / 过期错签 / 磁盘不足 / 下载中断 / 安装中强杀均有正确提示——单测覆盖各错误码；**界面与真机均未验证**
+（今天无发布公钥，检查即报 `UPDATE_NO_TRUSTED_KEYS`，安装路径在真机上无法走通，直到 PR-02 的公钥与 PR-03 的 Release 就绪）。

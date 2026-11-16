@@ -110,6 +110,13 @@ public sealed class DshLayerInstaller(RuntimeLayout layout, Func<string, bool>? 
     private const string PhaseBegin = "begin";
     private const string PhasePlaced = "placed";
 
+    /// <summary>
+    /// vNext PR-05: placed but not yet committed — the new layer is at <c>dsh</c>, the old one still aside, while an
+    /// update health check runs. <see cref="CommitProbed"/> commits, <see cref="AbortProbed"/> (or a <see cref="Recover"/>
+    /// in a process that is not holding the probe, e.g. after the app was killed mid-check) restores the old layer.
+    /// </summary>
+    private const string PhaseProbing = "probing";
+
     /// <summary>Legacy <c>isInstalled</c>: bin.js or a version record.</summary>
     public bool IsInstalled => File.Exists(Path.Combine(DshDir, BinJs)) || File.Exists(Path.Combine(DshDir, VersionFile));
 
@@ -132,11 +139,11 @@ public sealed class DshLayerInstaller(RuntimeLayout layout, Func<string, bool>? 
         return new DshLayerDecision(!keep, current, newVersion);
     }
 
-    public Task<DshLayerResult> InstallFromFileAsync(string bundlePath, string? expectedSha256, string? newVersion, bool allowDowngrade, CancellationToken ct)
+    public Task<DshLayerResult> InstallFromFileAsync(string bundlePath, string? expectedSha256, string? newVersion, bool allowDowngrade, CancellationToken ct, bool holdForProbe = false)
     {
         ArgumentException.ThrowIfNullOrEmpty(bundlePath);
         return File.Exists(bundlePath)
-            ? InstallAsync(() => File.OpenRead(bundlePath), expectedSha256, newVersion, allowDowngrade, ct)
+            ? InstallAsync(() => File.OpenRead(bundlePath), expectedSha256, newVersion, allowDowngrade, ct, holdForProbe)
             : Task.FromResult(new DshLayerResult(false, DshLayerErrorCodes.BundleNotFound, $"dsh bundle not found: {bundlePath}", InstalledVersion(), false, 0));
     }
 
@@ -144,7 +151,9 @@ public sealed class DshLayerInstaller(RuntimeLayout layout, Func<string, bool>? 
     /// Installs from a re-openable source (an APK asset or a file): read once for the checksum, once for extraction
     /// (hashed again while extracting, so a source that changed in between is refused).
     /// </summary>
-    public async Task<DshLayerResult> InstallAsync(Func<Stream> open, string? expectedSha256, string? newVersion, bool allowDowngrade, CancellationToken ct)
+    /// <param name="holdForProbe">vNext PR-05: stop at <c>probing</c> (old layer kept aside) instead of committing; the caller
+    /// runs a health check and then calls <see cref="CommitProbed"/> or <see cref="AbortProbed"/>.</param>
+    public async Task<DshLayerResult> InstallAsync(Func<Stream> open, string? expectedSha256, string? newVersion, bool allowDowngrade, CancellationToken ct, bool holdForProbe = false)
     {
         ArgumentNullException.ThrowIfNull(open);
         var sw = Stopwatch.StartNew();
@@ -223,6 +232,11 @@ public sealed class DshLayerInstaller(RuntimeLayout layout, Func<string, bool>? 
             catch (Exception e) when (e is IOException or UnauthorizedAccessException)
             {
             }
+            if (holdForProbe)
+            {
+                WriteJournal(PhaseProbing, hadOld);
+                return new DshLayerResult(true, "OK", "installed; held for the update health check (old layer kept aside)", InstalledVersion(), true, sw.ElapsedMilliseconds);
+            }
             WriteJournal(PhasePlaced, hadOld);
             var done = Recover(); // retires the old layer and drops the journal
             return new DshLayerResult(true, "OK", done.Ok ? null : "new layer installed; clean-up of the old layer is retried later: " + done.Message,
@@ -276,7 +290,9 @@ public sealed class DshLayerInstaller(RuntimeLayout layout, Func<string, bool>? 
     /// Then the journal is removed. Staging leftovers are always removed; without a journal nothing else is touched,
     /// except an aside layer with no <c>dsh</c> next to it, which is put back. The caller makes sure no DSH process holds the layer.
     /// </summary>
-    public DshLayerRecovery Recover()
+    /// <param name="keepProbing">The caller is the process holding a <c>probing</c> install (its health check is running):
+    /// leave it alone. Every other caller — notably the first one after the app was killed mid-check — undoes it.</param>
+    public DshLayerRecovery Recover(bool keepProbing = false)
     {
         var dsh = DshDir;
         var aside = AsideDir;
@@ -298,6 +314,10 @@ public sealed class DshLayerInstaller(RuntimeLayout layout, Func<string, bool>? 
                 return new DshLayerRecovery(true, "none", null);
             }
             var (phase, hadOld) = journal.Value;
+            if (phase == PhaseProbing && keepProbing)
+            {
+                return new DshLayerRecovery(true, "held", null);
+            }
             string action;
             if (phase == PhasePlaced)
             {
@@ -329,6 +349,31 @@ public sealed class DshLayerInstaller(RuntimeLayout layout, Func<string, bool>? 
             return new DshLayerRecovery(false, "failed", e.Message);
         }
     }
+
+    /// <summary>Whether an install is held at <c>probing</c> (new layer in place, old one aside, health check pending).</summary>
+    public bool IsHeldForProbe => ReadJournal() is { Phase: PhaseProbing };
+
+    /// <summary>The health check passed: commit the held install (retire the old layer, drop the journal).</summary>
+    public DshLayerRecovery CommitProbed()
+    {
+        if (!IsHeldForProbe)
+        {
+            return new DshLayerRecovery(false, "failed", "no DSH install is held for a health check");
+        }
+        try
+        {
+            WriteJournal(PhasePlaced, ReadJournal()!.Value.HadOld);
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            return new DshLayerRecovery(false, "failed", "cannot commit: " + e.Message);
+        }
+        return Recover();
+    }
+
+    /// <summary>The health check failed (or was abandoned): put the old layer back, drop the new one.</summary>
+    public DshLayerRecovery AbortProbed() =>
+        IsHeldForProbe ? Recover(keepProbing: false) : new DshLayerRecovery(false, "failed", "no DSH install is held for a health check");
 
     /// <summary>Legacy end state for the replaced layer: <c>previous/dsh</c> when <c>previous/</c> exists, else gone.</summary>
     private void RetireAside()
