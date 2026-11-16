@@ -36,3 +36,7 @@
 - Android APK 与 Runtime、DSH 都是不同的制品，不能只凭构建成功就声称最终 APK 已包含最新两种运行层或已验证安装。应在设备上分别验证下载、导入、更新及启动。
 
 首次合并这份 CI 修改（工作流文件在路径过滤范围内）会触发缺失版本的自动发布；请在 Actions 中检查结果，并先确认运行环境的真实制品，再填写 `release/preview.json` 与配置签名。
+
+## 自动版本升级
+
+详见 [自动升级与发布完整流程](../docs/RELEASE_AUTOMATION.md)。夜间 `upstream-update-proposals.yml` 分别为 Node/Runtime、DSH 和 Release Assets 提出独立 PR；通过 CI、审核合并后发布不可变 Runtime/DSH Release。运行环境签名通道仍需配置公钥和受保护的签名私钥。
