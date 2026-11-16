@@ -20,6 +20,8 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - name: Install NDK 27.0.12077973
         run: |
           "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "ndk;27.0.12077973" > /dev/null
@@ -39,6 +41,10 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v4
+        with:
+          # The layers job holds contents: write while `npm ci` runs third-party install scripts: never leave the
+          # token in .git/config (nothing here pushes; the release step gets its token through GH_TOKEN only).
+          persist-credentials: false
       - uses: actions/download-artifact@v4
         with:
           name: proot-arm64-v8a

@@ -145,6 +145,7 @@ DshMobile.Core         通用协议类型、WebView 策略、工作区文件系�
 
 - [docs/FEATURES.md](docs/FEATURES.md)：功能矩阵与真机证据
 - [docs/MIGRATION.md](docs/MIGRATION.md)：迁移状态（唯一事实源）
+- [docs/VNEXT_STATUS.md](docs/VNEXT_STATUS.md)：vNext 基线、证据核对（已通过 / 待复测 / 待测 / 阻断）与下一批 PR 门禁
 - [docs/ADR/](docs/ADR/)：架构决策记录（0001–0022）
 - [docs/UPSTREAMS.md](docs/UPSTREAMS.md)：上游来源、固定版本与许可
 - [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md)：设备兼容性

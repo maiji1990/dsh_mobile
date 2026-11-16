@@ -15,14 +15,15 @@
 | .NET SDK | `11.0.100-rc.2.26504.105` | `global.json`（`rollForward: disable`） |
 | .NET workload set | `11.0.100-rc.2.26513.2`（android `37.2.0-rc.2.84`） | `global.json` `workloadVersion` |
 | JDK | Temurin 21.0.12 | 本机 `JAVA_HOME` |
-| Gradle | 9.5.0 | `native/gradle/wrapper/gradle-wrapper.properties` |
-| AGP / Kotlin | 9.3.1 / 2.4.20 | `third_party/dshbox/gradle/libs.versions.toml` |
-| Android compileSdk | 36（native-bridge / DSHBox 模块）；.NET App 使用 workload 默认 API 37（targetSdk 37 = Android 17） | |
-| Android build-tools | 37.0.0（`native/gradle.properties` `dshmobile.buildToolsVersion`，覆盖 AGP 9.3.1 默认的 36.0.0） | |
+| ~~Gradle / AGP / Kotlin~~ | ~~9.5.0 / 9.3.1 / 2.4.20~~ | **已删除（ADR-0018）**：不再有 Gradle 构建 |
+| Android compileSdk | .NET App 使用 workload 默认 API 37（targetSdk 37 = Android 17）；~~native-bridge / DSHBox 模块 36~~ 已删除 | |
+| Android NDK | 27.0.12077973（`native/*/build.*`；`.so` 以 `max-page-size=16384` 链接） | AGENTS.md 规则 10 |
 | .NET Android 运行时 | CoreCLR（APK 内 `libcoreclr.so` / `libclrjit.so`，已核对） | |
-| Xamarin.Kotlin.StdLib | 2.4.0.1 | `src/DshMobile.NativeBinding` |
+| ~~Xamarin.Kotlin.StdLib~~ | ~~2.4.0.1~~ | **已删除（ADR-0018，`DshMobile.NativeBinding` 不复存在）** |
 
 > 方案文档基线写的是 .NET 11 **RC3**（2026-10-25）；本机当前仅安装 **RC2**。按方案“GA 后做独立升级 PR”的要求，升级到 RC3 / GA 时修改 `global.json` 并重新跑基线，单独提交。
+>
+> **2026-11-16（vNext PR-00）**：.NET 11 GA（SDK `11.0.100`）已于 2026-11-10 发布，`global.json` 仍为 RC2；升级是 vNext PR-01（单独分支），workload 版本以 GA SDK 实际 `dotnet workload --version` 为准，不预填。
 
 ## 真机矩阵
 
@@ -33,6 +34,33 @@
 | Android 16 / ARM64 | 待测 | — | — | |
 | Android 17 / ARM64 | **通过（见下）**，旋转未测 | **通过**（DSH 0.2.1-rc.5 READY） | web/sdk/sdk-minimal/acp 通过；headless 受限（凭据）；plugin 失败（pnpm） | Honor PTP-AN10，厂商 ROM `11.0.0.117`，4 KB 页，2026-11-09 |
 | x86_64 模拟器 | 待测 | 不保证 | 不保证 | |
+
+## vNext 待测矩阵（PR-00，2026-11-16）
+
+「—」= 不适用。除 Android 17 一行的「当前 C#」格外，**全部待测**；只有真机日志 / 报告能把格子改为通过（AGENTS.md 规则 9）。
+「当前 C#」指 PR-10 之后的唯一实现（2026-11-16 两次真机，Debug 构建，早于 maiji1990/dsh_mobile#41）。状态总览见 [VNEXT_STATUS.md](VNEXT_STATUS.md)。
+
+| 维度 | Android 10 (API 29) | Android 14 (API 34) | Android 17 (API 37) | 备注 |
+|---|---|---|---|---|
+| 安装 / 冷启动（Release full-trim, CoreCLR） | 待测 | 待测 | 待复测（仅 PR-10 前；11-16 为 Debug） | PR-01 升级 .NET 11 GA 后必测 |
+| 导入 → READY → WebUI → 停止无残留 | 待测 | 待测 | 通过（当前 C#） | |
+| 终端 PTY 自检 / 多会话 / ^C | 待测 | 待测 | 通过（当前 C#，#41 前构建） | #41 改了 `PtyProbe` 计时（行为等价），需复跑自检 |
+| 终端中文 IME / vim / tmux / 大输出 | 待测 | 待测 | 待测 | PR-08 |
+| 文件页 / 受保护 `.dsh` / SAF 导入导出 | 待测 | 待测 | 部分（SAF 仅 PR-10 前） | |
+| 手机操控只读 + 审批卡 | 待测 | 待测 | 通过（当前 C#） | 写操作仅 PR-10 前 |
+| 运行层导入 / 回滚 | 待测 | 待测 | 通过（当前 C#，回滚需手工 `previous/`） | |
+| DSH 层换层事务：中途强杀 / 低磁盘 | 待测 | 待测 | 待测 | #41 只有单测 + 故障注入 |
+| 在线更新（发现 / 下载 / 安装 / 回滚） | 阻断 | 阻断 | 阻断 | 无发布公钥（PR-02）、无下载器（PR-04） |
+
+| 维度 | 状态 | 备注 |
+|---|---|---|
+| 4 KB 页 arm64 | 通过（Android 17，PTP-AN10 为 4 KB 页） | |
+| 16 KB 页 arm64 | 待测 | 构建以 `max-page-size=16384` 链接，但 CI 没有 `readelf` LOAD 对齐检查，也没有 16 KB 设备 / 镜像运行记录 |
+| x86_64 模拟器 | 只做 UI 冒烟 | arm64 guest 不可用（SIGILL 不能说明 arm64 Runtime 可用） |
+| SSH → Windows OpenSSH | 待复测（仅 PR-10 前，2026-11-14） | 主机指纹 / Keystore 密钥 / 远端 web 启停 |
+| SSH → Linux sshd | 待测 | |
+| SSH over Tailscale（MagicDNS / tailnet IP） | 待测 | PR-12 |
+| 远端 SFTP / SSH PTY | 未实现 | PR-11 |
 
 ## 真机记录
 
