@@ -176,6 +176,48 @@ public sealed class RuntimeCoordinatorTests : IDisposable
         Assert.Equal(["host.start"], _calls);
     }
 
+    /// <summary>The process died mid-import: the old body is aside, half a new base is live, the journal says "begin".</summary>
+    private static LayerInstaller InterruptImport(RuntimeLayout layout)
+    {
+        var body = new LayerInstaller(layout);
+        Directory.CreateDirectory(body.AsideDir);
+        foreach (var item in (string[])["base", "android-side"])
+        {
+            Directory.Move(Path.Combine(layout.RuntimeCurrentDir, item), Path.Combine(body.AsideDir, item));
+        }
+        File.Move(Path.Combine(layout.RuntimeCurrentDir, "runtime-profile.json"), Path.Combine(body.AsideDir, "runtime-profile.json"));
+        Directory.CreateDirectory(Path.Combine(layout.RuntimeCurrentDir, "base", "etc"));
+        File.WriteAllText(body.JournalFile, "phase=begin\nold=base,android-side,runtime-profile.json\n");
+        return body;
+    }
+
+    [Fact]
+    public async Task Start_FirstRecoversAnInterruptedRuntimeImport()
+    {
+        var c = HostCoordinator();
+        var layout = Layout();
+        var body = InterruptImport(layout);
+
+        var r = await c.StartAsync(DshProfile.Web, CancellationToken.None);
+        Assert.True(r.Ok, r.Message);
+        Assert.Contains("runtime body: interrupted import restored", _log.Lines);
+        Assert.True(File.Exists(Path.Combine(layout.RuntimeCurrentDir, "base", ".dshmobile", "layer-base.sha256")));
+        Assert.False(Directory.Exists(Path.Combine(layout.RuntimeCurrentDir, "base", "etc")));
+        Assert.False(File.Exists(body.JournalFile));
+        Assert.False(Directory.Exists(body.AsideDir));
+        Assert.Equal(["host.start"], _calls);
+    }
+
+    [Fact]
+    public async Task Refresh_AtAppStart_SettlesAnInterruptedRuntimeImport_SoTheStateIsThatOfAWholeBody()
+    {
+        var c = HostCoordinator();
+        var body = InterruptImport(Layout());
+        Assert.Equal(RuntimeState.Ready, (await c.RefreshStateAsync(CancellationToken.None)).State);
+        Assert.Contains("runtime body: interrupted import restored", _log.Lines);
+        Assert.False(File.Exists(body.JournalFile));
+    }
+
     [Fact]
     public async Task Start_OtherProfile_IsRefused()
     {
@@ -441,6 +483,23 @@ public sealed class RuntimeCoordinatorTests : IDisposable
         Assert.Equal(RuntimeState.Ready, c.State.Current.State);
         Assert.Contains("\"version\":\"0\"", File.ReadAllText(Path.Combine(layout.RuntimeCurrentDir, "runtime-profile.json")), StringComparison.Ordinal);
         Assert.Contains(_journal.ReadTail(20), e => e.Reason == "rolled back");
+    }
+
+    [Fact]
+    public async Task Rollback_FirstRecoversAnInterruptedImport_ThenSwapsThePreviousBodyIn()
+    {
+        var c = HostCoordinator();
+        var layout = Layout();
+        TestRuntime.Install(layout.FilesDir, version: "0", sha: "bb", body: Path.Combine(layout.RuntimeCurrentDir, "previous"));
+        InterruptImport(layout);
+        var r = await c.RollbackAsync(CancellationToken.None);
+        Assert.True(r.Ok, r.Message);
+        Assert.Contains("runtime body: interrupted import restored", _log.Lines);
+        Assert.Contains("\"version\":\"0\"", File.ReadAllText(Path.Combine(layout.RuntimeCurrentDir, "runtime-profile.json")), StringComparison.Ordinal);
+        // failed/ holds the body from before the interrupted import, not the half-placed one.
+        var failed = LayerRollback.FailedDir(layout);
+        Assert.Equal("aa", File.ReadAllText(Path.Combine(failed, "base", ".dshmobile", "layer-base.sha256")));
+        Assert.False(Directory.Exists(Path.Combine(failed, "base", "etc")));
     }
 
     // ------------------------------------------------------------------ runtime.prepare / bundled DSH (MIGRATION row 17)

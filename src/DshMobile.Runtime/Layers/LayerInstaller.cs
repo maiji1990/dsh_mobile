@@ -20,24 +20,54 @@ public sealed record LayerInstallResult(
     long ElapsedMs);
 
 /// <summary>
-/// Installs a runtime bundle ZIP into <c>runtime/runtime-current</c> with the legacy layout and semantics:
+/// Outcome of <see cref="LayerInstaller.Recover"/>: <paramref name="Action"/> is <c>none</c> (no interrupted import),
+/// <c>restored</c> (the body from before the interrupted import is back), <c>completed</c> (the new body had been placed;
+/// only retiring the old one was left) or <c>failed</c> (the journal is kept, the next call tries again).
+/// </summary>
+public sealed record RuntimeBodyRecovery(bool Ok, string Action, string? Message);
+
+/// <summary>
+/// Installs a runtime bundle ZIP into <c>runtime/runtime-current</c> with the legacy layout and end states:
 /// inspect (layout, profile, per-layer SHA-256) → extract every layer into a private staging directory and record the
-/// <c>.dshmobile/layer-&lt;name&gt;.sha256</c> sentinel → move the current body (layers + profile) to
-/// <c>runtime-current/previous/</c> → move the new layers in → write the profile atomically. The DSH layer
-/// (<c>runtime-current/dsh</c>, <c>previous/dsh</c>) and <c>user-data</c> are never touched. The caller guarantees that
-/// the sandbox is stopped. Staging is always removed.
+/// <c>.dshmobile/layer-&lt;name&gt;.sha256</c> sentinel → swap the body (layers + profile) as one journaled transaction
+/// (<see cref="JournalFile"/>): the current body goes to <see cref="AsideDir"/>, the new one is placed, and only then is
+/// the old one retired — into <c>runtime-current/previous/</c> when that exists, otherwise deleted. An import interrupted
+/// by process death is finished or undone by <see cref="Recover"/> (run first by every import, and by the coordinator
+/// before each read of the runtime state from disk, so before a start or a rollback too). The DSH layer (<c>runtime-current/dsh</c>, <c>previous/dsh</c>) and <c>user-data</c> are
+/// never touched; <c>previous/</c> is never created (whether imports keep a rollback copy is a separate decision,
+/// MIGRATION §7). The caller guarantees that the sandbox is stopped. Staging is always removed.
 /// </summary>
 public sealed class LayerInstaller(RuntimeLayout layout, Func<string, bool>? hostPathExists = null)
 {
     public const string ImportFailed = "BUNDLE_IMPORT_FAILED";
 
+    /// <summary>The body items in swap order: the layers, then the profile.</summary>
+    private static IReadOnlyList<string> BodyItems => LayerRollback.BodyItems;
+
+    private const string PhaseBegin = "begin";
+    private const string PhasePlaced = "placed";
+
     /// <summary>Distinct from the legacy <c>runtime-bundle-staging</c>, so the two importers never share a directory.</summary>
     public string StagingDir => Path.Combine(layout.FilesDir, "dshmobile-bundle-staging");
+
+    /// <summary>Where the current body waits while the new one is placed (inside <c>runtime-current</c>).</summary>
+    public string AsideDir => Path.Combine(layout.RuntimeCurrentDir, "dshmobile-body-old");
+
+    /// <summary>Write-ahead record of a body swap in progress (<c>phase=begin|placed</c>, <c>old=</c> items); absent when none is.</summary>
+    public string JournalFile => Path.Combine(layout.RuntimeCurrentDir, "dshmobile-body-install.journal");
+
+    /// <summary>The filesystem primitives of the swap (tests inject faults).</summary>
+    internal LayerFileOps Ops { get; init; } = LayerFileOps.Real;
 
     public async Task<LayerInstallResult> InstallAsync(string zipPath, IProgress<RuntimeProgress>? progress, CancellationToken ct)
     {
         ArgumentException.ThrowIfNullOrEmpty(zipPath);
         var sw = Stopwatch.StartNew();
+        var recovery = Recover();
+        if (!recovery.Ok)
+        {
+            return new LayerInstallResult(false, ImportFailed, "an earlier interrupted runtime import could not be recovered: " + recovery.Message, null, [], sw.ElapsedMilliseconds);
+        }
         var inspection = await RuntimeBundleInspector.InspectAsync(zipPath, progress, ct).ConfigureAwait(false);
         if (!inspection.Ok)
         {
@@ -76,18 +106,21 @@ public sealed class LayerInstaller(RuntimeLayout layout, Func<string, bool>? hos
             {
                 return new LayerInstallResult(false, "BUNDLE_NO_BASE", "Runtime bundle missing base layer", inspection, extracted, sw.ElapsedMilliseconds);
             }
-            SwapRuntimeBody(staging, RuntimeConstants.LayerNames);
-            return new LayerInstallResult(true, "OK", null, inspection, extracted, sw.ElapsedMilliseconds);
+            var (swapped, swapMessage) = SwapRuntimeBody(staging);
+            return new LayerInstallResult(swapped, swapped ? "OK" : ImportFailed, swapMessage, inspection, extracted, sw.ElapsedMilliseconds);
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException or InvalidDataException)
         {
-            return new LayerInstallResult(false, ImportFailed, "import failed: " + e.Message, inspection, extracted, sw.ElapsedMilliseconds);
+            // Before the journal this undoes nothing; after it (e.g. the journal itself could not be written) it is the undo.
+            var undo = Recover();
+            return new LayerInstallResult(false, ImportFailed, "import failed: " + e.Message + (undo.Ok ? "" : "; recovery pending: " + undo.Message),
+                inspection, extracted, sw.ElapsedMilliseconds);
         }
         finally
         {
             try
             {
-                DeleteTree(staging);
+                Ops.DeleteTree(staging);
             }
             catch (Exception e) when (e is IOException or UnauthorizedAccessException)
             {
@@ -141,93 +174,250 @@ public sealed class LayerInstaller(RuntimeLayout layout, Func<string, bool>? hos
     }
 
     /// <summary>
-    /// Legacy <c>swapRuntimeBody</c>, step for step. Note the inherited behavior: when <c>previous/</c> does not exist the
-    /// rename fails and the old layer is deleted (no rollback copy) - pinned by install-scenarios.json.
+    /// Legacy <c>swapRuntimeBody</c> end states, reached as one journaled transaction over the whole body (the layers and
+    /// <c>runtime-profile.json</c>, <see cref="LayerRollback.BodyItems"/>):
+    /// <list type="number">
+    /// <item>journal <c>phase=begin</c> with the items that exist now;</item>
+    /// <item>each existing item is renamed into <see cref="AsideDir"/> (inside <c>runtime-current</c>, created first, so the
+    /// rename cannot hit a missing directory). A refused rename puts the moved items back and refuses the import —
+    /// nothing changes;</item>
+    /// <item>the staged layers are renamed into place (copy as fallback), then the profile is written durably. If any of it
+    /// fails, the placed items are dropped and the old body is renamed back;</item>
+    /// <item>journal <c>phase=placed</c>, then <see cref="Recover"/> retires the old body.</item>
+    /// </list>
+    /// The legacy code deleted every current layer as soon as the rename into the (normally missing)
+    /// <c>previous/</c> failed, before the new layers were moved in; a failing move or copy then left no body at all.
+    /// Ok when the new body is in place (the message then says whether retiring the old one is still pending); otherwise
+    /// the message says why not and whether the old body is back or its recovery is pending.
     /// </summary>
-    private void SwapRuntimeBody(string staging, IReadOnlyList<string> layerNames)
+    private (bool Ok, string? Message) SwapRuntimeBody(string staging)
     {
         var runtimeDir = layout.RuntimeCurrentDir;
         // RuntimeController creates runtime-current before every import (UPSTREAMS: fresh-install rename failure).
         Directory.CreateDirectory(runtimeDir);
-        var previous = Path.Combine(runtimeDir, "previous");
-        foreach (var layer in layerNames)
+        var old = BodyItems.Where(item => Exists(Path.Combine(runtimeDir, item))).ToList();
+        WriteJournal(PhaseBegin, old);
+        if (old.Count > 0)
         {
-            var cur = Path.Combine(runtimeDir, layer);
-            var prev = Path.Combine(previous, layer);
-            if (Exists(prev))
+            Directory.CreateDirectory(AsideDir);
+        }
+        foreach (var item in old)
+        {
+            if (!Ops.Rename(Path.Combine(runtimeDir, item), Path.Combine(AsideDir, item)))
             {
-                DeleteTree(prev);
+                var undo = Recover();
+                return (false, $"Cannot move the current runtime body ({item}) aside; " +
+                    (undo.Ok ? "nothing was changed" : "putting it back failed, retried on the next import or start: " + undo.Message));
             }
-            if (Exists(cur) && !TryRename(cur, prev))
+        }
+        string? failure = null;
+        try
+        {
+            foreach (var layer in RuntimeConstants.LayerNames)
             {
-                DeleteTree(cur);
-            }
-        }
-        var curProfile = Path.Combine(runtimeDir, RuntimeBundleLayout.ProfileName);
-        var prevProfile = Path.Combine(previous, RuntimeBundleLayout.ProfileName);
-        if (File.Exists(prevProfile))
-        {
-            File.Delete(prevProfile);
-        }
-        if (File.Exists(curProfile))
-        {
-            TryRename(curProfile, prevProfile);
-        }
-        foreach (var layer in layerNames)
-        {
-            var src = Path.Combine(staging, layer);
-            if (Directory.Exists(src))
-            {
-                var dest = Path.Combine(runtimeDir, layer);
-                if (!TryRename(src, dest))
+                var src = Path.Combine(staging, layer);
+                if (Directory.Exists(src) && !Place(src, Path.Combine(runtimeDir, layer)))
                 {
-                    CopyTree(src, dest);
+                    failure = $"Cannot place the new {layer} layer (both rename and copy failed)";
+                    break;
                 }
             }
+            var staged = Path.Combine(staging, RuntimeBundleLayout.ProfileName);
+            if (failure is null && File.Exists(staged))
+            {
+                Ops.WriteFile(Path.Combine(runtimeDir, RuntimeBundleLayout.ProfileName), File.ReadAllText(staged, Encoding.UTF8));
+            }
         }
-        var staged = Path.Combine(staging, RuntimeBundleLayout.ProfileName);
-        if (File.Exists(staged))
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         {
-            WriteFileAtomically(File.ReadAllText(staged, Encoding.UTF8), curProfile);
+            failure = "Cannot place the new runtime body: " + e.Message;
+        }
+        if (failure is not null)
+        {
+            var undo = Recover();
+            return (false, failure + "; " + (undo.Ok ? "the previous runtime body was kept" : "restoring the previous body failed, retried on the next import or start: " + undo.Message));
+        }
+        WriteJournal(PhasePlaced, old);
+        var done = Recover(); // retires the old body and drops the journal
+        return (true, done.Ok ? null : "new body installed; retiring the old one is retried on the next import or start: " + done.Message);
+    }
+
+    /// <summary>Staging → live by rename, else by copy. False when neither worked (<see cref="Recover"/> drops a partial copy).</summary>
+    private bool Place(string src, string dest)
+    {
+        if (Ops.Rename(src, dest))
+        {
+            return true;
+        }
+        try
+        {
+            Ops.CopyTree(src, dest);
+            return true;
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            return false;
         }
     }
 
-    /// <summary>Legacy <c>writeFileAtomically</c>: temp file in the same directory, fsync, rename over the target.</summary>
-    private static void WriteFileAtomically(string content, string target)
+    /// <summary>
+    /// Finishes or undoes a body swap that did not complete (process death, a failed placement, a failed clean-up),
+    /// according to <see cref="JournalFile"/>:
+    /// <list type="bullet">
+    /// <item><c>begin</c>: the new body was not committed. Every item the journal lists as old that sits in
+    /// <see cref="AsideDir"/> is renamed back (whatever was placed over it is dropped first); items that did not exist
+    /// before the import are dropped. The body is the one from before the import;</item>
+    /// <item><c>placed</c>: the new body is in place; the old one is retired with the legacy end state — when
+    /// <c>runtime-current/previous/</c> exists each old item replaces <c>previous/&lt;item&gt;</c> and the previous copies of
+    /// items that did not exist are dropped; otherwise the old items are deleted.</item>
+    /// </list>
+    /// Then the aside directory and the journal are removed. Staging leftovers are always removed; without a journal
+    /// nothing else is touched, except aside items whose live item is missing, which are put back.
+    /// <c>previous/</c> is never created. The caller makes sure no runtime process uses the body.
+    /// </summary>
+    public RuntimeBodyRecovery Recover()
     {
-        var tmp = target + ".tmp";
-        var wrote = false;
+        var runtimeDir = layout.RuntimeCurrentDir;
+        var aside = AsideDir;
         try
         {
-            using (var fs = new FileStream(tmp, FileMode.Create, FileAccess.Write, FileShare.None))
+            if (Exists(StagingDir))
             {
-                fs.Write(Encoding.UTF8.GetBytes(content));
-                fs.Flush(flushToDisk: true);
+                Ops.DeleteTree(StagingDir); // an extraction the process did not survive
             }
-            wrote = true;
+            foreach (var tmp in (string[])[JournalFile + ".tmp", Path.Combine(runtimeDir, RuntimeBundleLayout.ProfileName) + ".tmp"])
+            {
+                if (File.Exists(tmp))
+                {
+                    Ops.DeleteFile(tmp); // a durable write the process did not survive
+                }
+            }
+            var journal = ReadJournal();
+            if (journal is null)
+            {
+                if (!Directory.Exists(aside))
+                {
+                    return new RuntimeBodyRecovery(true, "none", null);
+                }
+                foreach (var item in BodyItems)
+                {
+                    var cur = Path.Combine(runtimeDir, item);
+                    if (Exists(Path.Combine(aside, item)) && !Exists(cur) && !Ops.Rename(Path.Combine(aside, item), cur))
+                    {
+                        return new RuntimeBodyRecovery(false, "failed", $"cannot rename the aside {item} back");
+                    }
+                }
+                // What is left has a live item next to it: without a journal no swap is in progress, the live one wins.
+                Ops.DeleteTree(aside);
+                return new RuntimeBodyRecovery(true, "restored", "aside body without a journal put back");
+            }
+            var (phase, old) = journal.Value;
+            string action;
+            if (phase == PhasePlaced)
+            {
+                RetireOldBody(old);
+                action = "completed";
+            }
+            else
+            {
+                // begin (or anything unreadable): undo. An old item not aside was never moved and is still live.
+                foreach (var item in BodyItems)
+                {
+                    var cur = Path.Combine(runtimeDir, item);
+                    var moved = Path.Combine(aside, item);
+                    if (Exists(moved) || !old.Contains(item))
+                    {
+                        if (Exists(cur))
+                        {
+                            Ops.DeleteTree(cur);
+                        }
+                        if (Exists(moved) && !Ops.Rename(moved, cur))
+                        {
+                            return new RuntimeBodyRecovery(false, "failed", $"cannot rename the aside {item} back");
+                        }
+                    }
+                }
+                action = "restored";
+            }
+            if (Exists(aside))
+            {
+                Ops.DeleteTree(aside);
+            }
+            Ops.DeleteFile(JournalFile);
+            return new RuntimeBodyRecovery(true, action, null);
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         {
+            return new RuntimeBodyRecovery(false, "failed", e.Message);
         }
-        if (wrote)
+    }
+
+    /// <summary>
+    /// Legacy end state for the replaced body, idempotent so a recovery can repeat it after dying halfway: an old item
+    /// still aside replaces <c>previous/&lt;item&gt;</c> (when <c>previous/</c> exists; else it is deleted); an item that did
+    /// not exist before the import only drops its stale <c>previous/&lt;item&gt;</c>; an old item no longer aside was
+    /// retired already.
+    /// </summary>
+    private void RetireOldBody(IReadOnlySet<string> old)
+    {
+        var previous = LayerRollback.PreviousDir(layout);
+        var keep = Directory.Exists(previous);
+        foreach (var item in BodyItems)
         {
-            try
+            var moved = Path.Combine(AsideDir, item);
+            var prev = Path.Combine(previous, item);
+            if (Exists(moved))
             {
-                File.Move(tmp, target, overwrite: true);
-                return;
+                if (keep)
+                {
+                    if (Exists(prev))
+                    {
+                        Ops.DeleteTree(prev);
+                    }
+                    if (Ops.Rename(moved, prev))
+                    {
+                        continue;
+                    }
+                }
+                Ops.DeleteTree(moved);
             }
-            catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+            else if (!old.Contains(item) && keep && Exists(prev))
             {
+                Ops.DeleteTree(prev);
             }
         }
-        try
+    }
+
+    private void WriteJournal(string phase, IEnumerable<string> old) =>
+        Ops.WriteFile(JournalFile, $"phase={phase}\nold={string.Join(',', old)}\n");
+
+    private (string Phase, IReadOnlySet<string> Old)? ReadJournal()
+    {
+        if (!File.Exists(JournalFile))
         {
-            File.Delete(tmp);
+            return null;
         }
-        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        var phase = "";
+        // Unreadable: every item counts as old, so nothing live is deleted without its old copy aside.
+        IReadOnlySet<string> old = BodyItems.ToHashSet(StringComparer.Ordinal);
+        foreach (var line in File.ReadAllLines(JournalFile, Encoding.UTF8))
         {
+            var eq = line.IndexOf('=', StringComparison.Ordinal);
+            if (eq <= 0)
+            {
+                continue;
+            }
+            var (key, value) = (line[..eq].Trim(), line[(eq + 1)..].Trim());
+            if (key == "phase")
+            {
+                phase = value;
+            }
+            else if (key == "old")
+            {
+                old = value.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToHashSet(StringComparer.Ordinal);
+            }
         }
-        File.WriteAllText(target, content);
+        return (phase, old);
     }
 
     /// <summary><c>File.renameTo</c>: false instead of throwing (missing parent, existing target, ...).</summary>
