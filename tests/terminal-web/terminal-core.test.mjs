@@ -148,3 +148,12 @@ test('typed / emulator replies flow back as in / resize', () => {
   term.resize(50, 10);
   assert.deepEqual(sent.filter((m) => m.t !== 'ack'), [{ t: 'in', d: 'ls\r' }, { t: 'resize', cols: 50, rows: 10 }]);
 });
+
+test('stress tool: 4 MiB of split UTF-8 + ANSI through the real emulator with the 1 MiB ack window', async () => {
+  const { spawnSync } = await import('node:child_process');
+  const r = spawnSync(process.execPath, [join(here, '../../tooling/terminal-stress.mjs'), '4', '--mix', 'ansi'], { encoding: 'utf8', timeout: 120_000 });
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  const report = JSON.parse(r.stdout.trim().split('\n').pop());
+  assert.equal(report.ok, true);
+  assert.equal(report.lastLine, 'STRESS-END 中文😀');
+});

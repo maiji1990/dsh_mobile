@@ -12,6 +12,7 @@ using DshMobile.Application.Terminal;
 using DshMobile.Runtime.Guest;
 using Google.Android.Material.AppBar;
 using Google.Android.Material.Button;
+using Google.Android.Material.Dialog;
 using Google.Android.Material.Tabs;
 using Fragment = AndroidX.Fragment.App.Fragment;
 using Log = Android.Util.Log;
@@ -22,15 +23,24 @@ namespace DshMobile.App.Terminal;
 /// Terminal tab (PR-06, ADR-0021). Sessions are C#-owned PTYs (<see cref="TerminalSessions"/>, guest login shell via
 /// libdshmobile_native); the emulator is xterm.js running from local assets in a locked-down WebView. PTY bytes go over a
 /// dedicated WebMessagePort as base64 batches, never the JSON bridge. Sessions outlive the screen: leaving the tab or the
-/// app only detaches the view.
+/// app only detaches the view. vNext PR-08: output is flow-controlled (<see cref="TerminalOutputPump"/>: the page
+/// acknowledges what it rendered), plus search, copy / select all, font size, session rename, links (confirmed, opened
+/// in the system browser), a latched ALT and a configurable extra-keys bar.
 /// </summary>
 public sealed class TerminalFragment : Fragment, ITabRoot
 {
     private const string Origin = "https://appassets.androidplatform.net";
     private const string PageUrl = Origin + "/terminal/index.html";
-    private const int BatchBytes = 64 * 1024;
     private const int MenuNew = 1;
     private const int MenuClose = 2;
+    private const int MenuSearch = 3;
+    private const int MenuCopy = 4;
+    private const int MenuSelectAll = 5;
+    private const int MenuFontLarger = 6;
+    private const int MenuFontSmaller = 7;
+    private const int MenuScrollBottom = 8;
+    private const int MenuRename = 9;
+    private const int MenuKeys = 10;
 
     private BridgeHost _bridge = null!;
     private TerminalSessions? _sessions;
@@ -40,13 +50,20 @@ public sealed class TerminalFragment : Fragment, ITabRoot
     private View _overlay = null!;
     private TextView _message = null!;
     private MaterialButton _ctrl = null!;
+    private MaterialButton _alt = null!;
+    private LinearLayout _keys = null!;
+    private View _searchBar = null!;
+    private EditText _searchText = null!;
+    private TextView _searchCount = null!;
     private IMenuItem? _closeItem;
+    private IMenuItem? _renameItem;
     private WebMessagePort? _port;
     private bool _destroyed;
     private bool _ready;
     private bool _autoCreated;
     private bool _rendering;
     private bool _ctrlOn;
+    private bool _altOn;
     private bool _appCursor;
     private int _cols;
     private int _rows;
@@ -54,7 +71,7 @@ public sealed class TerminalFragment : Fragment, ITabRoot
     // Output: one generation per attachment; a stale pump never posts after a newer attachment's reset.
     private int _generation;
     private IDisposable? _attachment;
-    private Channel<byte[]?>? _output;
+    private TerminalOutputPump? _pump;
     private string? _attachedId;
 
     // Input: one writer task so a full PTY never blocks the UI thread and keystrokes keep their order.
@@ -80,15 +97,49 @@ public sealed class TerminalFragment : Fragment, ITabRoot
         _closeItem = menu.Add(0, MenuClose, 1, GetString(Resource.String.terminal_close))!;
         _closeItem.SetIcon(Resource.Drawable.ic_close);
         _closeItem.SetShowAsAction(ShowAsAction.Always);
+        menu.Add(0, MenuSearch, 2, GetString(Resource.String.terminal_search))!.SetShowAsAction(ShowAsAction.Never);
+        menu.Add(0, MenuCopy, 3, GetString(Resource.String.terminal_copy))!.SetShowAsAction(ShowAsAction.Never);
+        menu.Add(0, MenuSelectAll, 4, GetString(Resource.String.terminal_select_all))!.SetShowAsAction(ShowAsAction.Never);
+        menu.Add(0, MenuFontLarger, 5, GetString(Resource.String.terminal_font_larger))!.SetShowAsAction(ShowAsAction.Never);
+        menu.Add(0, MenuFontSmaller, 6, GetString(Resource.String.terminal_font_smaller))!.SetShowAsAction(ShowAsAction.Never);
+        menu.Add(0, MenuScrollBottom, 7, GetString(Resource.String.terminal_scroll_bottom))!.SetShowAsAction(ShowAsAction.Never);
+        _renameItem = menu.Add(0, MenuRename, 8, GetString(Resource.String.terminal_rename))!;
+        _renameItem.SetShowAsAction(ShowAsAction.Never);
+        menu.Add(0, MenuKeys, 9, GetString(Resource.String.terminal_keys))!.SetShowAsAction(ShowAsAction.Never);
         toolbar.MenuItemClick += (_, e) =>
         {
-            if (e.Item?.ItemId == MenuNew)
+            switch (e.Item?.ItemId)
             {
-                _ = CreateSessionAsync();
-            }
-            else if (e.Item?.ItemId == MenuClose && _sessions?.ActiveId is { } id)
-            {
-                _ = _sessions.CloseAsync(id);
+                case MenuNew:
+                    _ = CreateSessionAsync();
+                    break;
+                case MenuClose when _sessions?.ActiveId is { } id:
+                    _ = _sessions.CloseAsync(id);
+                    break;
+                case MenuSearch:
+                    ShowSearch(true);
+                    break;
+                case MenuCopy:
+                    PostToPage("{\"t\":\"copy\"}");
+                    break;
+                case MenuSelectAll:
+                    PostToPage("{\"t\":\"selectAll\"}");
+                    break;
+                case MenuFontLarger:
+                    SetFontSize(UiPrefs.TerminalFontSize(ctx) + 1);
+                    break;
+                case MenuFontSmaller:
+                    SetFontSize(UiPrefs.TerminalFontSize(ctx) - 1);
+                    break;
+                case MenuScrollBottom:
+                    PostToPage("{\"t\":\"scroll\",\"to\":\"bottom\"}");
+                    break;
+                case MenuRename:
+                    Rename();
+                    break;
+                case MenuKeys:
+                    ChooseKeys();
+                    break;
             }
         };
         root.AddView(toolbar);
@@ -127,20 +178,16 @@ public sealed class TerminalFragment : Fragment, ITabRoot
         body.AddView(overlay, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MatchParent, ViewGroup.LayoutParams.MatchParent));
         root.AddView(body, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MatchParent, 0, 1f));
 
-        var keys = new LinearLayout(ctx) { Orientation = Orientation.Horizontal };
+        _searchBar = CreateSearchBar(ctx, body);
+        root.AddView(_searchBar);
+
+        _keys = new LinearLayout(ctx) { Orientation = Orientation.Horizontal };
         var pad = Rows.Dp(ctx, 4);
-        keys.SetPadding(pad, pad, pad, pad);
-        _ctrl = KeyButton(ctx, "CTRL", () => SetCtrl(!_ctrlOn));
-        _ctrl.Checkable = true;
-        keys.AddView(_ctrl);
-        foreach (var (label, key) in TerminalKeys.Bar)
-        {
-            keys.AddView(KeyButton(ctx, label, () => SendKey(key, alt: false)));
-        }
-        keys.AddView(KeyButton(ctx, GetString(Resource.String.terminal_paste), Paste));
+        _keys.SetPadding(pad, pad, pad, pad);
+        BuildKeys(ctx);
         var keysScroll = new HorizontalScrollView(ctx) { HorizontalScrollBarEnabled = false };
         keysScroll.SetBackgroundColor(new Android.Graphics.Color(Rows.Color(body, Resource.Attribute.colorSurfaceContainer)));
-        keysScroll.AddView(keys);
+        keysScroll.AddView(_keys);
         root.AddView(keysScroll);
 
         // Landscape with the keyboard up leaves the terminal no rows: the title bar and the session tabs give theirs back
@@ -274,6 +321,7 @@ public sealed class TerminalFragment : Fragment, ITabRoot
                     _rows = m.GetProperty("rows").GetInt32();
                     _ready = true;
                     _bridge.Note($"{TerminalSessions.Slice}: view ready {_cols}x{_rows}");
+                    PostToPage("{\"t\":\"font\",\"size\":" + UiPrefs.TerminalFontSize(RequireContext()).ToString(System.Globalization.CultureInfo.InvariantCulture) + "}");
                     if (!_autoCreated && _sessions.Snapshot().Count == 0)
                     {
                         _autoCreated = true;
@@ -298,6 +346,18 @@ public sealed class TerminalFragment : Fragment, ITabRoot
                     break;
                 case "mode":
                     _appCursor = m.GetProperty("appCursor").GetBoolean();
+                    break;
+                case "ack":
+                    _pump?.Ack(m.GetProperty("n").GetInt64());
+                    break;
+                case "search":
+                    ShowSearchResult(m.GetProperty("index").GetInt32(), m.GetProperty("count").GetInt32());
+                    break;
+                case "selection":
+                    CopyToClipboard(m.GetProperty("text").GetString());
+                    break;
+                case "link":
+                    ConfirmLink(m.GetProperty("uri").GetString());
                     break;
             }
         }
@@ -357,6 +417,7 @@ public sealed class TerminalFragment : Fragment, ITabRoot
         // Invisible, not Gone: the page keeps its size so xterm.js can measure columns and rows.
         _web.Visibility = empty ? ViewStates.Invisible : ViewStates.Visible;
         _closeItem?.SetEnabled(!empty);
+        _renameItem?.SetEnabled(!empty);
         if (empty)
         {
             Detach();
@@ -380,13 +441,13 @@ public sealed class TerminalFragment : Fragment, ITabRoot
         }
         Detach();
         var gen = ++_generation;
-        var output = Channel.CreateUnbounded<byte[]?>(new UnboundedChannelOptions { SingleReader = true });
-        output.Writer.TryWrite(null); // reset before the replay
-        _attachment = _sessions!.Attach(id, b => output.Writer.TryWrite(b));
-        _output = output;
+        // Flow-controlled (vNext PR-08): the page acknowledges each rendered batch; a slow page slows the shell.
+        var pump = new TerminalOutputPump(json => Post(json, gen));
+        pump.Reset(); // reset before the replay
+        _attachment = _sessions!.Attach(id, pump);
+        _pump = pump;
         _attachedId = id;
         _appCursor = false;
-        _ = Task.Run(() => PumpToPageAsync(output.Reader, gen));
         if (_cols > 0 && _rows > 0)
         {
             _ = _sessions.ResizeAsync(id, _cols, _rows, CancellationToken.None);
@@ -400,46 +461,12 @@ public sealed class TerminalFragment : Fragment, ITabRoot
 
     private void Detach()
     {
-        _attachment?.Dispose();
+        _attachment?.Dispose(); // detach first, then release a reader waiting for room
         _attachment = null;
-        _output?.Writer.TryComplete();
-        _output = null;
+        _pump?.Dispose();
+        _pump = null;
         _attachedId = null;
         _generation++;
-    }
-
-    private async Task PumpToPageAsync(ChannelReader<byte[]?> reader, int gen)
-    {
-        var batch = new MemoryStream();
-        while (await reader.WaitToReadAsync().ConfigureAwait(false))
-        {
-            while (reader.TryRead(out var item))
-            {
-                if (item is null)
-                {
-                    Flush(batch, gen);
-                    Post("{\"t\":\"reset\"}", gen);
-                    continue;
-                }
-                batch.Write(item);
-                if (batch.Length >= BatchBytes)
-                {
-                    Flush(batch, gen);
-                }
-            }
-            Flush(batch, gen);
-        }
-    }
-
-    private void Flush(MemoryStream batch, int gen)
-    {
-        if (batch.Length == 0)
-        {
-            return;
-        }
-        var b64 = Convert.ToBase64String(batch.GetBuffer(), 0, (int)batch.Length);
-        batch.SetLength(0);
-        Post("{\"t\":\"out\",\"b\":\"" + b64 + "\"}", gen);
     }
 
     private void Post(string json, int gen) => RunOnUi(() =>
@@ -479,6 +506,15 @@ public sealed class TerminalFragment : Fragment, ITabRoot
                 SetCtrl(false);
             }
         }
+        if (_altOn)
+        {
+            var (output, released) = TerminalKeys.ApplyAlt(typed);
+            typed = output;
+            if (released)
+            {
+                SetAlt(false);
+            }
+        }
         Send(Encoding.UTF8.GetBytes(typed));
     }
 
@@ -490,11 +526,227 @@ public sealed class TerminalFragment : Fragment, ITabRoot
         }
     }
 
+    /// <summary>A bar key: punctuation is typed text (the CTRL / ALT latches apply), the rest are fixed sequences.</summary>
+    private void OnBarKey(string key)
+    {
+        if (key.StartsWith("TEXT:", StringComparison.Ordinal) && TerminalKeys.Sequence(key, false) is { } text)
+        {
+            OnTyped(text);
+            return;
+        }
+        var alt = _altOn;
+        if (alt)
+        {
+            SetAlt(false);
+        }
+        SendKey(key, alt);
+    }
+
     private void SetCtrl(bool on)
     {
         _ctrlOn = on;
         _ctrl.Checked = on;
         _ctrl.ContentDescription = on ? "CTRL 已锁定（下一个字母）" : "CTRL";
+    }
+
+    private void SetAlt(bool on)
+    {
+        _altOn = on;
+        _alt.Checked = on;
+        _alt.ContentDescription = on ? "ALT 已锁定（下一个键）" : "ALT";
+    }
+
+    private void BuildKeys(Context ctx)
+    {
+        _keys.RemoveAllViews();
+        _ctrl = KeyButton(ctx, "CTRL", () => SetCtrl(!_ctrlOn));
+        _ctrl.Checkable = true;
+        _ctrl.Checked = _ctrlOn;
+        _keys.AddView(_ctrl);
+        _alt = KeyButton(ctx, "ALT", () => SetAlt(!_altOn));
+        _alt.Checkable = true;
+        _alt.Checked = _altOn;
+        _keys.AddView(_alt);
+        foreach (var (label, key) in TerminalKeys.ParseBar(UiPrefs.TerminalKeyBar(ctx)))
+        {
+            _keys.AddView(KeyButton(ctx, label, () => OnBarKey(key)));
+        }
+        _keys.AddView(KeyButton(ctx, GetString(Resource.String.terminal_paste), Paste));
+    }
+
+    /// <summary>Which keys the bar shows (in catalogue order); CTRL, ALT and paste are always there.</summary>
+    private void ChooseKeys()
+    {
+        var ctx = RequireContext();
+        var catalog = TerminalKeys.Catalog;
+        var shown = TerminalKeys.ParseBar(UiPrefs.TerminalKeyBar(ctx)).Select(k => k.Key).ToHashSet(StringComparer.Ordinal);
+        var labels = catalog.Select(k => k.Label).ToArray();
+        var picked = catalog.Select(k => shown.Contains(k.Key)).ToArray();
+        new MaterialAlertDialogBuilder(ctx)
+            .SetTitle(Resource.String.terminal_keys)!
+            .SetMultiChoiceItems(labels, picked, (_, e) => picked[e.Which] = e.IsChecked)!
+            .SetPositiveButton(Android.Resource.String.Ok, (_, _) =>
+            {
+                var keys = catalog.Where((_, i) => picked[i]).Select(k => k.Key).ToList();
+                UiPrefs.SetTerminalKeyBar(ctx, keys.Count == 0 ? null : TerminalKeys.FormatBar(keys));
+                BuildKeys(ctx);
+            })!
+            .SetNeutralButton(Resource.String.terminal_keys_reset, (_, _) =>
+            {
+                UiPrefs.SetTerminalKeyBar(ctx, null);
+                BuildKeys(ctx);
+            })!
+            .SetNegativeButton(Android.Resource.String.Cancel, (_, _) => { })!
+            .Show();
+    }
+
+    // ── vNext PR-08: search, copy, font, rename, links ─────────────────────
+
+    /// <summary>UI thread. Host → page control messages (the bytes go through the pump).</summary>
+    private void PostToPage(string json) => _port?.PostMessage(new WebMessage(json));
+
+    private View CreateSearchBar(Context ctx, View themed)
+    {
+        var bar = new LinearLayout(ctx) { Orientation = Orientation.Horizontal, Visibility = ViewStates.Gone };
+        bar.SetGravity(GravityFlags.CenterVertical);
+        var pad = Rows.Dp(ctx, 4);
+        bar.SetPadding(pad * 2, pad, pad, pad);
+        bar.SetBackgroundColor(new Android.Graphics.Color(Rows.Color(themed, Resource.Attribute.colorSurfaceContainer)));
+        _searchText = new EditText(ctx)
+        {
+            Hint = GetString(Resource.String.terminal_search_hint),
+            InputType = Android.Text.InputTypes.ClassText,
+            ImeOptions = ImeAction.Search,
+        };
+        _searchText.SetSingleLine(true);
+        _searchText.EditorAction += (_, e) =>
+        {
+            e.Handled = e.ActionId == ImeAction.Search;
+            if (e.Handled)
+            {
+                Search("next");
+            }
+        };
+        bar.AddView(_searchText, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WrapContent, 1f));
+        _searchCount = new TextView(ctx);
+        _searchCount.SetPadding(pad * 2, 0, pad * 2, 0);
+        bar.AddView(_searchCount);
+        bar.AddView(KeyButton(ctx, "↑", () => Search("prev"), GetString(Resource.String.terminal_search_prev)));
+        bar.AddView(KeyButton(ctx, "↓", () => Search("next"), GetString(Resource.String.terminal_search_next)));
+        bar.AddView(KeyButton(ctx, "✕", () => ShowSearch(false), GetString(Resource.String.terminal_search_close)));
+        return bar;
+    }
+
+    private void ShowSearch(bool show)
+    {
+        _searchBar.Visibility = show ? ViewStates.Visible : ViewStates.Gone;
+        var imm = (InputMethodManager?)RequireContext().GetSystemService(Context.InputMethodService);
+        if (show)
+        {
+            _searchText.RequestFocus();
+            imm?.ShowSoftInput(_searchText, ShowFlags.Implicit);
+        }
+        else
+        {
+            _searchCount.Text = "";
+            PostToPage("{\"t\":\"searchClear\"}");
+            _keyboard.RequestFocus(); // typing goes back to the shell
+        }
+    }
+
+    private void Search(string dir)
+    {
+        var q = _searchText.Text ?? "";
+        if (q.Length == 0)
+        {
+            return;
+        }
+        PostToPage("{\"t\":\"search\",\"dir\":\"" + dir + "\",\"q\":\"" + JsonEncodedText.Encode(q) + "\"}");
+    }
+
+    private void ShowSearchResult(int index, int count) =>
+        _searchCount.Text = index < 0 || count <= 0
+            ? GetString(Resource.String.terminal_search_none)
+            : Rows.Fmt(RequireContext(), Resource.String.terminal_search_count, index + 1, count);
+
+    private void SetFontSize(int size)
+    {
+        var ctx = RequireContext();
+        size = Math.Clamp(size, UiPrefs.TerminalFontMin, UiPrefs.TerminalFontMax);
+        UiPrefs.SetTerminalFontSize(ctx, size);
+        PostToPage("{\"t\":\"font\",\"size\":" + size.ToString(System.Globalization.CultureInfo.InvariantCulture) + "}");
+    }
+
+    private void CopyToClipboard(string? text)
+    {
+        var ctx = RequireContext();
+        if (string.IsNullOrEmpty(text))
+        {
+            Toast.MakeText(ctx, Resource.String.terminal_copy_empty, ToastLength.Long)!.Show();
+            return;
+        }
+        var cm = (ClipboardManager?)ctx.GetSystemService(Context.ClipboardService);
+        if (cm is not null)
+        {
+            cm.PrimaryClip = ClipData.NewPlainText("terminal", text);
+            Toast.MakeText(ctx, Resource.String.terminal_copied, ToastLength.Short)!.Show();
+        }
+    }
+
+    private void Rename()
+    {
+        var sessions = _sessions;
+        if (sessions?.ActiveId is not { } id || sessions.Snapshot().FirstOrDefault(i => i.Id == id) is not { } info)
+        {
+            return;
+        }
+        var ctx = RequireContext();
+        var input = new EditText(ctx) { Text = info.Title, Hint = GetString(Resource.String.terminal_rename_hint), InputType = Android.Text.InputTypes.ClassText };
+        input.SetSingleLine(true);
+        input.SetFilters([new Android.Text.InputFilterLengthFilter(TerminalSessions.MaxTitleLength)]);
+        var frame = new FrameLayout(ctx);
+        var pad = Rows.Dp(ctx, 20);
+        frame.SetPadding(pad, Rows.Dp(ctx, 8), pad, 0);
+        frame.AddView(input);
+        new MaterialAlertDialogBuilder(ctx)
+            .SetTitle(Resource.String.terminal_rename)!
+            .SetView(frame)!
+            .SetPositiveButton(Android.Resource.String.Ok, (_, _) => sessions.Rename(id, input.Text))!
+            .SetNegativeButton(Android.Resource.String.Cancel, (_, _) => { })!
+            .Show();
+    }
+
+    /// <summary>A link tapped in the output: untrusted text, so the user sees the real host and confirms first.</summary>
+    private void ConfirmLink(string? text)
+    {
+        if (TerminalLinks.Parse(text) is not { } link)
+        {
+            Log.Warn(BridgeHost.LogTag, $"{TerminalSessions.Slice}: refused link");
+            return;
+        }
+        var ctx = RequireContext();
+        var message = Rows.Fmt(ctx, Resource.String.terminal_link_message, link.Host, link.Uri.AbsoluteUri);
+        if (link.HasUserInfo)
+        {
+            message += "\n\n" + Rows.Fmt(ctx, Resource.String.terminal_link_userinfo, link.Host);
+        }
+        new MaterialAlertDialogBuilder(ctx)
+            .SetTitle(Resource.String.terminal_link_title)!
+            .SetMessage(message)!
+            .SetPositiveButton(Resource.String.terminal_link_open, (_, _) =>
+            {
+                try
+                {
+                    StartActivity(new Intent(Intent.ActionView, Android.Net.Uri.Parse(link.Uri.AbsoluteUri)).AddCategory(Intent.CategoryBrowsable));
+                    _bridge.Note($"{TerminalSessions.Slice}: opened link to {link.Host}");
+                }
+                catch (ActivityNotFoundException)
+                {
+                    Toast.MakeText(ctx, Resource.String.terminal_link_no_browser, ToastLength.Short)!.Show();
+                }
+            })!
+            .SetNegativeButton(Android.Resource.String.Cancel, (_, _) => { })!
+            .Show();
     }
 
     private void Paste()
@@ -505,19 +757,23 @@ public sealed class TerminalFragment : Fragment, ITabRoot
         if (!string.IsNullOrEmpty(text) && _port is not null)
         {
             // xterm.js applies bracketed paste when the shell enabled it, then hands the text back as input.
-            _port.PostMessage(new WebMessage("{\"t\":\"paste\",\"d\":\"" + JsonEncodedText.Encode(text) + "\"}"));
+            PostToPage("{\"t\":\"paste\",\"d\":\"" + JsonEncodedText.Encode(text) + "\"}");
         }
     }
 
     // ── views ─────────────────────────────────────────────────────────────
 
-    private static MaterialButton KeyButton(Context ctx, string label, Action onClick)
+    private static MaterialButton KeyButton(Context ctx, string label, Action onClick, string? description = null)
     {
         var b = new MaterialButton(ctx, null, Resource.Attribute.materialButtonOutlinedStyle)
         {
             Text = label,
             Focusable = false, // keep keyboard focus in the terminal
         };
+        if (description is not null)
+        {
+            b.ContentDescription = description;
+        }
         b.SetAllCaps(false);
         b.SetMinWidth(0);
         b.SetMinimumWidth(Rows.Dp(ctx, 52));

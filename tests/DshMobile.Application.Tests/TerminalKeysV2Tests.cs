@@ -89,3 +89,33 @@ public sealed class TerminalKeysV2Tests
         Assert.Equal(2, changed);
     }
 }
+
+/// <summary>vNext PR-08: links from terminal output are untrusted; only http(s) with a host reach the confirm dialog.</summary>
+public sealed class TerminalLinksTests
+{
+    [Theory]
+    [InlineData("https://example.com/a?b=1", "example.com", false)]
+    [InlineData("http://例子.测试/路径", "xn--fsqu00a.xn--0zwm56d", false)]
+    [InlineData("https://google.com@evil.example/", "evil.example", true)]
+    public void Accepts_HttpLinks_AndExposesTheRealHost(string text, string host, bool userInfo)
+    {
+        var link = TerminalLinks.Parse(text)!;
+        Assert.Equal((host, userInfo), (link.Host, link.HasUserInfo));
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("file:///etc/passwd")]
+    [InlineData("javascript:alert(1)")]
+    [InlineData("intent://scan/#Intent;scheme=zxing;end")]
+    [InlineData("content://media/external")]
+    [InlineData("https://")]
+    [InlineData("/relative/path")]
+    [InlineData("https://a b.example")]
+    [InlineData("https://example.com/\u0007")]
+    public void Refuses_EverythingElse(string? text) => Assert.Null(TerminalLinks.Parse(text));
+
+    [Fact]
+    public void Refuses_OverlongLinks() => Assert.Null(TerminalLinks.Parse("https://example.com/" + new string('a', TerminalLinks.MaxLength)));
+}
