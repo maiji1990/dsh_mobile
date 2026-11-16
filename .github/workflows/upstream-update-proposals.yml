@@ -4,6 +4,12 @@ name: upstream-update-proposals
 on:
   schedule:
     - cron: '18 3 * * *'
+  # After verified immutable releases have been published on main, immediately
+  # propose syncing their digests and the signed-channel preview spec.
+  workflow_run:
+    workflows: [runtime-layers]
+    types: [completed]
+    branches: [main]
   workflow_dispatch:
     inputs:
       component:
@@ -19,6 +25,9 @@ concurrency:
   cancel-in-progress: false
 jobs:
   propose:
+    # A workflow_run only proposes asset reconciliation if the upstream Release
+    # pipeline actually succeeded. PR / dispatch still run with normal review.
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
@@ -26,7 +35,7 @@ jobs:
         component: [runtime, dsh, assets]
     steps:
       - name: Require a token capable of triggering PR checks
-        if: github.event_name == 'schedule' || inputs.component == 'all' || inputs.component == matrix.component
+        if: github.event_name == 'schedule' || (github.event_name == 'workflow_run' && matrix.component == 'assets') || inputs.component == 'all' || inputs.component == matrix.component
         env:
           PR_TOKEN: ${{ secrets.UPDATE_PR_TOKEN }}
         run: |
@@ -41,10 +50,10 @@ jobs:
         with:
           node-version: '22.16.0'
       - name: Detect and pin upstream version
-        if: github.event_name == 'schedule' || inputs.component == 'all' || inputs.component == matrix.component
+        if: github.event_name == 'schedule' || (github.event_name == 'workflow_run' && matrix.component == 'assets') || inputs.component == 'all' || inputs.component == matrix.component
         run: node tooling/update-upstream.mjs --component '${{ matrix.component }}'
       - name: Create reviewable PR
-        if: github.event_name == 'schedule' || inputs.component == 'all' || inputs.component == matrix.component
+        if: github.event_name == 'schedule' || (github.event_name == 'workflow_run' && matrix.component == 'assets') || inputs.component == 'all' || inputs.component == matrix.component
         uses: peter-evans/create-pull-request@v7
         with:
           token: ${{ secrets.UPDATE_PR_TOKEN }}
