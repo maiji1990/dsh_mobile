@@ -34,6 +34,21 @@
    不走私有仓库 + OAuth（方案中“仅个人使用”的备选不实现）。
 7. **没有可信钥匙就什么都不提供**：`ReleaseTrust.BuiltIn` 当前为空，发现直接返回 `UPDATE_NO_TRUSTED_KEYS`，连网络都不访问——不伪造“已是最新”。
 
+## 修订（2026-11-16，vNext PR-02）
+
+- **托管改为本仓库**：负责人把源码仓库 `maiji1990/dsh_mobile` 改为公开（GitHub API 核实 `visibility: public`），决策 6 的“单独公开位置”
+  因此就是本仓库的 GitHub Releases，不再另建 `dsh_mobile_releases`。通道清单固定在 release `channel-stable` / `channel-preview`
+  （`ReleaseEndpoints.ManifestUrl`：`https://github.com/maiji1990/dsh_mobile/releases/download/channel-<通道>/release-manifest.json`，`.sig` 同目录），
+  该 release 只放这两个文件；制品在版本化 release 中。地址只来自代码。
+- **可信公钥是一份文件**：`src/DshMobile.Runtime/Updates/release-trusted-keys.txt` 嵌入 App（`ReleaseTrust.BuiltIn`），发布工作流也用它验证自己的产物；
+  格式错误时 App 信任为空（失败即关闭）。
+- **防重放下限落盘**（决策 4 的“由调用方持久化”）：`ReleaseAcceptanceStore`，`files/dshmobile-runtime/release-acceptance.json`，每通道只升不降；
+  文件损坏 → `UPDATE_STATE_UNREADABLE`（不当作空），写失败 → `UPDATE_STATE_WRITE_FAILED`（该次检查不给出候选）。
+- **App 接入（仍只读）**：`UpdateChecker`（Application）+ 开发者选项「检查更新（只读）」；不下载制品、不安装。
+- **发布**：`.github/workflows/release-publish.yml`——规格 `release/<通道>.json` 经 PR 审阅；签名只在 environment `release-signing`（必需审批人）的
+  一个步骤中可见；发布后无密钥的 job 匿名读回并核对签名与每个制品；`stable` 须附写明每个版本号的真机验收记录。
+- 清单有效期：工作流默认 30 天、上限 90 天（`expires_days`）；到期前重新运行工作流即重签。
+
 ## 后果
 
 - 正面：在线更新的第一道门（来源真实性）在任何下载之前就位；错误码稳定、可在 UI 原样显示；内容规则把发布流水线的错误挡在安装器之外。
@@ -42,7 +57,9 @@
 
 ## 未决（需负责人）
 
-1. 用 `node tooling/release-manifest-sign.mjs keygen <私密目录>` 生成发布密钥；私钥只放进受保护的 GitHub Actions environment（必需审批人），
-   不进仓库；公钥（base64）在单独 PR 中加入 `ReleaseTrust.BuiltIn`，并登记到本 ADR。
-2. 确定公开发布位置（仓库名 / CDN 域名）与清单 URL；`release-publish.yml` 工作流（方案第 3 节）在该 PR 中实现签名步骤。
-3. 清单有效期与重签节奏。
+1. 用 `node tooling/release-manifest-sign.mjs keygen <仓库外的私密目录>` 生成发布密钥；私钥只放进 environment `release-signing` 的 secret
+   `DSHM_RELEASE_SIGNING_KEY`（并离线备份），不进仓库；公钥（base64）以单独 commit 加入 `release-trusted-keys.txt`，keyId 登记于下。
+2. ~~确定公开发布位置~~：已定（本仓库，见「修订」）。
+3. ~~清单有效期~~：默认 30 天、上限 90 天；重签节奏 = 每次发布或到期前。
+
+已信任的 keyId：（无）

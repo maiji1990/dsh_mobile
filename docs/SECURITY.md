@@ -62,6 +62,7 @@
 | 启动失败统一清理、停止失败不释放前台服务（避免无监督的 PRoot 孤儿） | `DshMobile.Application.Runtime.RuntimeCoordinator` |
 | C# 运行时私有状态（journal、装后核对报告）放 `files/dshmobile-runtime/`，不绑定进 guest、不在用户工作区 | `RuntimeLayout.HostStateDir` |
 | 发布清单 Ed25519 分离签名（域分离前缀 + 原始字节，keyId 由公钥派生、可多钥匙轮换），先验签后严格解析（https-only、无凭据 URL、纯文件名、64 位小写 SHA-256、DSH 层必须钉源码 tag / commit、拒绝重复 JSON 键）；通道不符 / 过期 / 未来时间 / 比上次接受的旧均拒绝；未内置公钥时不联网、返回 `UPDATE_NO_TRUSTED_KEYS`；只读，不下载不安装（ADR-0022） | `DshMobile.Runtime.Updates.{ReleaseManifestVerifier, ReleaseManifestParser, ReleaseCatalog, HttpReleaseSource}`、`ReleaseManifestTests` |
+| 防重放下限落盘（每通道只升不降，损坏即拒绝、不当作空）；发布地址固定在代码里（`ReleaseEndpoints`）；App 与发布工作流共用一份可信公钥文件（`release-trusted-keys.txt`，格式错误即信任为空）；签名私钥只在 environment `release-signing` 的签名步骤中以 secret 出现，发布后由无密钥的 job 匿名读回核对（ADR-0022 修订） | `ReleaseAcceptanceStore`、`UpdateChecker`、`.github/workflows/release-publish.yml`、`ReleaseStateTests`、`UpdateCheckerTests`、`tests/tooling` |
 | DSH 层换层为日志化事务：旧层先移到同级 aside，新层就位后才退役，放置失败改回，进程中途死亡由 `Recover()` 完成或撤销（每次安装前、启动前）；不会因备份失败删除唯一可运行的层 | `DshLayerInstaller`、`DshLayerFaultInjectionTests` |
 | C# 层解包与旧实现同等约束：拒绝 `user-data` / `.dsh` 路径、规范路径越界、链接目标越界；所有路径决定在内存模型上完成，目标写入层只接受已证明在根内的相对路径；磁盘目标要求空目录；装后核对只干跑不写盘 | `DshMobile.Runtime.Layers.LayerExtractor`、`tests/TestVectors/layer-extract.json` |
 
