@@ -35,4 +35,24 @@ public static class ServiceCollectionExtensions
             bundledAssets: sp.GetService<DshMobile.Runtime.Layers.IBundledAssets>()));
         return services;
     }
+
+    /// <summary>
+    /// Read-only release discovery (vNext PR-02, ADR-0022): <see cref="Updates.UpdateChecker"/> over the built-in trust
+    /// (<see cref="DshMobile.Runtime.Updates.ReleaseTrust.BuiltIn"/>) and the fixed channel URLs of
+    /// <see cref="DshMobile.Runtime.Updates.ReleaseEndpoints"/>, fetched anonymously with <paramref name="http"/>.
+    /// Call after <see cref="AddDshMobileApplication"/>.
+    /// </summary>
+    public static IServiceCollection AddDshMobileUpdateCheck(this IServiceCollection services, Updates.UpdateCheckOptions options, HttpClient http)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+        ArgumentNullException.ThrowIfNull(options);
+        ArgumentNullException.ThrowIfNull(http);
+        services.AddSingleton(sp => new Updates.UpdateChecker(
+            sp.GetRequiredService<RuntimeLayout>(),
+            DshMobile.Runtime.Updates.ReleaseTrust.BuiltIn,
+            channel => new DshMobile.Runtime.Updates.HttpReleaseSource(http, DshMobile.Runtime.Updates.ReleaseEndpoints.ManifestUrl(channel)),
+            options,
+            sp.GetRequiredService<TimeProvider>()));
+        return services;
+    }
 }

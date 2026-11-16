@@ -37,8 +37,10 @@ public sealed class BridgeHost : IDisposable, IDiagnosticsLog
             .AddSingleton<DshMobile.Runtime.Layers.IBundledAssets>(new AndroidBundledAssets(_context.Assets!))
             .AddSingleton<IDiagnosticsLog>(this)
             .AddDshMobileApplication(Layout)
+            .AddDshMobileUpdateCheck(new DshMobile.Application.Updates.UpdateCheckOptions(AppVersion(_context), DeviceAbi()), _http)
             .BuildServiceProvider();
         Runtime = _services.GetRequiredService<RuntimeCoordinator>();
+        Updates = _services.GetRequiredService<DshMobile.Application.Updates.UpdateChecker>();
         // ADR-0010: the guest-facing C# Relay stops with the sandbox and the ui_* layer is removed.
         Runtime.SandboxStopping += () =>
         {
@@ -61,6 +63,12 @@ public sealed class BridgeHost : IDisposable, IDiagnosticsLog
     }
 
     private readonly ServiceProvider _services;
+
+    /// <summary>Anonymous https client for the two release-manifest files (no auth headers; ADR-0022).</summary>
+    private readonly HttpClient _http = new() { Timeout = TimeSpan.FromSeconds(30) };
+
+    /// <summary>Read-only release discovery (vNext PR-02). Built-in trust is empty until the release key is pinned.</summary>
+    public DshMobile.Application.Updates.UpdateChecker Updates { get; }
 
     public RuntimeLayout Layout { get; }
 
@@ -252,6 +260,28 @@ public sealed class BridgeHost : IDisposable, IDiagnosticsLog
     });
 
     /// <summary>
+    /// vNext PR-02 (read-only): fetches and verifies the channel's signed release manifest and logs what could be
+    /// updated. Installs nothing. Without a pinned release key this reports UPDATE_NO_TRUSTED_KEYS and does not go online.
+    /// </summary>
+    public Task RunUpdateCheckAsync(string channel) => RunExclusive("update.check", async () =>
+    {
+        using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(2));
+        var r = await Updates.CheckAsync(channel, cts.Token).ConfigureAwait(false);
+        Report(r.Ok, r.Code, r.Message);
+        foreach (var line in DshMobile.Application.Updates.UpdateChecker.Describe(channel, r))
+        {
+            Append(line);
+        }
+    });
+
+    private static string AppVersion(Android.Content.Context context) =>
+        context.PackageManager?.GetPackageInfo(context.PackageName!, 0)?.VersionName is { Length: > 0 } v ? v : "0.0.0";
+
+    /// <summary>The release-manifest ABI of this device: <c>arm64</c> for arm64-v8a, else the Android ABI name.</summary>
+    private static string DeviceAbi() =>
+        Android.OS.Build.SupportedAbis is { Count: > 0 } abis ? abis[0] == "arm64-v8a" ? "arm64" : abis[0]! : "unknown";
+
+    /// <summary>
     /// PR-06 developer acceptance: the guest login shell on a C#-owned PTY (libdshmobile_native), driven by PtyProbe.
     /// The steps (prompt, tty, resize, ^C, exit, no orphans) are logged.
     /// </summary>
@@ -362,5 +392,6 @@ public sealed class BridgeHost : IDisposable, IDiagnosticsLog
     public void Dispose()
     {
         _services.Dispose();
+        _http.Dispose();
     }
 }

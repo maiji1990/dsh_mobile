@@ -19,6 +19,12 @@ public static class UpdateErrorCodes
     public const string Expired = "MANIFEST_EXPIRED";
     public const string NotYetValid = "MANIFEST_NOT_YET_VALID";
     public const string Rollback = "MANIFEST_ROLLBACK";
+
+    /// <summary>The anti-replay record (<see cref="ReleaseAcceptanceStore"/>) cannot be read: nothing is trusted until it is repaired.</summary>
+    public const string StateUnreadable = "UPDATE_STATE_UNREADABLE";
+
+    /// <summary>A verified manifest could not be recorded as accepted; it is not offered (its replay floor would be lost).</summary>
+    public const string StateWriteFailed = "UPDATE_STATE_WRITE_FAILED";
 }
 
 /// <summary>What a release artifact replaces on the device.</summary>

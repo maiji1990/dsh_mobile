@@ -54,6 +54,7 @@ public sealed class DeveloperActivity : DshActivity
         Tool(content, Resource.Drawable.ic_build, Resource.String.dev_diag, Resource.String.dev_diag_sub, () => _ = _bridge.RunDiagnosticsAsync());
         Tool(content, Resource.Drawable.ic_code, Resource.String.dev_probe, Resource.String.dev_probe_sub, () => _ = _bridge.RunProbesAsync());
         Tool(content, Resource.Drawable.ic_terminal, Resource.String.dev_pty, Resource.String.dev_pty_sub, ConfirmPtyProbe);
+        Tool(content, Resource.Drawable.ic_info, Resource.String.dev_update, Resource.String.dev_update_sub, ChooseUpdateChannel);
 
         Rows.Header(content, GetString(Resource.String.developer_section_log));
         var card = new MaterialCardView(this, null, Resource.Attribute.materialCardViewFilledStyle);
@@ -124,6 +125,17 @@ public sealed class DeveloperActivity : DshActivity
             }
         });
         _tools.Add(row.View);
+    }
+
+    /// <summary>vNext PR-02: read-only update check (signed manifest + catalog) for the chosen channel; installs nothing.</summary>
+    private void ChooseUpdateChannel()
+    {
+        var channels = DshMobile.Runtime.Updates.ReleaseEndpoints.Channels.ToArray();
+        new MaterialAlertDialogBuilder(this)
+            .SetTitle(Resource.String.dev_update_choose)!
+            .SetItems(channels, (_, e) => _ = _bridge.RunUpdateCheckAsync(channels[e.Which]))!
+            .SetNegativeButton(Android.Resource.String.Cancel, (_, _) => { })!
+            .Show();
     }
 
     /// <summary>PR-06 acceptance: the C#-owned PTY self-test (guest login shell), after a confirmation.</summary>
