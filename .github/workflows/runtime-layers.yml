@@ -159,6 +159,10 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           global-json-file: global.json
+      # global.json pins workloadVersion: the SDK refuses to evaluate any project until that workload set is installed
+      # (MSB4242 "Workload version 11.0.100.1 … was not found"), even one that uses no workload.
+      - name: Install the pinned workload set
+        run: dotnet workload restore tests/DshMobile.Runtime.Tests/DshMobile.Runtime.Tests.csproj
       - name: The app's importer and DSH installer accept the layers (SelfBuiltRuntimeBundleTests)
         env:
           DSHM_REQUIRE_SELF_BUILT: "1"
@@ -175,9 +179,9 @@ jobs:
             echo "# Runtime layers verification"
             echo "- source commit: \`$GITHUB_SHA\`  · run: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
             echo "- lock: \`$(sha256sum runtime-bundle/runtime-build.lock | cut -d' ' -f1)\` runtime-bundle/runtime-build.lock"
-            echo; echo "## SHA256SUMS"; echo '```'; cat artifacts/runtime-build/dist/SHA256SUMS 2>/dev/null; echo '```'
-            echo; cat "$RUNNER_TEMP/repro.md" 2>/dev/null
-            echo; echo "## Guest smoke (chroot on arm64 Linux; not Android, not PRoot)"; echo '```'; cat "$RUNNER_TEMP/smoke.txt" 2>/dev/null; echo '```'
+            echo; echo "## SHA256SUMS"; echo '```'; cat artifacts/runtime-build/dist/SHA256SUMS 2>/dev/null || echo "(not staged)"; echo '```'
+            echo; cat "$RUNNER_TEMP/repro.md" 2>/dev/null || echo "(reproducibility not compared)"
+            echo; echo "## Guest smoke (chroot on arm64 Linux; not Android, not PRoot)"; echo '```'; cat "$RUNNER_TEMP/smoke.txt" 2>/dev/null || echo "(not run)"; echo '```'
             echo; echo "Device acceptance is still required (AGENTS.md rule 9)."
           } > verification.md
           cat verification.md >> "$GITHUB_STEP_SUMMARY"
