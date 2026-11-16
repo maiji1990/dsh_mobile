@@ -5,7 +5,8 @@ name: runtime-layers
 #   dsh     = the DSH layer (exact @deepseek-ai/dsh version, npm ci from the pinned lockfile, arm64 Node)
 # so a DSH update never means re-downloading Debian. Each is built twice (reproducibility), then verified on arm64:
 # the app's own importer / DSH installer accept them (SelfBuiltRuntimeBundleTests) and DSH starts in the guest layout
-# (tooling/runtime-smoke.sh: chroot + the app's dsh-probe.mjs for web / headless / sdk / sdk-minimal / acp).
+# (tooling/runtime-smoke.sh: chroot + the app's dsh-probe.mjs for web / headless / sdk / sdk-minimal / acp, and DSH's
+# own first-use workspace resolver with the app's xdg-user-dir wrapper, vNext PR-07).
 #
 # Pull requests that touch the build run everything except publishing. Manual dispatch can publish each product as its
 # own immutable, anonymously downloadable release of this public repository: runtime-<BUNDLE_VERSION>,
@@ -29,6 +30,8 @@ on:
       - tooling/runtime-smoke.sh
       - src/DshMobile.Runtime/Layers/**
       - src/DshMobile.Runtime/Guest/Assets/dsh-probe.mjs
+      - src/DshMobile.Runtime/Guest/Assets/xdg-user-dir
+      - src/DshMobile.Runtime/Guest/Assets/dsh-e2e.mjs
       - tests/DshMobile.Runtime.Tests/SelfBuiltRuntimeBundleTests.cs
       - .github/workflows/runtime-layers.yml
 

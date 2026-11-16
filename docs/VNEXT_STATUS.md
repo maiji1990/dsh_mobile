@@ -74,7 +74,7 @@ C# 路径；PR-10 之后的 C# 唯一实现只有两次真机验收：
 | **已通过（真机 · 当前 C#）** | 启动 → READY → WebUI → 停止无残留；web 与 sdk / sdk-minimal / acp **握手**、plugin list；终端多会话 / ^C=130 / 重放 / resize / 横屏、PTY 自检 PASS；文件页浏览与受保护 `.dsh`；运行层导入 + 装后核对、回滚（需手工建 `previous/`）；手机操控只读 + 页内 / 悬浮审批卡（`FLAG_SECURE`）；深色模式；ADR-0019 数据迁移；覆盖安装杀进程后 journal `RUNTIME_INTERRUPTED` 恢复 |
 | **待复测（只有 PR-10 前真机证据）** | Release full-trim 冷启动（TASK-002）；SAF 导入 / 导出；插件 add / remove 与安装守卫；手机操控写操作；前台服务后台 90 s 存活；远程主机（SSH → Windows OpenSSH，远端 `dsh web` 启停） |
 | **待测（从未真机验证）** | #41 之后的 PTY 自检；DSH 层换层中途强杀 / 低磁盘；中文 IME / vim / tmux / 大输出；WebUI 401 恢复 / 文件选择 / 下载；通知栏审批面；Android 10 / 14；16 KB 页；Linux sshd；Tailscale |
-| **阻断** | 模型凭据相关：headless 真实任务、Session / Resume / Fork、工具调用与审批、MCP 工具被模型调用、Subagent / Agent Team（PR-07）；DSH 默认工作区无法创建（guest 无 Documents，PR-10 计划）；在线更新：`ReleaseTrust.BuiltIn` 为空 → `UPDATE_NO_TRUSTED_KEYS`（PR-02），无下载器 / 安装事务 / UI（PR-04 … 06） |
+| **阻断** | 模型凭据相关：headless 真实任务、Session / Resume / Fork、工具调用与审批、MCP 工具被模型调用、Subagent / Agent Team（PR-07）；DSH 默认工作区无法创建（guest 无 `xdg-user-dir`；**PR-07 已修复，真机待验**）；在线更新：`ReleaseTrust.BuiltIn` 为空 → `UPDATE_NO_TRUSTED_KEYS`（PR-02），无下载器 / 安装事务 / UI（PR-04 … 06） |
 
 FEATURES.md 各行的状态列已按上表改写（证据列保留原始记录）；COMPATIBILITY.md 删除了已不存在的 Gradle / AGP / Kotlin 工具链行。
 
@@ -214,3 +214,23 @@ chroot 探测未覆盖终端 / 子进程工具，**真机上自建 DSH 层从未
 
 验收（方案）：无网络 / 无公钥 / 无 Release / 过期错签 / 磁盘不足 / 下载中断 / 安装中强杀均有正确提示——单测覆盖各错误码；**界面与真机均未验证**
 （今天无发布公钥，检查即报 `UPDATE_NO_TRUSTED_KEYS`，安装路径在真机上无法走通，直到 PR-02 的公钥与 PR-03 的 Release 就绪）。
+
+## 10. PR-07 状态（Harness Agent E2E，发布硬门禁）
+
+| 方案要求 | 实现 / 证据 |
+|---|---|
+| 1. 修复「首次无法创建默认工作区」；凭据保存 / 清除、日志脱敏 | 根因：DSH `dsh-api-workspace-controller` 的 `defaultWorkspaceDirectory` 在 Linux 执行 `xdg-user-dir DOCUMENTS`，Debian minbase 没有。App 在 dsh 角色 PATH 上的包装器目录写最小 `xdg-user-dir`（`Guest/Assets/xdg-user-dir`，`user-dirs.dirs` 优先，否则 Documents = `/root/projects`），**不改 DSH**；单测 3 例 + CI chroot 用 DSH 自己的解析器验证（无包装器失败、有包装器得到 `/root/projects/deepseek-harness/default-workspace`）。凭据由 DSH 自己保存（WebUI）；驱动不读不打印凭据，输出经 `redact()`；清除后检查写入执行手册第 9 步 |
+| 2. 文本会话、Bash 与文件修改、权限 / 审批、Resume / Fork、进程重启后会话仍在 | 驱动：shell 工具写 nonce 文件并落盘校验，新进程召回 nonce（headless `--session-id`、sdk / acp `session/resume`）；ACP 权限请求 allow-once 应答并计数。WebUI 审批卡、Fork：手动（手册第 4 步） |
+| 3. headless 真实任务、sdk 与 acp 的 initialize + session/prompt | `dsh-e2e.mjs` 三个套件；协议按 DSH 0.2.1-rc.5 已发布包核对（headless `--json` 事件、SDK `session/prompt` + `session/wait` + `session.event`、ACP v1 + `@agentclientprotocol/sdk` 1.4.0 方法名）；假 DSH 测试 9 例（含谎报成功、续接失忆、缺凭据不报 pass）+ 变异检查；CI 对真实 DSH 期望三项 `needs-credential` |
+| 4. 插件、Cordis patch / bundle / profile、Skills 与 MCP ToolCall 真实调用 | 手动（手册第 5 步）；未自动化 |
+| 5. Subagent / Agent Team、后台与锁屏 15 / 60 / 180 分钟、停止无孤儿、强杀后 journal 恢复 | 手动（手册第 6、7 步） |
+| 6. WebView 附件上传 / 下载 / 401 重新认证 | 手动（手册第 8 步）；附件 / 下载功能本身尚未实现（FEATURES） |
+
+CI（runtime-layers run 43815317473，arm64 chroot，真实 DSH 0.2.1-rc.5 / Debian 13.7）：默认工作区——无包装器 `spawn xdg-user-dir ENOENT`，有包装器
+`/root/projects/deepseek-harness/default-workspace`（**修复在真实 DSH 解析器上成立**）；E2E——headless 与 acp 正确报告 `needs-credential`（DSH：
+`MISSING_CREDENTIAL: llm-deepseek: no API key for provider route "deepseek-official"; store DEEPSEEK_API_KEY through the credentials service (the web Models page writes it)…`）；
+sdk 暴露驱动缺陷：失败的轮次 `session/wait` 仍回 `{}`，错误只在 `turn/end` 的 reason 里——已改为读取该 reason（假 DSH 同步改为此行为 + 变异检查）。修正后（run 43816191740，`28797c2`）：web / sdk / sdk-minimal / acp 探测 pass、headless limited；E2E **headless / sdk / acp 三项均为 `needs-credential`**（总状态 needs-credential，驱动从未在无凭据时报 pass）。同一提交 android-dotnet：Core 35 / Runtime 847（+3 跳过）/ Application 129 / guest 46 / tooling 5 全绿，警告 75（基线）。
+
+验收（方案）：真机日志与清除密钥后的检查结果，每个「通过」记录版本 / 系统 / 设备 / 时间——**未做**，需负责人用自己的凭据在真机执行
+（[TEST_PLAN「vNext PR-07」](TEST_PLAN.md)，记录模板 [TEMPLATE-vnext-pr07-agent-e2e.md](../migration/parity/TEMPLATE-vnext-pr07-agent-e2e.md)）。
+在此之前 Preview 不得升为 Stable。

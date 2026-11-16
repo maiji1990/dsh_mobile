@@ -67,12 +67,15 @@ public sealed partial class GuestAssetProvisionerTests : IDisposable
         var dshmobile = Path.Combine(layout.GuestCacheDir, "dshmobile");
         Assert.Equal(File.ReadAllBytes(Repo.PathOf("src", "DshMobile.Runtime", "Guest", "Assets", "dsh-probe.mjs")),
             File.ReadAllBytes(Path.Combine(dshmobile, GuestAssetProvisioner.ProbeName)));
+        Assert.Equal(File.ReadAllBytes(Repo.PathOf("src", "DshMobile.Runtime", "Guest", "Assets", "dsh-e2e.mjs")),
+            File.ReadAllBytes(Path.Combine(dshmobile, GuestAssetProvisioner.E2eName)));
         Assert.True(UiFacadeAssets.Intact(layout.GuestCacheDir));
         var corepack = GuestToolchain.CorepackDir(layout);
         Assert.True(File.Exists(Path.Combine(corepack, GuestToolchain.ReadyMarker)));
         Assert.NotEmpty(Directory.EnumerateFileSystemEntries(corepack).Where(p => !p.EndsWith(GuestToolchain.ReadyMarker, StringComparison.Ordinal)));
         Assert.True(File.Exists(Path.Combine(GuestToolchain.ShimBinDir(layout), "dsh")));
         Assert.True(File.Exists(Path.Combine(GuestToolchain.ShimBinDir(layout), "pnpm")));
+        Assert.True(File.Exists(Path.Combine(GuestToolchain.ShimBinDir(layout), "xdg-user-dir")));
         Assert.Empty(Directory.GetDirectories(layout.GuestCacheDir, "corepack-stage-*"));
 
         var again = await GuestAssetProvisioner.EnsureAsync(layout, Assets(), CancellationToken.None);
@@ -124,6 +127,7 @@ public sealed partial class GuestAssetProvisionerTests : IDisposable
         Assert.Equal(Path.Combine(layout.UserDataDir, ".dsh", "dshmobile", "bin"), GuestToolchain.ShimBinDir(layout));
         Assert.Equal(Path.Combine(layout.FilesDir, "guest-cache", "corepack"), GuestToolchain.CorepackDir(layout));
         Assert.Equal("/opt/dshmobile-cache/dshmobile/dsh-probe.mjs", GuestAssetProvisioner.GuestProbe);
+        Assert.Equal("/opt/dshmobile-cache/dshmobile/dsh-e2e.mjs", GuestAssetProvisioner.GuestE2e);
     }
 
     // ------------------------------------------------------------------ pinned against the former GuestToolchain.kt

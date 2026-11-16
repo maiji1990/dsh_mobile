@@ -22,6 +22,8 @@
     <EmbeddedResource Include="Automation/Assets/ui-facade.mjs" LogicalName="DshMobile.UiTools.ui-facade.mjs" />
     <EmbeddedResource Include="Automation/Assets/ui-facade-check.mjs" LogicalName="DshMobile.UiTools.ui-facade-check.mjs" />
     <EmbeddedResource Include="Guest/Assets/dsh-probe.mjs" LogicalName="DshMobile.Guest.dsh-probe.mjs" />
+    <EmbeddedResource Include="Guest/Assets/dsh-e2e.mjs" LogicalName="DshMobile.Guest.dsh-e2e.mjs" />
+    <EmbeddedResource Include="Guest/Assets/xdg-user-dir" LogicalName="DshMobile.Guest.xdg-user-dir" />
     <!-- ADR-0022: release-manifest public keys, shared with release-publish.yml (ReleaseTrust.BuiltIn). -->
     <EmbeddedResource Include="Updates/release-trusted-keys.txt" LogicalName="DshMobile.Updates.release-trusted-keys.txt" />
   </ItemGroup>

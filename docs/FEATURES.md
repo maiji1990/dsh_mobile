@@ -17,14 +17,14 @@
 |---|---|---|
 | DSH 启动与停止 | 通过（真机·当前 C#（11-16）） | 导入→启动→READY 18.5 s→停止，无孤儿进程；见 COMPATIBILITY.md「M2 运行时」 |
 | `web` profile | 通过（真机·当前 C#（11-16）） | `--dump-config` 44.6 KB；运行中的 DSH `GET /` → 401（launch token 鉴权生效）；App 内 WebView 承载官方 WebUI 已通过（TASK-006） |
-| `headless` profile | 受限（需模型凭据） | `--dump-config`、`--help` 通过；真实一次性任务需模型 API Key，未验证 |
+| `headless` profile | 受限（需模型凭据） | `--dump-config`、`--help` 通过；真实一次性任务需模型 API Key，未验证；E2E 驱动已就绪（vNext PR-07 `dsh-e2e.mjs`，真机待执行） |
 | `sdk` profile | 握手通过（真机·当前 C#（11-16），模式探测）；会话待测 | JSON-RPC `initialize` → `deepseek-harness-sdk-runtime`，`shutdown` → `{}`，exit 0；会话/提示需模型凭据，未验证 |
 | `sdk-minimal` profile | 握手通过（真机·当前 C#（11-16），模式探测）；会话待测 | 同 sdk 握手（initialize 5.1 s） |
 | `acp` profile | 握手通过（真机·当前 C#（11-16），模式探测）；会话待测 | ACP v1 `initialize` → `deepseek-harness-acp`、能力声明；stdin EOF 正常退出 0；会话/提示需模型凭据，未验证 |
 | `plugin` 命令 | 部分：`plugin list` 通过（真机·当前 C#（11-16））；add / remove **待复测**（仅 PR-10 前真机） | 离线 pnpm 11.1.2（corepack 缓存）+ dsh/pnpm 包装；`plugin list` / `add` / `remove` exit 0（用 `is-number` 验证安装与卸载）；安全模式、源选择未做 |
 | Cordis profile / bundle / patch | 部分 | 五个 shipped profile 的 `--dump-config` 均成功合成；patch / bundle 切换未测 |
 | Model Providers / 凭据 | 未开始 | |
-| Session / Resume / Fork | 未开始 | 需模型凭据；WebUI 已可承载，待配置凭据后验证 |
+| Session / Resume / Fork | 未开始（真机） | 需模型凭据；WebUI 已可承载；跨进程续接由 PR-07 驱动检查（headless / sdk / acp），真机待执行；默认工作区创建失败已修复（`xdg-user-dir`，真机待验） |
 | 工具调用与审批 | 未开始 | |
 | Subagent / Agent Team | 未开始 | |
 | Bash / PTY / 子进程 | 通过（真机·当前 C#（11-16））；中文 IME / vim / 大输出**待测** | 原生 TerminalView + PRoot bash：命令执行、^C、多会话新建/切换/关闭、关闭页面后会话保留、「停止」连带结束终端进程均已验证；横屏（9 行，键盘弹出时紧凑模式）已验证；中文/宽字符、大量输出未测 |
