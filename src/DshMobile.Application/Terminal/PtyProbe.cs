@@ -17,6 +17,9 @@ public sealed record PtyProbeReport(bool Ok, IReadOnlyList<PtyProbeStep> Steps, 
 /// terminal does — prompt, <c>tty</c> / <c>stty size</c>, window resize, ^C (byte 0x03 → SIGINT via the line
 /// discipline, exit status 130), <c>exit</c> → exit code 0 — then checks that no process of the session survived.
 /// Every step reports what it saw; nothing is assumed.
+/// <para>Every delay and timeout runs on the given <see cref="TimeProvider"/> (default: the system clock). Timeouts are
+/// upper bounds; tests drive a fake clock and advance it only once the fake shell is quiescent, so a busy CI runner can
+/// no longer make a step that should pass time out.</para>
 /// </summary>
 public static partial class PtyProbe
 {
@@ -43,12 +46,13 @@ public static partial class PtyProbe
         Func<int, IReadOnlyList<int>> descendantsOf,
         Func<int, bool> isAlive,
         CancellationToken ct,
-        double timeScale = 1.0)
+        TimeProvider? time = null)
     {
         ArgumentNullException.ThrowIfNull(open);
         ArgumentNullException.ThrowIfNull(descendantsOf);
         ArgumentNullException.ThrowIfNull(isAlive);
-        TimeSpan S(double seconds) => TimeSpan.FromSeconds(seconds * timeScale);
+        var clock = time ?? TimeProvider.System;
+        static TimeSpan S(double seconds) => TimeSpan.FromSeconds(seconds);
         var steps = new List<PtyProbeStep>();
         var sw = Stopwatch.StartNew();
         void Step(string name, bool ok, string detail)
@@ -68,7 +72,7 @@ public static partial class PtyProbe
             return new PtyProbeReport(false, steps, "");
         }
         Step("open", true, $"pid {session.Pid}");
-        var output = new Transcript();
+        var output = new Transcript(clock);
         using var readerStop = new CancellationTokenSource();
         var reader = Task.Run(async () =>
         {
@@ -122,7 +126,7 @@ public static partial class PtyProbe
             // 4. ^C interrupts the foreground job; the shell survives and reports 130.
             await output.WaitAsync(t => PromptAtEnd().IsMatch(t), mark, S(5), ct).ConfigureAwait(false);
             Send("sleep 30\r");
-            await Task.Delay(S(1.5), ct).ConfigureAwait(false);
+            await Task.Delay(S(1.5), clock, ct).ConfigureAwait(false);
             mark = output.Length;
             var interrupt = Stopwatch.StartNew();
             session.Stream.Write([0x03]);
@@ -137,11 +141,11 @@ public static partial class PtyProbe
             await output.WaitAsync(t => PromptAtEnd().IsMatch(t), mark, S(5), ct).ConfigureAwait(false);
             var tree = descendantsOf(session.Pid);
             Send("exit\r");
-            var exited = await CompletesWithin(session.Completion, S(15)).ConfigureAwait(false);
+            var exited = await CompletesWithin(session.Completion, S(15), clock).ConfigureAwait(false);
             var exit = exited ? session.Completion.Result.ToString() : "still running";
             Step("exit", exited && session.Completion.Result.ExitCode == 0, exit);
 
-            await Task.Delay(S(0.5), ct).ConfigureAwait(false);
+            await Task.Delay(S(0.5), clock, ct).ConfigureAwait(false);
             var left = tree.Append(session.Pid).Where(isAlive).ToList();
             Step("no-orphans", left.Count == 0, left.Count == 0 ? $"{tree.Count + 1} process(es) gone" : "alive: " + string.Join(",", left));
             return await FinishAsync(steps.All(s => s.Ok)).ConfigureAwait(false);
@@ -161,11 +165,11 @@ public static partial class PtyProbe
         }
     }
 
-    private static async Task<bool> CompletesWithin(Task t, TimeSpan timeout)
+    private static async Task<bool> CompletesWithin(Task t, TimeSpan timeout, TimeProvider clock)
     {
         try
         {
-            await t.WaitAsync(timeout).ConfigureAwait(false);
+            await t.WaitAsync(timeout, clock).ConfigureAwait(false);
             return true;
         }
         catch (TimeoutException)
@@ -175,7 +179,7 @@ public static partial class PtyProbe
     }
 
     /// <summary>Thread-safe accumulated PTY output with "wait until it contains X" (UTF-8, partial sequences kept).</summary>
-    private sealed class Transcript
+    private sealed class Transcript(TimeProvider clock)
     {
         private readonly StringBuilder _text = new();
         private readonly Decoder _utf8 = Encoding.UTF8.GetDecoder();
@@ -224,16 +228,21 @@ public static partial class PtyProbe
             }
         }
 
+        /// <summary>
+        /// True once the output since <paramref name="mark"/> satisfies <paramref name="predicate"/>. On timeout the
+        /// output is checked one last time: text that arrived before the deadline counts even when the continuation
+        /// that would have seen it had not run yet (thread-pool starvation must not turn a pass into a fail).
+        /// </summary>
         public async Task<bool> WaitAsync(Func<string, bool> predicate, int mark, TimeSpan timeout, CancellationToken ct)
         {
-            using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-            cts.CancelAfter(timeout);
+            using var deadline = new CancellationTokenSource(timeout, clock);
+            using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct, deadline.Token);
             while (true)
             {
                 Task changed;
                 lock (_lock)
                 {
-                    if (predicate(mark >= _text.Length ? "" : _text.ToString(mark, _text.Length - mark)))
+                    if (Matches(predicate, mark))
                     {
                         return true;
                     }
@@ -245,9 +254,15 @@ public static partial class PtyProbe
                 }
                 catch (OperationCanceledException) when (!ct.IsCancellationRequested)
                 {
-                    return false;
+                    lock (_lock)
+                    {
+                        return Matches(predicate, mark);
+                    }
                 }
             }
         }
+
+        private bool Matches(Func<string, bool> predicate, int mark) =>
+            predicate(mark >= _text.Length ? "" : _text.ToString(mark, _text.Length - mark));
     }
 }
