@@ -605,7 +605,7 @@ public sealed class TerminalFragment : Fragment, ITabRoot
     /// <summary>UI thread. Host → page control messages (the bytes go through the pump).</summary>
     private void PostToPage(string json) => _port?.PostMessage(new WebMessage(json));
 
-    private View CreateSearchBar(Context ctx, View themed)
+    private LinearLayout CreateSearchBar(Context ctx, View themed)
     {
         var bar = new LinearLayout(ctx) { Orientation = Orientation.Horizontal, Visibility = ViewStates.Gone };
         bar.SetGravity(GravityFlags.CenterVertical);
