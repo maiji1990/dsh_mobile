@@ -49,7 +49,7 @@ DSH 原样运行在 App 私有目录里的 Debian 沙箱（PRoot）中；App 负
 
 **前置**：
 
-- .NET SDK `11.0.100-rc.2.26504.105` 与 `android` workload（`global.json` 锁定，不自动前滚）；
+- .NET SDK `11.0.100`（.NET 11 GA）与 `android` workload，workload set `11.0.100.1`（`global.json` 锁定，不自动前滚）；
 - Android SDK：`platforms;android-37.2`、`build-tools;36.0.0`（可用 `tooling/install-android-sdk-components.ps1` 安装）；
 - NDK `27.0.12077973`。
 
