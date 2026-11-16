@@ -11,7 +11,8 @@
 #
 # This is NOT the Android environment: no PRoot, no Android kernel restrictions, no link-shim. It proves the layers are
 # complete and DSH starts on this Node / glibc; device acceptance is still required (AGENTS.md rule 9).
-# Needs: sudo, unzip, zstd, tar. No network access is needed by the probe; no model API is called.
+# The web profile is also started for real (as the app starts it) so the probe's GET / -> 401 check has a server.
+# Needs: sudo, unzip, zstd, tar, curl. No network access is needed by the probe; no model API is called.
 set -euo pipefail
 
 zip="$(realpath "$1")"; dsh_tar="$(realpath "$2")"; work="$3"; report="${4:-}"
@@ -22,6 +23,7 @@ probe="$repo/src/DshMobile.Runtime/Guest/Assets/dsh-probe.mjs"
 sudo rm -rf "$work"; mkdir -p "$work/zip" "$work/node" "$work/dsh"
 root="$work/root"; sudo mkdir -p "$root"
 cleanup() {
+  sudo pkill -f 'dsh/lib/bin.js --profile web' 2>/dev/null || true; sleep 1
   for m in "$root/dev" "$root/proc" "$root/opt/dshapp/runtime" "$root/usr/local"; do
     mountpoint -q "$m" 2>/dev/null && sudo umount -R "$m" || true
   done
@@ -51,6 +53,22 @@ guest() {
 
 echo "guest: $(guest /bin/sh -c 'cat /etc/debian_version; uname -m') node $(guest /usr/local/bin/node --version)"
 echo "dsh --version: $(guest /usr/local/bin/node /opt/dshapp/runtime/node_modules/@deepseek-ai/dsh/lib/bin.js --version 2>&1 | tail -n 1)"
+
+# The web probe checks the running app DSH (GET / must be 401: launch-token auth enforced), so start it the way
+# ProotCommandBuilder does (role "dsh": DSH_HOME, PORT=3080, TMPDIR, SHELL; node --expose-internals bin.js --profile web).
+sudo setsid chroot "$root" /usr/bin/env -i HOME=/root TERM=xterm-256color LANG=C.UTF-8 DSH_PERMISSION_MODE=danger-full-access \
+  PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin DSH_HOME=/root/projects/.dsh PORT=3080 \
+  TMPDIR=/tmp TMP=/tmp TEMP=/tmp SHELL=/bin/bash \
+  /bin/sh -c 'cd /root/projects && exec /usr/local/bin/node --expose-internals /opt/dshapp/runtime/node_modules/@deepseek-ai/dsh/lib/bin.js --profile web' \
+  > "$work/web.log" 2>&1 &
+code=000
+for _ in $(seq 1 90); do
+  code="$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:3080/ || true)"
+  [ "$code" != 000 ] && break
+  sleep 1
+done
+echo "dsh web: GET / -> $code"
+[ "$code" != 000 ] || { echo "runtime-smoke: DSH web did not start; log tail:" >&2; tail -n 40 "$work/web.log" >&2; }
 
 results=(); failed=0
 for profile in web headless sdk sdk-minimal acp; do
