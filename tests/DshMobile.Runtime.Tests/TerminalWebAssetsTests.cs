@@ -44,19 +44,31 @@ public class TerminalWebAssetsTests
         }
         Assert.DoesNotContain("unsafe-eval", csp, StringComparison.Ordinal);
         var refs = Regex.Matches(html, "(?:src|href)=\"([^\"]+)\"").Select(m => m.Groups[1].Value).ToList();
-        Assert.Equal(["vendor/xterm.css", "vendor/xterm.js", "vendor/addon-fit.js", "terminal.js"], refs);
+        Assert.Equal(["vendor/xterm.css", "vendor/xterm.js", "vendor/addon-fit.js", "vendor/addon-search.js", "vendor/addon-web-links.js",
+            "vendor/addon-unicode11.js", "terminal-core.js", "terminal.js"], refs);
         Assert.All(refs, r => Assert.True(File.Exists(Asset(r.Split('/'))), r));
     }
 
-    [Fact]
-    public void GlueScript_UsesNoNetworkStorageOrDynamicCode()
+    [Theory]
+    [InlineData("terminal.js")]
+    [InlineData("terminal-core.js")]
+    public void GlueScripts_UseNoNetworkStorageNavigationOrDynamicCode(string file)
     {
-        var js = File.ReadAllText(Asset("terminal.js"));
-        foreach (var api in new[] { "fetch(", "XMLHttpRequest", "WebSocket", "EventSource", "eval(", "new Function", "innerHTML", "localStorage", "indexedDB", "document.cookie", "location" })
+        var js = File.ReadAllText(Asset(file));
+        foreach (var api in new[] { "fetch(", "XMLHttpRequest", "WebSocket", "EventSource", "eval(", "new Function", "innerHTML", "localStorage", "indexedDB", "document.cookie", "location", "window.open" })
         {
             Assert.DoesNotContain(api, js, StringComparison.Ordinal);
         }
-        Assert.Contains("e.data !== 'dshm-port'", js, StringComparison.Ordinal); // takes exactly one handed-over port
+    }
+
+    [Fact]
+    public void Page_TakesExactlyOnePort_AndLinksOnlyGoToTheHost()
+    {
+        var glue = File.ReadAllText(Asset("terminal.js"));
+        Assert.Contains("e.data !== 'dshm-port'", glue, StringComparison.Ordinal); // takes exactly one handed-over port
+        // WebLinksAddon's default handler would window.open(); the page always passes its own, which only posts to the host.
+        Assert.Contains("new WebLinksAddon.WebLinksAddon(core.linkHandler(send))", glue, StringComparison.Ordinal);
+        Assert.Contains("/^https?:\\/\\/[^\\s]+$/i", File.ReadAllText(Asset("terminal-core.js")), StringComparison.Ordinal);
     }
 
     [Fact]
