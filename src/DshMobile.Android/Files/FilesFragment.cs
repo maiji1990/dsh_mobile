@@ -598,7 +598,7 @@ public sealed class FilesFragment : Fragment, ITabRoot
             var bar = Snackbar.Make(root, Rows.Fmt(RequireContext(), Resource.String.files_deleted, r.Deleted.Count), Snackbar.LengthLong);
             if (r.Restorable)
             {
-                bar.SetAction(GetString(Resource.String.files_undo), _ => _ = Busy(async () =>
+                bar.SetAction(GetString(Resource.String.files_undo), view => _ = Busy(async () =>
                 {
                     var restored = await _provider!.RestoreAsync(r, CancellationToken.None);
                     return Rows.Fmt(RequireContext(), Resource.String.files_restored, string.Join(", ", restored));
@@ -731,12 +731,12 @@ public sealed class FilesFragment : Fragment, ITabRoot
                     return;
                 }
                 _ = SaveAsync(e, doc, edited, doc.Version);
-            })!;
-            builder.SetNegativeButton(Android.Resource.String.Cancel, (_, _) => { })!;
+            });
+            builder.SetNegativeButton(Android.Resource.String.Cancel, (_, _) => { });
         }
         else
         {
-            builder.SetPositiveButton(Android.Resource.String.Ok, (_, _) => { })!;
+            builder.SetPositiveButton(Android.Resource.String.Ok, (_, _) => { });
         }
         builder.Show();
     }
