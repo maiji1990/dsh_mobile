@@ -59,6 +59,8 @@ jobs:
     needs: proot
     runs-on: ubuntu-24.04-arm
     strategy:
+      # Both builds always finish: the reproducibility comparison needs each of them.
+      fail-fast: false
       matrix:
         build: [a, b]
     steps:
@@ -85,6 +87,8 @@ jobs:
   dsh:
     runs-on: ubuntu-24.04-arm
     strategy:
+      # Both builds always finish: the reproducibility comparison needs each of them.
+      fail-fast: false
       matrix:
         build: [a, b]
     steps:

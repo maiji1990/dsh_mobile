@@ -37,6 +37,9 @@ while [ $# -gt 0 ]; do
     *) echo "unknown argument: $1" >&2; exit 2 ;;
   esac
 done
+# Absolute paths: later steps cd into the bundle directory (zip) and the DSH directory (npm ci), so a relative
+# --out / --work / --proot (e.g. CI's `--out dist`) would resolve against the wrong directory.
+out="$(realpath -m -- "$out")"; work="$(realpath -m -- "$work")"; proot_dir="$(realpath -m -- "$proot_dir")"
 cache="$work/../cache"
 
 die() { echo "build-runtime: $*" >&2; exit 1; }
