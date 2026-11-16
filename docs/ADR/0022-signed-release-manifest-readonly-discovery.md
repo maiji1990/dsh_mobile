@@ -49,6 +49,19 @@
   一个步骤中可见；发布后无密钥的 job 匿名读回并核对签名与每个制品；`stable` 须附写明每个版本号的真机验收记录。
 - 清单有效期：工作流默认 30 天、上限 90 天（`expires_days`）；到期前重新运行工作流即重签。
 
+## 修订（2026-11-16，vNext PR-04：下载）
+
+- **只下载签名清单里的制品**：`VerifiedRelease` 只能由 `ReleaseManifestVerifier.Verify` 生成（internal 构造），`ArtifactDownloader`
+  只接受它与其中的一项 `ReleaseArtifact`（逐字段相等）；名称再次校验（64 位十六进制摘要作目录、纯文件名作文件名），URL 必须 https。
+  插件、Agent、UI 都无法让它去下载任意地址。
+- **存放**：`files/updates/partial/<sha256>.part`（+ 续传日志）与 `files/updates/verified/<sha256>/<archive>`（+ 来源记录）；
+  不在 `runtime-current` 或 `user-data` 下。已验证文件每次取用前重新计算哈希。缓存上限默认 2 GiB，按最近使用淘汰。
+- **续传**：`Range` + `If-Range`（ETag，否则 Last-Modified）；只接受起点恰为已有字节数、总长等于清单的 206；200（忽略 Range 或实体已变）
+  从 0 重下；超出清单大小立即失败。**完成后对整个文件重新做 SHA-256 与大小校验**，不信任任何已续传的前缀；不符即删除。
+- **空间**：下载前检查剩余所需字节 + 64 MiB 余量；安装所需空间由 PR-05 的 preflight 另行检查。
+- 错误码：`DOWNLOAD_NOT_OFFERED / INSUFFICIENT_SPACE / CACHE_FULL / HTTP_FAILED / INSECURE_REDIRECT / INCOMPLETE / SIZE_MISMATCH /
+  SHA256_MISMATCH / WRITE_FAILED / CANCELLED`。下载器不安装、不切换任何东西（PR-05），尚未接入 UI（PR-06）。
+
 ## 后果
 
 - 正面：在线更新的第一道门（来源真实性）在任何下载之前就位；错误码稳定、可在 UI 原样显示；内容规则把发布流水线的错误挡在安装器之外。

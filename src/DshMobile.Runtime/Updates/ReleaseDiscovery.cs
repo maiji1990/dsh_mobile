@@ -95,7 +95,11 @@ public sealed class HttpReleaseSource : IReleaseSource
 }
 
 /// <summary>Outcome of a discovery run; <see cref="Choices"/> is empty unless <see cref="Ok"/>.</summary>
-public sealed record ReleaseDiscoveryResult(bool Ok, string Code, string? Message, ReleaseManifest? Manifest, string? KeyId, IReadOnlyList<ReleaseChoice> Choices);
+public sealed record ReleaseDiscoveryResult(bool Ok, string Code, string? Message, ReleaseManifest? Manifest, string? KeyId, IReadOnlyList<ReleaseChoice> Choices)
+{
+    /// <summary>Set only on success: what the artifact downloader accepts (<see cref="VerifiedRelease"/>).</summary>
+    public VerifiedRelease? Release { get; init; }
+}
 
 /// <summary>
 /// Read-only "what could I update to?" (P0-03): fetch → verify signature and content → evaluate the catalog. Nothing is
@@ -136,6 +140,6 @@ public static class ReleaseDiscovery
         {
             return new(false, v.Code, v.Message, null, null, []);
         }
-        return new(true, RuntimeErrorCodes.Ok, null, v.Manifest, v.KeyId, ReleaseCatalog.Evaluate(v.Manifest!, installed, deviceAbi));
+        return new(true, RuntimeErrorCodes.Ok, null, v.Manifest, v.KeyId, ReleaseCatalog.Evaluate(v.Manifest!, installed, deviceAbi)) { Release = v.Release };
     }
 }

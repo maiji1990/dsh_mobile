@@ -88,9 +88,33 @@ public sealed class ReleaseTrust
     internal bool TryGet(string keyId, out byte[] key) => _keys.TryGetValue(keyId, out key!);
 }
 
+/// <summary>
+/// Proof that a manifest passed <see cref="ReleaseManifestVerifier.Verify"/>: only the verifier can create one (internal
+/// constructor), so code that takes a <see cref="VerifiedRelease"/> — the artifact downloader (vNext PR-04) — can only be
+/// handed artifacts from a signed, trusted, unexpired manifest, never a free URL from a plugin, the agent or the UI.
+/// </summary>
+public sealed class VerifiedRelease
+{
+    internal VerifiedRelease(ReleaseManifest manifest, string keyId)
+    {
+        Manifest = manifest;
+        KeyId = keyId;
+    }
+
+    public ReleaseManifest Manifest { get; }
+
+    public string KeyId { get; }
+
+    /// <summary>Whether <paramref name="artifact"/> is one of this manifest's artifacts (value equality on every field).</summary>
+    public bool Offers(ReleaseArtifact artifact) => Manifest.Artifacts.Contains(artifact);
+}
+
 /// <summary>Outcome of verifying a manifest; <see cref="Manifest"/> is set only when <see cref="Ok"/>.</summary>
 public sealed record ReleaseVerification(bool Ok, string Code, string? Message, ReleaseManifest? Manifest, string? KeyId)
 {
+    /// <summary>Set only on success: the token the downloader requires.</summary>
+    public VerifiedRelease? Release { get; init; }
+
     internal static ReleaseVerification Fail(string code, string message) => new(false, code, message, null, null);
 }
 
@@ -182,7 +206,7 @@ public static class ReleaseManifestVerifier
         {
             return ReleaseVerification.Fail(UpdateErrorCodes.Rollback, $"generatedAt {parsed.GeneratedAt:O} is older than the last accepted manifest ({floor:O})");
         }
-        return new ReleaseVerification(true, RuntimeErrorCodes.Ok, null, parsed, verifiedBy);
+        return new ReleaseVerification(true, RuntimeErrorCodes.Ok, null, parsed, verifiedBy) { Release = new VerifiedRelease(parsed, verifiedBy) };
     }
 
     /// <summary><c>{"schema":1,"signatures":[{"alg":"ed25519","keyId":"ed25519:…","sig":"&lt;base64, 64 bytes&gt;"}]}</c>.</summary>
