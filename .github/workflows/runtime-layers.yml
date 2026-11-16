@@ -8,11 +8,24 @@ name: runtime-layers
 # (tooling/runtime-smoke.sh: chroot + the app's dsh-probe.mjs for web / headless / sdk / sdk-minimal / acp, and DSH's
 # own first-use workspace resolver with the app's xdg-user-dir wrapper, vNext PR-07).
 #
-# Pull requests that touch the build run everything except publishing. Manual dispatch can publish each product as its
-# own immutable, anonymously downloadable release of this public repository: runtime-<BUNDLE_VERSION>,
-# dsh-<DSH_VERSION>. Publishing is a separate job that never runs third-party install scripts; signing a channel
-# manifest that points at these releases is release-publish.yml (ADR-0022).
+# Pull requests build + verify without publishing. Changes merged to main build, verify, and publish
+# missing immutable versioned prereleases automatically (runtime-<BUNDLE_VERSION> / dsh-<DSH_VERSION>).
+# A previously published version must remain byte-identical; upstream changes need a version bump.
+# Workflow dispatch still allows publishing either product explicitly. Device update channels remain
+# separately signed and manually approved by release-publish.yml (ADR-0022).
 on:
+  push:
+    branches: [main]
+    paths:
+      - runtime-bundle/**
+      - native/proot/**
+      - tooling/runtime-smoke.sh
+      - src/DshMobile.Runtime/Layers/**
+      - src/DshMobile.Runtime/Guest/Assets/dsh-probe.mjs
+      - src/DshMobile.Runtime/Guest/Assets/xdg-user-dir
+      - src/DshMobile.Runtime/Guest/Assets/dsh-e2e.mjs
+      - tests/DshMobile.Runtime.Tests/SelfBuiltRuntimeBundleTests.cs
+      - .github/workflows/runtime-layers.yml
   workflow_dispatch:
     inputs:
       publish_runtime:
@@ -143,14 +156,17 @@ jobs:
           b="$RUNNER_TEMP/builds"
           {
             echo "## Reproducibility"
+            mismatches=0
             for p in runtime dsh; do
               if diff -u "$b/$p-a/SHA256SUMS" "$b/$p-b/SHA256SUMS" > "$RUNNER_TEMP/$p.diff"; then
                 echo "- $p: **reproducible** (both builds byte-identical)"
               else
                 echo "- $p: **NOT reproducible**"; echo '```diff'; cat "$RUNNER_TEMP/$p.diff"; echo '```'
-                echo "::warning::$p: the two builds differ (see the verification report)"
+                echo "::error::$p: two independent builds differ; publishing is forbidden"
+                mismatches=1
               fi
             done
+            [ "$mismatches" -eq 0 ] || exit 1
           } | tee "$RUNNER_TEMP/repro.md"
       - name: Stage build a where the app's tests look for it
         run: |
@@ -198,7 +214,10 @@ jobs:
 
   publish:
     needs: verify
-    if: github.event_name == 'workflow_dispatch' && (inputs.publish_runtime || inputs.publish_dsh)
+    concurrency:
+      group: runtime-layers-versioned-publish
+      cancel-in-progress: false
+    if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && (inputs.publish_runtime || inputs.publish_dsh))
     runs-on: ubuntu-24.04
     permissions:
       contents: write
@@ -212,17 +231,31 @@ jobs:
       - name: Publish immutable releases
         env:
           GH_TOKEN: ${{ github.token }}
-          PUBLISH_RUNTIME: ${{ inputs.publish_runtime }}
-          PUBLISH_DSH: ${{ inputs.publish_dsh }}
+          AUTO_RELEASE: ${{ github.event_name == 'push' }}
+          PUBLISH_RUNTIME: ${{ github.event_name == 'push' || inputs.publish_runtime }}
+          PUBLISH_DSH: ${{ github.event_name == 'push' || inputs.publish_dsh }}
         run: |
           set -euo pipefail
           a="$RUNNER_TEMP/a"
           lock() { grep "^$1=" runtime-bundle/runtime-build.lock | cut -d= -f2; }
           release() {
-            local tag="$1" title="$2"; shift 2
-            if gh release view "$tag" > /dev/null 2>&1; then echo "::error::release $tag already exists; published releases are immutable"; exit 1; fi
-            gh release create "$tag" "$@" --target "$GITHUB_SHA" --prerelease --latest=false --title "$title" \
-              --notes "Built by runtime-layers.yml from runtime-bundle/runtime-build.lock at $GITHUB_SHA (ADR-0020, vNext PR-03). Verification: verification.md. Offered to devices only through a signed channel manifest (release-publish.yml, ADR-0022)."
+            local tag="$1" title="$2" primary="$3"; shift 3
+            if gh release view "$tag" > /dev/null 2>&1; then
+              if [ "$AUTO_RELEASE" != true ]; then
+                echo "::error::release $tag already exists; published releases are immutable"; exit 1
+              fi
+              local existing="$RUNNER_TEMP/existing/$tag"
+              mkdir -p "$existing"
+              gh release download "$tag" --pattern "$(basename "$primary")" --dir "$existing"
+              if ! cmp -s "$primary" "$existing/$(basename "$primary")"; then
+                echo "::error::$tag differs from the existing release: bump its version in runtime-build.lock"; exit 1
+              fi
+              echo "Already published: $tag (identical bytes, not overwritten)" >> "$GITHUB_STEP_SUMMARY"
+              return 0
+            fi
+            gh release create "$tag" "$primary" "$@" --target "$GITHUB_SHA" --prerelease --latest=false --title "$title" \
+              --notes "Built by runtime-layers.yml from runtime-bundle/runtime-build.lock at $GITHUB_SHA (ADR-0020). Verification: verification.md. Offered to devices only through a signed channel manifest (release-publish.yml, ADR-0022)."
+            echo "Published: $tag" >> "$GITHUB_STEP_SUMMARY"
           }
           if [ "$PUBLISH_RUNTIME" = true ]; then
             v="$(lock BUNDLE_VERSION)"
