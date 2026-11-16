@@ -3,7 +3,7 @@ name: release-publish
 # vNext PR-02 / ADR-0022: signs and publishes a channel's release manifest. Manual only.
 #
 # What it publishes: release/<channel>.json (a reviewed spec) names artifacts that already sit in versioned releases of
-# this public repository (e.g. created by runtime-layers.yml with release_tag). This workflow downloads them
+# this public repository (runtime-<v> / dsh-<v>, published by runtime-layers.yml). This workflow downloads them
 # anonymously, builds release-manifest.json from their real SHA-256 / size, signs it with the release key, uploads
 # manifest + .sig to the fixed release `channel-<channel>` (the URL the app reads, ReleaseEndpoints), then a second job
 # without any secret reads everything back anonymously and verifies it against the app's own trusted-keys file.

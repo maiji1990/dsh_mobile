@@ -157,3 +157,32 @@ FEATURES.md 各行的状态列已按上表改写（证据列保留原始记录�
 
 PR-02 验收门禁（方案）：匿名拉取两文件并正确验签（工作流 verify job）；伪造 / 篡改 / 过期 / 回放 / preview 冒充 stable 全部拒绝（单测已覆盖，
 真机待公钥就绪后用开发者选项复核）；私钥不进 APK 或 Actions artifact（签名只在一个步骤以 secret 注入）。
+
+## 7. PR-03 状态（运行层 / DSH 层分开构建与发布）
+
+| 切片 | 状态 |
+|---|---|
+| 两个独立作业（runtime：base / node / android-side；dsh：DSH 层） | 已实现（`runtime-layers.yml`）；锁定值与 SHA 校验沿用 `runtime-build.lock` |
+| 可复现性 | 每个产品构建两次比对 `SHA256SUMS`，结果写入验收报告（不一致只告警，不宣称可复现） |
+| 验收 | arm64：`SelfBuiltRuntimeBundleTests`（App 导入器 + DSH 安装器，缺产物即失败）；chroot guest 布局 + App 的 `dsh-probe.mjs`：web / sdk / sdk-minimal / acp 须 pass，headless pass 或 limited；plugin 留给真机 |
+| 来源 | DSH 层 `provenance.json`：npm integrity（来自锁文件）+ 上游 tag `dsh-v<版本>` 的 commit（`git ls-remote`，CI 中解析）；没有 commit 时拒绝发布 |
+| 发布 | 手动：`publish_runtime` / `publish_dsh` 分别创建不可覆盖的 `runtime-<v>` / `dsh-<v>` Release；发布作业不跑 `npm ci` |
+| `runtime-assets.lock` | **未改**：仍指 DSHBox v1.5.1；自有 Release 发布并真机验收后单独改 |
+| DSH `0.2.2-rc.3`（preview） | **未做**：上游升级，按规则 8 另起 PR（新 `package.json` / lockfile、Node `>=24.9.0` 已满足、兼容性对照） |
+| 真机 | **未做**：chroot 不是 Android / PRoot |
+
+**CI 结果**（maiji1990/dsh_mobile#46，`runtime-layers` run [43807148968](https://github.com/maiji1990/dsh_mobile/actions/runs/43807148968)，head `df7a4b6`）：
+
+| 项 | 结果 |
+|---|---|
+| 可复现性 | runtime 与 dsh 两次构建均逐字节相同；与前一次运行（43806511282）的哈希也相同（共 4 次独立构建一致）：`dshmobile-runtime-debian-arm64-0.2.0.zip` = `204d8489…3daba`，`0.2.1-rc.5.tar.zst` = `b8d45456…37352`（DSH 层 90,615,319 字节） |
+| App 验收 | `SelfBuiltRuntimeBundleTests` 通过（App 的 `LayerInstaller` 导入、`DshLayerInstaller` 装 DSH 层，`DSHM_REQUIRE_SELF_BUILT=1`） |
+| guest（chroot，arm64 Linux） | Debian 13.7 / aarch64 / node v24.19.0；`dsh --version` = 0.2.1-rc.5；DSH web 按 App 方式启动，`GET /` → **401**；探测 web **pass**、headless **limited**（需凭据）、sdk **pass**、sdk-minimal **pass**、acp **pass** |
+| 来源 | `provenance.json`：npm integrity `sha512-WkyJZv4z…`，上游 tag `dsh-v0.2.1-rc.5` → commit `b830ec950faba0a46dda564be3e2d854afed94f1` |
+
+**发现（待处理）**：DSH 层 `npm ci` 输出 `npm warn allow-scripts 5 packages have install scripts not yet covered by allowScripts`——
+`@deepseek-ai/dsh-subprocess-local`（postinstall `ensure-spawn-helper.mjs`）、`koffi`、`node-pty`（prebuild / node-gyp）、`protobufjs`、
+`@google/genai`（no-op）。若该 npm 版本跳过未批准的脚本，层内可能缺少这些包安装时应完成的步骤（如 spawn-helper、node-pty 原生模块就位）。
+chroot 探测未覆盖终端 / 子进程工具，**真机上自建 DSH 层从未运行过**（11-16 真机仍用 DSHBox 构建的 DSH 层）。发布 `dsh-0.2.1-rc.5` 前需：
+核对层内 `node-pty` 的 `linux-arm64` 原生模块与 spawn-helper 是否存在且可执行，必要时在 `package.json` 中显式允许这几个包的脚本（单独 PR，规则 8）；
+并在真机上用自建 DSH 层跑一次带 Bash 工具 / 终端的任务。

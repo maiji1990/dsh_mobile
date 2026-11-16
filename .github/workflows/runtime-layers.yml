@@ -1,15 +1,36 @@
 name: runtime-layers
 
-# ADR-0020: builds the runtime layers (base / node / android-side bundle + DSH layer) from runtime-bundle/runtime-build.lock.
-# Manual only. With `release_tag` set, the outputs are also published as a GitHub Release of this repository; after that,
-# runtime-bundle/runtime-assets.lock is pointed at the release in a separate PR.
+# ADR-0020 + vNext PR-03: builds the runtime layers from runtime-bundle/runtime-build.lock as two independent products,
+#   runtime = base / node / android-side bundle (Debian snapshot + official Node linux-arm64 + this repo's PRoot)
+#   dsh     = the DSH layer (exact @deepseek-ai/dsh version, npm ci from the pinned lockfile, arm64 Node)
+# so a DSH update never means re-downloading Debian. Each is built twice (reproducibility), then verified on arm64:
+# the app's own importer / DSH installer accept them (SelfBuiltRuntimeBundleTests) and DSH starts in the guest layout
+# (tooling/runtime-smoke.sh: chroot + the app's dsh-probe.mjs for web / headless / sdk / sdk-minimal / acp).
+#
+# Pull requests that touch the build run everything except publishing. Manual dispatch can publish each product as its
+# own immutable, anonymously downloadable release of this public repository: runtime-<BUNDLE_VERSION>,
+# dsh-<DSH_VERSION>. Publishing is a separate job that never runs third-party install scripts; signing a channel
+# manifest that points at these releases is release-publish.yml (ADR-0022).
 on:
   workflow_dispatch:
     inputs:
-      release_tag:
-        description: "Create a GitHub Release with this tag (e.g. runtime-0.2.0); empty = workflow artifact only"
-        required: false
-        default: ""
+      publish_runtime:
+        description: "Publish release runtime-<BUNDLE_VERSION> (refused if it exists)"
+        type: boolean
+        default: false
+      publish_dsh:
+        description: "Publish release dsh-<DSH_VERSION> (refused if it exists)"
+        type: boolean
+        default: false
+  pull_request:
+    paths:
+      - runtime-bundle/**
+      - native/proot/**
+      - tooling/runtime-smoke.sh
+      - src/DshMobile.Runtime/Layers/**
+      - src/DshMobile.Runtime/Guest/Assets/dsh-probe.mjs
+      - tests/DshMobile.Runtime.Tests/SelfBuiltRuntimeBundleTests.cs
+      - .github/workflows/runtime-layers.yml
 
 permissions:
   contents: read
@@ -34,16 +55,17 @@ jobs:
           path: artifacts/native/proot/arm64-v8a/
           if-no-files-found: error
 
-  layers:
+  runtime:
     needs: proot
     runs-on: ubuntu-24.04-arm
-    permissions:
-      contents: write
+    strategy:
+      # Both builds always finish: the reproducibility comparison needs each of them.
+      fail-fast: false
+      matrix:
+        build: [a, b]
     steps:
       - uses: actions/checkout@v4
         with:
-          # The layers job holds contents: write while `npm ci` runs third-party install scripts: never leave the
-          # token in .git/config (nothing here pushes; the release step gets its token through GH_TOKEN only).
           persist-credentials: false
       - uses: actions/download-artifact@v4
         with:
@@ -54,18 +76,158 @@ jobs:
           sudo apt-get update -q
           sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -q --no-install-recommends \
             mmdebstrap debian-archive-keyring zstd zip
-      - name: Build layers
-        run: bash runtime-bundle/build-runtime.sh --proot "$RUNNER_TEMP/proot" --work "$RUNNER_TEMP/rt" --out dist
+      - name: Build runtime bundle (base / node / android-side)
+        run: bash runtime-bundle/build-runtime.sh --layers base,node,android-side --proot "$RUNNER_TEMP/proot" --work "$RUNNER_TEMP/rt" --out dist
       - uses: actions/upload-artifact@v4
         with:
-          name: runtime-layers
+          name: runtime-${{ matrix.build }}
           path: dist/
           if-no-files-found: error
-      - name: Publish release
-        if: ${{ inputs.release_tag != '' }}
+
+  dsh:
+    runs-on: ubuntu-24.04-arm
+    strategy:
+      # Both builds always finish: the reproducibility comparison needs each of them.
+      fail-fast: false
+      matrix:
+        build: [a, b]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Install build tools
+        run: sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -q --no-install-recommends zstd zip
+      - name: Build DSH layer (npm ci from the pinned lockfile under arm64 Node)
+        run: bash runtime-bundle/build-runtime.sh --layers dsh --work "$RUNNER_TEMP/rt" --out dist
+      - name: Provenance (npm integrity + upstream tag commit)
+        if: matrix.build == 'a'
+        run: |
+          set -euo pipefail
+          v="$(grep '^DSH_VERSION=' runtime-bundle/runtime-build.lock | cut -d= -f2)"
+          integrity="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["packages"]["node_modules/@deepseek-ai/dsh"]["integrity"])' runtime-bundle/dsh/package-lock.json)"
+          # npm metadata carries no gitHead: the source commit is the upstream release tag's commit (peeled if annotated).
+          refs="$(git ls-remote https://github.com/deepseek-ai/deepseek-harness "refs/tags/dsh-v$v" "refs/tags/dsh-v$v^{}" || true)"
+          commit="$(printf '%s\n' "$refs" | awk '/\^\{\}$/ {print $1; found=1} END {}' | head -n1)"
+          [ -n "$commit" ] || commit="$(printf '%s\n' "$refs" | awk 'NF {print $1}' | head -n1)"
+          if [ -z "$commit" ]; then echo "::warning::upstream tag dsh-v$v not found; publishing the DSH release will be refused"; fi
+          python3 - "$v" "$integrity" "$commit" "$(cut -d' ' -f1 "dist/$v.tar.zst.sha256")" <<'PY' | tee dist/provenance.json
+          import json, os, sys
+          v, integrity, commit, sha = sys.argv[1:5]
+          print(json.dumps({"schema": 1, "npmPackage": "@deepseek-ai/dsh", "version": v, "npmIntegrity": integrity,
+                            "sourceRepo": "deepseek-ai/deepseek-harness", "sourceTag": f"dsh-v{v}", "sourceCommit": commit or None,
+                            "builtFrom": os.environ["GITHUB_SHA"], "layerSha256": sha}, indent=2))
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dsh-${{ matrix.build }}
+          path: dist/
+          if-no-files-found: error
+
+  verify:
+    needs: [runtime, dsh]
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: "*-[ab]"
+          path: ${{ runner.temp }}/builds
+      - name: Reproducibility (two independent builds of each product)
+        run: |
+          set -euo pipefail
+          b="$RUNNER_TEMP/builds"
+          {
+            echo "## Reproducibility"
+            for p in runtime dsh; do
+              if diff -u "$b/$p-a/SHA256SUMS" "$b/$p-b/SHA256SUMS" > "$RUNNER_TEMP/$p.diff"; then
+                echo "- $p: **reproducible** (both builds byte-identical)"
+              else
+                echo "- $p: **NOT reproducible**"; echo '```diff'; cat "$RUNNER_TEMP/$p.diff"; echo '```'
+                echo "::warning::$p: the two builds differ (see the verification report)"
+              fi
+            done
+          } | tee "$RUNNER_TEMP/repro.md"
+      - name: Stage build a where the app's tests look for it
+        run: |
+          set -euo pipefail
+          d=artifacts/runtime-build/dist; mkdir -p "$d"
+          cp "$RUNNER_TEMP"/builds/runtime-a/*.zip "$RUNNER_TEMP"/builds/dsh-a/*.tar.zst "$RUNNER_TEMP"/builds/dsh-a/*.tar.zst.sha256 "$d/"
+          cat "$RUNNER_TEMP/builds/runtime-a/SHA256SUMS" "$RUNNER_TEMP/builds/dsh-a/SHA256SUMS" > "$d/SHA256SUMS"
+          cat "$d/SHA256SUMS"
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+      # global.json pins workloadVersion: the SDK refuses to evaluate any project until that workload set is installed
+      # (MSB4242 "Workload version 11.0.100.1 … was not found"), even one that uses no workload.
+      - name: Install the pinned workload set
+        run: dotnet workload restore tests/DshMobile.Runtime.Tests/DshMobile.Runtime.Tests.csproj
+      - name: The app's importer and DSH installer accept the layers (SelfBuiltRuntimeBundleTests)
+        env:
+          DSHM_REQUIRE_SELF_BUILT: "1"
+        run: dotnet test tests/DshMobile.Runtime.Tests -c Release --filter "FullyQualifiedName~SelfBuiltRuntimeBundleTests" --logger "console;verbosity=normal"
+      - name: DSH starts in the guest layout (chroot smoke, dsh-probe.mjs)
+        run: |
+          set -euo pipefail
+          d=artifacts/runtime-build/dist
+          bash tooling/runtime-smoke.sh "$(ls "$d"/*.zip)" "$(ls "$d"/*.tar.zst | grep -v '\.sha256$')" "$RUNNER_TEMP/smoke" "$RUNNER_TEMP/smoke.json" | tee "$RUNNER_TEMP/smoke.txt"
+      - name: Verification report
+        if: always()
+        run: |
+          {
+            echo "# Runtime layers verification"
+            echo "- source commit: \`$GITHUB_SHA\`  · run: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+            echo "- lock: \`$(sha256sum runtime-bundle/runtime-build.lock | cut -d' ' -f1)\` runtime-bundle/runtime-build.lock"
+            echo; echo "## SHA256SUMS"; echo '```'; cat artifacts/runtime-build/dist/SHA256SUMS 2>/dev/null || echo "(not staged)"; echo '```'
+            echo; cat "$RUNNER_TEMP/repro.md" 2>/dev/null || echo "(reproducibility not compared)"
+            echo; echo "## Guest smoke (chroot on arm64 Linux; not Android, not PRoot)"; echo '```'; cat "$RUNNER_TEMP/smoke.txt" 2>/dev/null || echo "(not run)"; echo '```'
+            echo; echo "Device acceptance is still required (AGENTS.md rule 9)."
+          } > verification.md
+          cat verification.md >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: verification
+          path: |
+            verification.md
+            ${{ runner.temp }}/smoke.json
+
+  publish:
+    needs: verify
+    if: github.event_name == 'workflow_dispatch' && (inputs.publish_runtime || inputs.publish_dsh)
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          path: ${{ runner.temp }}/a
+      - name: Publish immutable releases
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: ${{ inputs.release_tag }}
+          PUBLISH_RUNTIME: ${{ inputs.publish_runtime }}
+          PUBLISH_DSH: ${{ inputs.publish_dsh }}
         run: |
-          gh release create "$TAG" dist/* --target "$GITHUB_SHA" --title "Runtime layers $TAG" \
-            --notes "Built by runtime-layers.yml from runtime-bundle/runtime-build.lock at $GITHUB_SHA (ADR-0020). SHA-256 in SHA256SUMS."
+          set -euo pipefail
+          a="$RUNNER_TEMP/a"
+          lock() { grep "^$1=" runtime-bundle/runtime-build.lock | cut -d= -f2; }
+          release() {
+            local tag="$1" title="$2"; shift 2
+            if gh release view "$tag" > /dev/null 2>&1; then echo "::error::release $tag already exists; published releases are immutable"; exit 1; fi
+            gh release create "$tag" "$@" --target "$GITHUB_SHA" --prerelease --latest=false --title "$title" \
+              --notes "Built by runtime-layers.yml from runtime-bundle/runtime-build.lock at $GITHUB_SHA (ADR-0020, vNext PR-03). Verification: verification.md. Offered to devices only through a signed channel manifest (release-publish.yml, ADR-0022)."
+          }
+          if [ "$PUBLISH_RUNTIME" = true ]; then
+            v="$(lock BUNDLE_VERSION)"
+            release "runtime-$v" "Runtime bundle $v" "$a"/runtime-a/*.zip "$a/runtime-a/SHA256SUMS" "$a/verification/verification.md"
+          fi
+          if [ "$PUBLISH_DSH" = true ]; then
+            v="$(lock DSH_VERSION)"
+            python3 -c 'import json,sys; sys.exit(0 if json.load(open(sys.argv[1])).get("sourceCommit") else 1)' "$a/dsh-a/provenance.json" \
+              || { echo "::error::provenance.json has no sourceCommit (upstream tag not found); refusing to publish"; exit 1; }
+            release "dsh-$v" "DSH layer $v" "$a/dsh-a/$v.tar.zst" "$a/dsh-a/$v.tar.zst.sha256" "$a/dsh-a/SHA256SUMS" "$a/dsh-a/provenance.json" "$a/verification/verification.md"
+          fi

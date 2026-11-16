@@ -87,6 +87,7 @@ corepack 缓存，见 `src/DshMobile.Android/Assets/README.md`）。Shizuku 客�
 | vNext P0-01 / 02 / 03 | 修复 CI 偶发失败（`PtyProbe` 超时走 `TimeProvider`，测试以 FakeShell 静默握手推进假时钟）；DSH 层换层日志化事务 + `Recover()`（第 7 节）；[ADR-0022](ADR/0022-signed-release-manifest-readonly-discovery.md)：签名发布清单验证与只读版本发现（未内置公钥、未接 UI） | 本地以 .NET 10 SDK 重定向 net10.0 运行（本环境取不到 .NET 11 SDK）：Core 35 / Runtime 797（+2 跳过）/ Application 112 / guest 37 全绿；线程池饥饿复现由必失败变为通过；**无真机证据**；`global.json` 仍为 rc.2（升级 .NET 11 GA 未做） |
 | vNext PR-00 | 基线与 CI 完整性：基线 `7e87118`（CI run 43793423389）；`PtyProbeTests` 重复验证；FEATURES 状态列加证据时代标记；COMPATIBILITY vNext 待测矩阵；[VNEXT_STATUS.md](VNEXT_STATUS.md)；工作流 checkout 不保留凭据、`android-dotnet.yml` 只读权限 | 证据：[基线记录](../migration/parity/2026-11-16-vnext-pr00-baseline.md)；无业务代码改动；无真机证据（本 PR 不需要；下一次真机回归清单见 VNEXT_STATUS §3） |
 | vNext PR-02 | 发布基础设施（ADR-0022 修订）：本仓库公开后通道清单固定在 release `channel-stable` / `channel-preview`；防重放下限持久化；只读 `UpdateChecker` 接入 App（开发者选项）；`release-publish.yml` + 清单构建 / 验证工具；App 与发布方共用可信公钥文件（目前为空） | 单测 + 本地演练；工作流未运行（待负责人：environment、secret、公钥；待 PR-03 的首个运行层 Release）；无真机证据 |
+| vNext PR-03 | 运行层 / DSH 层分开构建与发布（ADR-0020 更新）：两个独立 arm64 作业各构建两次比对可复现性；App 自己的导入器与 DSH 安装器验收；chroot guest 布局里用 App 的 dsh-probe 跑 5 个 profile；DSH 附 provenance；分别发布不可覆盖的 `runtime-<v>` / `dsh-<v>` Release | 以本 PR 的 `runtime-layers` CI 为准（见 VNEXT_STATUS §7）；chroot 不是 Android / PRoot，**无真机证据**；`runtime-assets.lock` 未改（发布并验收后再改） |
 | PR-03 … PR-11（其余） | 见迁移方案第 6 节与切片总表 | 已由上列各 PR 覆盖；PR-11 不再需要（浏览器不迁移） |
 
 ## 4. 已修复的现有缺陷（迁移方案第 7 节）
