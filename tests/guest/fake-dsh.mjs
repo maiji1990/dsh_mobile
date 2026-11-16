@@ -62,7 +62,6 @@ const rl = createInterface({ input: process.stdin });
 rl.on("close", () => process.exit(0));
 
 if (profile === "sdk") {
-  const failed = new Set();
   rl.on("line", (line) => {
     const m = JSON.parse(line);
     const reply = (result) => send({ id: m.id, result });
@@ -72,15 +71,20 @@ if (profile === "sdk") {
       case "initialize": return reply({ serverInfo: { name: "deepseek-harness-sdk-runtime", version: "0.0.1" } });
       case "session/prompt": {
         const text = (p.contentBlocks ?? []).map((b) => b.text).join("");
-        if (mode === "no-credential") { failed.add(p.sessionId); return reply({ messageId: "m1" }); }
+        if (mode === "no-credential") {
+          // Like DSH 0.2.1-rc.5: the failed turn ends durably with an error reason and session/wait then answers {}.
+          send({ method: "session.event", params: { sessionId: p.sessionId, event: { type: "turn/end", data: { turn: 1, reason: { kind: "error", error: { code: "MISSING_CREDENTIAL", message: AUTH_ERROR } } } } } });
+          return reply({ messageId: "m1" });
+        }
         if (load(p.sessionId) === undefined) save(p.sessionId, { cwd: process.cwd() });
         const r = doTask(p.sessionId, text);
         const ev = (event) => send({ method: "session.event", params: { sessionId: p.sessionId, event } });
         if (r.tool) { ev({ type: "tool/call", data: { name: "bash" } }); ev({ type: "tool/result", data: { message: { isError: false } } }); }
         ev({ type: "assistant/message", data: { message: { content: [{ type: "text", text: r.text }] } } });
+        ev({ type: "turn/end", data: { turn: 1, reason: { kind: "completed" } } });
         return reply({ messageId: "m1" });
       }
-      case "session/wait": return failed.has(p.sessionId) ? fail(AUTH_ERROR) : reply({});
+      case "session/wait": return reply({});
       case "session/resume": return load(p.sessionId) ? reply({}) : fail(`no persisted session ${p.sessionId}`);
       case "shutdown": reply({}); return setTimeout(() => process.exit(0), 10);
       default: return send({ id: m.id, error: { code: -32601, message: `method not found: ${m.method}` } });

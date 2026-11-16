@@ -40,7 +40,7 @@ export function redact(text) {
     .replace(/((?:api[_-]?key|access[_-]?token|auth[_-]?token|secret|password|authorization)["']?\s*[:=]\s*["']?)(?!Bearer\b)[^\s"',}]{4,}/gi, "$1<redacted>");
 }
 
-const CREDENTIAL = /api[ _-]?key|credential|unauthori[sz]ed|\b401\b|authenticat|not logged in|no (?:model|provider) (?:is )?configured|missing .*key|invalid .*key|incorrect .*key/i;
+const CREDENTIAL = /MISSING_CREDENTIAL|api[ _-]?key|credential|unauthori[sz]ed|\b401\b|authenticat|not logged in|no (?:model|provider) (?:is )?configured|missing .*key|invalid .*key|incorrect .*key/i;
 
 /** True when a failure text says the model call had no (valid) credential. */
 export function isCredentialFailure(text) {
@@ -251,15 +251,30 @@ function sdkObserved(peer, sessionId) {
   };
 }
 
+/**
+ * A failed turn: `session/wait` still answers {} once the failed turn has a durable `turn/end` (DSH 0.2.1-rc.5
+ * clears the live failure at that point), so the error is read from the `turn/end` reason in `session.event`.
+ */
+function sdkTurnError(peer, sessionId, from) {
+  const ends = peer.notifications.slice(from)
+    .filter((n) => n.method === "session.event" && n.params?.sessionId === sessionId && n.params.event?.type === "turn/end")
+    .map((n) => n.params.event.data?.reason ?? {});
+  const err = ends.find((r) => r.kind === "error");
+  if (err) return `turn/end error ${err.error?.code ?? ""}: ${err.error?.message ?? JSON.stringify(err)}`;
+  const other = ends.find((r) => r.kind !== undefined && r.kind !== "completed");
+  return other ? `turn/end ${JSON.stringify(other).slice(0, 300)}` : null;
+}
+
 async function sdkTurn(s, peer, sessionId, text, opts, label) {
   const t0 = Date.now();
+  const from = peer.notifications.length;
   const p = await peer.request("session/prompt", { sessionId, contentBlocks: [{ type: "text", text }] }, 120_000);
   if (rpcFailure(p, peer)) {
     if (s.credentialGate(rpcFailure(p, peer))) return false;
     return s.check(`${label}prompt`, false, rpcFailure(p, peer));
   }
   const w = await peer.request("session/wait", { sessionId }, opts.turnTimeoutMs);
-  const failure = rpcFailure(w, peer);
+  const failure = rpcFailure(w, peer) ?? sdkTurnError(peer, sessionId, from);
   if (failure && s.credentialGate(failure)) return false;
   return s.check(`${label}turn`, !failure, failure ?? `messageId=${p.result?.messageId}`, Date.now() - t0);
 }

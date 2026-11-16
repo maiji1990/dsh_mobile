@@ -130,7 +130,7 @@ Issue、PR、截图或终端历史里；日志贴出前再检查一次。
 
 1. **默认工作区**：全新安装（或删除 `/root/projects/deepseek-harness`）后在 WebUI 首次新建会话，不再出现「无法创建默认工作区」；
    终端里 `xdg-user-dir DOCUMENTS` → `/root/projects`，WebUI 显示的工作区为 `/root/projects/deepseek-harness/default-workspace`。
-2. **凭据**：在 WebUI 的 DSH 设置中配置模型账号 / API Key；新建文本会话得到回答。
+2. **凭据**：在 WebUI 的 **Models** 页面配置 API Key（DSH 经其 credentials service 保存；不要在终端 `export DEEPSEEK_API_KEY`，会留在 shell 历史与进程环境里）；新建文本会话得到回答。缺凭据时 DSH 报 `MISSING_CREDENTIAL`。
 3. **驱动（终端执行）**：
    ```sh
    node /opt/dshmobile-cache/dshmobile/dsh-e2e.mjs 2>&1 | tee /root/projects/e2e-$(date +%Y%m%d-%H%M%S).log
@@ -144,7 +144,7 @@ Issue、PR、截图或终端历史里；日志贴出前再检查一次。
 6. **Subagent / Agent Team**（DSH 版本支持时）：一次派生子代理的任务完成，父会话收到结果。
 7. **后台 / 锁屏**：一个长任务运行中锁屏 15 / 60 / 180 分钟后回到前台，任务完成或给出明确失败；停止后 `ps` 无孤儿；运行中 `am force-stop` 后重开，journal 报告中断并可再次启动。
 8. **WebView 回归**：附件上传、文件下载、令牌失效后 401 重新认证。
-9. **清除凭据后**：在 WebUI 删除凭据，重跑第 3 步，期望 `status: needs-credential`、退出码 3；`grep -rIl -- '<密钥前 8 个字符>' /root/projects/.dsh /root/projects/*.log`
+9. **清除凭据后**：在 WebUI 的 Models 页面删除凭据，重跑第 3 步，期望 `status: needs-credential`、退出码 3；`grep -rIl -- '<密钥前 8 个字符>' /root/projects/.dsh /root/projects/*.log`
    无结果（只用前缀检索，不输入完整密钥）。
 
 证据：按 [migration/parity/TEMPLATE-vnext-pr07-agent-e2e.md](../migration/parity/TEMPLATE-vnext-pr07-agent-e2e.md) 记录，每个「通过」都写明版本、设备、系统、时间；不适用项写原因，不写「通过」。

@@ -226,6 +226,11 @@ chroot 探测未覆盖终端 / 子进程工具，**真机上自建 DSH 层从未
 | 5. Subagent / Agent Team、后台与锁屏 15 / 60 / 180 分钟、停止无孤儿、强杀后 journal 恢复 | 手动（手册第 6、7 步） |
 | 6. WebView 附件上传 / 下载 / 401 重新认证 | 手动（手册第 8 步）；附件 / 下载功能本身尚未实现（FEATURES） |
 
+CI（runtime-layers run 43815317473，arm64 chroot，真实 DSH 0.2.1-rc.5 / Debian 13.7）：默认工作区——无包装器 `spawn xdg-user-dir ENOENT`，有包装器
+`/root/projects/deepseek-harness/default-workspace`（**修复在真实 DSH 解析器上成立**）；E2E——headless 与 acp 正确报告 `needs-credential`（DSH：
+`MISSING_CREDENTIAL: llm-deepseek: no API key for provider route "deepseek-official"; store DEEPSEEK_API_KEY through the credentials service (the web Models page writes it)…`）；
+sdk 暴露驱动缺陷：失败的轮次 `session/wait` 仍回 `{}`，错误只在 `turn/end` 的 reason 里——已改为读取该 reason（假 DSH 同步改为此行为 + 变异检查）。修正后的结果见本 PR 最新的 runtime-layers 运行。
+
 验收（方案）：真机日志与清除密钥后的检查结果，每个「通过」记录版本 / 系统 / 设备 / 时间——**未做**，需负责人用自己的凭据在真机执行
 （[TEST_PLAN「vNext PR-07」](TEST_PLAN.md)，记录模板 [TEMPLATE-vnext-pr07-agent-e2e.md](../migration/parity/TEMPLATE-vnext-pr07-agent-e2e.md)）。
 在此之前 Preview 不得升为 Stable。
