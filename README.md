@@ -152,8 +152,10 @@ DshMobile.Core         通用协议类型、WebView 策略、工作区文件系�
 
 ## 现状与限制
 
-- App 只有 C# 实现（[ADR-0018](docs/ADR/0018-remove-dshbox.md) 删除了 DSHBox 子模块、AAR 与 Kotlin 层）。此前大部分功能在 Android 17 真机上验证过；
-  删除旧实现之后与新界面（ADR-0021）的真机复验**尚未进行**，各项状态与证据以 [docs/MIGRATION.md](docs/MIGRATION.md) 为准。
+- App 只有 C# 实现（[ADR-0018](docs/ADR/0018-remove-dshbox.md) 删除了 DSHBox 子模块、AAR 与 Kotlin 层）。新界面（ADR-0021）已在 Android 17 真机上
+  逐页验收（启动 / WebUI / 终端 / 文件 / 停止、诊断与 PTY 自检）；深色模式、远程连接、手机操控中继与运行环境导入 / 回滚尚未在新实现上真机复验。
+  各项状态与证据以 [docs/MIGRATION.md](docs/MIGRATION.md) 为准。
+- DSH 首次打开会提示「无法创建默认工作区」（guest 内没有 Documents 目录配置），需在 DSH 里手动选择工作区。
 - 模型凭据相关能力（会话、工具调用、Subagent 等）尚未验证。
 - 浏览器自动化（`browser_*`）不提供。
 
