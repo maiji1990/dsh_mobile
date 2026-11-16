@@ -1,6 +1,4 @@
-# Runtime layers taken from the pinned DSHBox release (see docs/UPSTREAMS.md).
-# Format: <file name> <sha256> <url>
-# The sha256 values are GitHub's published release-asset digests, re-verified locally on 2026-11-09.
-# Changing anything here is an upstream upgrade: separate PR + compatibility notes.
-0.2.1-rc.5.tar.zst c29ea980eb5d49a8e183f18f456536cd33c002cbfcba3b39d92d3c2de6da1d0f https://github.com/WSK-build/DSHBox/releases/download/v1.5.1/0.2.1-rc.5.tar.zst
-dshapp-runtime-debian-arm64-0.1.0.zip 0cb608abe0c17931eec2a16945405d930eb8d14879ad065901765b4e45b9f68f https://github.com/WSK-build/DSHBox/releases/download/v1.5.1/dshapp-runtime-debian-arm64-0.1.0.zip
+# Pinned assets from this repository's immutable versioned Releases. Never use floating latest.
+# Format: file SHA256 url
+0.2.1-rc.5.tar.zst b8d45456d09d5c11f2eb4d964f94dcbd0ab2e66f9159cd7b7cd4ecb36f537352 https://github.com/maiji1990/dsh_mobile/releases/download/dsh-0.2.1-rc.5/0.2.1-rc.5.tar.zst
+dshmobile-runtime-debian-arm64-0.2.0.zip 204d848974090445b113518097101dedc7b23152728675a78d55ac2df0d3daba https://github.com/maiji1990/dsh_mobile/releases/download/runtime-0.2.0/dshmobile-runtime-debian-arm64-0.2.0.zip
