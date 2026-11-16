@@ -1,0 +1,14 @@
+#!/bin/sh
+# DSH Mobile: minimal `xdg-user-dir` (Debian minbase has no xdg-user-dirs). DSH asks for DOCUMENTS on first use.
+name="$1"
+case "$name" in ''|*[!A-Z_]*) echo "$HOME"; exit 0 ;; esac
+conf="${XDG_CONFIG_HOME:-$HOME/.config}/user-dirs.dirs"
+if [ -f "$conf" ]; then
+  dir=$(sed -n "s/^XDG_${name}_DIR=\"\(.*\)\"\$/\1/p" "$conf" | tail -n 1)
+  if [ -n "$dir" ]; then
+    case "$dir" in '$HOME'*) dir="$HOME${dir#\$HOME}" ;; esac
+    echo "$dir"
+    exit 0
+  fi
+fi
+if [ "$name" = DOCUMENTS ]; then echo /root/projects; else echo "$HOME"; fi

@@ -115,11 +115,11 @@ public static class GuestAssetProvisioner
                 written.Add("corepack cache (pnpm 11.1.2)");
             }
         }
-        Step(failures, "dsh/pnpm wrappers", () =>
+        Step(failures, "guest wrappers", () =>
         {
             if (GuestToolchain.WriteShims(layout) is var n and > 0)
             {
-                written.Add($"dsh/pnpm wrappers ({n})");
+                written.Add($"dsh/pnpm/xdg-user-dir wrappers ({n})");
             }
         });
         return new GuestAssetReport(written, failures);

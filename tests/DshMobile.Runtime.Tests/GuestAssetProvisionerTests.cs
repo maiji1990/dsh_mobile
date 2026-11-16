@@ -73,6 +73,7 @@ public sealed partial class GuestAssetProvisionerTests : IDisposable
         Assert.NotEmpty(Directory.EnumerateFileSystemEntries(corepack).Where(p => !p.EndsWith(GuestToolchain.ReadyMarker, StringComparison.Ordinal)));
         Assert.True(File.Exists(Path.Combine(GuestToolchain.ShimBinDir(layout), "dsh")));
         Assert.True(File.Exists(Path.Combine(GuestToolchain.ShimBinDir(layout), "pnpm")));
+        Assert.True(File.Exists(Path.Combine(GuestToolchain.ShimBinDir(layout), "xdg-user-dir")));
         Assert.Empty(Directory.GetDirectories(layout.GuestCacheDir, "corepack-stage-*"));
 
         var again = await GuestAssetProvisioner.EnsureAsync(layout, Assets(), CancellationToken.None);

@@ -73,12 +73,33 @@ public static class GuestToolchain
         exec /usr/local/bin/corepack pnpm "$@"
         """;
 
+    /// <summary>
+    /// vNext PR-07 (<c>Guest/Assets/xdg-user-dir</c>): Debian minbase has no <c>xdg-user-dirs</c>, and DSH's first-use workspace
+    /// (<c>@deepseek-ai/dsh-api-workspace-controller</c> <c>defaultWorkspaceDirectory</c>) runs <c>xdg-user-dir DOCUMENTS</c>
+    /// on Linux and fails with "system Documents directory is unavailable" without it. Same contract as the real tool:
+    /// honour <c>user-dirs.dirs</c>, else Documents = <c>/root/projects</c> (user-data, so the default workspace lands in
+    /// <c>/root/projects/deepseek-harness/default-workspace</c>), every other name = <c>$HOME</c>. No DSH code is changed.
+    /// </summary>
+    public const string XdgUserDirName = "xdg-user-dir";
+
+    private const string XdgUserDirResource = "DshMobile.Guest.xdg-user-dir";
+
+    /// <summary>The embedded bytes of <c>Guest/Assets/xdg-user-dir</c> (the same file <c>tooling/runtime-smoke.sh</c> stages).</summary>
+    public static byte[] ReadXdgUserDirShim()
+    {
+        using var stream = typeof(GuestToolchain).Assembly.GetManifestResourceStream(XdgUserDirResource)
+            ?? throw new InvalidOperationException($"embedded guest asset missing: {XdgUserDirResource}");
+        using var buffer = new MemoryStream();
+        stream.CopyTo(buffer);
+        return buffer.ToArray();
+    }
+
     /// <summary>Legacy <c>setExecutable(true, false)</c> on an app-private file: owner rw + execute for everyone.</summary>
     internal const UnixFileMode ShimMode = UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute
         | UnixFileMode.GroupExecute | UnixFileMode.OtherExecute;
 
     /// <summary>
-    /// Writes the <c>dsh</c> and <c>pnpm</c> wrappers (legacy rewrites them every process; C# only when the text differs,
+    /// Writes the <c>dsh</c>, <c>pnpm</c> and <c>xdg-user-dir</c> wrappers (legacy rewrites them every process; C# only when the text differs,
     /// and always fixes the mode). Returns how many were written. Throws on an unwritable directory.
     /// </summary>
     public static int WriteShims(RuntimeLayout layout)
@@ -87,10 +108,11 @@ public static class GuestToolchain
         var bin = ShimBinDir(layout);
         Directory.CreateDirectory(bin);
         var written = 0;
-        foreach (var (name, body) in new[] { ("dsh", DshShim), ("pnpm", PnpmShim) })
+        static byte[] Text(string body) => System.Text.Encoding.UTF8.GetBytes(body.ReplaceLineEndings("\n") + "\n");
+        foreach (var (name, bytes) in new[] { ("dsh", Text(DshShim)), ("pnpm", Text(PnpmShim)), (XdgUserDirName, ReadXdgUserDirShim()) })
         {
             var path = Path.Combine(bin, name);
-            if (GuestAssetProvisioner.WriteIfDifferent(path, System.Text.Encoding.UTF8.GetBytes(body.ReplaceLineEndings("\n") + "\n")))
+            if (GuestAssetProvisioner.WriteIfDifferent(path, bytes))
             {
                 written++;
             }
