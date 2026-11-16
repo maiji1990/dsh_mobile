@@ -42,8 +42,8 @@ DSH 原样运行在 App 私有目录里的 Debian 沙箱（PRoot）中；App 负
 2. 首页点「导入运行环境包」，选择 `dshmobile-runtime-debian-arm64-*.zip`。导入会逐层校验 SHA-256，并安装 App 内置的 DSH。
 3. 点「启动 DSH」，就绪后点「打开 DSH」。
 
-运行环境包由本仓库的 `runtime-bundle/build-runtime.sh` 构建（[ADR-0020](docs/ADR/0020-self-built-runtime-layers.md)），**尚未发布 GitHub Release**；
-在那之前，`runtime-bundle/fetch-runtime.ps1` 下载的 DSHBox `v1.5.1` 旧包 `dshapp-runtime-debian-arm64-0.1.0.zip` 同样可以导入。
+运行环境包由本仓库的 `runtime-bundle/build-runtime.sh` 构建（[ADR-0020](docs/ADR/0020-self-built-runtime-layers.md)），已经通过本仓库独立 GitHub Releases 发布；
+`runtime-bundle/fetch-runtime.ps1` 从本仓库的锁定制品下载最新**已审核并发布**的 Runtime 和 DSH 包。旧 DSHBox 离线包仍可作为兼容性测试输入，但不再作为默认下载源。参见 [自动升级与发布流程](docs/RELEASE_AUTOMATION.md)。
 
 ## 从源码构建
 
