@@ -177,7 +177,7 @@ public sealed class RuntimeActivity : DshActivity
         });
     }
 
-    private int KindIcon(string kind) => kind switch
+    private static int KindIcon(string kind) => kind switch
     {
         "runtime" => Resource.Drawable.ic_storage,
         "node" => Resource.Drawable.ic_code,
