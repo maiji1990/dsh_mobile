@@ -129,7 +129,7 @@ async function dsh(check) {
 }
 
 async function assets(check) {
-  let lockText = "# Pinned assets from this repository's immutable versioned Releases. Never use floating latest.\\n# Format: file SHA256 url\\n";
+  let lockText = "# Pinned assets from this repository's immutable versioned Releases. Never use floating latest.\n# Format: file SHA256 url\n";
   const t=lock(), parts=[
     {kind:'dsh',version:locked(t,'DSH_VERSION'),file:locked(t,'DSH_VERSION')+'.tar.zst'},
     {kind:'runtime',version:locked(t,'BUNDLE_VERSION'),file:locked(t,'BUNDLE_NAME')+'-'+locked(t,'BUNDLE_VERSION')+'.zip'}
