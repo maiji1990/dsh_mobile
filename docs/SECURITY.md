@@ -29,6 +29,10 @@
 | 工作区文件：`.dsh/`（DSH_HOME，含 `.credentials.yaml`）只列出，不可预览 / 导出 / 写入（真机验证） | 同上 |
 | 工作区导入：不覆盖已有文件；先写临时文件再改名，失败不留半成品；文件名净化为单一路径分量 | 同上 |
 | 文件进出只经系统文件选择器（SAF）按次授权，无存储权限 | `src/DshMobile.Android/Files/` |
+| 文件工作台（vNext PR-09，[ADR-0026](ADR/0026-file-providers-trash-conflicts-archives.md)）：`.dsh` 双向不可触（不读 / 改 / 删 / 改名，也不能被写入 / 移入 / 复制入 / 解压入）；链接只改链接本身、复制时跳过、递归删除不下行；能力按条目真实权限给出，越权为 `NOT_SUPPORTED` | `src/DshMobile.Core/Files/WorkspaceProvider.cs` |
+| 编辑保存带打开时版本（长度 + mtime + SHA-256），不符即 `CONFLICT`，不静默覆盖；原子替换并保留 Unix 权限位；非 UTF-8 只读不重编码 | `WorkspaceProvider.WriteAsync`、`TextDocument` |
+| 删除进工作区外的回收站（DSH 不可见）并可撤销；无回收站时明示永久删除 | `WorkspaceProvider.Delete / Restore` |
+| 压缩包不可信：staging 解包、全部通过才就位；条目名规范化 + 逐段校验；不创建链接 / 设备；重名中止；条目数与实际写入字节上限 | `WorkspaceProvider.Archive.cs` |
 | 终端：PTY 字节经 WebMessagePort 送入本地 xterm.js 页，页面资源拦截只放行 `/terminal/**`、CSP 禁网络；不进入日志 | `TerminalFragment`、`TerminalSessions` |
 | 终端：停止运行时（含「无运行」时）先关闭全部 C# 终端会话，避免 guest 进程脱离生命周期 | `RuntimeCoordinator.StopAsync` |
 | 终端：Ctrl 键栏为一次性锁存 | `TerminalKeys` |

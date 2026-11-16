@@ -31,6 +31,22 @@ public static class WorkspaceErrors
     public const string TooLarge = "TOO_LARGE";
     public const string Exists = "EXISTS";
     public const string InvalidName = "INVALID_NAME";
+
+    // vNext PR-09 (file providers)
+    /// <summary>The file changed since the editor read it; nothing was written.</summary>
+    public const string Conflict = "CONFLICT";
+    /// <summary>The provider (or this entry) does not offer the operation.</summary>
+    public const string NotSupported = "NOT_SUPPORTED";
+    /// <summary>A directory copied / moved into itself or its own subtree.</summary>
+    public const string IntoItself = "INTO_ITSELF";
+    /// <summary>An archive entry escapes the target, is a link / device, or the archive breaks a limit.</summary>
+    public const string ArchiveUnsafe = "ARCHIVE_UNSAFE";
+    public const string ArchiveTooLarge = "ARCHIVE_TOO_LARGE";
+    public const string ArchiveUnsupported = "ARCHIVE_UNSUPPORTED";
+    /// <summary>A trashed batch that no longer exists (purged, or already restored).</summary>
+    public const string TrashGone = "TRASH_GONE";
+    /// <summary>The filesystem refused (permissions, disk full, …); the message carries the OS error.</summary>
+    public const string IoError = "IO_ERROR";
 }
 
 public sealed class WorkspaceException(string code, string message) : Exception(message)
@@ -211,7 +227,7 @@ public sealed class WorkspaceFileSystem
         }
     }
 
-    private static bool IsLink(string path)
+    internal static bool IsLink(string path)
     {
         try
         {

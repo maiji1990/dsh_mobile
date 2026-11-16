@@ -104,6 +104,8 @@
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.14" />
     <!-- Material 3 for C#-written screens (AGENTS.md rule 12); brings AndroidX AppCompat. Published 2026-07-29. -->
     <PackageReference Include="Xamarin.Google.Android.Material" Version="1.14.0.6" />
+    <!-- vNext PR-09 Files list. Already a dependency of Material 1.14.0.6 at exactly this version; referenced so the use is explicit. -->
+    <PackageReference Include="Xamarin.AndroidX.RecyclerView" Version="1.4.0.6" />
     <!-- Satisfies the Shizuku AARs' androidx.annotation dependency (XA4242); the version Material already resolves. -->
     <PackageReference Include="Xamarin.AndroidX.Annotation" Version="1.11.0" />
   </ItemGroup>

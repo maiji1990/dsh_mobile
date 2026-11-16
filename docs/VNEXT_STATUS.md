@@ -247,3 +247,17 @@ sdk 暴露驱动缺陷：失败的轮次 `session/wait` 仍回 `{}`，错误只�
 | 5. vim / nano / htop / tmux / ssh、中文输入、UTF-8 断包、鼠标 / 光标模式、100 MB 压力 | UTF-8 断包：单测（真实 xterm.js）；100 MiB：`tooling/terminal-stress.mjs` 本机 Node ascii 41.9 / utf8 36.4 / ansi 23.8 MiB/s、末行完整（**不是 WebView**）；其余为真机项（TEST_PLAN「vNext PR-08」） |
 
 验收：Android 界面只经 CI 编译；**无截图级真机验收**（规则 12）、无真机性能数据。
+
+## 12. PR-09 状态（文件工作台 V2，[ADR-0026](ADR/0026-file-providers-trash-conflicts-archives.md)）
+
+| 方案要求 | 实现 / 证据 |
+|---|---|
+| 1. `IFileProvider`：Workspace / SAF / SFTP；list / read / write / create / delete / rename / copy / move / metadata / capabilities，按真实权限暴露 | `IFileProvider` + `FileCapabilities` + `CapabilitiesOf(entry)`；`WorkspaceProvider` 全部实现。**SAF Provider 未做**（下一段：按 `DocumentsContract` 标志给能力）；SFTP 属 PR-11 |
+| 2. RecyclerView + DiffUtil、面包屑、搜索、排序、筛选、长按多选、批量复制 / 移动 / 删除、历史 / 收藏；大量文件不卡死 | 已做（> 5000 项整表刷新）；30,000 个文件的列出 + 排序 + 筛选 + 搜索单测；**历史 / 收藏未做** |
+| 3. Markdown / JSON / YAML / 代码文本预览 / 编辑：编码与大小限额，记录原哈希 / mtime，外部变更提示冲突 | `TextDocument`（UTF-8 / BOM / UTF-16 逐字节往返、非 UTF-8 只读、二进制不打开、1 MiB）；`FileVersion` 冲突检测 + 三选项冲突框；JSON 校验提示。**Markdown 渲染预览、语法高亮未做**（纯文本编辑） |
+| 4. zip / tar 压缩解压：目录逃逸与符号链接安全，先在 staging 解包 | 已做（zip / tar / tar.gz 解压，zip 压缩）；zip slip 六种写法、链接 / 硬链接 / FIFO、重名、文件目录冲突、条目数 / 字节上限、损坏包均有单测；变异检查 |
+| 5. `.dsh` 与凭据保护；SAF / SFTP 权限分别校验 | `.dsh` 双向不可触（含不能被改名移走——测试曾抓到此缺陷并修复）；SAF / SFTP 随各自 Provider |
+| 6. 「用 DSH 打开此工作区」、Git 识别、Diff 预览 | 未做（方案标注「后续」） |
+
+验收（方案）：`WorkspaceFileSystemTests` 旧向量全部通过（是）；新增 symlink、`../`、大小写、空文件、中文名、数万文件（是，单测）、断开 SAF、SFTP 失败（随 Provider，未做）；
+**真机闭环未做**（TEST_PLAN「vNext PR-09」），Android 界面只经 CI 编译。
