@@ -4,7 +4,7 @@
 // CI runs with one component per PR; publishing always consumes exact locks.
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
-import { readFileSync, writeFileSync } from 'node:fs';
+import { readFileSync, writeFileSync, appendFileSync } from 'node:fs';
 import { resolve, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -60,7 +60,7 @@ async function get(url) {
 function lock() {return readFileSync(lockPath,'utf8');}
 function locked(t,k) {const m=new RegExp('^'+k+'=(.*)$','m').exec(t);if(!m)throw Error('missing '+k);return m[1];}
 function put(path,content,check) {if(!check) writeFileSync(path,content);}
-function summary(s) {process.stdout.write(s+'\n');if(process.env.GITHUB_STEP_SUMMARY){import('node:fs').then(({appendFileSync})=>appendFileSync(process.env.GITHUB_STEP_SUMMARY,s+'\n'));}}
+function summary(s) {process.stdout.write(s+'\n');if(process.env.GITHUB_STEP_SUMMARY)appendFileSync(process.env.GITHUB_STEP_SUMMARY,s+'\n');}
 function command(cmd,args,opts={}) {return execFileSync(cmd,args,{encoding:'utf8',stdio:['ignore','pipe','inherit'],...opts}).trim();}
 function appendUpstream(record,check){
   const path=p('docs','UPSTREAMS.md');
@@ -129,7 +129,7 @@ async function dsh(check) {
 }
 
 async function assets(check) {
-  let lockText='# Pinned assets from this repository\\'s immutable versioned Releases. Never use floating latest.\\n# Format: file SHA256 url\\n';
+  let lockText = "# Pinned assets from this repository's immutable versioned Releases. Never use floating latest.\\n# Format: file SHA256 url\\n";
   const t=lock(), parts=[
     {kind:'dsh',version:locked(t,'DSH_VERSION'),file:locked(t,'DSH_VERSION')+'.tar.zst'},
     {kind:'runtime',version:locked(t,'BUNDLE_VERSION'),file:locked(t,'BUNDLE_NAME')+'-'+locked(t,'BUNDLE_VERSION')+'.zip'}
