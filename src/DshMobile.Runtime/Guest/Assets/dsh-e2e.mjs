@@ -22,7 +22,7 @@
 import { spawn } from "node:child_process";
 import { randomBytes, randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { isAbsolute, join } from "node:path";
 import { pathToFileURL } from "node:url";
 
 const DSH_BIN = process.env.DSHE2E_DSH_BIN || "/opt/dshapp/runtime/node_modules/@deepseek-ai/dsh/lib/bin.js";
@@ -64,7 +64,7 @@ export function parseArgs(argv) {
       if (!Number.isSafeInteger(opts.turnTimeoutMs) || opts.turnTimeoutMs <= 0) throw new Error("--turn-timeout-ms must be a positive integer");
     } else throw new Error(`unknown argument ${a}`);
   }
-  if (opts.workspace !== undefined && !opts.workspace.startsWith("/")) throw new Error("--workspace must be absolute");
+  if (opts.workspace !== undefined && !isAbsolute(opts.workspace)) throw new Error("--workspace must be absolute");
   return opts;
 }
 
