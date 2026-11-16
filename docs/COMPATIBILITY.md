@@ -8,12 +8,12 @@
 - ABI：`android-arm64` 主目标；`android-x64` 仅用于模拟器开发冒烟，不保证运行层可用。
 - 主测试目标：Android 14 / 16 / 17 真机。
 
-## 工具链锁定（2026-11-09）
+## 工具链锁定（2026-11-09；.NET 2026-11-16 升级到 GA，vNext PR-01）
 
 | 组件 | 版本 | 来源 |
 |---|---|---|
-| .NET SDK | `11.0.100-rc.2.26504.105` | `global.json`（`rollForward: disable`） |
-| .NET workload set | `11.0.100-rc.2.26513.2`（android `37.2.0-rc.2.84`） | `global.json` `workloadVersion` |
+| .NET SDK | `11.0.100`（GA，2026-11-10）；此前 `11.0.100-rc.2.26504.105` | `global.json`（`rollForward: disable`，`allowPrerelease: false`） |
+| .NET workload set | `11.0.100.1`（android `37.2.31`）；此前 `11.0.100-rc.2.26513.2`（android `37.2.0-rc.2.84`） | `global.json` `workloadVersion`；取自 nuget.org `Microsoft.NET.Workloads.11.0.100` 11.100.1（README：「workloads version 11.0.100.1」，2026-11-10 18:18 UTC 发布，为该 band 最新；11.100.0 = `11.0.100`、android 37.2.29） |
 | JDK | Temurin 21.0.12 | 本机 `JAVA_HOME` |
 | ~~Gradle / AGP / Kotlin~~ | ~~9.5.0 / 9.3.1 / 2.4.20~~ | **已删除（ADR-0018）**：不再有 Gradle 构建 |
 | Android compileSdk | .NET App 使用 workload 默认 API 37（targetSdk 37 = Android 17）；~~native-bridge / DSHBox 模块 36~~ 已删除 | |
@@ -24,6 +24,8 @@
 > 方案文档基线写的是 .NET 11 **RC3**（2026-10-25）；本机当前仅安装 **RC2**。按方案“GA 后做独立升级 PR”的要求，升级到 RC3 / GA 时修改 `global.json` 并重新跑基线，单独提交。
 >
 > **2026-11-16（vNext PR-00）**：.NET 11 GA（SDK `11.0.100`）已于 2026-11-10 发布，`global.json` 仍为 RC2；升级是 vNext PR-01（单独分支），workload 版本以 GA SDK 实际 `dotnet workload --version` 为准，不预填。
+>
+> **2026-11-16（vNext PR-01a）**：`global.json` → SDK `11.0.100` + workload set `11.0.100.1`。workload 版本取自已发布的 workload set 包本身（见上表），由 CI 的 `dotnet workload install android` 实际安装验证；真机 Release 验收见 [VNEXT_STATUS.md](VNEXT_STATUS.md) §3（待做）。
 
 ## 真机矩阵
 

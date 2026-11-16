@@ -97,14 +97,14 @@ corepack 缓存，见 `src/DshMobile.Android/Assets/README.md`）。Shizuku 客�
 | 3 | `RunStartAsync` 先起前台服务，沙箱失败不清理；`RunStopAsync` 失败仍停服务；且旧 `sandbox.start` 在沙箱 `ERROR` 时仍回 `ok=true` | `RuntimeCoordinator`：以返回的沙箱状态判定；失败 → 尽力 `sandbox.stop` → 成功才释放服务；停止失败保留服务并置 `Failed`；DSH 失败保留沙箱 | 协调器单测 14 例；真机：启动 / 重复启动 / 停止无孤儿 / 强杀后 journal 恢复 `RUNTIME_INTERRUPTED` 通过；失败清理分支仅单测（无法安全注入） |
 | 4 | WebUI 下载 `DOWNLOAD_UNSUPPORTED` | 未处理（WebView 切片） | — |
 | 5 | CI 无可运行 APK 的真机门禁 | 未处理（需设备农场 / 自托管 runner） | — |
-| 6 | SDK 固定 `11.0.100-rc.2` | 不在本 PR 改（独立 PR） | — |
+| 6 | SDK 固定 `11.0.100-rc.2` | vNext PR-01a（2026-11-16）：`global.json` → GA SDK `11.0.100` + workload set `11.0.100.1` | CI（见 [VNEXT_STATUS.md](VNEXT_STATUS.md) §5）；真机 Release 验收待做 |
 
 ## 5. 证据与采集方法
 
 - PR-10 之前：新旧实现双跑 `dotnet test tests/DshMobile.Runtime.Tests`（C#）+ `native/gradlew :native-bridge:testDebugUnitTest`（旧 Kotlin/DSHBox）。PR-10 起旧侧已删除：`tests/TestVectors` 的期望值即当时新旧双绿的结果，向上游源码的扫描改为钉住当时扫到的值（`UpstreamPinnedValuesTests` 及各测试中的字面量 / SHA-256，注明来源 commit）。
 - 真机影子报告（每次导入一行 JSON；Release 构建不可 `run-as`，此时以 `adb logcat -s DshMobile:I` 中的 `shadow …` 行为准）：
   ```bash
-  adb shell run-as org.example.dshmobile cat files/dshmobile-runtime/shadow-reports.jsonl
+  adb shell run-as io.github.maiji1990.dshmobile cat files/dshmobile-runtime/shadow-reports.jsonl   # ADR-0023 之前的构建：org.example.dshmobile
   ```
   `verdict` 必须为 `Agree`；`Diverge` 为迁移阻断，`Inconclusive` 需说明（如 `SANDBOX_RUNNING`）。拉取的报告存 `migration/parity/`。PR-10 起只剩导入的装后树核对（`runtime.layer-install`）写这一文件。
 - 运行时状态 journal：`files/dshmobile-runtime/runtime-journal.jsonl`。
