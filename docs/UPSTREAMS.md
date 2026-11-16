@@ -6,7 +6,7 @@
 
 | 上游 | 引入方式 | 固定版本 | Commit SHA | 许可证 | 用途 |
 |---|---|---|---|---|---|
-| [WSK-build/DSHBox](https://github.com/WSK-build/DSHBox) | PR-10（ADR-0018）起**不再引入源码**（子模块已删除）；仍使用：C# 移植的来源（下表）、Release 运行层（`runtime-bundle/runtime-assets.lock`）、原样复制的 guest 资产（`src/DshMobile.Android/Assets/README.md`、`native/link-shim/`） | `v1.5.1` | `7c9d33c1f29dd2c42dde6c7e2fcdf38814f491c4` | GPL-3.0（品牌资产保留，见其 `TRADEMARK.md`）；子模块各自许可见其 `licenses/` | 移植来源、运行层与 guest 资产 |
+| [WSK-build/DSHBox](https://github.com/WSK-build/DSHBox) | PR-10（ADR-0018）起**不再引入源码**（子模块已删除）；仍使用：C# 移植的来源（下表）、历史 DSHBox Release（新 Runtime/DSH 下载源已改为本仓库独立 Release）、原样复制的 guest 资产（`src/DshMobile.Android/Assets/README.md`、`native/link-shim/`） | `v1.5.1` | `7c9d33c1f29dd2c42dde6c7e2fcdf38814f491c4` | GPL-3.0（品牌资产保留，见其 `TRADEMARK.md`）；子模块各自许可见其 `licenses/` | 移植来源、运行层与 guest 资产 |
 | [deepseek-ai/deepseek-harness](https://github.com/deepseek-ai/deepseek-harness) | 运行时层（npm 包，TASK-004/005 引入） | 待定（最新 tag 观察到 `dsh-v0.2.2-rc.1`，尚无稳定 tag） | — | 见上游 | 原样运行的 DSH / Cordis |
 | [maiji1990/ui_mcp](https://github.com/maiji1990/ui_mcp) | 契约参考（TASK-010；不引入代码，guest 门面按其契约另行实现） | `main` @ `e098f91c7d34f27372ced17bea033861b63b681e`（工具名、错误码、ref 语义、`docs/p2-phone-facade-design.md`） | `e098f91c7d34f27372ced17bea033861b63b681e` | 见上游 | `ui_*` 统一契约 |
 | [termux/proot](https://github.com/termux/proot) | 源码归档，`native/proot/sources.lock` 钉 SHA-256，`native/proot/build.ps1` / `build.sh` 用 NDK 27.0.12077973 构建（ADR-0014） | `v5.1.107.90`（= DSHBox 所带 `libproot.so`；termux-packages proot 配方 commit `96385864cc0f32f3ce1c0c8eeeb97e5c13601762`，无补丁） | `894e5789cd982e53d644bb3a13332f1d35e907ac` | GPL-2.0-or-later（未修改源码） | `libproot.so` / `libproot-loader.so`（APK 中的唯一来源，ADR-0018） |
@@ -151,3 +151,8 @@ npm 包只取发布 tarball 中的必要文件（addon 版本与 xterm 6.0.0 同
 | 2026-11-09 | DSHBox | — | `v1.5.1` (`7c9d33c`) | 初次引入；仅使用 `common` 模块 |
 | 2026-11-09 | DSHBox | `v1.5.1` | `v1.5.1` | 新增使用 `sandbox-manager`、预编译 `.so` 与 v1.5.1 Release 运行层；Maven 运行时依赖审计清单见 `artifacts/native/jars/MANIFEST.txt`（Kotlin/AndroidX 由 NuGet 提供） |
 | 2026-11-15 | DSHBox | `v1.5.1`（子模块） | `v1.5.1`（仅 Release 运行层 + 原样资产） | PR-10 / ADR-0018：删除子模块、Gradle 构建、Bridge AAR 与浏览器栈；guest 资产改由 App 打包；源码契约扫描改为钉值 |
+
+## 2026-11-16：本仓库自主发行与上游跟踪
+
+- 当前 `runtime-assets.lock` 精确指向 `maiji1990/dsh_mobile` 版本化 Release：Runtime `0.2.0`（SHA-256 `204d8489…3daba`）、DSH `0.2.1-rc.5`（SHA-256 `b8d45456…37352`）。此前 DSHBox 版本仅用于兼容性历史记录。
+- 新增 `upstream-update-proposals.yml` 按官方 nodejs.org SHA256 与 deepseek-harness tag + npm 包版本提出独立 PR；Node 26 是升级目标，而非已验证的当前运行版本。升级时追加此登记记录并审核后再合并。见 `docs/RELEASE_AUTOMATION.md`。
