@@ -134,6 +134,7 @@ async function assets(check) {
     {kind:'dsh',version:locked(t,'DSH_VERSION'),file:locked(t,'DSH_VERSION')+'.tar.zst'},
     {kind:'runtime',version:locked(t,'BUNDLE_VERSION'),file:locked(t,'BUNDLE_NAME')+'-'+locked(t,'BUNDLE_VERSION')+'.zip'}
   ];
+  let provenance;
   for(const part of parts){
     const tag=part.kind+'-'+part.version;
     const release=await (await get('https://api.github.com/repos/maiji1990/dsh_mobile/releases/tags/'+tag)).json();
@@ -141,12 +142,38 @@ async function assets(check) {
     if(!a?.digest?.startsWith('sha256:') || !/^[0-9a-f]{64}$/.test(a.digest.slice(7)))
       throw Error('Release '+tag+' is absent or lacks a SHA256 digest for '+part.file);
     lockText+=part.file+' '+a.digest.slice(7)+' '+a.browser_download_url+'\n';
+    if(part.kind==='dsh'){
+      const prov=release.assets?.find(x=>x.name==='provenance.json');
+      if(!prov?.browser_download_url)throw Error('missing DSH source provenance for '+tag);
+      provenance=await (await get(prov.browser_download_url)).json();
+      if(provenance.version!==part.version || !/^[0-9a-f]{40,64}$/.test(provenance.sourceCommit??''))
+        throw Error('invalid DSH provenance for '+tag);
+    }
   }
   const current=readFileSync(p('runtime-bundle','runtime-assets.lock'),'utf8');
-  if(current===lockText){summary('Assets: already synchronized with versioned Releases');return;}
-  put(p('runtime-bundle','runtime-assets.lock'),lockText,check);
-  summary('Assets: synchronized pinned release digests for '+parts.map(x=>x.kind+'-'+x.version).join(', '));
+  if(current!==lockText)put(p('runtime-bundle','runtime-assets.lock'),lockText,check);
+  const appProps=readFileSync(p('src','DshMobile.Android','PackageIdentity.props'),'utf8');
+  const appVersion=/<ApplicationDisplayVersion>([^<]+)<\/ApplicationDisplayVersion>/.exec(appProps)?.[1];
+  if(!/^\d+\.\d+\.\d+$/.test(appVersion??''))throw Error('app version cannot be read from PackageIdentity.props');
+  const spec={
+    repository:'maiji1990/dsh_mobile',
+    artifacts:[
+      {kind:'runtime',version:parts[1].version,abi:'arm64',file:parts[1].file,
+        releaseTag:'runtime-'+parts[1].version,minAppVersion:appVersion},
+      {kind:'dsh',version:parts[0].version,abi:'arm64',file:parts[0].file,
+        releaseTag:'dsh-'+parts[0].version,requiresNode:locked(t,'NODE_VERSION').split('.')[0]+'.x',
+        sourceRepo:provenance.sourceRepo,sourceTag:provenance.sourceTag,sourceCommit:provenance.sourceCommit}
+    ]
+  };
+  if(spec.artifacts[1].sourceRepo!=='deepseek-ai/deepseek-harness' ||
+     spec.artifacts[1].sourceTag!=='dsh-v'+parts[0].version)
+    throw Error('unexpected provenance source');
+  const previewPath=p('release','preview.json'), next=JSON.stringify(spec,null,2)+'\n';
+  let oldSpec='';try{oldSpec=readFileSync(previewPath,'utf8')}catch(e){if(e.code!=='ENOENT')throw e;}
+  if(next!==oldSpec)put(previewPath,next,check);
+  summary('Assets: reconciled release digests and reviewed preview spec for '+parts.map(x=>x.kind+'-'+x.version).join(', '));
 }
+
 const args=process.argv.slice(2);
 if(args.includes('--component')){
   const component=args[args.indexOf('--component')+1], check=args.includes('--check');
