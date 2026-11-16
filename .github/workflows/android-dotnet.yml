@@ -73,6 +73,16 @@ jobs:
       - name: Build app
         run: dotnet build src/DshMobile.Android -c Release
 
+      # CI preview only: this is not an independently signed stable release.
+      # Runtime/DSH are separately versioned and downloaded from their Releases.
+      - name: Upload APK build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: dshmobile-apk-preview
+          path: src/DshMobile.Android/bin/Release/**/*.apk
+          if-no-files-found: error
+          retention-days: 30
+
       - uses: actions/upload-artifact@v4
         with:
           name: native-libs
