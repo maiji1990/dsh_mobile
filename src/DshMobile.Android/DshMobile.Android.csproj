@@ -1,14 +1,12 @@
 <Project Sdk="Microsoft.NET.Sdk">
+  <!-- ApplicationId / ApplicationDisplayVersion / derived versionCode (ADR-0023). -->
+  <Import Project="PackageIdentity.props" />
   <PropertyGroup>
     <TargetFramework>net11.0-android</TargetFramework>
     <!-- Matches DSHBox / Interlock Relay minSdk 29 (plan section 0). -->
     <SupportedOSPlatformVersion>29</SupportedOSPlatformVersion>
     <OutputType>Exe</OutputType>
     <RootNamespace>DshMobile.App</RootNamespace>
-    <!-- Placeholder id (plan 13.1): replace with the real owner's reverse-domain id before any release. -->
-    <ApplicationId>org.example.dshmobile</ApplicationId>
-    <ApplicationVersion>1</ApplicationVersion>
-    <ApplicationDisplayVersion>0.1.0</ApplicationDisplayVersion>
     <RuntimeIdentifiers>android-arm64;android-x64</RuntimeIdentifiers>
     <AndroidPackageFormats>apk</AndroidPackageFormats>
     <!-- .NET 11 Android defaults to CoreCLR. Do not set UseMonoRuntime / RunAOTCompilation (ADR-0001). -->

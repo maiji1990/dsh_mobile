@@ -104,7 +104,7 @@ corepack 缓存，见 `src/DshMobile.Android/Assets/README.md`）。Shizuku 客�
 - PR-10 之前：新旧实现双跑 `dotnet test tests/DshMobile.Runtime.Tests`（C#）+ `native/gradlew :native-bridge:testDebugUnitTest`（旧 Kotlin/DSHBox）。PR-10 起旧侧已删除：`tests/TestVectors` 的期望值即当时新旧双绿的结果，向上游源码的扫描改为钉住当时扫到的值（`UpstreamPinnedValuesTests` 及各测试中的字面量 / SHA-256，注明来源 commit）。
 - 真机影子报告（每次导入一行 JSON；Release 构建不可 `run-as`，此时以 `adb logcat -s DshMobile:I` 中的 `shadow …` 行为准）：
   ```bash
-  adb shell run-as org.example.dshmobile cat files/dshmobile-runtime/shadow-reports.jsonl
+  adb shell run-as io.github.maiji1990.dshmobile cat files/dshmobile-runtime/shadow-reports.jsonl   # ADR-0023 之前的构建：org.example.dshmobile
   ```
   `verdict` 必须为 `Agree`；`Diverge` 为迁移阻断，`Inconclusive` 需说明（如 `SANDBOX_RUNNING`）。拉取的报告存 `migration/parity/`。PR-10 起只剩导入的装后树核对（`runtime.layer-install`）写这一文件。
 - 运行时状态 journal：`files/dshmobile-runtime/runtime-journal.jsonl`。
