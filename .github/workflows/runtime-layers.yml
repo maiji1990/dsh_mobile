@@ -204,13 +204,19 @@ jobs:
             echo; echo "Device acceptance is still required (AGENTS.md rule 9)."
           } > verification.md
           cat verification.md >> "$GITHUB_STEP_SUMMARY"
+          # Keep the uploaded artifact rooted at the repository workspace.
+          # Mixing this file with a runner.temp absolute path makes upload-artifact
+          # choose /home/runner/work as the common root, so publish cannot find
+          # $RUNNER_TEMP/a/verification/verification.md.
+          if [ -f "$RUNNER_TEMP/smoke.json" ]; then cp "$RUNNER_TEMP/smoke.json" smoke.json; fi
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: verification
           path: |
             verification.md
-            ${{ runner.temp }}/smoke.json
+            smoke.json
+          if-no-files-found: error
 
   publish:
     needs: verify
@@ -237,6 +243,11 @@ jobs:
         run: |
           set -euo pipefail
           a="$RUNNER_TEMP/a"
+          test -s "$a/verification/verification.md" || {
+            echo "::error::verification report missing from the verification artifact; cannot publish unverified builds"
+            find "$a/verification" -maxdepth 6 -type f -print || true
+            exit 1
+          }
           lock() { grep "^$1=" runtime-bundle/runtime-build.lock | cut -d= -f2; }
           release() {
             local tag="$1" title="$2" primary="$3"; shift 3
