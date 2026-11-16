@@ -393,7 +393,7 @@ public sealed class RelayMailboxParityTests : IDisposable
                     Assert.InRange(budgets[p.Name], p.Value[0].GetInt64(), p.Value[1].GetInt64());
                 }
             }
-            var log = string.Join("\n", Directory.GetFiles(paths.LogsDir).Select(f => File.ReadAllText(f, Encoding.UTF8)));
+            var log = SharedRead.Logs(paths.LogsDir);
             foreach (var line in Strings(s.GetProperty("logContains")))
             {
                 Assert.True(log.Contains(line, StringComparison.Ordinal), $"{name}: log lacks '{line}'");

@@ -195,7 +195,7 @@ public sealed class RelayControlParityTests : IDisposable
             }
             File.Move(temp, Path.Combine(paths.ControlInboxDir, fileName));
         }
-        string Log() => string.Join("\n", Directory.GetFiles(paths.LogsDir).Select(f => File.ReadAllText(f, Encoding.UTF8)));
+        string Log() => SharedRead.Logs(paths.LogsDir); // the server is still appending while the test polls
         async Task Until(Func<bool> condition, string what)
         {
             var sw = Stopwatch.StartNew();
