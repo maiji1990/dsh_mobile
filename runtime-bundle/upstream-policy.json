@@ -5,6 +5,8 @@
     "debianSuite": "trixie"
   },
   "dsh": {
-    "npmDistTag": "next"
+    "sourceRepo": "deepseek-ai/deepseek-harness",
+    "tagPrefix": "dsh-v",
+    "npmPackage": "@deepseek-ai/dsh"
   }
 }
