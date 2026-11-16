@@ -1,0 +1,8 @@
+# Release-manifest public keys this app trusts (ADR-0022). One raw Ed25519 public key per line, base64 (32 bytes),
+# as printed by `node tooling/release-manifest-sign.mjs keygen` / `pubkey`. '#' starts a comment.
+#
+# Embedded into the app (ReleaseTrust.BuiltIn) AND read by .github/workflows/release-publish.yml to verify what it
+# published: one list, so the app and the publisher can never disagree. Adding a key is its own reviewed commit that
+# also records the keyId in ADR-0022. Rotation: add the new key, sign with both, ship, then remove the old one.
+#
+# No key yet: until one is added, every update check reports UPDATE_NO_TRUSTED_KEYS and does not go online.

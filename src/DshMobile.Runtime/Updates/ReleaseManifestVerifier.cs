@@ -30,12 +30,51 @@ public sealed class ReleaseTrust
     }
 
     /// <summary>
-    /// The keys built into this app: <b>none yet</b>. The release signing key is generated and held by the project
-    /// owner (tooling/release-manifest-sign.mjs keygen; private key only in the protected release environment); its
-    /// public half is pinned here in its own reviewed PR. Until then every discovery ends in
-    /// <see cref="UpdateErrorCodes.NoTrustedKeys"/> — never in an unverified offer.
+    /// The keys built into this app, from the embedded <c>Updates/release-trusted-keys.txt</c> (one base64 raw key per
+    /// line, <c>#</c> comments) — the same file <c>release-publish.yml</c> verifies against. <b>Empty today</b>: the
+    /// release signing key is generated and held by the project owner (tooling/release-manifest-sign.mjs keygen; the
+    /// private key only in the protected release environment), and its public half is added in its own reviewed commit.
+    /// Until then every discovery ends in <see cref="UpdateErrorCodes.NoTrustedKeys"/> — never in an unverified offer.
+    /// A malformed file yields an empty trust (fail closed); <c>ReleaseTrustFileTests</c> keeps it well-formed.
     /// </summary>
-    public static ReleaseTrust BuiltIn { get; } = new([]);
+    public static ReleaseTrust BuiltIn { get; } = LoadBuiltIn();
+
+    public const string BuiltInResource = "DshMobile.Updates.release-trusted-keys.txt";
+
+    /// <summary>Parses a trusted-keys file; throws <see cref="FormatException"/> / <see cref="ArgumentException"/> on any bad line.</summary>
+    public static ReleaseTrust Parse(string text)
+    {
+        ArgumentNullException.ThrowIfNull(text);
+        var keys = new List<byte[]>();
+        foreach (var raw in text.Split('\n'))
+        {
+            var line = raw.Trim();
+            if (line.Length == 0 || line.StartsWith('#'))
+            {
+                continue;
+            }
+            keys.Add(Convert.FromBase64String(line));
+        }
+        return new ReleaseTrust(keys);
+    }
+
+    private static ReleaseTrust LoadBuiltIn()
+    {
+        try
+        {
+            using var s = typeof(ReleaseTrust).Assembly.GetManifestResourceStream(BuiltInResource);
+            if (s is null)
+            {
+                return new ReleaseTrust([]);
+            }
+            using var reader = new StreamReader(s, Encoding.UTF8);
+            return Parse(reader.ReadToEnd());
+        }
+        catch (Exception e) when (e is FormatException or ArgumentException or IOException)
+        {
+            return new ReleaseTrust([]);
+        }
+    }
 
     public static ReleaseTrust FromBase64(params string[] keys) => new(keys.Select(Convert.FromBase64String));
 
