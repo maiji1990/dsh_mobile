@@ -1,5 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- App shell (ADR-0021): one tab's fragment above the bottom navigation bar. Insets: MainActivity. -->
+<!-- App shell (ADR-0021): one tab's fragment beside a navigation rail (width >= 600dp, e.g. landscape) or above the
+     bottom navigation bar. MainActivity handles rotation itself (the terminal WebView survives), so both bars live in
+     this one layout and MainActivity shows one of them. Insets: MainActivity. -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:id="@+id/screen_root"
@@ -8,11 +10,30 @@
     android:background="?attr/colorSurface"
     android:orientation="vertical">
 
-    <FrameLayout
-        android:id="@+id/tab_content"
+    <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="0dp"
-        android:layout_weight="1" />
+        android:layout_weight="1"
+        android:orientation="horizontal">
+
+        <com.google.android.material.navigationrail.NavigationRailView
+            android:id="@+id/nav_rail"
+            android:layout_width="wrap_content"
+            android:layout_height="match_parent"
+            android:visibility="gone"
+            app:labelVisibilityMode="labeled"
+            app:menuGravity="center"
+            app:paddingTopSystemWindowInsets="false"
+            app:paddingBottomSystemWindowInsets="false"
+            app:paddingStartSystemWindowInsets="false"
+            app:menu="@menu/bottom_nav" />
+
+        <FrameLayout
+            android:id="@+id/tab_content"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1" />
+    </LinearLayout>
 
     <com.google.android.material.bottomnavigation.BottomNavigationView
         android:id="@+id/bottom_nav"

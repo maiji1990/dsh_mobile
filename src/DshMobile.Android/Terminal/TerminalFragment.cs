@@ -5,6 +5,7 @@ using Android.Content;
 using Android.Views;
 using Android.Views.InputMethods;
 using Android.Webkit;
+using AndroidX.Core.View;
 using DshMobile.App.Bridge;
 using DshMobile.App.Ui;
 using DshMobile.Application.Terminal;
@@ -58,6 +59,9 @@ public sealed class TerminalFragment : Fragment, ITabRoot
 
     // Input: one writer task so a full PTY never blocks the UI thread and keystrokes keep their order.
     private Channel<(string Id, byte[] Data)> _input = null!;
+
+    /// <summary>Landscape with the keyboard up: the title bar and the session tabs are hidden.</summary>
+    private bool _compact;
 
     public override View OnCreateView(LayoutInflater inflater, ViewGroup? container, Bundle? savedInstanceState)
     {
@@ -138,6 +142,21 @@ public sealed class TerminalFragment : Fragment, ITabRoot
         keysScroll.SetBackgroundColor(new Android.Graphics.Color(Rows.Color(body, Resource.Attribute.colorSurfaceContainer)));
         keysScroll.AddView(keys);
         root.AddView(keysScroll);
+
+        // Landscape with the keyboard up leaves the terminal no rows: the title bar and the session tabs give theirs back
+        // until the keyboard closes (the extra-keys bar stays, it carries Ctrl / Esc / arrows).
+        ViewCompat.SetOnApplyWindowInsetsListener(root, new Edges.Listener((_, insets) =>
+        {
+            var compact = Edges.ImeVisible(insets)
+                && Resources.Configuration?.Orientation == Android.Content.Res.Orientation.Landscape;
+            if (compact != _compact)
+            {
+                _compact = compact;
+                toolbar.Visibility = compact ? ViewStates.Gone : ViewStates.Visible;
+                _tabs.Visibility = compact || _tabs.TabCount == 0 ? ViewStates.Gone : ViewStates.Visible;
+            }
+            return insets;
+        }));
 
         _ = Task.Run(WriteInputAsync);
 
@@ -333,7 +352,7 @@ public sealed class TerminalFragment : Fragment, ITabRoot
             _rendering = false;
         }
         var empty = list.Count == 0;
-        _tabs.Visibility = empty ? ViewStates.Gone : ViewStates.Visible;
+        _tabs.Visibility = empty || _compact ? ViewStates.Gone : ViewStates.Visible;
         _overlay.Visibility = empty ? ViewStates.Visible : ViewStates.Gone;
         // Invisible, not Gone: the page keeps its size so xterm.js can measure columns and rows.
         _web.Visibility = empty ? ViewStates.Invisible : ViewStates.Visible;

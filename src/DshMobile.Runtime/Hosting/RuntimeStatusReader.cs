@@ -64,16 +64,17 @@ public static class RuntimeStatusReader
         return new RuntimeSnapshot(facts.RuntimeInstalled ? RuntimeState.Ready : RuntimeState.NotInstalled, HarnessState.Stopped, 0, facts.DshVersion, null, null, at);
     }
 
-    /// <summary>Available bytes on the file system holding <paramref name="path"/> (legacy <c>StatFs.availableBytes</c>); -1 when unknown.</summary>
+    /// <summary>
+    /// Available bytes on the file system holding <paramref name="path"/> (legacy <c>StatFs.availableBytes</c>); -1 when
+    /// unknown. On Unix <see cref="DriveInfo"/> statvfs()es the path itself; picking a mount by path prefix from
+    /// <see cref="DriveInfo.GetDrives"/> read the tmpfs that Android's app-data isolation mounts over <c>/data/user</c>
+    /// (about half of RAM) instead of the data partition (2026-11-16 real device: 7.6 GB shown, 261 GB free).
+    /// </summary>
     public static long FreeBytes(string path)
     {
         try
         {
-            var full = Path.GetFullPath(path);
-            var drive = DriveInfo.GetDrives()
-                .Where(d => full.StartsWith(d.RootDirectory.FullName, StringComparison.Ordinal))
-                .MaxBy(d => d.RootDirectory.FullName.Length);
-            return drive?.AvailableFreeSpace ?? -1;
+            return new DriveInfo(Path.GetFullPath(path)).AvailableFreeSpace;
         }
 #pragma warning disable CA1031 // free space is informational; any failure reads as "unknown"
         catch (Exception)

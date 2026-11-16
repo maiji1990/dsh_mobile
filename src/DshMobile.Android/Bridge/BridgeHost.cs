@@ -135,7 +135,16 @@ public sealed class BridgeHost : IDisposable, IDiagnosticsLog
     public Task RunPrepareAsync() => RunExclusive("runtime.prepare", async () =>
     {
         var r = await Runtime.PrepareAsync(CancellationToken.None).ConfigureAwait(false);
-        Report(r.Ok, r.Code, r.Message);
+        // The legacy prepare is ok even when the DSH layer was not installed (kept, failed, no layers); the UI says which.
+        var o = r.Ok ? PrepareOutcome.Parse(r.Message) : null;
+        if (o is { Failed: true })
+        {
+            Report(false, o.Code ?? RuntimeErrorCodes.Upstream, o.Detail);
+        }
+        else
+        {
+            Report(r.Ok, r.Code, r.Message);
+        }
         if (!r.Ok)
         {
             Append($"prepare FAILED {r.Code}: {r.Message}"); // the coordinator already logged the steps on success

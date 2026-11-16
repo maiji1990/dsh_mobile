@@ -399,13 +399,25 @@ public sealed class AutomationActivity : DshActivity
         {
             return;
         }
-        _relay.SetSubtitle($"{s.Phase}{(s.ChannelRunning ? " · 信箱运行中" : "")}{(s.DegradedReason is { } r ? " · " + r : "")}");
+        _relay.SetSubtitle(RelayLine(s.Phase, s.ChannelRunning, s.DegradedReason));
         _a11y.SetSubtitle(Rows.AfterLabel(A11yLine(s.AccessibilityGap)));
         _shizuku.SetSubtitle(Rows.AfterLabel(ShizukuLine(ShizukuClient.Probe())));
         _tools.SetSubtitle(Rows.AfterLabel(CsToolsLine(registered)));
         _details.SetSubtitle(string.Join('\n', $"允许的能力：{string.Join(", ", s.Allowed)}", $"guest CLI：{s.GuestEntry}"));
         _details.View.Visibility = ViewStates.Visible;
     }
+
+    /// <summary>The relay row: the phase in words, the mailbox, and a degraded reason as reported.</summary>
+    private string RelayLine(RelayRuntimePhase phase, bool channelRunning, string? degradedReason) =>
+        GetString(phase switch
+        {
+            RelayRuntimePhase.Starting => Resource.String.automation_relay_starting,
+            RelayRuntimePhase.Running => Resource.String.automation_relay_running,
+            RelayRuntimePhase.Degraded => Resource.String.automation_relay_degraded,
+            _ => Resource.String.automation_relay_off,
+        })
+        + (channelRunning ? " · " + GetString(Resource.String.automation_relay_mailbox) : "")
+        + (degradedReason is { } r ? " · " + r : "");
 
     private void ShowCsRelay()
     {
@@ -416,7 +428,7 @@ public sealed class AutomationActivity : DshActivity
         _relaySwitch.Checked = on;
         _settingSwitch = false;
         _relay.SetSubtitle(on
-            ? phase + (host?.IsChannelRunning == true ? " · 信箱运行中" : "") + (host?.DegradedReason is { } r ? " · " + r : "")
+            ? RelayLine(phase, host?.IsChannelRunning == true, host?.DegradedReason)
             : GetString(Resource.String.automation_relay_off));
         if (!on)
         {
