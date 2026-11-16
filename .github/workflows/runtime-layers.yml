@@ -31,6 +31,7 @@ on:
       - src/DshMobile.Runtime/Layers/**
       - src/DshMobile.Runtime/Guest/Assets/dsh-probe.mjs
       - src/DshMobile.Runtime/Guest/Assets/xdg-user-dir
+      - src/DshMobile.Runtime/Guest/Assets/dsh-e2e.mjs
       - tests/DshMobile.Runtime.Tests/SelfBuiltRuntimeBundleTests.cs
       - .github/workflows/runtime-layers.yml
 

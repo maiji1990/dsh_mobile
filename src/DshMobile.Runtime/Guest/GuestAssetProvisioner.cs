@@ -47,11 +47,24 @@ public static class GuestAssetProvisioner
 
     private const string ProbeResource = "DshMobile.Guest.dsh-probe.mjs";
 
+    /// <summary>vNext PR-07: the Agent end-to-end driver (real model turns; run by the owner on the device, never by the app).</summary>
+    public const string E2eName = "dsh-e2e.mjs";
+
+    /// <summary>Guest path of the E2E driver.</summary>
+    public const string GuestE2e = RuntimeConstants.GuestCacheDir + "/" + UiFacadeAssets.HostSubDir + "/" + E2eName;
+
+    private const string E2eResource = "DshMobile.Guest.dsh-e2e.mjs";
+
+    /// <summary>The embedded bytes of this repo's <c>Guest/Assets/dsh-e2e.mjs</c>.</summary>
+    public static byte[] ReadE2eScript() => ReadResource(E2eResource);
+
     /// <summary>The embedded bytes of this repo's <c>dsh-probe.mjs</c> (<c>Guest/Assets/</c>, moved from the bridge's guest assets in PR-10).</summary>
-    public static byte[] ReadProbeScript()
+    public static byte[] ReadProbeScript() => ReadResource(ProbeResource);
+
+    private static byte[] ReadResource(string name)
     {
-        using var stream = typeof(GuestAssetProvisioner).Assembly.GetManifestResourceStream(ProbeResource)
-            ?? throw new InvalidOperationException($"embedded guest asset missing: {ProbeResource}");
+        using var stream = typeof(GuestAssetProvisioner).Assembly.GetManifestResourceStream(name)
+            ?? throw new InvalidOperationException($"embedded guest asset missing: {name}");
         using var buffer = new MemoryStream();
         stream.CopyTo(buffer);
         return buffer.ToArray();
@@ -83,13 +96,17 @@ public static class GuestAssetProvisioner
                 }
             });
         }
-        Step(failures, "probe script", () =>
+        Step(failures, "probe / e2e scripts", () =>
         {
             var dir = UiFacadeAssets.HostDir(layout.GuestCacheDir);
             Directory.CreateDirectory(dir);
             if (WriteIfDifferent(Path.Combine(dir, ProbeName), ReadProbeScript()))
             {
                 written.Add(ProbeName);
+            }
+            if (WriteIfDifferent(Path.Combine(dir, E2eName), ReadE2eScript()))
+            {
+                written.Add(E2eName);
             }
         });
         Step(failures, "ui facade", () =>
