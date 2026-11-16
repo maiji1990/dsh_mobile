@@ -55,4 +55,23 @@ public static class ServiceCollectionExtensions
             sp.GetRequiredService<TimeProvider>()));
         return services;
     }
+
+    /// <summary>
+    /// Online DSH layer update (vNext PR-05): <see cref="DshMobile.Runtime.Updates.ArtifactDownloader"/> into the private
+    /// update store and <see cref="Updates.UpdateCoordinator"/>. <paramref name="downloadHttp"/> should have no overall
+    /// timeout (large files; every download is cancellable). Call after <see cref="AddDshMobileApplication"/>.
+    /// </summary>
+    public static IServiceCollection AddDshMobileUpdateInstall(this IServiceCollection services, HttpClient downloadHttp)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+        ArgumentNullException.ThrowIfNull(downloadHttp);
+        services.AddSingleton(sp => new DshMobile.Runtime.Updates.ArtifactDownloader(downloadHttp,
+            new DshMobile.Runtime.Updates.ArtifactStore(sp.GetRequiredService<RuntimeLayout>())));
+        services.AddSingleton(sp => new Updates.UpdateCoordinator(
+            sp.GetRequiredService<RuntimeCoordinator>(),
+            sp.GetRequiredService<DshMobile.Runtime.Updates.ArtifactDownloader>(),
+            new DshMobile.Runtime.Updates.UpdateStateStore(sp.GetRequiredService<RuntimeLayout>()),
+            sp.GetRequiredService<TimeProvider>()));
+        return services;
+    }
 }

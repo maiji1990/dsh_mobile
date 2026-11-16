@@ -38,9 +38,16 @@ public sealed class BridgeHost : IDisposable, IDiagnosticsLog
             .AddSingleton<IDiagnosticsLog>(this)
             .AddDshMobileApplication(Layout)
             .AddDshMobileUpdateCheck(new DshMobile.Application.Updates.UpdateCheckOptions(AppVersion(_context), DeviceAbi()), _http)
+            .AddDshMobileUpdateInstall(_downloadHttp)
             .BuildServiceProvider();
         Runtime = _services.GetRequiredService<RuntimeCoordinator>();
         Updates = _services.GetRequiredService<DshMobile.Application.Updates.UpdateChecker>();
+        UpdateInstaller = _services.GetRequiredService<DshMobile.Application.Updates.UpdateCoordinator>();
+        // An update the previous process did not finish is reported once (its layer was already restored by recovery).
+        if (UpdateInstaller.SettleInterrupted() is { } interrupted)
+        {
+            Append($"update: the previous update of {interrupted.Kind} {interrupted.Version} was interrupted ({interrupted.Message})");
+        }
         // ADR-0010: the guest-facing C# Relay stops with the sandbox and the ui_* layer is removed.
         Runtime.SandboxStopping += () =>
         {
@@ -69,6 +76,19 @@ public sealed class BridgeHost : IDisposable, IDiagnosticsLog
 
     /// <summary>Read-only release discovery (vNext PR-02). Built-in trust is empty until the release key is pinned.</summary>
     public DshMobile.Application.Updates.UpdateChecker Updates { get; }
+
+    /// <summary>Large artifact downloads: no overall timeout (each download is cancellable), no auth headers.</summary>
+    private readonly HttpClient _downloadHttp = new() { Timeout = Timeout.InfiniteTimeSpan };
+
+    /// <summary>Online DSH layer update (vNext PR-05 / PR-06).</summary>
+    public DshMobile.Application.Updates.UpdateCoordinator UpdateInstaller { get; }
+
+    /// <summary>The last update check of this process and its channel (the update UI's rows); null before the first check.</summary>
+    public DshMobile.Runtime.Updates.ReleaseDiscoveryResult? LastCheck { get; private set; }
+
+    public string? LastCheckChannel { get; private set; }
+
+    private CancellationTokenSource? _updateCts;
 
     public RuntimeLayout Layout { get; }
 
@@ -267,12 +287,82 @@ public sealed class BridgeHost : IDisposable, IDiagnosticsLog
     {
         using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(2));
         var r = await Updates.CheckAsync(channel, cts.Token).ConfigureAwait(false);
+        LastCheck = r;
+        LastCheckChannel = channel;
         Report(r.Ok, r.Code, r.Message);
         foreach (var line in DshMobile.Application.Updates.UpdateChecker.Describe(channel, r))
         {
             Append(line);
         }
     });
+
+    /// <summary>
+    /// vNext PR-05 / PR-06: downloads, verifies and installs the DSH update of the last check (<see cref="LastCheck"/>),
+    /// with a health check and automatic restore of the old layer. <paramref name="stopConfirmed"/>: the user agreed that a
+    /// running DSH and its terminals are stopped. Cancellable only while downloading (<see cref="CancelUpdate"/>).
+    /// </summary>
+    public Task RunDshUpdateAsync(bool stopConfirmed) => RunExclusive("update.install", async () =>
+    {
+        if (LastCheck is not { } check || LastCheckChannel is not { } channel)
+        {
+            Report(false, DshMobile.Runtime.Updates.UpdateTransactionCodes.NothingToInstall, "check for updates first");
+            return;
+        }
+        using var cts = new CancellationTokenSource();
+        Volatile.Write(ref _updateCts, cts);
+        try
+        {
+            var progress = new Progress<DshMobile.Application.Updates.UpdateProgress>(p =>
+            {
+                Volatile.Write(ref _progress, new RuntimeProgress(p.Phase, p.Received, p.Total));
+                Changed?.Invoke(this, EventArgs.Empty);
+            });
+            var r = await UpdateInstaller.InstallDshAsync(check, channel, stopConfirmed, progress, cts.Token).ConfigureAwait(false);
+            Report(r.Ok, r.Code, r.Message);
+            Append(r.Ok ? $"update: {r.Message} (DSH {r.InstalledVersion ?? "-"})" : $"update FAILED {r.Code} at {r.Phase}: {r.Message} (DSH {r.InstalledVersion ?? "-"})");
+            await LogStatusAsync("status").ConfigureAwait(false);
+        }
+        finally
+        {
+            Volatile.Write(ref _updateCts, null);
+        }
+    });
+
+    /// <summary>Cancels a running update download (later phases are not cancellable and ignore this).</summary>
+    public void CancelUpdate()
+    {
+        try
+        {
+            Volatile.Read(ref _updateCts)?.Cancel();
+        }
+        catch (ObjectDisposedException)
+        {
+            // the download just ended
+        }
+    }
+
+    /// <summary>Copyable text: the last check, the planner's notes and the last update record (no secrets).</summary>
+    public string UpdateDiagnostics()
+    {
+        var lines = new List<string> { $"app {AppVersion(_context)} abi {DeviceAbi()}" };
+        if (LastCheck is { } c && LastCheckChannel is { } ch)
+        {
+            lines.AddRange(DshMobile.Application.Updates.UpdateChecker.Describe(ch, c));
+            if (c.Ok)
+            {
+                lines.AddRange(DshMobile.Runtime.Updates.UpdatePlanner.Plan(c.Choices).Notes.Select(n => "  note: " + n));
+            }
+        }
+        else
+        {
+            lines.Add("update check: not run in this session");
+        }
+        if (UpdateInstaller.LastState is { } s)
+        {
+            lines.Add($"last update: {s.Kind} {s.Version} {s.Phase}{(s.Code is null ? "" : " " + s.Code)} at {s.UpdatedAt:O}{(s.Message is null ? "" : " — " + s.Message)}");
+        }
+        return string.Join('\n', lines);
+    }
 
     private static string AppVersion(Android.Content.Context context) =>
         context.PackageManager?.GetPackageInfo(context.PackageName!, 0)?.VersionName is { Length: > 0 } v ? v : "0.0.0";
@@ -393,5 +483,6 @@ public sealed class BridgeHost : IDisposable, IDiagnosticsLog
     {
         _services.Dispose();
         _http.Dispose();
+        _downloadHttp.Dispose();
     }
 }
