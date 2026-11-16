@@ -26,6 +26,7 @@ jobs:
         component: [runtime, dsh, assets]
     steps:
       - name: Require a token capable of triggering PR checks
+        if: github.event_name == 'schedule' || inputs.component == 'all' || inputs.component == matrix.component
         env:
           PR_TOKEN: ${{ secrets.UPDATE_PR_TOKEN }}
         run: |
@@ -48,11 +49,13 @@ jobs:
         with:
           token: ${{ secrets.UPDATE_PR_TOKEN }}
           branch: automation/upstream-${{ matrix.component }}
+          base: main
           delete-branch: true
           commit-message: "build: propose pinned ${{ matrix.component }} upstream update"
           title: "build(${{ matrix.component }}): pinned upstream update proposal"
           body: |
             Automated proposal, not an approved or published upgrade.
+            Component: ${{ matrix.component }}. Each component is reviewed and merged separately.
             Upstream metadata, package-lock and SHA-256 are pinned exactly.
             Review the changes, run ARM64 reproducibility + smoke + Android tests.
             Releases are immutable; stable publication requires signed approval and device evidence.
