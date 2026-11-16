@@ -61,11 +61,13 @@
 | 运行时状态变化先写 durable journal 再生效；进程中断后不冒充“仍在运行”，恢复为 `Failed(RUNTIME_INTERRUPTED)` | `DshMobile.Runtime.RuntimeStateMachine`、`FileRuntimeJournal` |
 | 启动失败统一清理、停止失败不释放前台服务（避免无监督的 PRoot 孤儿） | `DshMobile.Application.Runtime.RuntimeCoordinator` |
 | C# 运行时私有状态（journal、装后核对报告）放 `files/dshmobile-runtime/`，不绑定进 guest、不在用户工作区 | `RuntimeLayout.HostStateDir` |
+| 发布清单 Ed25519 分离签名（域分离前缀 + 原始字节，keyId 由公钥派生、可多钥匙轮换），先验签后严格解析（https-only、无凭据 URL、纯文件名、64 位小写 SHA-256、DSH 层必须钉源码 tag / commit、拒绝重复 JSON 键）；通道不符 / 过期 / 未来时间 / 比上次接受的旧均拒绝；未内置公钥时不联网、返回 `UPDATE_NO_TRUSTED_KEYS`；只读，不下载不安装（ADR-0022） | `DshMobile.Runtime.Updates.{ReleaseManifestVerifier, ReleaseManifestParser, ReleaseCatalog, HttpReleaseSource}`、`ReleaseManifestTests` |
+| DSH 层换层为日志化事务：旧层先移到同级 aside，新层就位后才退役，放置失败改回，进程中途死亡由 `Recover()` 完成或撤销（每次安装前、启动前）；不会因备份失败删除唯一可运行的层 | `DshLayerInstaller`、`DshLayerFaultInjectionTests` |
 | C# 层解包与旧实现同等约束：拒绝 `user-data` / `.dsh` 路径、规范路径越界、链接目标越界；所有路径决定在内存模型上完成，目标写入层只接受已证明在根内的相对路径；磁盘目标要求空目录；装后核对只干跑不写盘 | `DshMobile.Runtime.Layers.LayerExtractor`、`tests/TestVectors/layer-extract.json` |
 
 ## 待实现（按里程碑）
 
-- M2：Runtime 层**签名**清单校验（当前仅固定哈希）、回滚 UI；PRoot 不是安全隔离，guest 内代码按不可信处理。
+- M2：Runtime 层**签名**清单校验——验证器与只读发现已实现（ADR-0022，见上表），**尚未内置发布公钥、未接 UI**，离线导入仍只校验固定哈希；回滚 UI；PRoot 不是安全隔离，guest 内代码按不可信处理。
 - M3：WebUI 已落实 loopback-only / token 轮换 / origin 校验（见上）；待做：DSHBox 完整导航鉴权状态机、下载与上传审批（TASK-007）。
 - M5：R0–R4 审批、审计日志、单写者设备租约。
 - 手机操控写操作（ADR-0008）：确认页的保护依赖无障碍后端的 `selfWindowVisible`；C# 接管执行层时必须原样保留，并把
