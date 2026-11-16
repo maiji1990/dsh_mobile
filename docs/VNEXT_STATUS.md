@@ -229,7 +229,7 @@ chroot 探测未覆盖终端 / 子进程工具，**真机上自建 DSH 层从未
 CI（runtime-layers run 43815317473，arm64 chroot，真实 DSH 0.2.1-rc.5 / Debian 13.7）：默认工作区——无包装器 `spawn xdg-user-dir ENOENT`，有包装器
 `/root/projects/deepseek-harness/default-workspace`（**修复在真实 DSH 解析器上成立**）；E2E——headless 与 acp 正确报告 `needs-credential`（DSH：
 `MISSING_CREDENTIAL: llm-deepseek: no API key for provider route "deepseek-official"; store DEEPSEEK_API_KEY through the credentials service (the web Models page writes it)…`）；
-sdk 暴露驱动缺陷：失败的轮次 `session/wait` 仍回 `{}`，错误只在 `turn/end` 的 reason 里——已改为读取该 reason（假 DSH 同步改为此行为 + 变异检查）。修正后的结果见本 PR 最新的 runtime-layers 运行。
+sdk 暴露驱动缺陷：失败的轮次 `session/wait` 仍回 `{}`，错误只在 `turn/end` 的 reason 里——已改为读取该 reason（假 DSH 同步改为此行为 + 变异检查）。修正后（run 43816191740，`28797c2`）：web / sdk / sdk-minimal / acp 探测 pass、headless limited；E2E **headless / sdk / acp 三项均为 `needs-credential`**（总状态 needs-credential，驱动从未在无凭据时报 pass）。同一提交 android-dotnet：Core 35 / Runtime 847（+3 跳过）/ Application 129 / guest 46 / tooling 5 全绿，警告 75（基线）。
 
 验收（方案）：真机日志与清除密钥后的检查结果，每个「通过」记录版本 / 系统 / 设备 / 时间——**未做**，需负责人用自己的凭据在真机执行
 （[TEST_PLAN「vNext PR-07」](TEST_PLAN.md)，记录模板 [TEMPLATE-vnext-pr07-agent-e2e.md](../migration/parity/TEMPLATE-vnext-pr07-agent-e2e.md)）。
