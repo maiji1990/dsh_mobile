@@ -10,11 +10,15 @@
 //       variable (PEM text). --append adds a signature to an existing envelope (key rotation: old + new key).
 //   node tooling/release-manifest-sign.mjs pubkey <pem>
 //       Prints the raw public key (base64) and key id of a private key.
+//   node tooling/release-manifest-sign.mjs verify <release-manifest.json> --keys <trusted-keys file> [--channel <c>]
+//       Exit 0 only if <manifest>.sig holds a valid signature by a key listed in the file (one base64 raw key per line,
+//       '#' comments; the same file the app embeds: src/DshMobile.Runtime/Updates/release-trusted-keys.txt) and, with
+//       --channel, the manifest is for that channel. Used by release-publish.yml on the anonymously downloaded files.
 //
 // Signed message = "DSHM-RELEASE-MANIFEST-V1\n" + the manifest file's exact bytes (ReleaseManifestVerifier.Domain).
 // The key id is "ed25519:" + the first 16 hex digits of SHA-256(raw public key) (ReleaseTrust.KeyId).
 
-import { createHash, createPrivateKey, createPublicKey, generateKeyPairSync, sign } from 'node:crypto';
+import { createHash, createPrivateKey, createPublicKey, generateKeyPairSync, sign, verify } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
@@ -68,6 +72,29 @@ if (cmd === 'keygen') {
 } else if (cmd === 'pubkey') {
   const raw = rawPublicKey(createPublicKey(createPrivateKey(readFileSync(args[0] ?? fail('usage: pubkey <pem>'), 'utf8'))));
   console.log(JSON.stringify({ publicKey: raw.toString('base64'), keyId: keyId(raw) }, null, 2));
+} else if (cmd === 'verify') {
+  const manifestPath = args[0] ?? fail('usage: verify <release-manifest.json> --keys <file> [--channel <c>]');
+  const ki = args.indexOf('--keys');
+  if (ki < 0) fail('verify needs --keys <file>');
+  const trusted = new Map();
+  for (const line of readFileSync(args[ki + 1], 'utf8').split(/\r?\n/)) {
+    const t = line.trim();
+    if (t === '' || t.startsWith('#')) continue;
+    const raw = Buffer.from(t, 'base64');
+    if (raw.length !== 32) fail(`not a 32-byte Ed25519 public key: ${t}`);
+    trusted.set(keyId(raw), createPublicKey({ key: { kty: 'OKP', crv: 'Ed25519', x: raw.toString('base64url') }, format: 'jwk' }));
+  }
+  if (trusted.size === 0) fail('no trusted keys in ' + args[ki + 1]);
+  const bytes = readFileSync(manifestPath);
+  const envelope = JSON.parse(readFileSync(manifestPath + '.sig', 'utf8'));
+  const message = Buffer.concat([DOMAIN, bytes]);
+  const good = (envelope.signatures ?? []).find((s) => s.alg === 'ed25519' && trusted.has(s.keyId)
+    && verify(null, message, trusted.get(s.keyId), Buffer.from(s.sig, 'base64')));
+  if (!good) fail(`${manifestPath}: no valid signature by a trusted key (${[...trusted.keys()].join(', ')})`);
+  const ci = args.indexOf('--channel');
+  const channel = JSON.parse(bytes.toString('utf8')).channel;
+  if (ci >= 0 && channel !== args[ci + 1]) fail(`${manifestPath}: channel is ${channel}, expected ${args[ci + 1]}`);
+  console.log(`${manifestPath}: valid signature by ${good.keyId}, channel ${channel}`);
 } else {
-  fail('usage: release-manifest-sign.mjs keygen <out-dir> | sign <manifest> [--key <pem>] [--append] | pubkey <pem>');
+  fail('usage: release-manifest-sign.mjs keygen <out-dir> | sign <manifest> [--key <pem>] [--append] | pubkey <pem> | verify <manifest> --keys <file> [--channel <c>]');
 }

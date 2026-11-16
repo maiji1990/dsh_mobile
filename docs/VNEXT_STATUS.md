@@ -134,3 +134,26 @@ FEATURES.md 各行的状态列已按上表改写（证据列保留原始记录�
 4. 测试：过期、回放、换签、通道串流、TLS 降级、错误 URL、无公钥。
 
 验收门禁：匿名拉取两文件并验签通过；篡改 / 过期 / 回放 / preview 冒充 stable 全部拒绝；私钥不出现在 APK、仓库、日志与 Actions artifact。
+
+## 5. PR-01 结果（maiji1990/dsh_mobile#44，已合并）
+
+| 项 | 结果 |
+|---|---|
+| SDK / workload | CI 实装 `11.0.100`（`dotnet-install: Installed version is 11.0.100`）、workload set `11.0.100.1`；Android 运行时包 `11.0.0`（GA） |
+| CI run [43797605544](https://github.com/maiji1990/dsh_mobile/actions/runs/43797605544)（SDK 提交） | Core 35 / Runtime 811（+1 跳过）/ Application 115 / guest 37；Android Release 构建 75 warnings / 0 errors（与 RC2 基线 75 相同） |
+| CI run [43798009073](https://github.com/maiji1990/dsh_mobile/actions/runs/43798009073)（包标识提交） | Core 35 / Runtime 814（+1）/ Application 115 / guest 37；构建日志 `DSH Mobile package io.github.maiji1990.dshmobile 0.1.0 versionCode 10000 (ADR-0023)`；75 warnings / 0 errors |
+| 包标识 | `io.github.maiji1990.dshmobile`，versionCode 由版本号推导（ADR-0023）；发布签名 keystore 待负责人生成 |
+| 真机 | **未做**：§3 清单（Release 构建）仍待执行；新包名是新应用，迁移步骤见 ADR-0023 |
+
+## 6. PR-02 状态（发布基础设施与可信密钥）
+
+| 切片 | 状态 |
+|---|---|
+| 公开发布位置 | 已定：本仓库已公开，通道清单在 release `channel-stable` / `channel-preview`（ADR-0022 修订） |
+| 防重放下限持久化 + 只读检查接入 App | 已实现（`ReleaseAcceptanceStore`、`UpdateChecker`、开发者选项「检查更新（只读）」）；单测；**无真机证据** |
+| `release-publish.yml` | 已实现；本地演练通过；**未运行**（需 environment `release-signing` + secret + 公钥 + 至少一个运行层 Release） |
+| 发布公钥 | **待负责人**：`release-trusted-keys.txt` 为空 → App 如实报 `UPDATE_NO_TRUSTED_KEYS`、不联网；工作流门禁失败 |
+| 首个通道清单 | 依赖 PR-03（运行层 / DSH 层在本仓库发布版本化 Release）与公钥 |
+
+PR-02 验收门禁（方案）：匿名拉取两文件并正确验签（工作流 verify job）；伪造 / 篡改 / 过期 / 回放 / preview 冒充 stable 全部拒绝（单测已覆盖，
+真机待公钥就绪后用开发者选项复核）；私钥不进 APK 或 Actions artifact（签名只在一个步骤以 secret 注入）。

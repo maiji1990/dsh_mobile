@@ -62,6 +62,10 @@ jobs:
       - name: Guest facade tests
         run: node tooling/run-node-tests.mjs tests/guest
 
+      # Release tooling (ADR-0022, vNext PR-02): manifest builder + sign / verify, cross-checked with the C# parser.
+      - name: Release tooling tests
+        run: node tooling/run-node-tests.mjs tests/tooling
+
       - name: Build app
         run: dotnet build src/DshMobile.Android -c Release
 

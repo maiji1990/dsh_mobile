@@ -1,0 +1,32 @@
+{
+  "schema": 1,
+  "channel": "preview",
+  "generatedAt": "2026-11-16T00:00:00Z",
+  "expiresAt": "2026-12-16T00:00:00Z",
+  "artifacts": [
+    {
+      "kind": "runtime",
+      "version": "0.2.0",
+      "abi": "arm64",
+      "archive": "runtime-bundle-arm64-0.2.0.zip",
+      "url": "https://github.com/maiji1990/dsh_mobile/releases/download/runtime-0.2.0/runtime-bundle-arm64-0.2.0.zip",
+      "sha256": "914d12304ef791840f49301ced9d14004d08a9d7bcb2ef8596482368c725ae28",
+      "size": 41,
+      "minAppVersion": "0.1.0"
+    },
+    {
+      "kind": "dsh",
+      "version": "0.2.1-rc.5",
+      "abi": "arm64",
+      "archive": "0.2.1-rc.5.tar.zst",
+      "url": "https://github.com/maiji1990/dsh_mobile/releases/download/runtime-0.2.0/0.2.1-rc.5.tar.zst",
+      "sha256": "f4a5a203a820e37a7e7ca40838ac8d16004fe27a0497a242c67983cde1cc8d9c",
+      "size": 36,
+      "minAppVersion": "0.1.0",
+      "requiresNode": "24.x",
+      "sourceRepo": "deepseek-ai/deepseek-harness",
+      "sourceTag": "dsh-v0.2.1-rc.5",
+      "sourceCommit": "0123456789abcdef0123456789abcdef01234567"
+    }
+  ]
+}

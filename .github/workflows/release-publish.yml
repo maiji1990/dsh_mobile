@@ -1,0 +1,154 @@
+name: release-publish
+
+# vNext PR-02 / ADR-0022: signs and publishes a channel's release manifest. Manual only.
+#
+# What it publishes: release/<channel>.json (a reviewed spec) names artifacts that already sit in versioned releases of
+# this public repository (e.g. created by runtime-layers.yml with release_tag). This workflow downloads them
+# anonymously, builds release-manifest.json from their real SHA-256 / size, signs it with the release key, uploads
+# manifest + .sig to the fixed release `channel-<channel>` (the URL the app reads, ReleaseEndpoints), then a second job
+# without any secret reads everything back anonymously and verifies it against the app's own trusted-keys file.
+#
+# Owner setup (once): Settings → Environments → `release-signing` with required reviewers, secret
+# DSHM_RELEASE_SIGNING_KEY = the PKCS#8 PEM from `node tooling/release-manifest-sign.mjs keygen <dir outside the repo>`.
+# The private key never enters the repository, logs or artifacts; only the sign step sees it.
+on:
+  workflow_dispatch:
+    inputs:
+      channel:
+        description: "Channel to publish"
+        type: choice
+        options: [preview, stable]
+        required: true
+      expires_days:
+        description: "Manifest validity in days (1..90); re-publish before it expires"
+        required: false
+        default: "30"
+      acceptance_evidence:
+        description: "stable only: device acceptance record in this repo (migration/parity/...md) naming every version"
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-publish-${{ inputs.channel }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    environment: release-signing
+    permissions:
+      contents: write
+    outputs:
+      manifest_sha256: ${{ steps.sign.outputs.manifest_sha256 }}
+    env:
+      CHANNEL: ${{ inputs.channel }}
+      SPEC: release/${{ inputs.channel }}.json
+      KEYS: src/DshMobile.Runtime/Updates/release-trusted-keys.txt
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Gate (spec, trusted key, stable acceptance)
+        env:
+          EVIDENCE: ${{ inputs.acceptance_evidence }}
+        run: |
+          set -euo pipefail
+          test -f "$SPEC" || { echo "::error::$SPEC does not exist (see release/README.md)"; exit 1; }
+          grep -v '^[[:space:]]*#' "$KEYS" | grep -q '[^[:space:]]' \
+            || { echo "::error::$KEYS holds no key: every app build would refuse this manifest (UPDATE_NO_TRUSTED_KEYS)"; exit 1; }
+          if [ "$CHANNEL" = stable ]; then
+            case "$EVIDENCE" in migration/parity/*.md) ;; *) echo "::error::stable needs acceptance_evidence=migration/parity/<record>.md"; exit 1;; esac
+            test -f "$EVIDENCE" || { echo "::error::$EVIDENCE does not exist at $GITHUB_SHA"; exit 1; }
+            for v in $(node -e 'for (const a of JSON.parse(require("fs").readFileSync(process.argv[1])).artifacts) console.log(a.version)' "$SPEC"); do
+              grep -qF -- "$v" "$EVIDENCE" || { echo "::error::$EVIDENCE does not mention version $v"; exit 1; }
+            done
+          fi
+
+      - name: Download the artifacts anonymously
+        run: |
+          set -euo pipefail
+          mkdir -p dl out
+          node -e '
+            const s = JSON.parse(require("fs").readFileSync(process.argv[1]));
+            for (const a of s.artifacts) console.log(`https://github.com/${s.repository}/releases/download/${a.releaseTag}/${a.file} ${a.file}`);
+          ' "$SPEC" | while read -r url file; do
+            echo "==> $url"
+            curl -fsSL --retry 3 --proto '=https' --proto-redir '=https' -o "dl/$file" "$url"
+          done
+
+      - name: Build the manifest
+        run: node tooling/release-manifest-build.mjs --spec "$SPEC" --dir dl --channel "$CHANNEL" --expires-days "${{ inputs.expires_days }}" --out out/release-manifest.json
+
+      - name: Sign
+        id: sign
+        env:
+          DSHM_RELEASE_SIGNING_KEY: ${{ secrets.DSHM_RELEASE_SIGNING_KEY }}
+        run: |
+          set -euo pipefail
+          test -n "$DSHM_RELEASE_SIGNING_KEY" || { echo "::error::secret DSHM_RELEASE_SIGNING_KEY is not set in environment release-signing"; exit 1; }
+          node tooling/release-manifest-sign.mjs sign out/release-manifest.json
+          node tooling/release-manifest-sign.mjs verify out/release-manifest.json --keys "$KEYS" --channel "$CHANNEL"
+          echo "manifest_sha256=$(sha256sum out/release-manifest.json | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+
+      - name: Publish to release channel-${{ inputs.channel }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tag="channel-$CHANNEL"
+          if ! gh release view "$tag" > /dev/null 2>&1; then
+            gh release create "$tag" --target "$GITHUB_SHA" --prerelease --latest=false --title "Release channel: $CHANNEL" \
+              --notes "Signed release manifest for the $CHANNEL channel (ADR-0022). Only release-manifest.json + .sig live here; artifacts are in versioned releases."
+          fi
+          # Both files in one call; a device that reads between the two uploads sees MANIFEST_SIGNATURE_INVALID and retries.
+          gh release upload "$tag" out/release-manifest.json out/release-manifest.json.sig --clobber
+          {
+            echo "### $tag"
+            echo "- source commit: \`$GITHUB_SHA\`"
+            echo "- manifest sha256: \`$(sha256sum out/release-manifest.json | cut -d' ' -f1)\`"
+            echo '```json'; cat out/release-manifest.json; echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  verify:
+    needs: publish
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    env:
+      CHANNEL: ${{ inputs.channel }}
+      KEYS: src/DshMobile.Runtime/Updates/release-trusted-keys.txt
+      EXPECTED: ${{ needs.publish.outputs.manifest_sha256 }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Anonymous read-back (what a phone sees)
+        run: |
+          set -euo pipefail
+          mkdir -p rb
+          base="https://github.com/$GITHUB_REPOSITORY/releases/download/channel-$CHANNEL"
+          for attempt in 1 2 3 4 5 6; do
+            curl -fsSL --proto '=https' --proto-redir '=https' -o rb/release-manifest.json "$base/release-manifest.json"
+            curl -fsSL --proto '=https' --proto-redir '=https' -o rb/release-manifest.json.sig "$base/release-manifest.json.sig"
+            [ "$(sha256sum rb/release-manifest.json | cut -d' ' -f1)" = "$EXPECTED" ] && break
+            echo "served manifest is not the one just published yet (attempt $attempt); waiting"; sleep 20
+          done
+          [ "$(sha256sum rb/release-manifest.json | cut -d' ' -f1)" = "$EXPECTED" ] || { echo "::error::anonymous URL still serves another manifest"; exit 1; }
+          node tooling/release-manifest-sign.mjs verify rb/release-manifest.json --keys "$KEYS" --channel "$CHANNEL"
+
+      - name: Every artifact is anonymously downloadable and matches the manifest
+        run: |
+          set -euo pipefail
+          node -e '
+            for (const a of JSON.parse(require("fs").readFileSync("rb/release-manifest.json")).artifacts) console.log(`${a.url} ${a.archive} ${a.sha256} ${a.size}`);
+          ' | while read -r url file sha size; do
+            curl -fsSL --retry 3 --proto '=https' --proto-redir '=https' -o "rb/$file" "$url"
+            [ "$(sha256sum "rb/$file" | cut -d' ' -f1)" = "$sha" ] || { echo "::error::$file: sha256 mismatch"; exit 1; }
+            [ "$(stat -c %s "rb/$file")" = "$size" ] || { echo "::error::$file: size mismatch"; exit 1; }
+            echo "ok $file"
+          done
