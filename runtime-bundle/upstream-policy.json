@@ -1,0 +1,12 @@
+{
+  "schema": 1,
+  "runtime": {
+    "nodeMajor": 26,
+    "debianSuite": "trixie"
+  },
+  "dsh": {
+    "sourceRepo": "deepseek-ai/deepseek-harness",
+    "tagPrefix": "dsh-v",
+    "npmPackage": "@deepseek-ai/dsh"
+  }
+}

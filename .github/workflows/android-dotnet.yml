@@ -70,6 +70,14 @@ jobs:
       - name: Terminal page tests
         run: node tooling/run-node-tests.mjs tests/terminal-web
 
+      # Release assets are checksum-pinned to this repository, not copied from DSHBox.
+      # This stages android-side and DSH into APK assets; base/node remain separately downloadable.
+      - name: Stage pinned Runtime and DSH assets
+        shell: pwsh
+        run: |
+          ./runtime-bundle/fetch-runtime.ps1
+          if ($LASTEXITCODE -ne 0) { throw "fetch-runtime.ps1 failed" }
+
       - name: Build app
         run: dotnet build src/DshMobile.Android -c Release
 

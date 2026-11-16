@@ -15,7 +15,7 @@
   </PropertyGroup>
 
   <!--
-    Runtime layers from the pinned DSHBox release (runtime-bundle/fetch-runtime.ps1 -> artifacts/runtime/).
+    Runtime layers from this repository's pinned immutable Releases (runtime-bundle/fetch-runtime.ps1 -> artifacts/runtime/).
     Packaged as assets/runtime/* and assets/dsh/* exactly like DSHBox, stored uncompressed (already zstd).
   -->
   <PropertyGroup>

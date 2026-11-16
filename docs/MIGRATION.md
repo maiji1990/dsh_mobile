@@ -142,3 +142,7 @@ corepack 缓存，见 `src/DshMobile.Android/Assets/README.md`）。Shizuku 客�
 | 导入成功后旧桥再调 `provisionBundledDsh`（APK 内 DSH 层版本仲裁） | `RuntimeController` `runtime.importBundle` | C# 导入后经协调器 `PrepareAsync` 完成同一步（按 `MigrationOptions.DshProvision`：默认旧实现 + 影子，C# 模式不经 DSHBox） |
 | `DshLayer.installFromBundle` 先做版本仲裁再校验 SHA-256：已装版本不低于来包时，即使校验和错误也返回“保留”；空校验和永不匹配；无 `previous/` 时旧 DSH 层被直接删除（同 `swapRuntimeBody`），且是在新层就位**之前**删除——新层随后放置失败时两版都没了 | `DshLayer.kt` + 向量 `dsh-layer.json` | 版本仲裁 / 校验和规则 C# 一致（向量锁定）。**换层顺序 2026-11-16 起有意不同（P0-02）**：旧层先改名到同级 `dshmobile-dsh-old`（改名失败 → `DSH_INSTALL_FAILED`，什么都不动），新层就位并写入版本记录后才退役旧层（有 `previous/` 进 `previous/dsh`，否则删除）；放置失败把旧层改回；全程写前日志 `dshmobile-dsh-install.journal`，进程中途死亡由 `DshLayerInstaller.Recover()`（每次安装开头、协调器启动前）完成或撤销。各向量的最终文件树不变；不创建 `previous/`（body 导入是否保留回滚副本仍需单独决定）。故障注入：`DshLayerFaultInjectionTests`（改名拒绝 / 放置时磁盘满 / 恢复失败后下次恢复 / 在每个变更步骤处模拟进程死亡），协调器 `Start_FirstRecoversAnInterruptedDshLayerInstall`；无真机证据 |
 | `provisionBundledDsh` 每次先把 89 MB 资产复制到 cache 再仲裁 | `RuntimeController.kt` | C# 先仲裁、保留时不打开资产，安装时直接流式读取（结果相同，向量 + 单测） |
+
+## 2026-11-16：版本升级与发行自动化（本 PR 待验收）
+
+Runtime、DSH、Assets 三条独立上游跟踪流程已在 PR 中实现（详见 `docs/RELEASE_AUTOMATION.md`）。Node/DSH 不再以浮动 latest 进入发布构建，升级自动产生精确锁定 PR；主分支合并后由原 ARM64 双重构建和安装/冒烟验收门禁决定能否发布不可变 GitHub Release。APK 构建前从本仓库已发布的 Release 下载/校验 DSH 与 android-side。**该 PR 尚未验证新的 Node 26 / DSH 新版真机兼容，Stable 签名公钥/私钥仍由负责人配置与验收；不能宣称已完成 OTA**。

@@ -1,0 +1,24 @@
+{
+  "repository": "maiji1990/dsh_mobile",
+  "artifacts": [
+    {
+      "kind": "runtime",
+      "version": "0.2.0",
+      "abi": "arm64",
+      "file": "dshmobile-runtime-debian-arm64-0.2.0.zip",
+      "releaseTag": "runtime-0.2.0",
+      "minAppVersion": "0.1.0"
+    },
+    {
+      "kind": "dsh",
+      "version": "0.2.1-rc.5",
+      "abi": "arm64",
+      "file": "0.2.1-rc.5.tar.zst",
+      "releaseTag": "dsh-0.2.1-rc.5",
+      "requiresNode": "24.x",
+      "sourceRepo": "deepseek-ai/deepseek-harness",
+      "sourceTag": "dsh-v0.2.1-rc.5",
+      "sourceCommit": "b830ec950faba0a46dda564be3e2d854afed94f1"
+    }
+  ]
+}
