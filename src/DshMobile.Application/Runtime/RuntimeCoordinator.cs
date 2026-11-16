@@ -43,6 +43,10 @@ public sealed class RuntimeCoordinator : IDisposable
     private readonly SemaphoreSlim _op = new(1, 1);
     private readonly Lock _migration = new();
     private bool _namesMigrated;
+
+    /// <summary>The last <see cref="SyncAsync"/>'s settling of an interrupted body import; null when it did not run (host owns processes).</summary>
+    private RuntimeBodyRecovery? _bodyRecovery;
+
     private IDshHost? _host;
 
     public RuntimeCoordinator(
@@ -217,11 +221,15 @@ public sealed class RuntimeCoordinator : IDisposable
     /// </summary>
     private async Task SyncAsync(CancellationToken ct)
     {
+        _bodyRecovery = null;
         if (HostOwnsProcesses)
         {
             return;
         }
         MigrateNamesOnce();
+        // An import interrupted by process death leaves the old body aside: settle it before the disk is read, so the
+        // state is that of a whole body (the old one, or the new one once it was committed).
+        _bodyRecovery = RecoverRuntimeBody();
         var facts = await ReadFactsAsync(ct).ConfigureAwait(false);
         var actual = RuntimeStatusReader.Idle(facts, _time.GetUtcNow());
         State.Observe(actual.State, actual.Harness, actual.DshVersion, Implementation);
@@ -311,6 +319,11 @@ public sealed class RuntimeCoordinator : IDisposable
             if (!recovery.Ok)
             {
                 return new RuntimeStartResult(false, DshLayerErrorCodes.InstallFailed, "the DSH layer is mid-install and could not be recovered: " + recovery.Message, State.Current);
+            }
+            // The runtime body of an interrupted import was settled by SyncAsync; if that failed, nothing runs on it.
+            if (_bodyRecovery is { Ok: false } body)
+            {
+                return new RuntimeStartResult(false, LayerInstaller.ImportFailed, "the runtime body is mid-import and could not be recovered: " + body.Message, State.Current);
             }
             if (!State.TryTransition(RuntimeState.Starting, "start requested", HarnessState.Stopped))
             {
@@ -500,6 +513,11 @@ public sealed class RuntimeCoordinator : IDisposable
                 _log.Note("rollback: refused, stop the runtime first");
                 return new RuntimeInstallResult(false, RuntimeErrorCodes.InvalidTransition, $"stop the runtime before rolling back (runtime {before})");
             }
+            // An interrupted import still owns runtime-current (SyncAsync could not settle it): nothing is swapped in.
+            if (_bodyRecovery is { Ok: false } body)
+            {
+                return new RuntimeInstallResult(false, LayerInstaller.ImportFailed, "the runtime body is mid-import and could not be recovered: " + body.Message, LayerInstaller.ImportFailed);
+            }
             if (!LayerRollback.Available(_layout))
             {
                 _log.Note($"rollback: {LayerRollback.NoRollbackSlot} (no previous runtime body)");
@@ -531,6 +549,17 @@ public sealed class RuntimeCoordinator : IDisposable
         {
             _op.Release();
         }
+    }
+
+    /// <summary>Finishes or undoes an interrupted body import (<see cref="LayerInstaller.Recover"/>) and notes what it did.</summary>
+    private RuntimeBodyRecovery RecoverRuntimeBody()
+    {
+        var r = new LayerInstaller(_layout, _options.HostPathExists).Recover();
+        if (r.Action != "none")
+        {
+            _log.Note($"runtime body: interrupted import {r.Action}{(r.Message is { } m ? ": " + m : "")}");
+        }
+        return r;
     }
 
     /// <summary>
