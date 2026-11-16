@@ -59,6 +59,20 @@
 5. 首页「导入运行环境包」→ 选择器选 zip → 日志 copy / import 耗时与 `runtime=True node=True`。
 6. 单元测试覆盖：路径规范化、符号链接（含悬空）拒绝、受保护目录、不覆盖、原子写入、文件名净化（`WorkspaceFileSystemTests`）。
 
+### vNext PR-09 文件工作台（需真机 + 截图，[ADR-0026](ADR/0026-file-providers-trash-conflicts-archives.md)）
+
+自动化：`WorkspaceProviderTests`（14 例）、`FileWorkbenchTests`（33 例：编码 / 行尾、排序 / 搜索、30,000 个文件、zip slip 六种写法、tar 链接 / FIFO、压缩往返）。
+
+1. **闭环**：菜单「新建文件夹」「新建文件」（中文名）→ 点文件「编辑」输入内容 → 保存 → 长按多选 →「复制」→ 进入另一文件夹「粘贴到此处」（重名得到 `name (1)`）→ 「导出到…」到下载目录 → 「删除」→ Snackbar「撤销」恢复。
+2. **冲突**：编辑器打开 `a.txt` 不保存；在终端 `echo other > /root/projects/a.txt`；回到编辑器保存 → 出现「文件已被修改」；分别验证「继续编辑」「放弃并重新加载」「用我的版本覆盖」。
+3. **编码**：GBK 文件（`printf '\xd6\xd0\xce\xc4' > gbk.txt`）打开为只读并说明原因；CRLF 文件编辑保存后 `file` / `od -c` 仍为 CRLF；`chmod +x run.sh` 后编辑保存仍可执行；二进制文件不打开。
+4. **受保护**：`.dsh` 可进入浏览但条目不能选中、没有任何动作；不能把文件粘贴 / 解压到 `.dsh`。
+5. **链接**：终端 `ln -s /etc etc-link`：列表显示链接与目标，只能改名 / 移动 / 删除；删除后 `/etc` 不受影响；复制含链接的文件夹时提示跳过数。
+6. **压缩包**：多选 →「压缩为 zip」→「解压到此处」得到新文件夹；导入一个含 `../evil` 条目的 zip（PC 上用 `python -c "import zipfile;z=zipfile.ZipFile('evil.zip','w');z.writestr('../evil','x')"` 生成）→ 解压报 `ARCHIVE_UNSAFE`，工作区与上级目录都没有新文件。
+7. **大目录**：终端 `mkdir big && cd big && seq 1 30000 | xargs touch` → 进入 `big` 滚动流畅、排序 / 筛选可用；「搜索子文件夹」有结果数与是否截断。
+8. **回收站**：删除后 `run-as <applicationId> ls files/dshmobile-files-trash` 有批次目录；撤销后批次消失。
+9. 记录设备、Android 版本、App 版本、时间与截图；逐项写通过 / 失败 / 不适用及原因。
+
 ## TASK-008 终端（需真机）
 
 注意：若设备使用中文等组合式输入法，`adb shell input text/keyevent` 注入会被输入法拦截，命令需人工输入。
