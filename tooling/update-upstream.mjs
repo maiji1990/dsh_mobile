@@ -65,7 +65,12 @@ function command(cmd,args,opts={}) {return execFileSync(cmd,args,{encoding:'utf8
 function appendUpstream(record,check){
   const path=p('docs','UPSTREAMS.md');
   const original=readFileSync(path,'utf8');
-  put(path,original+'\n'+record+'\n',check);
+  const heading=original.indexOf('## 同步记录');
+  if(heading<0)throw Error('upstream sync table missing');
+  const next=original.indexOf('\n## ',heading+'## 同步记录'.length);
+  const pos=next>=0?next:original.length;
+  const before=original.slice(0,pos).trimEnd()+'\n'+record+'\n';
+  put(path,before+original.slice(pos),check);
 }
 async function runtime(check) {
   const text=lock(), old=locked(text,'NODE_VERSION');
@@ -85,7 +90,7 @@ async function runtime(check) {
   out=updateKey(out,'BUNDLE_VERSION',nextBundleVersion(locked(text,'BUNDLE_VERSION')));
   out=out.replace(/^# Node layer:.*$/m,'# Node layer: official build, SHA-256 from https://nodejs.org/dist/v'+version+'/SHASUMS256.txt');
   put(lockPath,out,check);
-  appendUpstream('<!-- Upstream review '+new Date().toISOString().slice(0,10)+': Node '+old+' → '+version+'; verify Debian/PRoot, native modules, DSH profiles and Android device before stable. Source: https://nodejs.org/dist/v'+version+'/SHASUMS256.txt -->',check);
+  appendUpstream('| '+new Date().toISOString().slice(0,10)+' | Node.js | '+old+' | '+version+' | 官方 arm64 SHA256 '+newHash+'；ARM64/DSH/真机待验，stable 禁止自动放行 |',check);
   summary('Runtime upgrade: Node '+old+' => '+version+'; bundle '+locked(text,'BUNDLE_VERSION')+' => '+locked(out,'BUNDLE_VERSION')+'; SHA256='+newHash);
 }
 
@@ -124,7 +129,7 @@ async function dsh(check) {
   const peeled=items.find(x=>x.includes('^{}')) ?? items[0];
   const commit=peeled?.split(/\s+/)[0];
   if(!/^[0-9a-f]{40}$/.test(commit??''))throw Error('cannot verify upstream tag commit');
-  appendUpstream('<!-- Upstream review '+new Date().toISOString().slice(0,10)+': DSH '+old+' → '+version+'; tag '+pref+version+' commit '+commit+'; npm-lock SHA256 '+sha(readFileSync(pkgLockPath))+'; test profiles, MCP/CLI, plugins and device before stable. -->',false);
+  appendUpstream('| '+new Date().toISOString().slice(0,10)+' | deepseek-ai/deepseek-harness | '+old+' | '+version+' | tag '+pref+version+' commit '+commit+'；npm-lock SHA256 '+sha(readFileSync(pkgLockPath))+'；profiles/MCP/真机待验 |',false);
   summary('DSH upgrade '+old+' => '+version+'; upstream commit '+commit);
 }
 
