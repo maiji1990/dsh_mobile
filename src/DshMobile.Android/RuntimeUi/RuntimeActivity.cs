@@ -105,7 +105,7 @@ public sealed class RuntimeActivity : DshActivity
         {
             var row = Rows.Add(_content, last.Ok ? Resource.Drawable.ic_check_circle : Resource.Drawable.ic_error,
                 Rows.Fmt(this, last.Ok ? Resource.String.runtime_last_ok : Resource.String.runtime_last_failed, OperationNames.Label(this, last.Operation)),
-                last.Ok ? null : OperationNames.Error(last.Code, last.Message));
+                last.Ok ? OkDetail(last) : OperationNames.Error(last.Code, last.Message));
             row.Subtitle.SetTextIsSelectable(true);
         }
 
@@ -116,6 +116,22 @@ public sealed class RuntimeActivity : DshActivity
             () => _ = _bridge.RunPrepareAsync());
         Action(Resource.Drawable.ic_history, Resource.String.runtime_rollback, Resource.String.runtime_rollback_sub, busy, ConfirmRollback);
         Rows.Add(_content, 0, "", GetString(Resource.String.runtime_bundle_note)).Title.Visibility = ViewStates.Gone;
+    }
+
+    /// <summary>What a successful "install bundled DSH" actually did (it may have kept the installed layer).</summary>
+    private string? OkDetail(OperationOutcome last)
+    {
+        if (last.Operation != "runtime.prepare")
+        {
+            return null;
+        }
+        var o = PrepareOutcome.Parse(last.Message);
+        return o.Kind switch
+        {
+            PrepareKind.Installed => Rows.Fmt(this, Resource.String.runtime_prepare_installed, o.Version ?? "?"),
+            PrepareKind.Kept => Rows.Fmt(this, Resource.String.runtime_prepare_kept, o.Version ?? "?"),
+            _ => last.Message,
+        };
     }
 
     private void Action(int icon, int title, int subtitle, bool busy, Action onClick)

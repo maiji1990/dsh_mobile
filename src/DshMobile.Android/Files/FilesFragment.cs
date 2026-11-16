@@ -279,7 +279,8 @@ public sealed class FilesFragment : Fragment, ITabRoot
     {
         < 1024 => $"{bytes} B",
         < 1024 * 1024 => $"{bytes / 1024.0:F1} KB",
-        _ => $"{bytes / 1024.0 / 1024.0:F1} MB",
+        < 1024L * 1024 * 1024 => $"{bytes / 1024.0 / 1024.0:F1} MB",
+        _ => $"{bytes / 1024.0 / 1024.0 / 1024.0:F1} GB",
     };
 
     /// <summary>One <c>item_row</c> per entry: kind icon, name, size / link target, a lock on protected entries.</summary>

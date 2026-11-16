@@ -10,11 +10,14 @@ using DshMobile.App.More;
 using DshMobile.App.Terminal;
 using DshMobile.App.Ui;
 using Google.Android.Material.BottomNavigation;
+using Google.Android.Material.Navigation;
+using Google.Android.Material.NavigationRail;
 
 namespace DshMobile.App;
 
 /// <summary>
-/// App shell (ADR-0021): four tabs — Home, Terminal, Files, More — under a Material 3 bottom navigation bar. Tabs are
+/// App shell (ADR-0021): four tabs — Home, Terminal, Files, More — under a Material 3 bottom navigation bar, or beside a
+/// navigation rail when the window is at least 600dp wide (landscape phone, tablet). Tabs are
 /// fragments that are shown / hidden rather than replaced, so a terminal session view or a folder position survives a
 /// tab switch; the terminal's shells outlive the screen anyway (<c>TerminalSessions</c>). The bottom bar hides while the
 /// soft keyboard is up so the terminal keeps its rows.
@@ -38,36 +41,51 @@ public sealed class MainActivity : AppCompatActivity
         (Resource.Id.nav_more, "more"),
     ];
 
-    private BottomNavigationView _nav = null!;
+    /// <summary>Material 3 window size class "medium": from here on the rail replaces the bottom bar.</summary>
+    private const int RailMinWidthDp = 600;
+
+    private BottomNavigationView _bar = null!;
+    private NavigationRailView _rail = null!;
+    private View _root = null!;
+    private bool _wide;
     private int _tab = Resource.Id.nav_home;
+
+    /// <summary>The navigation that is shown now.</summary>
+    private NavigationBarView Nav => _wide ? _rail : _bar;
 
     protected override void OnCreate(Bundle? savedInstanceState)
     {
         base.OnCreate(savedInstanceState);
         Edges.Enable(Window!);
         SetContentView(Resource.Layout.activity_main);
-        _nav = FindViewById<BottomNavigationView>(Resource.Id.bottom_nav)!;
+        _bar = FindViewById<BottomNavigationView>(Resource.Id.bottom_nav)!;
+        _rail = FindViewById<NavigationRailView>(Resource.Id.nav_rail)!;
         var content = FindViewById(Resource.Id.tab_content)!;
-        var root = FindViewById(Resource.Id.screen_root)!;
-        ViewCompat.SetOnApplyWindowInsetsListener(root, new Edges.Listener((v, insets) =>
+        _root = FindViewById(Resource.Id.screen_root)!;
+        ViewCompat.SetOnApplyWindowInsetsListener(_root, new Edges.Listener((v, insets) =>
         {
             var bars = insets.GetInsets(WindowInsetsCompat.Type.SystemBars() | WindowInsetsCompat.Type.DisplayCutout())!;
             var ime = Edges.ImeVisible(insets);
-            v.SetPadding(bars.Left, bars.Top, bars.Right, 0);
-            // With the keyboard up the bar is hidden and the tab ends at the keyboard; otherwise the bar pads itself.
-            _nav.Visibility = ime ? ViewStates.Gone : ViewStates.Visible;
+            // The bottom bar pads itself for the navigation bar; with the rail the root does. With the keyboard up the
+            // bottom bar is hidden and the tab ends at the keyboard (the rail stays: it takes no rows).
+            v.SetPadding(bars.Left, bars.Top, bars.Right, _wide && !ime ? bars.Bottom : 0);
+            _bar.Visibility = _wide || ime ? ViewStates.Gone : ViewStates.Visible;
+            _rail.Visibility = _wide ? ViewStates.Visible : ViewStates.Gone;
             content.SetPadding(0, 0, 0, ime ? insets.GetInsets(WindowInsetsCompat.Type.Ime())!.Bottom : 0);
             return insets;
         }));
 
         _tab = savedInstanceState?.GetInt(TabKey, Resource.Id.nav_home) ?? Resource.Id.nav_home;
-        _nav.ItemSelected += (_, e) =>
+        foreach (NavigationBarView nav in new NavigationBarView[] { _bar, _rail })
         {
-            e.Handled = true;
-            Show(e.Item.ItemId);
-        };
-        _nav.ItemReselected += (_, e) => (Current() as ITabRoot)?.OnReselected();
-        _nav.SelectedItemId = _tab;
+            nav.ItemSelected += (_, e) =>
+            {
+                e.Handled = true;
+                Show(e.Item.ItemId);
+            };
+            nav.ItemReselected += (_, e) => (Current() as ITabRoot)?.OnReselected();
+        }
+        ApplyWidth(Resources!.Configuration!);
         Show(_tab);
 
         OnBackPressedDispatcher.AddCallback(this, new BackCallback(this));
@@ -81,6 +99,25 @@ public sealed class MainActivity : AppCompatActivity
         }
     }
 
+    public override void OnConfigurationChanged(Android.Content.Res.Configuration newConfig)
+    {
+        base.OnConfigurationChanged(newConfig);
+        ApplyWidth(newConfig);
+    }
+
+    /// <summary>Rail or bottom bar for this width; the shown one gets the current tab, then the insets are re-applied.</summary>
+    private void ApplyWidth(Android.Content.Res.Configuration config)
+    {
+        _wide = config.ScreenWidthDp >= RailMinWidthDp;
+        _rail.Visibility = _wide ? ViewStates.Visible : ViewStates.Gone;
+        _bar.Visibility = _wide ? ViewStates.Gone : ViewStates.Visible;
+        if (Nav.SelectedItemId != _tab)
+        {
+            Nav.SelectedItemId = _tab;
+        }
+        ViewCompat.RequestApplyInsets(_root);
+    }
+
     protected override void OnSaveInstanceState(Bundle outState)
     {
         base.OnSaveInstanceState(outState);
@@ -88,7 +125,7 @@ public sealed class MainActivity : AppCompatActivity
     }
 
     /// <summary>Switches to a tab (also from other screens' buttons, e.g. Home → Terminal).</summary>
-    public void SelectTab(int id) => _nav.SelectedItemId = id;
+    public void SelectTab(int id) => Nav.SelectedItemId = id;
 
     private void Show(int id)
     {
@@ -116,6 +153,14 @@ public sealed class MainActivity : AppCompatActivity
         tx.SetReorderingAllowed(true);
         tx.CommitNow();
         _tab = id;
+        // Keep the hidden navigation on the same tab for the next width change (no listener runs for an equal id).
+        foreach (NavigationBarView nav in new NavigationBarView[] { _bar, _rail })
+        {
+            if (nav != Nav && nav.SelectedItemId != id)
+            {
+                nav.Menu.FindItem(id)?.SetChecked(true);
+            }
+        }
     }
 
     private static AndroidX.Fragment.App.Fragment Create(int id) => id switch

@@ -239,8 +239,10 @@
     <string name="runtime_missing">缺失</string>
     <string name="runtime_import">导入运行环境包</string>
     <string name="runtime_import_sub">选择 dshmobile-runtime-*.zip；逐层校验后安装，并安装内置 DSH。DSH 须已停止。</string>
-    <string name="runtime_repair">修复 DSH</string>
-    <string name="runtime_repair_sub">重新安装 App 内置的 DSH 层。工作区与插件不受影响；DSH 须已停止。</string>
+    <string name="runtime_repair">安装内置 DSH</string>
+    <string name="runtime_repair_sub">DSH 层缺失或比 App 内置的旧时安装内置版本；已是同版或更新时保持不变。工作区与插件不受影响；DSH 须已停止。</string>
+    <string name="runtime_prepare_installed">已安装 DSH %1$s</string>
+    <string name="runtime_prepare_kept">已装 DSH %1$s 不比内置旧，保持不变</string>
     <string name="runtime_rollback">回滚到上一版</string>
     <string name="runtime_rollback_sub">换回上一次导入前的运行环境；没有上一版时会如实报告。</string>
     <string name="runtime_rollback_confirm_title">回滚运行环境？</string>
@@ -248,7 +250,7 @@
     <string name="runtime_rollback_action">回滚</string>
     <string name="runtime_last_ok">「%1$s」已完成</string>
     <string name="runtime_last_failed">「%1$s」未成功</string>
-    <string name="runtime_bundle_note">运行环境包由本项目的构建脚本生成并在 GitHub Release 发布（dshmobile-runtime-debian-arm64-*.zip）；旧的 dshapp-runtime-*.zip 也可导入。</string>
+    <string name="runtime_bundle_note">运行环境包（dshmobile-runtime-debian-arm64-*.zip）由本项目的构建脚本生成；旧的 dshapp-runtime-*.zip 也可导入。</string>
 
     <string name="developer_title">开发者选项</string>
     <string name="developer_section_tools">诊断工具</string>
@@ -286,6 +288,10 @@
     <string name="automation_section_developer">开发者</string>
     <string name="automation_relay">手机操控中继</string>
     <string name="automation_relay_off">已关闭</string>
+    <string name="automation_relay_starting">正在开启</string>
+    <string name="automation_relay_running">已开启</string>
+    <string name="automation_relay_degraded">部分可用</string>
+    <string name="automation_relay_mailbox">信箱运行中</string>
     <string name="automation_a11y">无障碍服务</string>
     <string name="automation_overlay">悬浮审批卡</string>
     <string name="automation_shizuku">Shizuku（可选）</string>

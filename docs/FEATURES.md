@@ -22,10 +22,10 @@
 | Session / Resume / Fork | 未开始 | 需模型凭据；WebUI 已可承载，待配置凭据后验证 |
 | 工具调用与审批 | 未开始 | |
 | Subagent / Agent Team | 未开始 | |
-| Bash / PTY / 子进程 | 通过（Android 17 真机） | 原生 TerminalView + PRoot bash：命令执行、^C、多会话新建/切换/关闭、关闭页面后会话保留、「停止」连带结束终端进程均已验证；中文/宽字符、大量输出、横屏未测 |
+| Bash / PTY / 子进程 | 通过（Android 17 真机） | 原生 TerminalView + PRoot bash：命令执行、^C、多会话新建/切换/关闭、关闭页面后会话保留、「停止」连带结束终端进程均已验证；横屏（9 行，键盘弹出时紧凑模式）已验证；中文/宽字符、大量输出未测 |
 | 文件、工作目录、附件 | 部分通过（Android 17 真机） | 文件页浏览 / 受保护 `.dsh` 拒绝 / SAF 导入 / SAF 导出已真机通过；WebUI 附件上传未验证（DSH 未发起文件选择，疑需先选工作区）；下载未做 |
 | MCP / Skills / 自定义工具 | 部分通过（Android 17 真机） | DSH 0.2.1-rc.5 经 `--patch` 加载 `dsh-mcp-client` 条目并拉起 guest MCP 服务 `ui-facade.mjs`（真机 `ps` 可见为 DSH 子进程）；由模型实际调用 `mcp__ui__*` 需模型凭据，未验证；Skills / 其它自定义工具未做 |
-| 更新与诊断 | 部分 | 离线导入 + 固定诊断（arch/debian/node/dsh 版本）+ 健康探测；在线更新与回滚 UI 未做 |
+| 更新与诊断 | 部分 | 离线导入（系统文件选择器）+ 回滚（「更多 → 运行环境」，真机通过，但槽位只在 `previous/` 已存在时产生）+ 固定诊断（arch/debian/node/dsh 版本）+ 健康探测；在线更新未做 |
 
 ## 宿主基础设施
 
@@ -39,7 +39,7 @@
 | Runtime 层管理（TASK-004） | 通过（Android 17 真机），部分验收未测 | 磁盘不足 / 层缺失 / 更新失败未测；见 milestones/M2.md |
 | C# 运行时协调器（ADR-0007，PR-00/01/02；影子比对已于 ADR-0018 删除） | 通过（Android 17 真机，PR-10 前） | Release full-trim：启停 / 重复启动 / 停止无孤儿 / 强杀后 journal 恢复为 `RUNTIME_INTERRUPTED`；导入时 `runtime.bundle-verify` 与 `runtime.layer-extract` 影子均 `Agree`（16,119 项逐项一致）。实现仍为旧桥；失败清理分支仅单测。见 COMPATIBILITY.md「ADR-0007 迁移」 |
 | C# 宿主（ADR-0015 起默认，ADR-0018 起唯一实现） | 通过（Android 17 真机，作为可选路径时） | 不经 DSHBox 代码：C# 启动沙箱 + DSH、取 launch token、C# WebView 加载官方 WebUI；10.1 s READY；停止 / 强杀无孤儿；token 不入日志。（当时运行期间终端 / 手机操控不可用；之后的版本已接通。）见 COMPATIBILITY.md「ADR-0007 里程碑」 |
-| C# 终端（ADR-0016 起默认，ADR-0018 起唯一实现） | 通过（Android 17 真机，作为可选路径时），部分未测 | 不经 DSHBox 终端代码：C# PTY + PRoot bash、Material 3 界面、本地 xterm.js 显示、原生键盘输入；多会话 / 重放 / resize / ^C / 大量输出 / 关闭与强杀无残留已验证；中文组合输入、vim 等应用光标模式、横屏未测。见 COMPATIBILITY.md「C# 终端界面」 |
+| C# 终端（ADR-0016 起默认，ADR-0018 起唯一实现） | 通过（Android 17 真机，作为可选路径时），部分未测 | 不经 DSHBox 终端代码：C# PTY + PRoot bash、Material 3 界面、本地 xterm.js 显示、原生键盘输入；多会话 / 重放 / resize / ^C / 大量输出 / 关闭与强杀无残留已验证；横屏已验证；中文组合输入、vim 等应用光标模式未测。见 COMPATIBILITY.md「C# 终端界面」 |
 
 ## 可选模块（方案 4.3）
 
