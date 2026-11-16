@@ -59,6 +59,7 @@ jobs:
           add-paths: |
             runtime-bundle/runtime-build.lock
             runtime-bundle/runtime-assets.lock
+            release/preview.json
             runtime-bundle/dsh/package.json
             runtime-bundle/dsh/package-lock.json
             docs/UPSTREAMS.md
