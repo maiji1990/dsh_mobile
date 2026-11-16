@@ -30,6 +30,12 @@ test('reviewed preview spec matches the App parser input schema', () => {
   const manifest=buildManifest(p,{channel:'preview',generatedAt:'2026-11-16T00:00:00Z',
     expiresDays:30,describe:()=>({sha256:'a'.repeat(64),size:100})});
   assert.equal(manifest.artifacts.length,2);
-  assert.equal(manifest.artifacts[1].sourceTag,'dsh-v0.2.1-rc.5');
-  assert.equal(manifest.artifacts[1].sourceCommit.length,40);
+  const locked=readFileSync(new URL('../../runtime-bundle/runtime-build.lock',import.meta.url),'utf8');
+  const dshVersion=/^DSH_VERSION=(.+)$/m.exec(locked)?.[1];
+  const runtimeVersion=/^BUNDLE_VERSION=(.+)$/m.exec(locked)?.[1];
+  assert.ok(dshVersion && runtimeVersion,'runtime-build.lock must pin both versions');
+  assert.equal(manifest.artifacts[0].version,runtimeVersion);
+  assert.equal(manifest.artifacts[1].version,dshVersion);
+  assert.equal(manifest.artifacts[1].sourceTag,'dsh-v'+dshVersion);
+  assert.match(manifest.artifacts[1].sourceCommit,/^[a-f0-9]{40,64}$/);
 });
