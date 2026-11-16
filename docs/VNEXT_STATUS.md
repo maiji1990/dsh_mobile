@@ -186,3 +186,16 @@ PR-02 验收门禁（方案）：匿名拉取两文件并正确验签（工作�
 chroot 探测未覆盖终端 / 子进程工具，**真机上自建 DSH 层从未运行过**（11-16 真机仍用 DSHBox 构建的 DSH 层）。发布 `dsh-0.2.1-rc.5` 前需：
 核对层内 `node-pty` 的 `linux-arm64` 原生模块与 spawn-helper 是否存在且可执行，必要时在 `package.json` 中显式允许这几个包的脚本（单独 PR，规则 8）；
 并在真机上用自建 DSH 层跑一次带 Bash 工具 / 终端的任务。
+
+## 8. PR-04 状态（安全下载器与磁盘预算）
+
+| 方案要求 | 实现 / 证据 |
+|---|---|
+| 只从已验签的 ReleaseCatalog 选项下载 | `VerifiedRelease` 只能由验证器生成；下载器只接受其中的制品（逐字段相等）；测试：自由 URL、`../`、点开头、非十六进制摘要、http URL 均 `DOWNLOAD_NOT_OFFERED` 且不发请求 |
+| 流式写私有 `.part`，取消 / 进度 / 磁盘预算 / HTTP 状态 / https-only 跳转 | `files/updates/partial/<sha>.part`；`IProgress<DownloadProgress>`；空间不足 / 超缓存上限在发请求前拒绝；非 200 / 206 → `DOWNLOAD_HTTP_FAILED`；最终地址非 https → `DOWNLOAD_INSECURE_REDIRECT` |
+| Range + ETag / Last-Modified 续传；不支持则从头；恢复后整文件重新校验 | `Range` + `If-Range`；206 起点 / 总长不符即拒；200 从 0 重下；完成后整文件 SHA-256 + 大小（变异：去掉该检查后 2 个测试失败） |
+| 成功后原子改名入可信缓存并记录来源；失败删除；限制并发与缓存总量 | 同文件系统 rename 到 `verified/<sha>/<archive>` + `verified.json`（kind / version / ABI / 通道 / keyId / 清单时间）；SHA 不符删除；单并发；默认 2 GiB 上限，LRU 淘汰 |
+| 测试：短下载、错误长度、分块中断、换 ETag、200 而非 206、写满磁盘、误删共享路径、重复下载、杀进程恢复、恶意文件名 | 12 例全部覆盖（写满磁盘以空间预算拒绝 + 写失败保留前缀覆盖；杀进程以新建下载器只凭 journal + part 续传覆盖）；另有「本地被篡改的 part」「缓存文件被改动后不再交出」两例 |
+| 验收：失败不碰 `runtime-current` / `user-data`；SHA 不符不得安装；续传不绕过完整性 | `NothingOutsideTheUpdateStore_IsEverWritten`；整文件哈希；安装（PR-05）只接受 `VerifiedArtifact` 且应在安装前再次校验 |
+
+未做：接入 App / UI（PR-06）、安装事务（PR-05）、真机（Android 上 `AndroidMessageHandler` 的跳转与 Range 行为需真机确认）。
