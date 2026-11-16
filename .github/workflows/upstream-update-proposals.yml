@@ -27,7 +27,7 @@ jobs:
     steps:
       - name: Require a token capable of triggering PR checks
         env:
-          PR_TOKEN: \${{ secrets.UPDATE_PR_TOKEN }}
+          PR_TOKEN: ${{ secrets.UPDATE_PR_TOKEN }}
         run: |
           if [ -z "$PR_TOKEN" ]; then
             echo '::error::Set UPDATE_PR_TOKEN with Contents and Pull requests write access; default GITHUB_TOKEN does not trigger PR CI.'
@@ -41,16 +41,16 @@ jobs:
           node-version: '22.16.0'
       - name: Detect and pin upstream version
         if: github.event_name == 'schedule' || inputs.component == 'all' || inputs.component == matrix.component
-        run: node tooling/update-upstream.mjs --component '\${{ matrix.component }}'
+        run: node tooling/update-upstream.mjs --component '${{ matrix.component }}'
       - name: Create reviewable PR
         if: github.event_name == 'schedule' || inputs.component == 'all' || inputs.component == matrix.component
         uses: peter-evans/create-pull-request@v7
         with:
-          token: \${{ secrets.UPDATE_PR_TOKEN }}
-          branch: automation/upstream-\${{ matrix.component }}
+          token: ${{ secrets.UPDATE_PR_TOKEN }}
+          branch: automation/upstream-${{ matrix.component }}
           delete-branch: true
-          commit-message: "build: propose pinned \${{ matrix.component }} upstream update"
-          title: "build(\${{ matrix.component }}): pinned upstream update proposal"
+          commit-message: "build: propose pinned ${{ matrix.component }} upstream update"
+          title: "build(${{ matrix.component }}): pinned upstream update proposal"
           body: |
             Automated proposal, not an approved or published upgrade.
             Upstream metadata, package-lock and SHA-256 are pinned exactly.
