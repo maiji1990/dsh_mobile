@@ -25,3 +25,5 @@ tests/TestVectors/relay-guest/** -text
 runtime-bundle/dsh/** -text
 # Read by runtime-bundle/build-runtime.sh (bash): never CRLF
 runtime-bundle/runtime-build.lock text eol=lf
+# Signed release-manifest fixtures (ADR-0022): the signature covers the exact bytes, never EOL-converted
+tests/TestVectors/release-manifest/** -text

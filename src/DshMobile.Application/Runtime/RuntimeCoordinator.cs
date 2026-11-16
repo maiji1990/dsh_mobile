@@ -302,6 +302,16 @@ public sealed class RuntimeCoordinator : IDisposable
             {
                 return Refused($"cannot start while the runtime is {State.Current.State}");
             }
+            // An install interrupted by process death leaves a journal: finish or undo it before DSH runs on the layer.
+            var recovery = new DshLayerInstaller(_layout, _options.HostPathExists).Recover();
+            if (recovery.Action != "none")
+            {
+                _log.Note($"start: interrupted DSH layer install {recovery.Action}{(recovery.Message is { } m ? ": " + m : "")}");
+            }
+            if (!recovery.Ok)
+            {
+                return new RuntimeStartResult(false, DshLayerErrorCodes.InstallFailed, "the DSH layer is mid-install and could not be recovered: " + recovery.Message, State.Current);
+            }
             if (!State.TryTransition(RuntimeState.Starting, "start requested", HarnessState.Stopped))
             {
                 return Refused($"cannot start while {State.Current.State}");

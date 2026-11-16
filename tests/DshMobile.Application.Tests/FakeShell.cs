@@ -13,6 +13,7 @@ internal sealed class FakeShell : IPtyHandle
     private readonly Queue<byte> _out = new();
     private readonly StringBuilder _line = new();
     private PtyExit? _exit;
+    private bool _readerWaiting;
     private bool _sleeping;
     private int _status;
 
@@ -50,6 +51,22 @@ internal sealed class FakeShell : IPtyHandle
 
     public int Pid { get; }
 
+    /// <summary>
+    /// Nothing in flight: every byte the shell emitted has been read, and the reader is back inside <see cref="Read"/>
+    /// waiting for more (a reader calls Read again only after it handled the previous chunk) or the shell has exited.
+    /// The handshake that lets a test advance a fake clock without starving a step that should pass.
+    /// </summary>
+    public bool Quiescent
+    {
+        get
+        {
+            lock (_lock)
+            {
+                return _out.Count == 0 && (_readerWaiting || _exit is not null);
+            }
+        }
+    }
+
     private void Emit(string s)
     {
         lock (_lock)
@@ -75,8 +92,10 @@ internal sealed class FakeShell : IPtyHandle
                     {
                         buffer[n++] = _out.Dequeue();
                     }
+                    _readerWaiting = false;
                     return n;
                 }
+                _readerWaiting = true;
                 if (_exit is not null)
                 {
                     return 0;

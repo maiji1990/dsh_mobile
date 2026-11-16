@@ -1,0 +1,31 @@
+{
+  "schema": 1,
+  "channel": "preview",
+  "generatedAt": "2026-11-16T00:00:00Z",
+  "expiresAt": "2026-12-16T00:00:00Z",
+  "artifacts": [
+    {
+      "kind": "dsh",
+      "version": "0.2.2-rc.3",
+      "abi": "arm64",
+      "archive": "dsh-arm64-0.2.2-rc.3.tar.zst",
+      "url": "https://releases.example.invalid/dsh/dsh-arm64-0.2.2-rc.3.tar.zst",
+      "sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+      "size": 94371840,
+      "minAppVersion": "0.1.0",
+      "requiresNode": "24.x",
+      "sourceRepo": "deepseek-ai/deepseek-harness",
+      "sourceTag": "dsh-v0.2.2-rc.3",
+      "sourceCommit": "2222222222222222222222222222222222222222"
+    },
+    {
+      "kind": "runtime",
+      "version": "2026.11.16",
+      "abi": "arm64",
+      "archive": "runtime-bundle-arm64-2026.11.16.zip",
+      "url": "https://releases.example.invalid/runtime/runtime-bundle-arm64-2026.11.16.zip",
+      "sha256": "3333333333333333333333333333333333333333333333333333333333333333",
+      "size": 268435456
+    }
+  ]
+}

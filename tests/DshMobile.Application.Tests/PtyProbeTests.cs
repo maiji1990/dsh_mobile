@@ -1,7 +1,9 @@
+using System.Diagnostics;
 using System.Text;
 using DshMobile.Application.Terminal;
 using DshMobile.Native;
 using DshMobile.Runtime.Guest;
+using Microsoft.Extensions.Time.Testing;
 
 namespace DshMobile.Application.Tests;
 
@@ -9,31 +11,45 @@ namespace DshMobile.Application.Tests;
 /// PR-06: the PTY device probe and the C# PTY session lifecycle, driven by a scripted shell on a fake
 /// <see cref="IPtyHandle"/>. The real PTY (libdshmobile_native) is only exercised on the device; these tests pin
 /// what the probe concludes from what it sees, and that teardown hangs up → kills → closes.
+/// <para>No wall-clock timeouts: the probe runs on a <see cref="FakeTimeProvider"/> that is advanced only while the
+/// fake shell is quiescent (all output read, reader waiting) and the session is not mid-reap. A step that should pass
+/// therefore cannot time out on a busy runner (CI run 43784510013 lost the 1.5 s prompt wait that way); a step that
+/// should fail times out as soon as nothing else can happen.</para>
 /// </summary>
 public class PtyProbeTests
 {
-    /// <summary>Timeout scale for tests that wait the timeouts out (the failure paths).</summary>
-    private const double Fast = 0.05;
+    private static readonly TimeSpan Tick = TimeSpan.FromSeconds(1);
 
-    /// <summary>
-    /// Timeout scale for the passing path: timeouts are upper bounds, so a healthy run still finishes quickly, but at
-    /// 0.05 the ^C step allowed only 400 ms and failed on a busy CI runner (xUnit runs classes in parallel).
-    /// </summary>
-    private const double Roomy = 0.5;
-
-    private static Task<PtyProbeReport> Probe(FakeShell shell, double scale = Fast) =>
-        PtyProbe.RunAsync(
-            _ => Task.FromResult(new ProotPtySession(shell, "test-pty", ["proot", "/usr/bin/bash"])),
+    private static async Task<PtyProbeReport> Probe(FakeShell shell)
+    {
+        var clock = new FakeTimeProvider();
+        ProotPtySession? session = null;
+        var run = PtyProbe.RunAsync(
+            _ => Task.FromResult(session = new ProotPtySession(shell, "test-pty", ["proot", "/usr/bin/bash"])),
             _ => [4243],
             _ => !shell.Exited,
             CancellationToken.None,
-            scale);
+            clock);
+        var guard = Stopwatch.StartNew();
+        while (!run.IsCompleted)
+        {
+            // The real session reaps on its own 100 ms poll: an exited shell is not quiescent until that was observed.
+            var reaping = shell.Exited && session is { Completion.IsCompleted: false };
+            if (shell.Quiescent && !reaping)
+            {
+                clock.Advance(Tick);
+            }
+            await Task.WhenAny(run, Task.Delay(5));
+            Assert.True(guard.Elapsed < TimeSpan.FromMinutes(5), "probe did not finish (hang guard, not a timeout of the probe)");
+        }
+        return await run;
+    }
 
     [Fact]
     public async Task WellBehavedShell_PassesEveryStep_AndExitsByItself()
     {
         var shell = new FakeShell();
-        var r = await Probe(shell, Roomy);
+        var r = await Probe(shell);
         Assert.True(r.Ok, r.Summary);
         Assert.Equal(["open", "prompt", "tty", "resize", "ctrl-c", "exit", "no-orphans"], r.Steps.Select(s => s.Name));
         Assert.All(r.Steps, s => Assert.True(s.Ok, s.Name));
@@ -79,8 +95,7 @@ public class PtyProbeTests
             _ => throw new GuestPtyException("RUNTIME_NOT_INSTALLED", "no runtime rootfs"),
             _ => [],
             _ => false,
-            CancellationToken.None,
-            Fast);
+            CancellationToken.None);
         Assert.False(r.Ok);
         var step = Assert.Single(r.Steps);
         Assert.Equal("open", step.Name);
