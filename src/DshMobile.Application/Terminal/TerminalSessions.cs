@@ -109,6 +109,53 @@ public sealed class TerminalSessions : IAsyncDisposable
         RaiseChanged();
     }
 
+    /// <summary>Longest session name (vNext PR-08 rename), in UTF-16 units.</summary>
+    public const int MaxTitleLength = 32;
+
+    /// <summary>
+    /// Renames a session (vNext PR-08). Control characters are removed and the name trimmed and cut to
+    /// <see cref="MaxTitleLength"/>; null / blank restores the numbered default ("终端 N"). False when no such session.
+    /// </summary>
+    public bool Rename(string id, string? title)
+    {
+        var clean = CleanTitle(title);
+        lock (_lock)
+        {
+            var entry = _entries.FirstOrDefault(e => e.Id == id);
+            if (entry is null)
+            {
+                return false;
+            }
+            if (entry.CustomTitle == clean)
+            {
+                return true;
+            }
+            entry.CustomTitle = clean;
+        }
+        RaiseChanged();
+        return true;
+    }
+
+    /// <summary>The name <see cref="Rename"/> stores; null for "use the default".</summary>
+    public static string? CleanTitle(string? title)
+    {
+        if (title is null)
+        {
+            return null;
+        }
+        var kept = new string(title.Where(c => !char.IsControl(c)).ToArray()).Trim();
+        if (kept.Length > MaxTitleLength)
+        {
+            kept = kept[..MaxTitleLength];
+            if (char.IsHighSurrogate(kept[^1]))
+            {
+                kept = kept[..^1]; // never cut a surrogate pair in half
+            }
+            kept = kept.TrimEnd();
+        }
+        return kept.Length == 0 ? null : kept;
+    }
+
     /// <summary>Closes one window: removes it at once, then hangs up / kills its shell. False when no such session.</summary>
     public async Task<bool> CloseAsync(string id)
     {
@@ -151,8 +198,19 @@ public sealed class TerminalSessions : IAsyncDisposable
     public IDisposable? Attach(string id, Action<byte[]> onOutput)
     {
         ArgumentNullException.ThrowIfNull(onOutput);
+        return Attach(id, new UnthrottledSink(onOutput));
+    }
+
+    /// <summary>
+    /// Attaches a view with flow control (vNext PR-08): like <see cref="Attach(string, Action{byte[]})"/>, and the
+    /// session's reader awaits <see cref="ITerminalOutputSink.WaitForRoomAsync"/> of every attached sink before each PTY
+    /// read. Detach (dispose the result) before disposing the sink.
+    /// </summary>
+    public IDisposable? Attach(string id, ITerminalOutputSink sink)
+    {
+        ArgumentNullException.ThrowIfNull(sink);
         var entry = Find(id);
-        return entry?.Attach(onOutput);
+        return entry?.Attach(sink);
     }
 
     /// <summary>Writes typed bytes to the shell. False when the session is gone or its shell has exited.</summary>
@@ -240,6 +298,7 @@ public sealed class TerminalSessions : IAsyncDisposable
         {
             while (true)
             {
+                await entry.WaitForRoomAsync().ConfigureAwait(false);
                 var n = await entry.Pty.Stream.ReadAsync(buf).ConfigureAwait(false);
                 if (n == 0)
                 {
@@ -290,10 +349,17 @@ public sealed class TerminalSessions : IAsyncDisposable
 
     private void RaiseChanged() => Changed?.Invoke();
 
+    private sealed class UnthrottledSink(Action<byte[]> onOutput) : ITerminalOutputSink
+    {
+        public void Write(byte[] chunk) => onOutput(chunk);
+
+        public ValueTask WaitForRoomAsync(CancellationToken ct) => ValueTask.CompletedTask;
+    }
+
     private sealed class Entry(string id, int order, ProotPtySession pty)
     {
         private readonly Lock _lock = new();
-        private readonly List<Action<byte[]>> _listeners = [];
+        private readonly List<ITerminalOutputSink> _listeners = [];
         private readonly byte[] _ring = new byte[ScrollbackBytes];
         private int _ringStart;
         private int _ringCount;
@@ -312,9 +378,11 @@ public sealed class TerminalSessions : IAsyncDisposable
 
         public bool Removed;
 
+        public string? CustomTitle;
+
         public TerminalSessionInfo Info(bool active) => new(
             Id,
-            "终端 " + order.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            CustomTitle ?? "终端 " + order.ToString(System.Globalization.CultureInfo.InvariantCulture),
             active,
             Running,
             Exited,
@@ -334,22 +402,40 @@ public sealed class TerminalSessions : IAsyncDisposable
                 var copy = chunk.ToArray();
                 foreach (var l in _listeners)
                 {
-                    l(copy);
+                    l.Write(copy);
                 }
             }
         }
 
-        public IDisposable Attach(Action<byte[]> listener)
+        public IDisposable Attach(ITerminalOutputSink listener)
         {
             lock (_lock)
             {
                 if (_ringCount > 0)
                 {
-                    listener(Kept());
+                    listener.Write(Kept());
                 }
                 _listeners.Add(listener);
             }
             return new Detach(this, listener);
+        }
+
+        /// <summary>Backpressure: the reader does not read more while an attached view is behind.</summary>
+        public async ValueTask WaitForRoomAsync()
+        {
+            ITerminalOutputSink[] sinks;
+            lock (_lock)
+            {
+                if (_listeners.Count == 0)
+                {
+                    return; // nobody watching: keep reading into the ring so the shell never blocks
+                }
+                sinks = [.. _listeners];
+            }
+            foreach (var sink in sinks)
+            {
+                await sink.WaitForRoomAsync(CancellationToken.None).ConfigureAwait(false);
+            }
         }
 
         public async Task DrainedAsync()
@@ -364,7 +450,7 @@ public sealed class TerminalSessions : IAsyncDisposable
             }
         }
 
-        private void Remove(Action<byte[]> listener)
+        private void Remove(ITerminalOutputSink listener)
         {
             lock (_lock)
             {
@@ -399,7 +485,7 @@ public sealed class TerminalSessions : IAsyncDisposable
             return result;
         }
 
-        private sealed class Detach(Entry entry, Action<byte[]> listener) : IDisposable
+        private sealed class Detach(Entry entry, ITerminalOutputSink listener) : IDisposable
         {
             private int _done;
 

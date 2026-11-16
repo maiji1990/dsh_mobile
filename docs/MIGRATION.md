@@ -91,6 +91,7 @@ corepack 缓存，见 `src/DshMobile.Android/Assets/README.md`）。Shizuku 客�
 | vNext PR-04 | 安全下载器（ADR-0022 修订）：`VerifiedRelease` 令牌、`ArtifactStore`（`files/updates`：partial / verified，按摘要命名，缓存上限与 LRU 淘汰）、`ArtifactDownloader`（Range + If-Range 续传、整文件哈希、https-only、空间预算、稳定错误码） | 单测 12 例 + 变异检查；未接入 UI / 安装（PR-05 / PR-06）；无真机证据 |
 | vNext PR-05 + PR-06 | [ADR-0024](ADR/0024-online-dsh-layer-update-transaction.md)：DSH 层在线更新事务（probing 阶段保留旧层、健康检查、自动恢复、被杀即回旧层、阶段记录）与运行环境页「在线更新」界面；Runtime / Node / App 行如实标注不支持在线安装 | 单测（Application 端到端 7 例 + 层 6 例 + 变异检查）；Android 界面只经 CI 编译，**无截图级真机验收**（规则 12 待补）；无真机证据 |
 | vNext PR-07 | Harness Agent E2E：guest `xdg-user-dir` 包装器修复默认工作区（不改 DSH）；guest 驱动 `dsh-e2e.mjs`（headless / sdk / acp 真实模型轮次、落盘校验、跨进程续接、缺凭据报告 `needs-credential`）；真机执行手册与记录模板 | 单测（`XdgUserDirShimTests` 3 例、guest 9 例 + 变异检查）；`runtime-layers` chroot 对真实 DSH 运行（见 VNEXT_STATUS §10）；**无真机证据**——发布门禁待负责人用自己的凭据执行 |
+| vNext PR-08（第一段） | [ADR-0025](ADR/0025-terminal-v2-flow-control-and-links.md)：终端输出流控（页面确认 + 1 MiB 窗口 + 停摆解除）；vendor search / web-links / unicode11；`terminal-core.js`；搜索、复制 / 全选、字号、重命名、链接确认、锁定 ALT、可配置辅助键 | 单测（Application：流控 7 + 键 / 重命名 19 + 链接 14；页面 11 例用真实 xterm.js headless）+ 变异检查；本机 Node 100 MiB 压力；Android 界面只经 CI 编译，**无截图级真机验收** |
 | PR-03 … PR-11（其余） | 见迁移方案第 6 节与切片总表 | 已由上列各 PR 覆盖；PR-11 不再需要（浏览器不迁移） |
 
 ## 4. 已修复的现有缺陷（迁移方案第 7 节）

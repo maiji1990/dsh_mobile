@@ -72,6 +72,23 @@
 7. 首页「停止」：App 用户下沙箱进程为 0。
 8. 待补：中文/emoji/宽字符、大量输出滚动、横屏与分屏、软键盘遮挡、粘贴大段文本。
 
+### vNext PR-08 终端 V2（需真机 + 截图，[ADR-0025](ADR/0025-terminal-v2-flow-control-and-links.md)）
+
+自动化：`tests/terminal-web`（真实 vendored xterm.js headless：UTF-8 跨批拆分、Unicode 11 宽度、ack、搜索 / 复制 / 字号消息、链接过滤、4 MiB 压力）、
+`TerminalOutputPumpTests`（窗口、停摆解除、读取端背压）、`TerminalKeysV2Tests`、`TerminalLinksTests`；`node tooling/terminal-stress.mjs 100` 为本机吞吐。
+
+1. **大输出与背压**：`seq 1 5000000`、`yes | head -c 100000000 > /dev/null; yes | head -c 50000000`：输出期间界面可滑动、菜单可开；
+   `adb shell dumpsys meminfo <applicationId>` 前后对比，App 内存不随输出线性增长；结束后提示符与 `echo ok` 正常。输出中切到别的 App 30 s 再回来：命令仍在推进或已完成。
+2. **中文 / emoji / 宽字符**：`printf '中文😀é|\n'`：`|` 对齐在第 8 列；`ls` 含中文文件名的目录列对齐。
+3. **搜索**：菜单「搜索」→ 输入 → 上一处 / 下一处、计数「n / m」，无匹配显示「无匹配」；关闭后键盘输入回到 shell。
+4. **复制 / 全选 / 粘贴**：长按拖选 →「复制选中内容」提示已复制，粘贴到别的 App 一致；未选中时提示先选择；「全选」后复制得到可见输出。
+5. **字号**：放大 / 缩小到边界（8 / 32）后不再变化，行列随之重算（`stty size` 变化）；重进 App 后保持。
+6. **重命名**：改名后标签显示新名，留空恢复「终端 N」；超长名截断为 32 字。
+7. **链接**：`echo https://example.com` 点链接 → 确认框显示主机 → 浏览器打开；`echo https://google.com@example.com` 显示 user@ 警告；`echo file:///etc/passwd` 不可点。
+8. **ALT / 辅助键**：ALT 锁定后按 `b` 发 `ESC b`（readline 回退一个词）并自动解除；「辅助键设置」勾选 ^D、`|` 后键栏立即更新，「恢复默认」还原。
+9. **TUI**：`vim`、`nano`、`htop`、`tmux`（若 guest 已装）：方向键、退出、窗口大小变化正常；`ssh` 待 PR-11。
+10. 记录设备、Android 版本、App / DSH / Node 版本、时间与截图；逐项写通过 / 失败 / 不适用及原因。
+
 ## TASK-009 插件管理（需真机）
 
 1. 首页「插件」：`list: OK`，显示 web profile 已装插件（全新为空）。

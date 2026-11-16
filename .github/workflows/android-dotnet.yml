@@ -66,6 +66,10 @@ jobs:
       - name: Release tooling tests
         run: node tooling/run-node-tests.mjs tests/tooling
 
+      # Terminal page (vNext PR-08): message logic driven with the real vendored xterm.js 6.0.0 (headless).
+      - name: Terminal page tests
+        run: node tooling/run-node-tests.mjs tests/terminal-web
+
       - name: Build app
         run: dotnet build src/DshMobile.Android -c Release
 

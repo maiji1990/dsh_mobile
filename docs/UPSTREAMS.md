@@ -123,12 +123,15 @@
 
 ## 前端资源（随 APK 打包，离线）
 
-npm 包只取发布 tarball 中的必要文件，**逐字节**放入 `src/DshMobile.Android/Assets/terminal/vendor/`；`tooling/terminal-web.lock.json` 记录精确版本、tarball `sha512` integrity 与每个文件的 `sha256`，`TerminalWebAssetsTests` 校验哈希并拒绝未登记文件。
+npm 包只取发布 tarball 中的必要文件（addon 版本与 xterm 6.0.0 同日发布的一组，2025-12-22），**逐字节**放入 `src/DshMobile.Android/Assets/terminal/vendor/`；`tooling/terminal-web.lock.json` 记录精确版本、tarball `sha512` integrity 与每个文件的 `sha256`，`TerminalWebAssetsTests` 校验哈希并拒绝未登记文件。
 
 | 包 | 版本 | 许可证 | 文件 | 用途 | 引入 |
 |---|---|---|---|---|---|
 | `@xterm/xterm` | 6.0.0 | MIT（`LICENSE-xterm.txt`） | `lib/xterm.js`、`css/xterm.css` | C# 终端的渲染（WebView 只显示；键盘由原生 `TerminalInputView` 接管） | PR-06 第二段 |
 | `@xterm/addon-fit` | 0.11.0 | MIT（`LICENSE-addon-fit.txt`） | `lib/addon-fit.js` | 按容器计算行列 | PR-06 第二段 |
+| `@xterm/addon-search` | 0.16.0 | MIT（`LICENSE-addon-search.txt`） | `lib/addon-search.js` | 终端内搜索（上一处 / 下一处、结果计数） | vNext PR-08 |
+| `@xterm/addon-web-links` | 0.12.0 | MIT（`LICENSE-addon-web-links.txt`） | `lib/addon-web-links.js` | 链接识别；点击交给原生侧确认后用系统浏览器打开（不在页内导航） | vNext PR-08 |
+| `@xterm/addon-unicode11` | 0.9.0 | MIT（`LICENSE-addon-unicode11.txt`） | `lib/addon-unicode11.js` | Unicode 11 字宽（CJK / emoji 占两列） | vNext PR-08 |
 
 ## C# 运行时依赖（NuGet）
 

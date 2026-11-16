@@ -1,49 +1,36 @@
-// PR-06 C# terminal page glue. xterm.js (vendored, tooling/terminal-web.lock.json) is only the emulator: the C#
-// activity owns the sessions, the PTY bytes and every key mapping. This file just pipes bytes both ways over the
-// WebMessagePort the host hands over once (never the JSON bridge, never the network).
-//
-//   page -> host: {t:'ready',cols,rows} {t:'in',d} {t:'bin',d} {t:'resize',cols,rows} {t:'mode',appCursor}
-//   host -> page: {t:'reset'} {t:'out',b:<base64>} {t:'paste',d} {t:'focus'}
+// PR-06 C# terminal page glue (vNext PR-08: search, links, Unicode 11 widths, flow control; the message logic is in
+// terminal-core.js). xterm.js (vendored, tooling/terminal-web.lock.json) is only the emulator: the C# side owns the
+// sessions, the PTY bytes and every key mapping. Bytes go both ways over the WebMessagePort the host hands over once
+// (never the JSON bridge, never the network).
 'use strict';
 (function () {
+  var core = DshmTerminalCore;
   var term = new Terminal({
     fontFamily: 'monospace',
     fontSize: 14,
     cursorBlink: true,
     scrollback: 5000,
+    allowProposedApi: true, // unicode + search decorations are still "proposed" in xterm 6.0.0
     theme: { background: '#000000' }
   });
   var fit = new FitAddon.FitAddon();
+  var search = new SearchAddon.SearchAddon({ highlightLimit: 1000 });
   term.loadAddon(fit);
+  term.loadAddon(search);
+  term.loadAddon(new Unicode11Addon.Unicode11Addon());
+  term.unicode.activeVersion = '11'; // CJK / emoji take two columns, as in the guest's wcwidth
   term.open(document.getElementById('terminal'));
 
   var port = null;
-  var appCursor = false;
-
   function send(m) {
     if (port) { port.postMessage(JSON.stringify(m)); }
   }
-
-  function decode(b64) {
-    var s = atob(b64);
-    var u = new Uint8Array(s.length);
-    for (var i = 0; i < s.length; i++) { u[i] = s.charCodeAt(i); }
-    return u;
-  }
-
-  // DECCKM decides what the host's arrow / HOME / END keys send; report changes after each write.
-  function checkMode() {
-    var m = term.modes.applicationCursorKeysMode;
-    if (m !== appCursor) { appCursor = m; send({ t: 'mode', appCursor: m }); }
-  }
+  term.loadAddon(new WebLinksAddon.WebLinksAddon(core.linkHandler(send)));
 
   function refit() {
     try { fit.fit(); } catch (e) { /* zero-size while hidden */ }
   }
-
-  term.onData(function (d) { send({ t: 'in', d: d }); });
-  term.onBinary(function (d) { send({ t: 'bin', d: d }); });
-  term.onResize(function (s) { send({ t: 'resize', cols: s.cols, rows: s.rows }); });
+  var page = core.bind(term, search, send, refit);
   new ResizeObserver(refit).observe(document.getElementById('terminal'));
 
   window.addEventListener('message', function (e) {
@@ -52,14 +39,8 @@
     port.onmessage = function (ev) {
       var m;
       try { m = JSON.parse(ev.data); } catch (x) { return; }
-      switch (m.t) {
-        case 'reset': term.reset(); appCursor = false; break;
-        case 'out': term.write(decode(m.b), checkMode); break;
-        case 'paste': term.paste(String(m.d)); break;
-        case 'focus': term.focus(); break;
-      }
+      page.handle(m);
     };
-    refit();
-    send({ t: 'ready', cols: term.cols, rows: term.rows });
+    page.ready();
   });
 })();

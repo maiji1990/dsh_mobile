@@ -234,3 +234,16 @@ sdk 暴露驱动缺陷：失败的轮次 `session/wait` 仍回 `{}`，错误只�
 验收（方案）：真机日志与清除密钥后的检查结果，每个「通过」记录版本 / 系统 / 设备 / 时间——**未做**，需负责人用自己的凭据在真机执行
 （[TEST_PLAN「vNext PR-07」](TEST_PLAN.md)，记录模板 [TEMPLATE-vnext-pr07-agent-e2e.md](../migration/parity/TEMPLATE-vnext-pr07-agent-e2e.md)）。
 在此之前 Preview 不得升为 Stable。
+
+## 11. PR-08 状态（终端 V2：保留 xterm.js + C# PTY，[ADR-0025](ADR/0025-terminal-v2-flow-control-and-links.md)）
+
+| 方案要求 | 实现 / 证据 |
+|---|---|
+| 按确切版本引入 SearchAddon、WebLinksAddon、Unicode11Addon，保持 lock 中 SHA / 许可证登记 | `@xterm/addon-search` 0.16.0、`addon-web-links` 0.12.0、`addon-unicode11` 0.9.0（与 xterm 6.0.0 同日 2025-12-22 发布）；`tooling/terminal-web.lock.json` 钉 integrity + sha256，`TerminalWebAssetsTests` 校验；UPSTREAMS 登记；API 按 6.0.0 typings 核对（unicode / decorations 需 `allowProposedApi`） |
+| 1. 协议测试：PTY 字节 → base64 → JS，不能双重 UTF-8 解码；大输出限速与背压 | `TerminalOutputPump`：原始字节批处理、页面 ack、1 MiB 窗口、5 s 停摆解除；`TerminalSessions` 读取端背压（变异检查：去掉等待则 2 例失败）。`tests/terminal-web` 用**真实 vendored xterm.js** 验证跨批拆分的中文 / emoji 只解码一次、Unicode 11 宽度 |
+| 2. IME 组合文本、软键盘、全角、emoji；禁止重复输入 | **未改**：`TerminalInputView` 的行为只能在真机输入法上判断，本段不做无证据的改动；列入真机清单 |
+| 3. 可配置辅助键与手势：Ctrl/Alt/Esc/Tab、方向、Home/End、PgUp/PgDn、复制 / 粘贴、搜索、会话重命名 | CTRL / ALT 锁定、可勾选键（新增 ^D ^Z ^L ^R、`| / - ~ _ *`）、粘贴常驻；菜单：搜索、复制、全选、重命名。**手势未做**；键的顺序固定为目录顺序 |
+| 4. 搜索、链接识别、选择复制、字号 / 行距 / 主题、滚动回看；可选会话摘要 | 搜索栏（上一处 / 下一处 / 计数）、链接（原生确认、显示真实主机、user@ 警告、系统浏览器）、复制 / 全选、字号（持久化）、滚动到底部；scrollback 5000 不变。**行距 / 主题、会话摘要未做** |
+| 5. vim / nano / htop / tmux / ssh、中文输入、UTF-8 断包、鼠标 / 光标模式、100 MB 压力 | UTF-8 断包：单测（真实 xterm.js）；100 MiB：`tooling/terminal-stress.mjs` 本机 Node ascii 41.9 / utf8 36.4 / ansi 23.8 MiB/s、末行完整（**不是 WebView**）；其余为真机项（TEST_PLAN「vNext PR-08」） |
+
+验收：Android 界面只经 CI 编译；**无截图级真机验收**（规则 12）、无真机性能数据。
