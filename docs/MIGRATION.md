@@ -90,6 +90,7 @@ corepack 缓存，见 `src/DshMobile.Android/Assets/README.md`）。Shizuku 客�
 | vNext PR-03 | 运行层 / DSH 层分开构建与发布（ADR-0020 更新）：两个独立 arm64 作业各构建两次比对可复现性；App 自己的导入器与 DSH 安装器验收；chroot guest 布局里用 App 的 dsh-probe 跑 5 个 profile；DSH 附 provenance；分别发布不可覆盖的 `runtime-<v>` / `dsh-<v>` Release | 以本 PR 的 `runtime-layers` CI 为准（见 VNEXT_STATUS §7）；chroot 不是 Android / PRoot，**无真机证据**；`runtime-assets.lock` 未改（发布并验收后再改） |
 | vNext PR-04 | 安全下载器（ADR-0022 修订）：`VerifiedRelease` 令牌、`ArtifactStore`（`files/updates`：partial / verified，按摘要命名，缓存上限与 LRU 淘汰）、`ArtifactDownloader`（Range + If-Range 续传、整文件哈希、https-only、空间预算、稳定错误码） | 单测 12 例 + 变异检查；未接入 UI / 安装（PR-05 / PR-06）；无真机证据 |
 | vNext PR-05 + PR-06 | [ADR-0024](ADR/0024-online-dsh-layer-update-transaction.md)：DSH 层在线更新事务（probing 阶段保留旧层、健康检查、自动恢复、被杀即回旧层、阶段记录）与运行环境页「在线更新」界面；Runtime / Node / App 行如实标注不支持在线安装 | 单测（Application 端到端 7 例 + 层 6 例 + 变异检查）；Android 界面只经 CI 编译，**无截图级真机验收**（规则 12 待补）；无真机证据 |
+| vNext PR-07 | Harness Agent E2E：guest `xdg-user-dir` 包装器修复默认工作区（不改 DSH）；guest 驱动 `dsh-e2e.mjs`（headless / sdk / acp 真实模型轮次、落盘校验、跨进程续接、缺凭据报告 `needs-credential`）；真机执行手册与记录模板 | 单测（`XdgUserDirShimTests` 3 例、guest 9 例 + 变异检查）；`runtime-layers` chroot 对真实 DSH 运行（见 VNEXT_STATUS §10）；**无真机证据**——发布门禁待负责人用自己的凭据执行 |
 | PR-03 … PR-11（其余） | 见迁移方案第 6 节与切片总表 | 已由上列各 PR 覆盖；PR-11 不再需要（浏览器不迁移） |
 
 ## 4. 已修复的现有缺陷（迁移方案第 7 节）

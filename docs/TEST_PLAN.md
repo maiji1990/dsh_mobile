@@ -118,3 +118,33 @@
 5. 断线：`adb reverse --remove-all` + `adb kill-server` 约 60 s 后恢复，重新进入页面：`DISCONNECTED · UNREACHABLE`，token 无；「连接」不再弹指纹直接 `CONNECTED`；再启动得到新转发端口与新 token。
 6. 隔离：远端 `READY` 时首页「启动」本机 DSH，两者同时 READY、互不影响；「断开」后远端端口释放、本机 DSH 不变。
 7. 待补：`HOST_KEY_CHANGED`（换主机密钥或改指向）、`AUTH_FAILED`（移除公钥）、真实局域网 / 公网主机、远端 WebUI（独立进程）、Linux 主机、Android 10。
+
+## vNext PR-07 Harness Agent E2E（发布硬门禁，需真机 + 负责人自己的模型凭据）
+
+自动化部分（CI，不需要凭据）：`tests/guest/dsh-e2e.test.mjs`（假 DSH：通过 / 缺凭据 / 谎报成功 / 续接失忆）；`runtime-layers`
+的 `tooling/runtime-smoke.sh` 在 arm64 chroot 中对真实 DSH 运行同一驱动，三个套件必须报告 `needs-credential`，并用 DSH 自己的解析器验证默认工作区修复。
+**CI 结果不能代替下列真机步骤**（AGENTS.md 规则 9）。
+
+前置：Release 构建；运行环境就绪、DSH READY；记录 App / DSH / Node / Runtime 版本、设备、系统版本、开始时间。凭据**只在设备上**输入，不要粘贴到聊天、
+Issue、PR、截图或终端历史里；日志贴出前再检查一次。
+
+1. **默认工作区**：全新安装（或删除 `/root/projects/deepseek-harness`）后在 WebUI 首次新建会话，不再出现「无法创建默认工作区」；
+   终端里 `xdg-user-dir DOCUMENTS` → `/root/projects`，WebUI 显示的工作区为 `/root/projects/deepseek-harness/default-workspace`。
+2. **凭据**：在 WebUI 的 DSH 设置中配置模型账号 / API Key；新建文本会话得到回答。
+3. **驱动（终端执行）**：
+   ```sh
+   node /opt/dshmobile-cache/dshmobile/dsh-e2e.mjs 2>&1 | tee /root/projects/e2e-$(date +%Y%m%d-%H%M%S).log
+   ```
+   期望最后一行 `DSHE2E {"status":"pass",…}`、退出码 0：headless（`--json` 任务：shell 工具写 nonce 文件 → 工具调用 + 完成结果 + 文件内容 + 回答；
+   新进程 `--session-id` 召回）、sdk（initialize → session/prompt → session/wait；新进程 session/resume 召回）、acp（session/new → session/prompt，
+   权限请求以 allow-once 应答并计数 → end_turn；session/list；新进程 session/resume 召回）。若用的不是 `deepseek-official` / `deepseek-v4-flash`，
+   加 `--provider … --model …`（sdk 必须显式指定）。单项：`--suites acp`。
+4. **审批（WebUI，手动）**：普通权限模式下让模型执行一条 Bash 命令与一次文件修改，审批卡正确显示，拒绝后命令不执行、允许后执行；会话在 App 强杀重开后仍在、可继续（Resume），Fork 后两条会话互不影响。
+5. **插件 / MCP / Skills**：插件页安装一个插件 → `--dump-config` 含其条目 → 模型实际调用一次该插件或 MCP 工具（含 `ui_*` 只读工具）→ 卸载后不再出现；Skill 被调用一次。
+6. **Subagent / Agent Team**（DSH 版本支持时）：一次派生子代理的任务完成，父会话收到结果。
+7. **后台 / 锁屏**：一个长任务运行中锁屏 15 / 60 / 180 分钟后回到前台，任务完成或给出明确失败；停止后 `ps` 无孤儿；运行中 `am force-stop` 后重开，journal 报告中断并可再次启动。
+8. **WebView 回归**：附件上传、文件下载、令牌失效后 401 重新认证。
+9. **清除凭据后**：在 WebUI 删除凭据，重跑第 3 步，期望 `status: needs-credential`、退出码 3；`grep -rIl -- '<密钥前 8 个字符>' /root/projects/.dsh /root/projects/*.log`
+   无结果（只用前缀检索，不输入完整密钥）。
+
+证据：按 [migration/parity/TEMPLATE-vnext-pr07-agent-e2e.md](../migration/parity/TEMPLATE-vnext-pr07-agent-e2e.md) 记录，每个「通过」都写明版本、设备、系统、时间；不适用项写原因，不写「通过」。
