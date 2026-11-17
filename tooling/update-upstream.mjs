@@ -52,8 +52,9 @@ export function selectDshTag(tags, prefix, current) {
     .filter(v=>parseVersions(v,current)>0).sort((a,b)=>parseVersions(b,a));
 }
 
-async function get(url) {
+async function get(url,{allow404=false}={}) {
   const r=await fetch(url,{headers:{'Accept':'application/vnd.github+json','User-Agent':'dshmobile-upstream-watch','X-GitHub-Api-Version':'2022-11-28'}});
+  if(allow404 && r.status===404) return null;
   if(!r.ok) throw new Error('upstream GET '+r.status+' '+url);
   return r;
 }
@@ -142,7 +143,15 @@ async function assets(check) {
   let provenance;
   for(const part of parts){
     const tag=part.kind+'-'+part.version;
-    const release=await (await get('https://api.github.com/repos/maiji1990/dsh_mobile/releases/tags/'+tag)).json();
+    // This task runs nightly as well as after a successful release workflow.
+    // A candidate version may exist in main before its Release has finished.
+    // Missing Releases are expected dependencies, not corrupt metadata.
+    const response=await get('https://api.github.com/repos/maiji1990/dsh_mobile/releases/tags/'+tag,{allow404:true});
+    if(!response){
+      summary('Assets: waiting for '+tag+' to be published; no asset/preview PR will be created');
+      return;
+    }
+    const release=await response.json();
     const a=release.assets?.find(a=>a.name===part.file);
     if(!a?.digest?.startsWith('sha256:') || !/^[0-9a-f]{64}$/.test(a.digest.slice(7)))
       throw Error('Release '+tag+' is absent or lacks a SHA256 digest for '+part.file);
