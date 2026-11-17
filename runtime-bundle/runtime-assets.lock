@@ -1,4 +1,4 @@
 # Pinned assets from this repository's immutable versioned Releases. Never use floating latest.
 # Format: file SHA256 url
-0.2.1-rc.5.tar.zst b8d45456d09d5c11f2eb4d964f94dcbd0ab2e66f9159cd7b7cd4ecb36f537352 https://github.com/maiji1990/dsh_mobile/releases/download/dsh-0.2.1-rc.5/0.2.1-rc.5.tar.zst
-dshmobile-runtime-debian-arm64-0.2.0.zip 204d848974090445b113518097101dedc7b23152728675a78d55ac2df0d3daba https://github.com/maiji1990/dsh_mobile/releases/download/runtime-0.2.0/dshmobile-runtime-debian-arm64-0.2.0.zip
+0.2.2-rc.3.tar.zst 404054db237c5c6bcbfea4ff962a8cf47aed0bed1e22ae0ce696dcf8e4a8308f https://github.com/maiji1990/dsh_mobile/releases/download/dsh-0.2.2-rc.3/0.2.2-rc.3.tar.zst
+dshmobile-runtime-debian-arm64-0.2.1.zip 9f3d1a4922eaac26cde68f8de59780ad7294f50c869fc609288e7dcc72eeb3a2 https://github.com/maiji1990/dsh_mobile/releases/download/runtime-0.2.1/dshmobile-runtime-debian-arm64-0.2.1.zip
