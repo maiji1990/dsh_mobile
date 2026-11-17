@@ -64,30 +64,11 @@ public class ParityVectorTests
     [Fact]
     public void Quote_MatchesGoldenVectors()
     {
-        foreach (var v in Repo.Vectors("plugin-commands.json").GetProperty("quoting").EnumerateArray())
-        {
-            Assert.Equal(v.GetProperty("quoted").GetString(), GuestCommandLine.Quote(v.GetProperty("arg").GetString()!));
-        }
-    }
-
-    [Fact]
-    public void PluginCommand_MatchesGoldenVectors()
-    {
-        var cases = Repo.Vectors("plugin-commands.json").GetProperty("commands").EnumerateArray().ToList();
+        var cases = Repo.Vectors("guest-command-line.json").GetProperty("quoting").EnumerateArray().ToList();
         Assert.NotEmpty(cases);
         foreach (var v in cases)
         {
-            var verb = v.GetProperty("verb").GetString()!;
-            var profile = v.GetProperty("profile").GetString()!;
-            var operand = v.StringOrNull("operand");
-            var label = $"{verb} {profile} {operand}";
-            var ok = PluginCommand.TryBuild(verb, profile, operand, out var argv, out var error);
-            Assert.True(v.GetProperty("valid").GetBoolean() == ok, $"{label}: {error}");
-            if (ok)
-            {
-                Assert.Equal(v.GetProperty("argv").EnumerateArray().Select(a => a.GetString()!), argv);
-                Assert.Equal(v.GetProperty("line").GetString(), GuestCommandLine.Join(argv));
-            }
+            Assert.Equal(v.GetProperty("quoted").GetString(), GuestCommandLine.Quote(v.GetProperty("arg").GetString()!));
         }
     }
 }

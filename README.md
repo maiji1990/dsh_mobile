@@ -1,8 +1,7 @@
 # DSH Mobile
 
 在 Android 手机上本地运行 [DeepSeek Harness（DSH）](https://www.npmjs.com/package/@deepseek-ai/dsh) 的客户端，用 **.NET 11 for Android（C#）** 编写。
-DSH 原样运行在 App 私有目录里的 Debian 沙箱（PRoot）中；App 负责安装与启停运行环境、承载官方网页界面，并提供终端、文件、插件、
-手机操控与远程主机等能力。
+DSH 原样运行在 App 私有目录里的 Debian 沙箱（PRoot）中。App 负责安装与启停运行环境、承载官方网页界面，并提供文件、手机操控与远程主机等能力。
 
 > **实验性项目**，与 DeepSeek、DSHBox 均无隶属关系，不是官方客户端。基于预览版 .NET 11 SDK 构建。
 > 部分 C# 代码移植自 [DSHBox](https://github.com/WSK-build/DSHBox)（GPL-3.0，逐项登记于 [docs/UPSTREAMS.md](docs/UPSTREAMS.md)），不含其品牌资产。
@@ -12,14 +11,13 @@ DSH 原样运行在 App 私有目录里的 Debian 沙箱（PRoot）中；App 负
 | | 说明 |
 |---|---|
 | **本地运行 DSH** | 一键启动 / 停止沙箱内的官方 DSH（`web` profile），在 App 内全屏打开其网页界面；后台运行时通知栏常驻（前台服务） |
-| **终端** | 沙箱内的多会话登录 shell（PTY），本地 xterm.js 渲染，带 Ctrl / Esc / Tab / 方向键辅助键栏 |
 | **文件** | 浏览工作区 `/root/projects`，从系统文件选择器导入、导出与预览文件；`.dsh` 等受保护目录只读 |
-| **插件** | 通过 DSH 自己的 `dsh plugin` 安装 / 卸载 Cordis 插件；装入的包不是可加载插件时自动回滚 |
+| **插件** | 在 DSH 内管理 Cordis 插件 |
 | **手机操控（实验）** | 让 DSH 通过 `ui_*` 工具读取和操作手机界面；每次写操作都需要你本人批准 |
 | **远程主机** | 通过 SSH 连接你自己电脑或服务器上的 DSH：端口转发、远端 DSH 启停 |
 | **运行环境维护** | 导入运行环境包（逐层校验）、导入 DSH 层、回滚到上一版 |
 
-界面为 Material 3，底部四栏：**首页 / 终端 / 文件 / 更多**（横屏 / 宽屏时为左侧导航栏）。主题跟随系统深浅色，Android 12+ 按壁纸取色。诊断、模式探测、PTY 自检与日志在
+界面为 Material 3，导航包含 **首页 / 文件 / 更多**（横屏或宽屏时使用左侧导航栏）。主题跟随系统深浅色，Android 12+ 按壁纸取色。诊断、模式探测、PTY 自检与日志在
 「更多 → 开发者选项」里，默认隐藏，在「关于」上连点 7 次开启（[ADR-0021](docs/ADR/0021-product-ui-material3.md)）。
 
 ## 安全设计
@@ -128,7 +126,7 @@ node tooling/run-node-tests.mjs tests/guest
 
 ```text
 DshMobile.Android      Activity / Fragment（Material 3）、前台服务、平台适配、Relay 组合根
-DshMobile.Application  编排：RuntimeCoordinator（状态机 + journal、导入 / 准备 / 回滚）、终端会话、首页状态模型、DI
+DshMobile.Application  编排：RuntimeCoordinator（状态机 + journal、导入 / 回滚）、PTY 自检、首页状态模型、DI
 DshMobile.Runtime      层校验与安装、PRoot 启动、DSH 宿主、Relay（ui_*）、远程 SSH（SSH.NET）
 DshMobile.Native       最小原生边界：W^X 可执行策略、libdshmobile_native（PTY、进程组）P/Invoke
 DshMobile.Core         通用协议类型、WebView 策略、工作区文件系统

@@ -66,10 +66,6 @@ jobs:
       - name: Release tooling tests
         run: node tooling/run-node-tests.mjs tests/tooling
 
-      # Terminal page (vNext PR-08): message logic driven with the real vendored xterm.js 6.0.0 (headless).
-      - name: Terminal page tests
-        run: node tooling/run-node-tests.mjs tests/terminal-web
-
       # Release assets are checksum-pinned to this repository, not copied from DSHBox.
       # This stages android-side into the APK assets; base/node are imported on the device and
       # the DSH layer is imported / updated online (ADR-0027).

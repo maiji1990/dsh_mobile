@@ -29,7 +29,7 @@ APK 一直打包约 90 MB 的 DSH 层（`assets/dsh/<version>.tar.zst`，构建�
    首次导入通过包结构检查后提交。替换已有层时按 ADR-0024 暂存旧层，待新版本 WebUI 就绪、版本一致且进程正常停止后提交。
    探测失败时恢复旧层。若探测进程未停止，则保留旧层，待停止或进程重启后恢复。文件名无效返回 `BAD_REQUEST`，
    文件缺失返回 `DSH_BUNDLE_NOT_FOUND`，包内入口缺失或版本不符返回 `DSH_BUNDLE_INVALID`，健康检查失败返回
-   `DSH_HEALTH_FAILED`，DSH 或终端仍在运行时返回 `RUNTIME_INVALID_TRANSITION`。
+   `DSH_HEALTH_FAILED`，DSH 仍在运行时返回 `RUNTIME_INVALID_TRANSITION`。
 4. **界面**：运行环境页「维护」区的「安装内置 DSH」改为「导入 DSH 层」；首页状态卡在 body 已装而 DSH 层缺失
    （journal 无 DSH 版本）时主按钮显示「导入 DSH」。运行环境页显示本次安装的版本或保留的版本。
 5. **在线更新不变**（ADR-0024）：下载 → 验签 → hold → 健康检查 → 提交 / 恢复，与本地导入互不干扰，共用
@@ -49,4 +49,4 @@ APK 一直打包约 90 MB 的 DSH 层（`assets/dsh/<version>.tar.zst`，构建�
 
 2026-11-17 在 Honor PTP-AN10 的 Android 17 arm64 上验证了 Release APK 覆盖安装、从 `0.2.1-rc.5` 导入 `0.2.2-rc.3` 并启动。回环未认证 `GET /` 返回 HTTP 401。Release APK 解包检查通过，详见[验收记录](../../migration/parity/2026-11-17-PTP-AN10-A17-dsh-import.md)。
 
-真机待测项包括首次双包导入、同版或旧版保留、改名包拒绝、DSH 或终端运行时拒绝导入、健康检查失败及导入中途 `am force-stop` 后恢复。
+真机待测项包括首次双包导入、同版或旧版保留、改名包拒绝、DSH 运行时拒绝导入、健康检查失败及导入中途 `am force-stop` 后恢复。

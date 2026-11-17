@@ -53,18 +53,9 @@ public sealed class UpstreamPinnedValuesTests
     }
 
     [Fact]
-    public void PluginAllowlists_AreTheBridgesRuntimeController()
-    {
-        Assert.Equal("^(@[a-z0-9][a-z0-9._-]{0,213}/)?[a-z0-9][a-z0-9._-]{0,213}(@[A-Za-z0-9._^~<>=*-]{1,64})?$", PluginCommand.PackageSpec().ToString());
-        Assert.Equal("^(@[a-z0-9][a-z0-9._-]{0,213}/)?[a-z0-9][a-z0-9._-]{0,213}$", PluginCommand.PackageName().ToString());
-        Assert.Equal(new HashSet<string>(["web", "headless", "sdk", "sdk-minimal", "acp"]), PluginCommand.Profiles.ToHashSet());
-    }
-
-    [Fact]
     public void GuestPaths_AreTheBridgesRuntimeController()
     {
         Assert.Equal("/opt/dshapp/runtime/node_modules/@deepseek-ai/dsh/lib/bin.js", RuntimeConstants.GuestDshBin);
-        Assert.Equal("/root/projects/.dsh/dshmobile/bin/dsh", RuntimeConstants.GuestDshWrapper);
     }
 
     [Fact]

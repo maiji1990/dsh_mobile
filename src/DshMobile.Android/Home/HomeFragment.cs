@@ -3,7 +3,6 @@ using Android.Content.Res;
 using Android.Views;
 using DshMobile.App.Automation;
 using DshMobile.App.Bridge;
-using DshMobile.App.Plugins;
 using DshMobile.App.Remote;
 using DshMobile.App.RuntimeUi;
 using DshMobile.App.Ui;
@@ -55,8 +54,7 @@ public sealed class HomeFragment : Fragment, ITabRoot
         var grid = view.FindViewById<GridLayout>(Resource.Id.shortcuts)!;
         _automationSubtitle = Shortcut(grid, Resource.Drawable.ic_phone, Resource.String.more_automation, Resource.String.home_shortcut_automation_sub, typeof(AutomationActivity));
         Shortcut(grid, Resource.Drawable.ic_cloud, Resource.String.more_remote, Resource.String.home_shortcut_remote_sub, typeof(RemoteActivity));
-        Shortcut(grid, Resource.Drawable.ic_extension, Resource.String.more_plugins, Resource.String.home_shortcut_plugins_sub, typeof(PluginsActivity));
-        Shortcut(grid, Resource.Drawable.ic_storage, Resource.String.more_runtime, Resource.String.home_shortcut_runtime_sub, typeof(RuntimeActivity));
+        Shortcut(grid, Resource.Drawable.ic_storage, Resource.String.more_runtime, Resource.String.home_shortcut_runtime_sub, typeof(RuntimeActivity), columnSpan: 2);
         return view;
     }
 
@@ -273,7 +271,7 @@ public sealed class HomeFragment : Fragment, ITabRoot
         }
     }
 
-    private TextView Shortcut(GridLayout grid, int icon, int title, int subtitle, Type activity)
+    private TextView Shortcut(GridLayout grid, int icon, int title, int subtitle, Type activity, int columnSpan = 1)
     {
         var card = LayoutInflater.From(grid.Context)!.Inflate(Resource.Layout.item_shortcut, grid, false)!;
         card.FindViewById<ImageView>(Resource.Id.shortcut_icon)!.SetImageResource(icon);
@@ -281,7 +279,7 @@ public sealed class HomeFragment : Fragment, ITabRoot
         var sub = card.FindViewById<TextView>(Resource.Id.shortcut_subtitle)!;
         sub.SetText(subtitle);
         card.Click += (_, _) => StartActivity(new Intent(RequireContext(), activity));
-        var lp = new GridLayout.LayoutParams(GridLayout.InvokeSpec(GridLayout.Undefined), GridLayout.InvokeSpec(GridLayout.Undefined, 1f))
+        var lp = new GridLayout.LayoutParams(GridLayout.InvokeSpec(GridLayout.Undefined), GridLayout.InvokeSpec(GridLayout.Undefined, columnSpan, 1f))
         {
             Width = 0,
         };

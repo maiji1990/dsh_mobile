@@ -3,7 +3,7 @@ using System.Text;
 using System.Text.RegularExpressions;
 using DshMobile.Runtime.Guest;
 
-namespace DshMobile.Application.Terminal;
+namespace DshMobile.Application.Runtime;
 
 public sealed record PtyProbeStep(string Name, bool Ok, string Detail, long Ms);
 
@@ -23,7 +23,7 @@ public sealed record PtyProbeReport(bool Ok, IReadOnlyList<PtyProbeStep> Steps, 
 /// </summary>
 public static partial class PtyProbe
 {
-    public const string Slice = "terminal.pty-probe";
+    public const string Slice = "runtime.pty-probe";
 
     [GeneratedRegex(@"[#$] $")]
     private static partial Regex PromptAtEnd();

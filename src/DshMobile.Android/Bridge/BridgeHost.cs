@@ -322,7 +322,7 @@ public sealed class BridgeHost : IDisposable, IDiagnosticsLog
     /// <summary>
     /// vNext PR-05 / PR-06: downloads, verifies and installs the DSH update of the last check (<see cref="LastCheck"/>),
     /// with a health check and automatic restore of the old layer. <paramref name="stopConfirmed"/>: the user agreed that a
-    /// running DSH and its terminals are stopped. Cancellable only while downloading (<see cref="CancelUpdate"/>).
+    /// running DSH is stopped. Cancellable only while downloading (<see cref="CancelUpdate"/>).
     /// </summary>
     public Task RunDshUpdateAsync(bool stopConfirmed) => RunExclusive("update.install", async () =>
     {
@@ -398,7 +398,7 @@ public sealed class BridgeHost : IDisposable, IDiagnosticsLog
     /// PR-06 developer acceptance: the guest login shell on a C#-owned PTY (libdshmobile_native), driven by PtyProbe.
     /// The steps (prompt, tty, resize, ^C, exit, no orphans) are logged.
     /// </summary>
-    public Task RunPtyProbeAsync() => RunExclusive("terminal.pty-probe", async () =>
+    public Task RunPtyProbeAsync() => RunExclusive(PtyProbe.Slice, async () =>
     {
         var native = DshMobile.Native.DshNativeLibrary.Probe();
         Append(native.Ok ? $"native: libdshmobile_native ABI {native.Value}" : $"native: {native.Code}: {native.Message}");

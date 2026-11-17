@@ -37,40 +37,4 @@ public static class UiPrefs
         editor.PutString(ChannelKey, channel == "preview" ? "preview" : "stable");
         editor.Apply();
     }
-
-    private const string TerminalFontKey = "terminal_font_size";
-    private const string TerminalBarKey = "terminal_key_bar";
-
-    /// <summary>Terminal font size in CSS px (vNext PR-08); the page clamps it to 8…32 as well.</summary>
-    public const int TerminalFontDefault = 14;
-    public const int TerminalFontMin = 8;
-    public const int TerminalFontMax = 32;
-
-    public static int TerminalFontSize(Context context) =>
-        Math.Clamp(context.GetSharedPreferences(File, FileCreationMode.Private)!.GetInt(TerminalFontKey, TerminalFontDefault), TerminalFontMin, TerminalFontMax);
-
-    public static void SetTerminalFontSize(Context context, int size)
-    {
-        var editor = context.GetSharedPreferences(File, FileCreationMode.Private)!.Edit()!;
-        editor.PutInt(TerminalFontKey, Math.Clamp(size, TerminalFontMin, TerminalFontMax));
-        editor.Apply();
-    }
-
-    /// <summary>The extra-keys bar layout (vNext PR-08), as <c>TerminalKeys.FormatBar</c> wrote it; null = default bar.</summary>
-    public static string? TerminalKeyBar(Context context) =>
-        context.GetSharedPreferences(File, FileCreationMode.Private)!.GetString(TerminalBarKey, null);
-
-    public static void SetTerminalKeyBar(Context context, string? layout)
-    {
-        var editor = context.GetSharedPreferences(File, FileCreationMode.Private)!.Edit()!;
-        if (layout is null)
-        {
-            editor.Remove(TerminalBarKey);
-        }
-        else
-        {
-            editor.PutString(TerminalBarKey, layout);
-        }
-        editor.Apply();
-    }
 }

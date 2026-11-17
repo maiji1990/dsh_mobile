@@ -122,7 +122,7 @@ public sealed class RuntimeActivity : DshActivity
 
     /// <summary>
     /// vNext PR-06: online updates. Channel, check, the four rows (Runtime / Node / DSH / App: installed, offered, why not),
-    /// download + install of the DSH layer after a confirmation (it stops a running DSH and its terminals), cancel while
+    /// download + install of the DSH layer after a confirmation, cancel while
     /// downloading, copyable diagnostics. Every outcome shows its own code; nothing installs in the background.
     /// </summary>
     private void RenderUpdates(bool busy)
@@ -209,7 +209,7 @@ public sealed class RuntimeActivity : DshActivity
             .Show();
     }
 
-    /// <summary>Installing stops a running DSH and closes its terminals: the user confirms first (never silently).</summary>
+    /// <summary>Asks for confirmation before installation stops a running DSH.</summary>
     private void ConfirmDshUpdate(DshMobile.Runtime.Updates.ReleaseArtifact target)
     {
         var running = _bridge.Runtime.HostOwnsProcesses;

@@ -36,6 +36,5 @@
   <color name="dshm_surface_container_high">#292A2D</color>
   <color name="dshm_surface_container_highest">#333538</color>
   <color name="dshm_running">#6DD58C</color>
-  <color name="dshm_terminal_background">#000000</color>
   <bool name="dshm_light_bars">false</bool>
 </resources>

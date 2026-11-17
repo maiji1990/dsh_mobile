@@ -1,7 +1,5 @@
 # APK assets
 
-`terminal/`: the C# terminal page (own files) and vendored xterm.js (`tooling/terminal-web.lock.json`).
-
 The files below come from DSHBox `v1.5.1` (`7c9d33c1f29dd2c42dde6c7e2fcdf38814f491c4`, GPL-3.0-or-later). PR-10 copied them
 **unmodified** when it removed the submodule (ADR-0018); ADR-0019 moved them from `dshbox/` to `dshmobile/` and replaced the
 prebuilt link shim with one built here. `GuestAssetProvisioner` / `GuestToolchain` copy them to the guest;

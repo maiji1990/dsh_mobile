@@ -1,0 +1,29 @@
+{
+  "description": "Shared golden vectors for POSIX single-token quoting at the guest shell boundary, inherited from the legacy RuntimeController.shellQuote.",
+  "quoting": [
+    {
+      "arg": "web",
+      "quoted": "'web'"
+    },
+    {
+      "arg": "pkg@>=1.0.0",
+      "quoted": "'pkg@>=1.0.0'"
+    },
+    {
+      "arg": "pkg@*",
+      "quoted": "'pkg@*'"
+    },
+    {
+      "arg": "it's",
+      "quoted": "'it'\\''s'"
+    },
+    {
+      "arg": "",
+      "quoted": "''"
+    },
+    {
+      "arg": "$(id)",
+      "quoted": "'$(id)'"
+    }
+  ]
+}

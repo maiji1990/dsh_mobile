@@ -15,7 +15,6 @@
     <string name="automation_surface_pref">执行面偏好（开发者）：%1$s</string>
     <string name="automation_surface_pref_fg">前台</string>
     <string name="automation_surface_pref_bg">优先后台</string>
-    <string name="plugins_list_failed">插件列表读取失败，原因见下方输出</string>
     <string name="automation_cs_guest_line">guest 信箱由 C# Relay 服务：%1$s</string>
     <string name="automation_cs_guest_stage_failed">ui_* guest 脚本写入失败（%1$s），未登记 ui_* 工具层；guest 的 relay 命令仍可用。</string>
     <string name="automation_cs_guest_conflict">ui_* 工具层路径上已有不是本应用写的文件，未覆盖；guest 的 relay 命令仍可用，ui_* 工具不会登记。</string>
@@ -89,49 +88,6 @@
     <string name="automation_tools_restart_on">DSH 工具（mcp__ui__*）：已注册，需重启 DSH 才会加载</string>
     <string name="automation_tools_restart_off">DSH 工具（mcp__ui__*）：已注销，当前 DSH 仍保留到重启（调用会失败）</string>
     <string name="automation_tools_conflict">DSH 工具（mcp__ui__*）：注册文件被其他内容占用，未改动，请检查</string>
-    <string name="plugins_title">插件</string>
-    <string name="plugins_profile">Profile：%1$s · 变更在重启 DSH 后生效</string>
-    <string name="plugins_spec_hint">npm 包名，例如 @scope/name@1.0.0</string>
-    <string name="plugins_add">安装</string>
-    <string name="plugins_remove">卸载</string>
-    <string name="plugins_add_confirm_title">安装 %1$s？</string>
-    <string name="plugins_add_confirm_body">插件是第三方代码，会在沙箱内以 DSH 的权限运行，可读写工作区并访问网络。PRoot 不是安全隔离。只安装你信任的来源。</string>
-    <string name="plugins_remove_confirm">卸载 %1$s？</string>
-    <string name="plugins_loading">正在读取插件列表…</string>
-    <string name="plugins_installing">正在安装 %1$s（需要网络，可能较久）…</string>
-    <string name="plugins_removing">正在卸载 %1$s…</string>
-    <string name="plugins_none">（没有已安装的插件）</string>
-    <string name="plugins_restart_hint">请回到首页停止并重新启动 DSH 以加载变更。</string>
-    <string name="terminal_paste">粘贴</string>
-    <string name="terminal_no_session">没有打开的会话</string>
-    <string name="terminal_no_runtime">运行环境尚未安装：先在首页导入运行环境包</string>
-    <string name="terminal_new">新建</string>
-    <string name="terminal_close">关闭</string>
-    <string name="terminal_new_session">新建会话</string>
-    <string name="terminal_open_failed">无法打开终端：%1$s</string>
-    <string name="terminal_search">搜索</string>
-    <string name="terminal_search_hint">在终端输出中搜索</string>
-    <string name="terminal_search_none">无匹配</string>
-    <string name="terminal_search_count">%1$d / %2$d</string>
-    <string name="terminal_search_prev">上一处</string>
-    <string name="terminal_search_next">下一处</string>
-    <string name="terminal_search_close">关闭搜索</string>
-    <string name="terminal_copy">复制选中内容</string>
-    <string name="terminal_copied">已复制</string>
-    <string name="terminal_copy_empty">没有选中的内容：先长按并拖动选择，或用「全选」</string>
-    <string name="terminal_select_all">全选</string>
-    <string name="terminal_font_larger">放大字号</string>
-    <string name="terminal_font_smaller">缩小字号</string>
-    <string name="terminal_scroll_bottom">滚动到底部</string>
-    <string name="terminal_rename">重命名会话</string>
-    <string name="terminal_rename_hint">留空则恢复默认名称</string>
-    <string name="terminal_keys">辅助键设置</string>
-    <string name="terminal_keys_reset">恢复默认</string>
-    <string name="terminal_link_title">打开链接？</string>
-    <string name="terminal_link_message">终端输出中的链接（任何程序都能打印）：\n\n站点：%1$s\n\n%2$s</string>
-    <string name="terminal_link_userinfo">注意：链接里带有「用户名@」部分，实际打开的站点是 %1$s。</string>
-    <string name="terminal_link_open">用浏览器打开</string>
-    <string name="terminal_link_no_browser">没有可以打开链接的浏览器</string>
     <string name="files_title">文件</string>
     <string name="files_up">上一级</string>
     <string name="files_import">导入</string>
@@ -172,10 +128,8 @@
 
     <!-- ADR-0021: product UI -->
     <string name="nav_home">首页</string>
-    <string name="nav_terminal">终端</string>
     <string name="nav_files">文件</string>
     <string name="nav_more">更多</string>
-    <string name="terminal_title">终端</string>
 
     <string name="home_label_not_installed">未安装</string>
     <string name="home_label_stopped">已停止</string>
@@ -212,7 +166,6 @@
     <string name="home_shortcut_automation_sub">让 DSH 操作手机界面（实验）</string>
     <string name="home_shortcut_automation_on">手机操控中继已开启</string>
     <string name="home_shortcut_remote_sub">连接电脑上的 DSH</string>
-    <string name="home_shortcut_plugins_sub">安装与管理 Cordis 插件</string>
     <string name="home_shortcut_runtime_sub">版本、导入与回滚</string>
 
     <string name="op_start">启动 DSH</string>
@@ -245,7 +198,7 @@
     <string name="update_cancel">取消下载</string>
     <string name="update_cancel_sub">已下载的部分会保留，下次继续</string>
     <string name="update_confirm_title">安装 DSH %1$s？</string>
-    <string name="update_confirm_running">DSH 正在运行：安装会先停止它并关闭所有终端会话（未保存的终端输入会丢失），装好并通过健康检查后再重新启动。工作区、会话记录与凭据不会被改动。</string>
+    <string name="update_confirm_running">安装前会停止正在运行的 DSH，健康检查通过后会重新启动。工作区、会话记录和凭据会保留。</string>
     <string name="update_confirm_stopped">安装后会启动一次 DSH 做健康检查再停止；不通过则自动恢复为当前版本。工作区、会话记录与凭据不会被改动。</string>
     <string name="update_confirm_action">安装</string>
     <string name="update_last">上次更新：%1$s %2$s · %3$s</string>
@@ -256,8 +209,6 @@
     <string name="more_section_runtime">运行环境</string>
     <string name="more_section_app">应用</string>
     <string name="more_section_developer">开发者</string>
-    <string name="more_plugins">插件</string>
-    <string name="more_plugins_sub">安装与管理 Cordis 插件</string>
     <string name="more_automation">手机操控</string>
     <string name="more_automation_sub">让 DSH 读取和操作手机界面（实验）</string>
     <string name="more_remote">远程主机</string>
@@ -272,7 +223,7 @@
     <string name="developer_enabled">已开启开发者选项</string>
     <string name="developer_already">开发者选项已开启</string>
     <string name="developer_steps">再点 %1$d 次即可开启开发者选项</string>
-    <string name="licenses_body">DSH Mobile 以 GNU GPL-3.0 许可证发布。\n\n部分代码移植自 DSHBox（GPL-3.0）。运行环境中的 DeepSeek Harness 按其自身许可证分发，本应用不修改它。\n\n本应用包含或使用：\n• PRoot（GPL-2.0-or-later）\n• talloc（LGPL-3.0-or-later）\n• libandroid-shmem（BSD-3-Clause）\n• xterm.js 与 addon-fit（MIT）\n• SSH.NET、BouncyCastle、ZstdSharp（MIT）\n• Shizuku API（MIT）\n• Material Components for Android（Apache-2.0）\n• Material Icons（Apache-2.0）\n\n完整清单与固定版本见源码仓库 docs/UPSTREAMS.md。</string>
+    <string name="licenses_body">DSH Mobile 以 GNU GPL-3.0 许可证发布。\n\n部分代码移植自 DSHBox（GPL-3.0）。运行环境中的 DeepSeek Harness 按其自身许可证分发，本应用不修改它。\n\n本应用包含或使用：\n• PRoot（GPL-2.0-or-later）\n• talloc（LGPL-3.0-or-later）\n• libandroid-shmem（BSD-3-Clause）\n• SSH.NET、BouncyCastle、ZstdSharp（MIT）\n• Shizuku API（MIT）\n• Material Components for Android（Apache-2.0）\n• Material Icons（Apache-2.0）\n\n完整清单与固定版本见源码仓库 docs/UPSTREAMS.md。</string>
 
     <string name="runtime_section_status">状态</string>
     <string name="runtime_section_actions">维护</string>
@@ -289,7 +240,7 @@
     <string name="runtime_import">导入运行环境包</string>
     <string name="runtime_import_sub">选择 dshmobile-runtime-*.zip；逐层校验后安装。DSH 须已停止。</string>
     <string name="runtime_import_dsh">导入 DSH 层</string>
-    <string name="runtime_import_dsh_sub">选择本项目 Release 的 &lt;版本&gt;.tar.zst。替换前会校验包内版本并检查新版本能否启动。请先停止 DSH 和终端。</string>
+    <string name="runtime_import_dsh_sub">选择本项目 Release 的 &lt;版本&gt;.tar.zst。替换时会核对包内版本并检查新版本能否启动。请先停止 DSH。</string>
     <string name="runtime_dsh_import_installed">已安装 DSH %1$s</string>
     <string name="runtime_dsh_import_kept">已保留 DSH %1$s</string>
     <string name="runtime_rollback">回滚到上一版</string>
@@ -315,12 +266,12 @@
     <string name="dev_diag_sub">健康检查、宿主状态与 guest 内固定命令（uname / debian / node / dsh --version）</string>
     <string name="dev_probe">DSH 模式探测</string>
     <string name="dev_probe_sub">web / headless / sdk / sdk-minimal / acp / plugin</string>
-    <string name="dev_pty">终端 PTY 自检</string>
+    <string name="dev_pty">PTY 自检</string>
     <string name="dev_pty_sub">打开 guest 登录 shell，检查 tty、窗口大小、Ctrl-C 与无残留进程</string>
     <string name="dev_update">检查更新（只读）</string>
     <string name="dev_update_sub">下载并验证签名版本清单，列出可更新的版本；不下载制品、不安装</string>
     <string name="dev_update_choose">选择更新通道</string>
-    <string name="dev_pty_confirm_title">终端 PTY 自检</string>
+    <string name="dev_pty_confirm_title">PTY 自检</string>
     <string name="dev_pty_confirm">用 C# + libdshmobile_native 打开一个 guest 登录 shell，自动执行 tty / stty / 调整窗口大小 / Ctrl-C / exit，并检查没有残留进程（用于验收）。</string>
     <string name="dev_pty_start">开始自检</string>
 
@@ -375,15 +326,10 @@
     <string name="files_validate_title">内容校验有警告</string>
     <string name="files_save_anyway">仍然保存</string>
     <string name="files_conflict_title">文件已被修改</string>
-    <string name="files_conflict_message">%1$s 在你打开后被其他程序（DSH、终端或其他 App）修改或删除。你的修改尚未保存。</string>
+    <string name="files_conflict_message">%1$s 在你打开后被 DSH 或其他应用修改或删除。你的修改尚未保存。</string>
     <string name="files_conflict_reload">放弃我的修改并重新加载</string>
     <string name="files_conflict_overwrite">用我的版本覆盖</string>
     <string name="files_conflict_keep">继续编辑</string>
-
-    <string name="plugins_section_install">安装插件</string>
-    <string name="plugins_section_installed">已安装</string>
-    <string name="plugins_section_output">输出</string>
-    <string name="plugins_warning">插件是第三方代码，会在沙箱内以 DSH 的权限运行。只安装你信任的来源。</string>
 
     <string name="automation_intro">让沙箱内的 DSH 通过 ui_* 工具读取和操作手机界面（点击、输入、滑动、按键、截图）。每一次写操作都要你本人批准，Agent 按不到「允许」。默认关闭，停止 DSH 时自动关闭。</string>
     <string name="automation_more">了解审批与权限</string>

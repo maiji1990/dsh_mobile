@@ -1,4 +1,5 @@
 using Android.Content;
+using DshMobile.Application.Runtime;
 using DshMobile.Application.Ui;
 
 namespace DshMobile.App.Ui;
@@ -16,7 +17,7 @@ public static class OperationNames
         "diagnostics" => Resource.String.op_diagnostics,
         "info" => Resource.String.op_info,
         "dsh.probe" => Resource.String.op_probe,
-        "terminal.pty-probe" => Resource.String.op_pty,
+        PtyProbe.Slice => Resource.String.op_pty,
         "update.check" => Resource.String.op_update_check,
         "update.install" => Resource.String.op_update_install,
         _ => Resource.String.op_generic,

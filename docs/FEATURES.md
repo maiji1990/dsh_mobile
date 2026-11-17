@@ -21,13 +21,13 @@
 | `sdk` profile | 握手通过（真机·当前 C#（11-16），模式探测）；会话待测 | JSON-RPC `initialize` → `deepseek-harness-sdk-runtime`，`shutdown` → `{}`，exit 0；会话/提示需模型凭据，未验证 |
 | `sdk-minimal` profile | 握手通过（真机·当前 C#（11-16），模式探测）；会话待测 | 同 sdk 握手（initialize 5.1 s） |
 | `acp` profile | 握手通过（真机·当前 C#（11-16），模式探测）；会话待测 | ACP v1 `initialize` → `deepseek-harness-acp`、能力声明；stdin EOF 正常退出 0；会话/提示需模型凭据，未验证 |
-| `plugin` 命令 | 部分：`plugin list` 通过（真机·当前 C#（11-17））；add / remove **待复测**（仅 PR-10 前真机） | Node `26.13.1` 直接运行随包 pnpm `11.1.2`，DSH 与中继运行时插件页输出 `list: OK`（[真机记录](../migration/parity/2026-11-17-PTP-AN10-A17-plugin-node26.md)）。历史验收用 `is-number` 验证安装与卸载 |
+| `plugin` 命令 | 由 DSH 提供 | App 原生插件页已移除。保留 DSH 使用的随包 pnpm `11.1.2`，Node `26.13.1` 工具链见 [真机记录](../migration/parity/2026-11-17-PTP-AN10-A17-plugin-node26.md) |
 | Cordis profile / bundle / patch | 部分 | 五个 shipped profile 的 `--dump-config` 均成功合成；patch / bundle 切换未测 |
 | Model Providers / 凭据 | 未开始 | |
 | Session / Resume / Fork | 未开始（真机） | 需模型凭据；WebUI 已可承载；跨进程续接由 PR-07 驱动检查（headless / sdk / acp），真机待执行；默认工作区创建失败已修复（`xdg-user-dir`，真机待验） |
 | 工具调用与审批 | 未开始 | |
 | Subagent / Agent Team | 未开始 | |
-| Bash / PTY / 子进程 | 通过（真机·当前 C#（11-16））；中文 IME / vim / 大输出**待测**（vNext PR-08：输出流控、搜索 / 链接 / Unicode 11 / 复制 / 字号 / 重命名 / ALT 与可配置辅助键已实现，仅单测 + 本机压力，真机待测） | 原生 TerminalView + PRoot bash：命令执行、^C、多会话新建/切换/关闭、关闭页面后会话保留、「停止」连带结束终端进程均已验证；横屏（9 行，键盘弹出时紧凑模式）已验证；中文/宽字符、大量输出未测 |
+| Bash / PTY / 子进程 | 保留 DSH 所需运行时及开发者选项中的 PTY 自检 | App 原生终端页面已移除。历史真机 PTY 证据见 [PTY 自检](../migration/parity/2026-11-12-PTP-AN10-A17-terminal-pty.md) |
 | 文件、工作目录、附件 | 部分：浏览 / 受保护 `.dsh` 通过（真机·当前 C#（11-16））；SAF 导入导出**待复测**（仅 PR-10 前）；附件 / 下载未实现；vNext PR-09 工作台（多选、复制 / 移动 / 回收站撤销、冲突感知编辑、zip / tar）已实现，仅单测，**真机待测** | 文件页浏览 / 受保护 `.dsh` 拒绝 / SAF 导入 / SAF 导出已真机通过；WebUI 附件上传未验证（DSH 未发起文件选择，疑需先选工作区）；下载未做 |
 | MCP / Skills / 自定义工具 | 部分：`ui_*` 门面自检通过（真机·当前 C#（11-16））；模型实际调用**待测**（需凭据） | DSH 0.2.1-rc.5 经 `--patch` 加载 `dsh-mcp-client` 条目并拉起 guest MCP 服务 `ui-facade.mjs`（真机 `ps` 可见为 DSH 子进程）；由模型实际调用 `mcp__ui__*` 需模型凭据，未验证；Skills / 其它自定义工具未做 |
 | 更新与诊断 | 部分：导入 / 回滚通过（真机·当前 C#（11-16），回滚需手工建 `previous/`）；在线更新**阻断**（无发布公钥）；开发者选项「检查更新（只读）」已接入（PR-02，如实报 `UPDATE_NO_TRUSTED_KEYS`，**待测**）；安全下载器（PR-04）与 DSH 层在线更新事务 + 运行环境页「在线更新」（PR-05/06，ADR-0024）已实现，仅单测 + CI 编译，**待测**；无发布公钥前检查即报 `UPDATE_NO_TRUSTED_KEYS` | 离线导入（系统文件选择器）+ 回滚（「更多 → 运行环境」，真机通过，但槽位只在 `previous/` 已存在时产生）+ 固定诊断（arch/debian/node/dsh 版本）+ 健康探测；在线更新未做（签名清单校验 + 只读版本发现已在 C# 实现并有单测，[ADR-0022](ADR/0022-signed-release-manifest-readonly-discovery.md)；未内置发布公钥、未接 UI、无下载 / 安装）；DSH 层换层已改为日志化事务，备份失败或中途强杀不再丢失旧层（单测 + 故障注入，无真机证据） |
@@ -44,7 +44,6 @@
 | Runtime 层管理（TASK-004） | 部分：导入 + 装后核对通过（真机·当前 C#（11-16））；低磁盘 / 中途强杀**待测**；DSH 层换层事务（#41）仅单测 | 磁盘不足 / 层缺失 / 更新失败未测；见 milestones/M2.md |
 | C# 运行时协调器（ADR-0007，PR-00/01/02；影子比对已于 ADR-0018 删除） | 通过（真机·当前 C#（11-16）：覆盖安装杀进程后 journal `RUNTIME_INTERRUPTED` → 读盘恢复） | Release full-trim：启停 / 重复启动 / 停止无孤儿 / 强杀后 journal 恢复为 `RUNTIME_INTERRUPTED`；导入时 `runtime.bundle-verify` 与 `runtime.layer-extract` 影子均 `Agree`（16,119 项逐项一致）。实现仍为旧桥；失败清理分支仅单测。见 COMPATIBILITY.md「ADR-0007 迁移」 |
 | C# 宿主（ADR-0015 起默认，ADR-0018 起唯一实现） | 通过（真机·当前 C#（11-16）：ready 16.2 s、停止无残留） | 不经 DSHBox 代码：C# 启动沙箱 + DSH、取 launch token、C# WebView 加载官方 WebUI；10.1 s READY；停止 / 强杀无孤儿；token 不入日志。（当时运行期间终端 / 手机操控不可用；之后的版本已接通。）见 COMPATIBILITY.md「ADR-0007 里程碑」 |
-| C# 终端（ADR-0016 起默认，ADR-0018 起唯一实现） | 通过（真机·当前 C#（11-16）），部分未测（同「Bash / PTY」） | 不经 DSHBox 终端代码：C# PTY + PRoot bash、Material 3 界面、本地 xterm.js 显示、原生键盘输入；多会话 / 重放 / resize / ^C / 大量输出 / 关闭与强杀无残留已验证；横屏已验证；中文组合输入、vim 等应用光标模式未测。见 COMPATIBILITY.md「C# 终端界面」 |
 
 ## 可选模块（方案 4.3）
 

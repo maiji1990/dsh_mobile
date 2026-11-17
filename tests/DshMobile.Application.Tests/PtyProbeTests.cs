@@ -1,6 +1,6 @@
 using System.Diagnostics;
 using System.Text;
-using DshMobile.Application.Terminal;
+using DshMobile.Application.Runtime;
 using DshMobile.Native;
 using DshMobile.Runtime.Guest;
 using Microsoft.Extensions.Time.Testing;

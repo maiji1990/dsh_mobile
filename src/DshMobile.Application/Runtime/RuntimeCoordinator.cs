@@ -1,7 +1,6 @@
 using System.Diagnostics;
 using System.Security.Cryptography;
 using DshMobile.Application.Shadow;
-using DshMobile.Application.Terminal;
 using DshMobile.Core.Contracts;
 using DshMobile.Runtime;
 using DshMobile.Runtime.Automation;
@@ -9,18 +8,17 @@ using DshMobile.Runtime.Guest;
 using DshMobile.Runtime.Hosting;
 using DshMobile.Runtime.Layers;
 using DshMobile.Runtime.Migration;
-using DshMobile.Runtime.Plugins;
 
 namespace DshMobile.Application.Runtime;
 
 /// <summary>
 /// Supervises runtime operations, all in C# since PR-10 (ADR-0018): the <see cref="DshHost"/> starts and owns the sandbox
 /// and DSH processes, the runtime state is read from disk (<see cref="RuntimeStatusReader"/>), imports of the runtime
-/// body and of the DSH layer (ADR-0027), rollback, guest commands, plugins, probes and the terminal go through the C#
+/// body and of the DSH layer (ADR-0027), rollback, guest commands and probes go through the C#
 /// layers. Keeps the PR-00 fix of the former bridge flow:
 /// <list type="bullet">
 /// <item>start fails -> whatever was started is gone, then the foreground service is released; state Failed.</item>
-/// <item>DSH given up by the health loop -> sandbox kept (terminal / diagnostics still work), service kept; harness Failed.</item>
+/// <item>DSH given up by the health loop -> sandbox kept for diagnostics, service kept; harness Failed.</item>
 /// <item>stop fails -> foreground service is kept (processes may still be alive); state Failed.</item>
 /// </list>
 /// Every transition goes through <see cref="RuntimeStateMachine"/> (durable journal). Operations are serialized.
@@ -61,7 +59,6 @@ public sealed class RuntimeCoordinator : IDisposable
         IShadowReportSink reports,
         RuntimeOptions? options = null,
         TimeProvider? time = null,
-        PtyOpener? terminalOpener = null,
         Func<RuntimeLayout, Action<string>, TimeProvider, IDshHost>? hostFactory = null,
         IBundledAssets? bundledAssets = null)
     {
@@ -75,13 +72,9 @@ public sealed class RuntimeCoordinator : IDisposable
         _time = time ?? TimeProvider.System;
         _assets = bundledAssets;
         _hostFactory = hostFactory ?? ((l, note, t) => new DshHost(l, note, t));
-        Terminals = new TerminalSessions(terminalOpener ?? OpenTerminalAsync, log.Note);
     }
 
     public RuntimeStateMachine State { get; }
-
-    /// <summary>The C#-owned terminal sessions (PR-06). Closed whenever the runtime stops.</summary>
-    public TerminalSessions Terminals { get; }
 
     /// <summary>
     /// Raised right before the sandbox is stopped (normal stop, cleanup after a failed start): the C# guest-facing Relay
@@ -109,32 +102,6 @@ public sealed class RuntimeCoordinator : IDisposable
 
     /// <summary>Whether the running DSH was spawned with the <c>ui_*</c> layer registered (null: unknown / not hosted).</summary>
     public bool? HostUiToolsAtStart => HostOwnsProcesses ? _host!.UiToolsAtStart : null;
-
-    /// <summary>Opens and registers a terminal while layer replacement and its health check are excluded.</summary>
-    public async Task<TerminalSessionInfo> CreateTerminalAsync(int rows, int columns, CancellationToken ct)
-    {
-        await _op.WaitAsync(ct).ConfigureAwait(false);
-        try
-        {
-            return await Terminals.CreateAsync(rows, columns, ct).ConfigureAwait(false);
-        }
-        finally
-        {
-            _op.Release();
-        }
-    }
-
-    private async Task<ProotPtySession> OpenTerminalAsync(int rows, int columns, CancellationToken ct)
-    {
-        await EnsureGuestAssetsAsync(ct).ConfigureAwait(false);
-        // Like the former TerminalController.newSession: make the app uid known to the guest first.
-        var user = GuestUser.Provision(Path.Combine(_layout.RuntimeCurrentDir, "base"));
-        if (user == GuestUser.Outcome.Updated)
-        {
-            _log.Note($"{TerminalSessions.Slice}: guest passwd entry written for {GuestUser.UserName}");
-        }
-        return await new ProotGuestProcess(_layout).OpenPtyAsync(new GuestExecutionOptions(), rows, columns, ct).ConfigureAwait(false);
-    }
 
     private void NotifySandboxStopping()
     {
@@ -165,14 +132,6 @@ public sealed class RuntimeCoordinator : IDisposable
 #pragma warning restore CA1031
         {
             _log.Note($"host stopping hook failed: {ex.GetType().Name}: {ex.Message}");
-        }
-    }
-
-    private async Task CloseTerminalsAsync()
-    {
-        if (await Terminals.CloseAllAsync().ConfigureAwait(false) is var n and > 0)
-        {
-            _log.Note($"{TerminalSessions.Slice}: closed {n} session(s) on stop");
         }
     }
 
@@ -362,9 +321,6 @@ public sealed class RuntimeCoordinator : IDisposable
                 return result;
             }
             await SyncAsync(ct).ConfigureAwait(false);
-            // Nothing hosted: the C# terminal opens its own PRoot shells without a started sandbox, so they can be the only
-            // thing running (device run 2026-11-12). Close them; then releasing the service cannot orphan anything.
-            await CloseTerminalsAsync().ConfigureAwait(false);
             _foreground.Release();
             _log.Note("stop: nothing running");
             return new RuntimeStartResult(true, RuntimeErrorCodes.Ok, "already stopped", State.Current);
@@ -400,7 +356,6 @@ public sealed class RuntimeCoordinator : IDisposable
     private async Task<RuntimeStartResult> StopHostAsync(IDshHost host, CancellationToken ct)
     {
         State.TryTransition(RuntimeState.Stopping, "stop requested");
-        await CloseTerminalsAsync().ConfigureAwait(false);
         await NotifyHostStoppingAsync(ct).ConfigureAwait(false);
         NotifySandboxStopping();
         var r = await host.StopAsync(ct).ConfigureAwait(false);
@@ -496,7 +451,7 @@ public sealed class RuntimeCoordinator : IDisposable
     /// ADR-0027: installs a DSH layer archive the user picked (<c>&lt;version&gt;.tar.zst</c>, the Release artifact's
     /// shape) with <see cref="DshLayerInstaller.InstallFromFileAsync"/>. The package version must match the archive name.
     /// Replacements keep the previous layer aside until the host health check passes. The operation lock is held across
-    /// extraction, the health check, and commit or restore. Running DSH and terminal sessions must be stopped first.
+    /// extraction, the health check, and commit or restore. Running DSH must be stopped first.
     /// </summary>
     public async Task<DshLayerResult> InstallDshFromFileAsync(string bundlePath, CancellationToken ct)
     {
@@ -506,9 +461,9 @@ public sealed class RuntimeCoordinator : IDisposable
         {
             await SyncAsync(ct).ConfigureAwait(false);
             var installer = new DshLayerInstaller(_layout, _options.HostPathExists);
-            if (HostOwnsProcesses || Terminals.Pids.Count != 0 || State.Current.State is RuntimeState.Running or RuntimeState.Starting or RuntimeState.Stopping)
+            if (HostOwnsProcesses || State.Current.State is RuntimeState.Running or RuntimeState.Starting or RuntimeState.Stopping)
             {
-                return new DshLayerResult(false, RuntimeErrorCodes.InvalidTransition, "stop DSH and its terminals before importing a DSH layer", installer.InstalledVersion(), false, 0);
+                return new DshLayerResult(false, RuntimeErrorCodes.InvalidTransition, "stop DSH before importing a DSH layer", installer.InstalledVersion(), false, 0);
             }
             if (_dshProbeHeld)
             {
@@ -773,65 +728,6 @@ public sealed class RuntimeCoordinator : IDisposable
         {
             _op.Release();
         }
-    }
-
-    /// <summary>Plugin list: <c>dsh plugin list --json --depth 0</c> through the C# PRoot launcher.</summary>
-    public async Task<GuestPluginResult> ListPluginsAsync(string profile, CancellationToken ct)
-    {
-        await _op.WaitAsync(ct).ConfigureAwait(false);
-        try
-        {
-            await EnsureGuestAssetsAsync(ct).ConfigureAwait(false);
-            return await GuestPlugins.RunAsync(new ProotGuestProcess(_layout), "list", profile, null, ct).ConfigureAwait(false);
-        }
-        finally
-        {
-            _op.Release();
-        }
-    }
-
-    /// <summary>
-    /// <c>dsh plugin add/remove</c> through the C# PRoot launcher with the ported install guard: an install that exits 0
-    /// but added a package that cannot load is rolled back (only the packages this install added); a remove is checked
-    /// against the profile's dependencies afterwards. Bad arguments are the shared <c>PluginCommand</c> rules
-    /// (<see cref="RuntimeErrorCodes.BadRequest"/>, nothing runs).
-    /// </summary>
-    public async Task<PluginChangeResult> ChangePluginAsync(string verb, string profile, string operand, CancellationToken ct)
-    {
-        ArgumentNullException.ThrowIfNull(operand);
-        if (verb is not ("add" or "remove"))
-        {
-            return new PluginChangeResult(false, RuntimeErrorCodes.BadRequest, "unknown plugin verb: " + verb, []);
-        }
-        if (!PluginCommand.TryBuild(verb, profile, operand, out _, out var error))
-        {
-            return new PluginChangeResult(false, RuntimeErrorCodes.BadRequest, error, []);
-        }
-        await _op.WaitAsync(ct).ConfigureAwait(false);
-        try
-        {
-            await EnsureGuestAssetsAsync(ct).ConfigureAwait(false);
-            var sw = Stopwatch.StartNew();
-            var guard = new PluginInstallGuard(new GuestPluginOps(new ProotGuestProcess(_layout), profile), new PluginProfileReader(_layout, profile));
-            var r = verb == "add"
-                ? await guard.InstallAsync(operand, SpecPackageName(operand), ct).ConfigureAwait(false)
-                : await guard.RemoveAsync(operand, ct).ConfigureAwait(false);
-            _log.Note($"plugin.{verb} {operand}: " + (r.Ok ? "ok" : $"{r.Code}{(r.RolledBack ? " (rolled back)" : "")}") + $" in {sw.Elapsed.TotalSeconds:F1} s"
-                + (r.Lines.FirstOrDefault(l => l.StartsWith("guard:", StringComparison.Ordinal)) is { } g ? "; " + g : ""));
-            return r;
-        }
-        finally
-        {
-            _op.Release();
-        }
-    }
-
-    /// <summary>The package name of a validated <c>name[@range]</c> spec (verification-only fallback for the guard).</summary>
-    public static string SpecPackageName(string spec)
-    {
-        ArgumentNullException.ThrowIfNull(spec);
-        var at = spec.LastIndexOf('@');
-        return at > 0 ? spec[..at] : spec;
     }
 
     /// <summary>

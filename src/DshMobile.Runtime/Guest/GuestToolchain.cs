@@ -6,7 +6,7 @@ namespace DshMobile.Runtime.Guest;
 
 /// <summary>
 /// Makes <c>dsh</c> and <c>pnpm</c> usable inside the guest (TASK-009). The wrappers live in
-/// <c>user-data/.dsh/dshmobile/bin</c>, which the DSH role and plugin commands put on the guest PATH.
+/// <c>user-data/.dsh/dshmobile/bin</c>, which the DSH role puts on the guest PATH.
 /// The bundled pnpm 11.1.2 runs directly on Node. Its archived Corepack cache is unpacked into guest
 /// <c>/opt/dshmobile-cache/corepack</c>. Not ported (as legacy): DSHBox's apt/dpkg wrappers and the opencode wrapper.
 /// </summary>

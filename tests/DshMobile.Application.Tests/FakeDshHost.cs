@@ -21,9 +21,6 @@ internal sealed class FakeDshHost(List<string> calls) : IDshHost
 
     public Func<DshHostResult>? OnStop { get; set; }
 
-    /// <summary>Runs first in <see cref="StopAsync"/>, before anything is torn down.</summary>
-    public Action? BeforeStop { get; set; }
-
     public event EventHandler? StateChanged;
 
     public Task<DshHostResult> StartAsync(CancellationToken ct)
@@ -37,7 +34,6 @@ internal sealed class FakeDshHost(List<string> calls) : IDshHost
 
     public Task<DshHostResult> StopAsync(CancellationToken ct)
     {
-        BeforeStop?.Invoke();
         calls.Add("host.stop");
         var r = OnStop?.Invoke() ?? new DshHostResult(true, "OK", null);
         _kept = false;

@@ -15,7 +15,7 @@ public sealed record UpdateResult(bool Ok, string Code, string? Message, string 
 /// <list type="number">
 /// <item><b>DOWNLOADING</b> the artifact of a verified discovery (<see cref="ArtifactDownloader"/>: resumable, whole-file
 /// SHA-256); cancellable only here;</item>
-/// <item><b>VERIFIED</b>; <b>STOPPING</b> the local DSH and terminals if they run — only when the caller says the user
+/// <item><b>VERIFIED</b>; <b>STOPPING</b> the local DSH if it runs — only when the caller says the user
 /// confirmed, otherwise refused;</item>
 /// <item><b>SWAPPING</b>: <see cref="RuntimeCoordinator.InstallDshUpdateAsync"/> re-hashes the file and installs it
 /// <i>held</i> (old layer kept aside);</item>
@@ -52,7 +52,7 @@ public sealed class UpdateCoordinator : IDisposable
     /// <summary>Call once at startup: settles a transaction the previous process did not finish.</summary>
     public UpdateState? SettleInterrupted() => _state.SettleInterrupted(_time.GetUtcNow());
 
-    /// <param name="stopConfirmed">The user agreed that a running DSH (and its terminals) is stopped for the update.</param>
+    /// <param name="stopConfirmed">The user agreed to stop DSH for the update.</param>
     public async Task<UpdateResult> InstallDshAsync(ReleaseDiscoveryResult check, string channel, bool stopConfirmed, IProgress<UpdateProgress>? progress, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(check);
@@ -98,7 +98,7 @@ public sealed class UpdateCoordinator : IDisposable
             {
                 if (!stopConfirmed)
                 {
-                    return End(false, RuntimeErrorCodes.InvalidTransition, "DSH is running: confirm stopping it (and its terminals) to install the update", UpdatePhases.Failed);
+                    return End(false, RuntimeErrorCodes.InvalidTransition, "DSH is running: confirm stopping it to install the update", UpdatePhases.Failed);
                 }
                 Record(UpdatePhases.Stopping);
                 var stopped = await _runtime.StopAsync(CancellationToken.None).ConfigureAwait(false);

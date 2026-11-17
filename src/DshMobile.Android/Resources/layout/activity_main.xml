@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- App shell (ADR-0021): one tab's fragment beside a navigation rail (width >= 600dp, e.g. landscape) or above the
-     bottom navigation bar. MainActivity handles rotation itself (the terminal WebView survives), so both bars live in
+     bottom navigation bar. MainActivity handles rotation itself, so both bars live in
      this one layout and MainActivity shows one of them. Insets: MainActivity. -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"

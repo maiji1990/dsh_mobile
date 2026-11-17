@@ -48,9 +48,6 @@ public static class RuntimeConstants
     public const string AssetsRelativeDir = ".dsh/dshmobile";
     public const string AssetsGuestDir = "/root/projects/.dsh/dshmobile";
 
-    /// <summary>The <c>dsh</c> wrapper written into the workspace (GuestToolchain).</summary>
-    public const string GuestDshWrapper = "/root/projects/.dsh/dshmobile/bin/dsh";
-
     /// <summary>
     /// App-written state inside each installed layer (<c>layer-&lt;name&gt;.sha256</c> sentinels, the DSH layer's
     /// <c>version</c>). DSHBox used <c>.dshbox</c> (ADR-0019; the bundle's own <c>.dshbox/env.d</c> is layer content).

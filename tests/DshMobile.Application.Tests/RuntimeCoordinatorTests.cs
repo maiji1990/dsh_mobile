@@ -11,8 +11,7 @@ namespace DshMobile.Application.Tests;
 /// <summary>
 /// The C#-only coordinator (PR-10, ADR-0018): state read from disk, start / stop through the C# host (a
 /// <see cref="FakeDshHost"/> here, or the real <see cref="DshHost"/> where its preconditions are the subject), import with the
-/// layer installer and its installed-tree check, DSH layer import from a file (ADR-0027), rollback, plugin changes and
-/// self-test.
+/// layer installer and its installed-tree check, DSH layer import from a file (ADR-0027), rollback and self-test.
 /// </summary>
 public sealed class RuntimeCoordinatorTests : IDisposable
 {
@@ -642,28 +641,6 @@ public sealed class RuntimeCoordinatorTests : IDisposable
         Assert.Null(o.Result);
         Assert.Equal(DshMobile.Runtime.Guest.DshProbe.UnknownProfile, o.ErrorCode);
     }
-
-    [Theory]
-    [InlineData("list", "web", "foo")]
-    [InlineData("add", "desktop", "foo")]
-    [InlineData("add", "web", "pkg; rm -rf /")]
-    [InlineData("remove", "web", "foo@1.0.0")]
-    public async Task PluginChange_BadArguments_AreBadRequestAndRunNothing(string verb, string profile, string operand)
-    {
-        // nativeLibraryDir has no libproot.so: reaching the launcher would fail differently, so BAD_REQUEST proves nothing ran.
-        var r = await Coordinator().ChangePluginAsync(verb, profile, operand, CancellationToken.None);
-        Assert.False(r.Ok);
-        Assert.Equal(RuntimeErrorCodes.BadRequest, r.Code);
-        Assert.Empty(r.Lines);
-    }
-
-    [Theory]
-    [InlineData("foo", "foo")]
-    [InlineData("foo@^1.0.0", "foo")]
-    [InlineData("@scope/foo", "@scope/foo")]
-    [InlineData("@scope/foo@1.2.3", "@scope/foo")]
-    public void SpecPackageName_StripsOnlyTheVersion(string spec, string name) =>
-        Assert.Equal(name, RuntimeCoordinator.SpecPackageName(spec));
 
     [Fact]
     public async Task RelaySelfTest_StagesTheUiScripts_ThenReportsTheLauncherRefusal()

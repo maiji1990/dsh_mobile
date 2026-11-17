@@ -33,12 +33,7 @@
 | 编辑保存带打开时版本（长度 + mtime + SHA-256），不符即 `CONFLICT`，不静默覆盖；原子替换并保留 Unix 权限位；非 UTF-8 只读不重编码 | `WorkspaceProvider.WriteAsync`、`TextDocument` |
 | 删除进工作区外的回收站（DSH 不可见）并可撤销；无回收站时明示永久删除 | `WorkspaceProvider.Delete / Restore` |
 | 压缩包不可信：staging 解包、全部通过才就位；条目名规范化 + 逐段校验；不创建链接 / 设备；重名中止；条目数与实际写入字节上限 | `WorkspaceProvider.Archive.cs` |
-| 终端：PTY 字节经 WebMessagePort 送入本地 xterm.js 页，页面资源拦截只放行 `/terminal/**`、CSP 禁网络；不进入日志 | `TerminalFragment`、`TerminalSessions` |
-| 终端：停止运行时（含「无运行」时）先关闭全部 C# 终端会话，避免 guest 进程脱离生命周期 | `RuntimeCoordinator.StopAsync` |
-| 终端：Ctrl 键栏为一次性锁存 | `TerminalKeys` |
-| 插件：spec / name 只接受 npm registry 包名（可选 @scope 与版本），拒绝路径、URL、git、file:、选项注入与 shell 元字符；profile 白名单（单测覆盖） | `PluginCommand`、`UpstreamPinnedValuesTests` |
-| 插件：安装前用户确认，明确告知为第三方代码、在沙箱内以 DSH 权限运行、PRoot 非安全隔离；结果显示真实退出码与输出，不伪造成功 | `PluginsActivity` |
-| 插件：pnpm 版本钉在随包 11.1.2（离线、可复现、SHA-256 校验），导入方式 copy；不注入 registry | `GuestToolchain` |
+| DSH 内部的插件管理使用随包的 pnpm 11.1.2。归档按 SHA-256 校验，使用 copy 模式和 guest 的 registry 配置 | `GuestToolchain` |
 | 手机操控默认关闭；只在用户点「开启中继」后运行，「关闭中继」/ 停止沙箱时停止并注销 `ui_*` 工具 | `CsRelay`、`RuntimeCoordinator.SandboxStopping`、`UiToolsRegistration` |
 | Relay 注册上游全部 39 项能力（ADR-0008），每次调用仍过未修改的闸门：档位上限、逐次 / 本会话审批、系统态、执行配额；`sys.shell` 上限 ASK_ONLY、默认 DENIED，改系统的动词还需逐条开关（本 App 不提供该界面） | `DshMobile.Runtime.Automation.Relay`（`RelayCapabilityListing`、`RelayGate`） |
 | Relay 所需权限与组件由 App 清单声明（PR-10 前来自 Relay 库清单合并，删除后逐项比对保留）；每一项（运行时权限、通知监听、录屏、Shizuku）都由用户在系统 / Shizuku 界面授予，App 不代为授予 | `src/DshMobile.Android/AndroidManifest.xml` |
@@ -60,7 +55,7 @@
 | 远程主机：主机名 / 用户名白名单校验（拒绝选项与 shell 语法），远端只执行固定命令 | `RemoteHostProfile`、`RemoteConnectRules` |
 | 运行层下载按固定 SHA-256 校验；android-side 再与随包 sidecar 交叉校验 | `runtime-bundle/fetch-runtime.ps1` |
 | 无 Gradle / Maven 传递依赖（ADR-0018）；Maven 依赖只有 Shizuku 13.1.5（`AndroidMavenLibrary` 精确版本），NuGet 精确版本 | `DshMobile.Android.csproj`、`docs/UPSTREAMS.md` |
-| guest 命令由 argv 构建、逐 token POSIX 单引号；插件 spec 中合法的 `>=` / `<` / `*` 不再被 shell 解释（PR-00，修复 `pkg@>=1.0.0` 重定向）；共享向量锁定 | `DshMobile.Runtime.Guest.{PluginCommand, GuestCommandLine}`、`tests/TestVectors/plugin-commands.json` |
+| guest 命令由 argv 构建，每个 token 使用 POSIX 单引号转义 | `DshMobile.Runtime.Guest.GuestCommandLine`、`tests/TestVectors/guest-command-line.json` |
 | 可执行文件只允许 `nativeLibraryDir` 内的裸 `lib*.so` 名（Android 10+ W^X）；写在 `filesDir` 的 ELF 永不直接 exec | `DshMobile.Native.NativeExecutablePolicy` |
 | 运行时状态变化先写 durable journal 再生效；进程中断后不冒充“仍在运行”，恢复为 `Failed(RUNTIME_INTERRUPTED)` | `DshMobile.Runtime.RuntimeStateMachine`、`FileRuntimeJournal` |
 | 启动失败统一清理、停止失败不释放前台服务（避免无监督的 PRoot 孤儿） | `DshMobile.Application.Runtime.RuntimeCoordinator` |
@@ -68,7 +63,7 @@
 | 发布清单 Ed25519 分离签名（域分离前缀 + 原始字节，keyId 由公钥派生、可多钥匙轮换），先验签后严格解析（https-only、无凭据 URL、纯文件名、64 位小写 SHA-256、DSH 层必须钉源码 tag / commit、拒绝重复 JSON 键）；通道不符 / 过期 / 未来时间 / 比上次接受的旧均拒绝；未内置公钥时不联网、返回 `UPDATE_NO_TRUSTED_KEYS`；只读，不下载不安装（ADR-0022） | `DshMobile.Runtime.Updates.{ReleaseManifestVerifier, ReleaseManifestParser, ReleaseCatalog, HttpReleaseSource}`、`ReleaseManifestTests` |
 | 防重放下限落盘（每通道只升不降，损坏即拒绝、不当作空）；发布地址固定在代码里（`ReleaseEndpoints`）；App 与发布工作流共用一份可信公钥文件（`release-trusted-keys.txt`，格式错误即信任为空）；签名私钥只在 environment `release-signing` 的签名步骤中以 secret 出现，发布后由无密钥的 job 匿名读回核对（ADR-0022 修订） | `ReleaseAcceptanceStore`、`UpdateChecker`、`.github/workflows/release-publish.yml`、`ReleaseStateTests`、`UpdateCheckerTests`、`tests/tooling` |
 | 制品下载只接受签名清单中的项（`VerifiedRelease` 只能由验证器生成）；存于 `files/updates`（不碰 `runtime-current` / `user-data`），名称由摘要与已校验文件名构成；续传仅限起点与总长都对上的 206，完成后整文件重算 SHA-256 与大小，不符即删；跳转离开 https 即失败；下载前检查空间，缓存有上限（ADR-0022 修订，PR-04） | `ArtifactDownloader`、`ArtifactStore`、`ArtifactDownloaderTests` |
-| DSH 层在线更新：换层前再整文件校验；保留旧层直至健康检查（READY + HTTP 401 + 版本）通过，否则自动恢复；任意时刻被杀只会回到旧层或已提交的新层；停止运行中的 DSH / 终端须用户确认；不在后台安装；不碰 `user-data`（ADR-0024） | `DshLayerInstaller`（probing）、`RuntimeCoordinator.InstallDshUpdateAsync`、`UpdateCoordinator`、`UpdateCoordinatorTests`、`DshLayerProbeHoldTests` |
+| DSH 层在线更新：换层前重新校验整文件，健康检查（READY + HTTP 401 + 版本）通过后提交，否则恢复旧层。进程中断后恢复到旧层或已提交的新层。停止运行中的 DSH 须用户确认。安装由前台发起，保留 `user-data`（ADR-0024） | `DshLayerInstaller`（probing）、`RuntimeCoordinator.InstallDshUpdateAsync`、`UpdateCoordinator`、`UpdateCoordinatorTests`、`DshLayerProbeHoldTests` |
 | DSH 层换层为日志化事务：旧层先移到同级 aside，新层就位后才退役，放置失败改回，进程中途死亡由 `Recover()` 完成或撤销（每次安装前、启动前）；不会因备份失败删除唯一可运行的层 | `DshLayerInstaller`、`DshLayerFaultInjectionTests` |
 | C# 层解包与旧实现同等约束：拒绝 `user-data` / `.dsh` 路径、规范路径越界、链接目标越界；所有路径决定在内存模型上完成，目标写入层只接受已证明在根内的相对路径；磁盘目标要求空目录；装后核对只干跑不写盘 | `DshMobile.Runtime.Layers.LayerExtractor`、`tests/TestVectors/layer-extract.json` |
 

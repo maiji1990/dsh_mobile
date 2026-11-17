@@ -10,7 +10,7 @@ using System.Text;
 
 namespace DshMobile.Runtime.Guest;
 
-/// <summary>argv + complete environment of the interactive guest login shell (one PRoot per terminal session).</summary>
+/// <summary>Argv and environment for the guest login shell used by the PTY self-test.</summary>
 public sealed class TerminalCommandBuilder(RuntimeLayout layout)
 {
     /// <summary><c>LOGIN_FLAGS</c>: <c>--noprofile</c> keeps the base image's /etc/profile from replacing PATH.</summary>

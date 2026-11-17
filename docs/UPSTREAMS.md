@@ -122,9 +122,9 @@
 | 2026-11-15 | `plugin-manager/dshbox-plugins/assets/dshbox/{link-shim.mjs, libdshbox-link.so}`、`app/src/main/assets/toolchain-cache/corepack-pnpm-11.1.2.tar.zst(.sha256)`、`plugin-manager/dshbox-plugins/tools/link-shim/*`（@ `7c9d33c`，GPL-3.0；corepack 缓存内容为 pnpm，MIT） | `src/DshMobile.Android/Assets/{dshbox, toolchain-cache}/`、`native/link-shim/` | **原样复制**（非翻译）：PR-10 前由 Gradle 打进 Bridge AAR 的同一字节改由 App 打包（ADR-0018）；`libdshbox-link.so` 为 DSHBox 预编译的 aarch64 glibc 库，源码与构建脚本仅为追溯保存、不在本仓库构建 | `UpstreamPinnedValuesTests`（4 个文件 SHA-256 + 文件清单）+ 模拟器：删除后由 C# 写回、哈希一致 |
 | 2026-11-15 | `sandbox-manager/.../BundleManager.kt` `rollback`（@ `7c9d33c`，GPL-3.0）的规则，套用到 `swapRuntimeBody` / `LayerInstaller` 留在 `runtime-current/previous/` 的分层 body | `src/DshMobile.Runtime/Layers/LayerRollback.cs`；协调器 `RollbackAsync` | 无上一版不动任何东西；旧 `failed/` 先删、当前 body 移入 `failed/`、上一版就位；任一步失败按相反顺序撤销；DSH 层与 user-data 不动；ADR-0017 | 单测（无槽位、换回、注入 rename 失败撤销）+ 协调器单测 + 模拟器 `BUNDLE_NO_ROLLBACK_SLOT` |
 
-## 前端资源（随 APK 打包，离线）
+## 历史前端依赖（终端页已移除）
 
-npm 包只取发布 tarball 中的必要文件（addon 版本与 xterm 6.0.0 同日发布的一组，2025-12-22），**逐字节**放入 `src/DshMobile.Android/Assets/terminal/vendor/`；`tooling/terminal-web.lock.json` 记录精确版本、tarball `sha512` integrity 与每个文件的 `sha256`，`TerminalWebAssetsTests` 校验哈希并拒绝未登记文件。
+原生终端曾从 npm 发布 tarball 逐字节复制下表的资源。其版本与摘要记录见删除前的 `tooling/terminal-web.lock.json`。2026-11-17 随终端页移除 APK 中的 xterm.js 与全部 addon。
 
 | 包 | 版本 | 许可证 | 文件 | 用途 | 引入 |
 |---|---|---|---|---|---|

@@ -116,7 +116,7 @@ public sealed class FilesFragment : Fragment, ITabRoot
         base.OnHiddenChanged(hidden);
         if (!hidden && _searchQuery is null)
         {
-            _ = LoadAsync(); // DSH or the terminal may have changed the workspace meanwhile
+            _ = LoadAsync(); // DSH may have changed the workspace meanwhile
         }
     }
 

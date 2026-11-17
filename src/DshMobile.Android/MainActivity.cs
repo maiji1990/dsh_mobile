@@ -7,7 +7,6 @@ using AndroidX.Fragment.App;
 using DshMobile.App.Files;
 using DshMobile.App.Home;
 using DshMobile.App.More;
-using DshMobile.App.Terminal;
 using DshMobile.App.Ui;
 using Google.Android.Material.BottomNavigation;
 using Google.Android.Material.Navigation;
@@ -16,27 +15,23 @@ using Google.Android.Material.NavigationRail;
 namespace DshMobile.App;
 
 /// <summary>
-/// App shell (ADR-0021): four tabs — Home, Terminal, Files, More — under a Material 3 bottom navigation bar, or beside a
-/// navigation rail when the window is at least 600dp wide (landscape phone, tablet). Tabs are
-/// fragments that are shown / hidden rather than replaced, so a terminal session view or a folder position survives a
-/// tab switch; the terminal's shells outlive the screen anyway (<c>TerminalSessions</c>). The bottom bar hides while the
-/// soft keyboard is up so the terminal keeps its rows.
+/// App shell (ADR-0021): Home, Files, and More use a Material 3 bottom bar or a navigation rail at 600dp.
+/// Tab fragments remain attached to preserve their state across navigation and window size changes.
 /// </summary>
 [Activity(
     Label = "@string/app_name",
     MainLauncher = true,
     Exported = true,
-    // Rotation / keyboard changes keep the terminal WebView; a light / dark switch recreates (the terminal replays).
+    // Width changes update the navigation layout without recreating the current tab.
     ConfigurationChanges = ConfigChanges.Orientation | ConfigChanges.ScreenSize | ConfigChanges.ScreenLayout
         | ConfigChanges.SmallestScreenSize | ConfigChanges.Keyboard | ConfigChanges.KeyboardHidden,
     WindowSoftInputMode = SoftInput.AdjustResize)]
 public sealed class MainActivity : AppCompatActivity
 {
-    private const string TabKey = "tab";
+    private const string TabKey = "navigation.tab.tag";
     private static readonly (int Id, string Tag)[] Tabs =
     [
         (Resource.Id.nav_home, "home"),
-        (Resource.Id.nav_terminal, "terminal"),
         (Resource.Id.nav_files, "files"),
         (Resource.Id.nav_more, "more"),
     ];
@@ -55,7 +50,9 @@ public sealed class MainActivity : AppCompatActivity
 
     protected override void OnCreate(Bundle? savedInstanceState)
     {
-        base.OnCreate(savedInstanceState);
+        var savedTab = SavedTab(savedInstanceState);
+        // Previous versions saved a numeric tab ID and can contain the removed terminal tab in FragmentManager state.
+        base.OnCreate(savedTab.HasValue ? savedInstanceState : null);
         Edges.Enable(Window!);
         SetContentView(Resource.Layout.activity_main);
         _bar = FindViewById<BottomNavigationView>(Resource.Id.bottom_nav)!;
@@ -75,7 +72,7 @@ public sealed class MainActivity : AppCompatActivity
             return insets;
         }));
 
-        _tab = savedInstanceState?.GetInt(TabKey, Resource.Id.nav_home) ?? Resource.Id.nav_home;
+        _tab = savedTab ?? Resource.Id.nav_home;
         foreach (NavigationBarView nav in new NavigationBarView[] { _bar, _rail })
         {
             nav.ItemSelected += (_, e) =>
@@ -121,11 +118,22 @@ public sealed class MainActivity : AppCompatActivity
     protected override void OnSaveInstanceState(Bundle outState)
     {
         base.OnSaveInstanceState(outState);
-        outState.PutInt(TabKey, _tab);
+        outState.PutString(TabKey, Tabs.First(tab => tab.Id == _tab).Tag);
     }
 
-    /// <summary>Switches to a tab (also from other screens' buttons, e.g. Home → Terminal).</summary>
-    public void SelectTab(int id) => Nav.SelectedItemId = id;
+    protected override void OnRestoreInstanceState(Bundle savedInstanceState)
+    {
+        if (SavedTab(savedInstanceState).HasValue)
+        {
+            base.OnRestoreInstanceState(savedInstanceState);
+        }
+    }
+
+    private static int? SavedTab(Bundle? state)
+    {
+        var tag = state?.GetString(TabKey);
+        return Tabs.Where(tab => tab.Tag == tag).Select(tab => (int?)tab.Id).FirstOrDefault();
+    }
 
     private void Show(int id)
     {
@@ -165,7 +173,6 @@ public sealed class MainActivity : AppCompatActivity
 
     private static AndroidX.Fragment.App.Fragment Create(int id) => id switch
     {
-        _ when id == Resource.Id.nav_terminal => new TerminalFragment(),
         _ when id == Resource.Id.nav_files => new FilesFragment(),
         _ when id == Resource.Id.nav_more => new MoreFragment(),
         _ => new HomeFragment(),
@@ -185,7 +192,7 @@ public sealed class MainActivity : AppCompatActivity
             }
             if (owner._tab != Resource.Id.nav_home)
             {
-                owner.SelectTab(Resource.Id.nav_home);
+                owner.Nav.SelectedItemId = Resource.Id.nav_home;
                 return;
             }
             Enabled = false;

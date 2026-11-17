@@ -40,7 +40,5 @@
   <color name="dshm_surface_container_highest">#E2E2E6</color>
   <!-- Status dot / icon for "running". Not a theme role: green reads as "up" in both schemes. -->
   <color name="dshm_running">#1E8E3E</color>
-  <!-- Terminal screen: always dark, whatever the app theme. -->
-  <color name="dshm_terminal_background">#000000</color>
   <bool name="dshm_light_bars">true</bool>
 </resources>
