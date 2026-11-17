@@ -18,7 +18,7 @@ DSH 原样运行在 App 私有目录里的 Debian 沙箱（PRoot）中。App 负
 | **运行环境维护** | 导入运行环境包（逐层校验）、导入 DSH 层、回滚到上一版 |
 
 界面为 Material 3，导航包含 **首页 / 文件 / 更多**（横屏或宽屏时使用左侧导航栏）。主题跟随系统深浅色，Android 12+ 按壁纸取色。诊断、模式探测、PTY 自检与日志在
-「更多 → 开发者选项」里，默认隐藏，在「关于」上连点 7 次开启（[ADR-0021](docs/ADR/0021-product-ui-material3.md)）。
+「更多 → 开发者选项」里，默认隐藏，在「关于」上连点 7 次开启（[ADR-0021](docs/ADR/0021-product-ui-material3.md)）。启动分段计时以 `startup-perf` 行写入 Logcat；采集日志、导出 CSV 与计算各阶段 P50/P95 见 [docs/STARTUP_PERF.md](docs/STARTUP_PERF.md)（真实耗时待真机验证）。
 
 ## 安全设计
 
