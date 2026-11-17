@@ -8,8 +8,8 @@ ARCH=arm64
 # Debian base (mmdebstrap minbase). The snapshot fixes package versions and SOURCE_DATE_EPOCH.
 DEBIAN_SUITE=trixie
 DEBIAN_SNAPSHOT=20261110T000000Z
-# Same explicit package set as DSHBox v1.5.1 runtime-bundle/build_base.sh.
-DEBIAN_PACKAGES=ca-certificates,curl,wget,openssl,git,openssh-client,rsync,coreutils,util-linux,procps,findutils,grep,sed,gawk,diffutils,tar,gzip,bzip2,xz-utils,zip,unzip,file,less,python3,python3-pip,python3-venv,locales,tzdata,apt-utils
+# Based on DSHBox v1.5.1 package set; libatomic1 is required by the official Node.js 26 arm64 binary.
+DEBIAN_PACKAGES=ca-certificates,curl,wget,openssl,git,openssh-client,rsync,coreutils,util-linux,procps,findutils,grep,sed,gawk,diffutils,tar,gzip,bzip2,xz-utils,zip,unzip,file,less,python3,python3-pip,python3-venv,locales,tzdata,apt-utils,libatomic1
 # The guest's own apt source after the build (owner decision: keep the Tsinghua mirror, as DSHBox did).
 GUEST_APT_SOURCE=deb https://mirrors.tuna.tsinghua.edu.cn/debian trixie main
 
