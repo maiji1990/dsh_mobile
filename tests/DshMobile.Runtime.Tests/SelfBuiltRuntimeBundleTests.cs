@@ -44,7 +44,7 @@ public sealed class SelfBuiltRuntimeBundleTests(ITestOutputHelper output) : IDis
 
         Assert.True(r.Ok, $"{r.Code}: {r.Message}");
         var profile = RuntimeProfile.Parse(File.ReadAllText(Path.Combine(layout.RuntimeCurrentDir, RuntimeBundleLayout.ProfileName)))!;
-        Assert.Equal("0.2.0", profile.Version);
+        Assert.Equal(LockValue("BUNDLE_VERSION"), profile.Version);
         Assert.Equal("arm64", profile.Arch);
         foreach (var name in RuntimeConstants.LayerNames)
         {
