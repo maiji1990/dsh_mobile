@@ -59,7 +59,15 @@ guest() {
     /bin/sh -c 'cd /root/projects && exec "$@"' guest "$@"
 }
 
-echo "guest: $(guest /bin/sh -c 'cat /etc/debian_version; uname -m') node $(guest /usr/local/bin/node --version)"
+# A successful archive/import is not proof that the official Node binary can load
+# inside Debian minbase. Fail immediately on missing ELF dependencies (e.g.
+# libatomic.so.1 from Debian's libatomic1 package in Node.js 26) instead of
+# spending 90 seconds waiting for a DSH web server that cannot start.
+if ! node_version="$(guest /usr/local/bin/node --version)"; then
+  echo "runtime-smoke: Node could not start inside the guest rootfs; inspect missing ELF shared libraries and DEBIAN_PACKAGES" >&2
+  exit 1
+fi
+echo "guest: $(guest /bin/sh -c 'cat /etc/debian_version; uname -m') node $node_version"
 echo "dsh --version: $(guest /usr/local/bin/node /opt/dshapp/runtime/node_modules/@deepseek-ai/dsh/lib/bin.js --version 2>&1 | tail -n 1)"
 
 # vNext PR-07: DSH's first-use workspace asks `xdg-user-dir DOCUMENTS` (Linux), which Debian minbase lacks. Run DSH's own

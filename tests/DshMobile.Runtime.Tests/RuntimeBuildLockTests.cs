@@ -42,6 +42,10 @@ public sealed class RuntimeBuildLockTests
         Assert.Matches("^[0-9]+\\.[0-9]+\\.[0-9]+$", l["NODE_VERSION"]);
         Assert.Matches("^[0-9a-f]{64}$", l["NODE_SHA256"]);
         Assert.Equal("arm64", l["ARCH"]);
+        // Node 26 arm64 links libatomic.so.1 at runtime; a successful tar extraction
+        // does not detect a missing Debian shared library.
+        if (int.Parse(l["NODE_VERSION"].Split('.')[0]) >= 26)
+            Assert.Contains("libatomic1", l["DEBIAN_PACKAGES"].Split(','));
         Assert.StartsWith("dshmobile-runtime-", l["BUNDLE_NAME"], StringComparison.Ordinal);
         Assert.DoesNotContain(l.Values, v => v.Contains("latest", StringComparison.OrdinalIgnoreCase));
     }
