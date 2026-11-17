@@ -1,6 +1,6 @@
 # 测试计划（TEST_PLAN）
 
-> **PR-10（[ADR-0018](ADR/0018-remove-dshbox.md)）后为历史文档**：涉及旧桥、DSHBox Kotlin 调用、旧终端与浏览器（TASK-011）的步骤已不适用；自动化测试入口见 `AGENTS.md`「构建」，其余真机步骤仍可用于 C# 实现的验收。
+> **PR-10（[ADR-0018](ADR/0018-remove-dshbox.md)）后为历史文档**：涉及旧桥、DSHBox Kotlin 调用、旧终端与浏览器（TASK-011）的步骤已不适用；**原生终端页与原生插件页已按 [ADR-0028](ADR/0028-remove-native-terminal-and-plugin-pages.md) 移除（2026-11-17）**——TASK-008 终端、vNext PR-08 终端 V2 与 TASK-009 插件管理的步骤仅作历史，App 侧只保留开发者选项的「PTY 自检」；自动化测试入口见 `AGENTS.md`「构建」，其余真机步骤仍可用于 C# 实现的验收。
 
 完整用例见方案第 15 节。此处记录已实现的测试与 M1 验收步骤。
 
@@ -73,7 +73,9 @@
 8. **回收站**：删除后 `run-as <applicationId> ls files/dshmobile-files-trash` 有批次目录；撤销后批次消失。
 9. 记录设备、Android 版本、App 版本、时间与截图；逐项写通过 / 失败 / 不适用及原因。
 
-## TASK-008 终端（需真机）
+## TASK-008 终端（已废弃，需真机）
+
+> **已废弃（[ADR-0028](ADR/0028-remove-native-terminal-and-plugin-pages.md)，2026-11-17）**：App 不再有终端页，下列步骤只能在 ADR-0028 之前的版本上复现。需要命令行时在 DSH 内完成；App 侧只剩开发者选项的「PTY 自检」。
 
 注意：若设备使用中文等组合式输入法，`adb shell input text/keyevent` 注入会被输入法拦截，命令需人工输入。
 
@@ -86,7 +88,9 @@
 7. 首页「停止」：App 用户下沙箱进程为 0。
 8. 待补：中文/emoji/宽字符、大量输出滚动、横屏与分屏、软键盘遮挡、粘贴大段文本。
 
-### vNext PR-08 终端 V2（需真机 + 截图，[ADR-0025](ADR/0025-terminal-v2-flow-control-and-links.md)）
+### vNext PR-08 终端 V2（已废弃，需真机 + 截图，[ADR-0025](ADR/0025-terminal-v2-flow-control-and-links.md) → [ADR-0028](ADR/0028-remove-native-terminal-and-plugin-pages.md)）
+
+> **已废弃（2026-11-17）**：终端页、xterm.js 资产、`tests/terminal-web`、`tooling/terminal-stress.mjs`、`tooling/terminal-web.lock.json` 与相关单测已随 ADR-0028 删除，下列步骤和上面的自动化入口都不再可执行，仅作历史。
 
 自动化：`tests/terminal-web`（真实 vendored xterm.js headless：UTF-8 跨批拆分、Unicode 11 宽度、ack、搜索 / 复制 / 字号消息、链接过滤、4 MiB 压力）、
 `TerminalOutputPumpTests`（窗口、停摆解除、读取端背压）、`TerminalKeysV2Tests`、`TerminalLinksTests`；`node tooling/terminal-stress.mjs 100` 为本机吞吐。
@@ -103,7 +107,9 @@
 9. **TUI**：`vim`、`nano`、`htop`、`tmux`（若 guest 已装）：方向键、退出、窗口大小变化正常；`ssh` 待 PR-11。
 10. 记录设备、Android 版本、App / DSH / Node 版本、时间与截图；逐项写通过 / 失败 / 不适用及原因。
 
-## TASK-009 插件管理（需真机）
+## TASK-009 插件管理（已废弃，需真机）
+
+> **已废弃（[ADR-0028](ADR/0028-remove-native-terminal-and-plugin-pages.md)，2026-11-17）**：原生插件页与安装守卫已删除，插件由 DSH 自己安装、列出和卸载；下列步骤与 `PluginSpecTest` 仅作历史。
 
 1. 首页「插件」：`list: OK`，显示 web profile 已装插件（全新为空）。
 2. 输入包名 →「安装」→ 确认警告 → `add <spec>: OK`，列表出现；DSH 重启后生效。
@@ -171,7 +177,7 @@ Issue、PR、截图或终端历史里；日志贴出前再检查一次。
    权限请求以 allow-once 应答并计数 → end_turn；session/list；新进程 session/resume 召回）。若用的不是 `deepseek-official` / `deepseek-v4-flash`，
    加 `--provider … --model …`（sdk 必须显式指定）。单项：`--suites acp`。
 4. **审批（WebUI，手动）**：普通权限模式下让模型执行一条 Bash 命令与一次文件修改，审批卡正确显示，拒绝后命令不执行、允许后执行；会话在 App 强杀重开后仍在、可继续（Resume），Fork 后两条会话互不影响。
-5. **插件 / MCP / Skills**：插件页安装一个插件 → `--dump-config` 含其条目 → 模型实际调用一次该插件或 MCP 工具（含 `ui_*` 只读工具）→ 卸载后不再出现；Skill 被调用一次。
+5. **插件 / MCP / Skills**：在 DSH 内安装一个插件（原生插件页已按 [ADR-0028](ADR/0028-remove-native-terminal-and-plugin-pages.md) 移除）→ `--dump-config` 含其条目 → 模型实际调用一次该插件或 MCP 工具（含 `ui_*` 只读工具）→ 卸载后不再出现；Skill 被调用一次。
 6. **Subagent / Agent Team**（DSH 版本支持时）：一次派生子代理的任务完成，父会话收到结果。
 7. **后台 / 锁屏**：一个长任务运行中锁屏 15 / 60 / 180 分钟后回到前台，任务完成或给出明确失败；停止后 `ps` 无孤儿；运行中 `am force-stop` 后重开，journal 报告中断并可再次启动。
 8. **WebView 回归**：附件上传、文件下载、令牌失效后 401 重新认证。

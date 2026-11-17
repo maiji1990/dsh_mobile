@@ -71,9 +71,9 @@ C# 路径；PR-10 之后的 C# 唯一实现只有两次真机验收：
 
 | 分类 | 条目 |
 |---|---|
-| **已通过（真机 · 当前 C#）** | 启动 → READY → WebUI → 停止无残留；web 与 sdk / sdk-minimal / acp **握手**、plugin list；终端多会话 / ^C=130 / 重放 / resize / 横屏、PTY 自检 PASS；文件页浏览与受保护 `.dsh`；运行层导入 + 装后核对、回滚（需手工建 `previous/`）；手机操控只读 + 页内 / 悬浮审批卡（`FLAG_SECURE`）；深色模式；ADR-0019 数据迁移；覆盖安装杀进程后 journal `RUNTIME_INTERRUPTED` 恢复 |
-| **待复测（只有 PR-10 前真机证据）** | Release full-trim 冷启动（TASK-002）；SAF 导入 / 导出；插件 add / remove 与安装守卫；手机操控写操作；前台服务后台 90 s 存活；远程主机（SSH → Windows OpenSSH，远端 `dsh web` 启停） |
-| **待测（从未真机验证）** | #41 之后的 PTY 自检；DSH 层换层中途强杀 / 低磁盘；中文 IME / vim / tmux / 大输出；WebUI 401 恢复 / 文件选择 / 下载；通知栏审批面；Android 10 / 14；16 KB 页；Linux sshd；Tailscale |
+| **已通过（真机 · 当前 C#）** | 启动 → READY → WebUI → 停止无残留；web 与 sdk / sdk-minimal / acp **握手**、plugin list（原 App 插件页，已按 [ADR-0028](ADR/0028-remove-native-terminal-and-plugin-pages.md) 移除）；终端多会话 / ^C=130 / 重放 / resize / 横屏（终端页已按 [ADR-0028](ADR/0028-remove-native-terminal-and-plugin-pages.md) 移除，属历史证据）、PTY 自检 PASS；文件页浏览与受保护 `.dsh`；运行层导入 + 装后核对、回滚（需手工建 `previous/`）；手机操控只读 + 页内 / 悬浮审批卡（`FLAG_SECURE`）；深色模式；ADR-0019 数据迁移；覆盖安装杀进程后 journal `RUNTIME_INTERRUPTED` 恢复 |
+| **待复测（只有 PR-10 前真机证据）** | Release full-trim 冷启动（TASK-002）；SAF 导入 / 导出；插件 add / remove 与安装守卫（该页面已按 ADR-0028 删除，不再复测）；手机操控写操作；前台服务后台 90 s 存活；远程主机（SSH → Windows OpenSSH，远端 `dsh web` 启停） |
+| **待测（从未真机验证）** | #41 之后的 PTY 自检；DSH 层换层中途强杀 / 低磁盘；中文 IME / vim / tmux / 大输出（随终端页移除，不再测）；WebUI 401 恢复 / 文件选择 / 下载；通知栏审批面；Android 10 / 14；16 KB 页；Linux sshd；Tailscale |
 | **阻断** | 模型凭据相关：headless 真实任务、Session / Resume / Fork、工具调用与审批、MCP 工具被模型调用、Subagent / Agent Team（PR-07）；DSH 默认工作区无法创建（guest 无 `xdg-user-dir`；**PR-07 已修复，真机待验**）；在线更新：`ReleaseTrust.BuiltIn` 为空 → `UPDATE_NO_TRUSTED_KEYS`（PR-02），无下载器 / 安装事务 / UI（PR-04 … 06） |
 
 FEATURES.md 各行的状态列已按上表改写（证据列保留原始记录）；COMPATIBILITY.md 删除了已不存在的 Gradle / AGP / Kotlin 工具链行。
@@ -235,7 +235,9 @@ sdk 暴露驱动缺陷：失败的轮次 `session/wait` 仍回 `{}`，错误只�
 （[TEST_PLAN「vNext PR-07」](TEST_PLAN.md)，记录模板 [TEMPLATE-vnext-pr07-agent-e2e.md](../migration/parity/TEMPLATE-vnext-pr07-agent-e2e.md)）。
 在此之前 Preview 不得升为 Stable。
 
-## 11. PR-08 状态（终端 V2：保留 xterm.js + C# PTY，[ADR-0025](ADR/0025-terminal-v2-flow-control-and-links.md)）
+## 11. PR-08 状态（终端 V2：保留 xterm.js + C# PTY，[ADR-0025](ADR/0025-terminal-v2-flow-control-and-links.md)）——**已废弃**
+
+> **2026-11-17 起本节为历史（[ADR-0028](ADR/0028-remove-native-terminal-and-plugin-pages.md)）**：终端页、xterm.js 资产、`TerminalSessions` / `TerminalOutputPump` / `TerminalKeys` / `TerminalLinks`、`tooling/terminal-web.lock.json`、`tooling/terminal-stress.mjs`、`tests/terminal-web` 已删除，下表的自动化证据不再可复跑；ADR-0025 由 ADR-0028 取代。
 
 | 方案要求 | 实现 / 证据 |
 |---|---|
