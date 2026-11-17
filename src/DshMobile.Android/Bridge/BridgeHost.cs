@@ -270,9 +270,9 @@ public sealed class BridgeHost : IDisposable, IDiagnosticsLog
     /// </summary>
     public Task RunStartAsync()
     {
-        // Observability only (docs/STARTUP_PERF.md): Logcat gets startup-perf records for this run; the in-app operation
-        // log and every existing message stay exactly as they were.
-        var trace = StartupTrace.Start(line => Log.Info(LogTag, line));
+        // Observability only (docs/STARTUP_PERF.md): Logcat gets startup-perf records for this run while detailed
+        // diagnostics are on; the in-app operation log and every existing message stay exactly as they were.
+        var trace = UiPrefs.StartupTraceEnabled(_context) ? StartupTrace.Start(line => Log.Info(LogTag, line)) : StartupTrace.Disabled;
         var clicked = trace.Mark();
         return RunExclusive("start", async () =>
         {

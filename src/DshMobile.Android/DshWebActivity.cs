@@ -40,7 +40,7 @@ public sealed class DshWebActivity : AppCompatActivity
 
         // Observability only (docs/STARTUP_PERF.md): DSH being READY does not mean the page is loaded or usable, so the
         // WebView load gets its own run id and its own records.
-        var trace = StartupTrace.Start(line => Log.Info(BridgeHost.LogTag, line));
+        var trace = UiPrefs.StartupTraceEnabled(this) ? StartupTrace.Start(line => Log.Info(BridgeHost.LogTag, line)) : StartupTrace.Disabled;
         var activitySpan = trace.Measure("web.activity_create");
 
         Edges.Enable(Window!);

@@ -25,6 +25,23 @@ public static class UiPrefs
         editor.Apply();
     }
 
+    private const string StartupTraceKey = "startup_trace";
+
+    /// <summary>
+    /// Detailed startup timing (docs/STARTUP_PERF.md). Off unless developer options are on, so a normal install pays
+    /// nothing; read once per start, never cached. There is no separate switch in the UI yet - the key exists so a
+    /// future developer-options row can override it without touching the callers.
+    /// </summary>
+    public static bool StartupTraceEnabled(Context context) =>
+        context.GetSharedPreferences(File, FileCreationMode.Private)!.GetBoolean(StartupTraceKey, DeveloperEnabled(context));
+
+    public static void SetStartupTraceEnabled(Context context, bool on)
+    {
+        var editor = context.GetSharedPreferences(File, FileCreationMode.Private)!.Edit()!;
+        editor.PutBoolean(StartupTraceKey, on);
+        editor.Apply();
+    }
+
     private const string ChannelKey = "update_channel";
 
     /// <summary>The release channel the user follows (vNext PR-06): <c>stable</c> (default) or <c>preview</c>.</summary>
