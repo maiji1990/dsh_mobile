@@ -151,6 +151,7 @@ npm 包只取发布 tarball 中的必要文件（addon 版本与 xterm 6.0.0 同
 | 2026-11-09 | DSHBox | — | `v1.5.1` (`7c9d33c`) | 初次引入；仅使用 `common` 模块 |
 | 2026-11-09 | DSHBox | `v1.5.1` | `v1.5.1` | 新增使用 `sandbox-manager`、预编译 `.so` 与 v1.5.1 Release 运行层；Maven 运行时依赖审计清单见 `artifacts/native/jars/MANIFEST.txt`（Kotlin/AndroidX 由 NuGet 提供） |
 | 2026-11-15 | DSHBox | `v1.5.1`（子模块） | `v1.5.1`（仅 Release 运行层 + 原样资产） | PR-10 / ADR-0018：删除子模块、Gradle 构建、Bridge AAR 与浏览器栈；guest 资产改由 App 打包；源码契约扫描改为钉值 |
+| 2026-11-17 | deepseek-ai/deepseek-harness | 0.2.1-rc.5 | 0.2.2-rc.3 | tag dsh-v0.2.2-rc.3 commit 38a6a5c965aa99ab525161efb7cc5cf1fe62fced；npm-lock SHA256 ebe6866b2a395da431e5315d62169f9bf77ad0b98df606e7ebf452f5d4251e70；profiles/MCP/真机待验 |
 
 ## 2026-11-16：本仓库自主发行与上游跟踪
 
