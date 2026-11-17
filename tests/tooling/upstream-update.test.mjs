@@ -33,8 +33,13 @@ test('reviewed preview spec matches the App parser input schema', () => {
   // The preview spec intentionally lags a proposed runtime/DSH upgrade:
   // assets reconciliation happens only AFTER the corresponding Releases exist.
   // Validate internal consistency without requiring the spec to match build locks.
-  assert.equal(manifest.artifacts[0].releaseTag,'runtime-'+manifest.artifacts[0].version);
-  assert.equal(manifest.artifacts[1].releaseTag,'dsh-'+manifest.artifacts[1].version);
+  // The built manifest carries no releaseTag field: the tag lives in each artifact's download URL
+  // (…/releases/download/<tag>/<file>), so check the spec's releaseTag and the URL built from it.
+  for (const [i,a] of manifest.artifacts.entries()) {
+    const tag=a.kind+'-'+a.version;
+    assert.equal(p.artifacts[i].releaseTag,tag);
+    assert.equal(a.url,'https://github.com/'+p.repository+'/releases/download/'+tag+'/'+a.archive);
+  }
   assert.equal(manifest.artifacts[1].sourceTag,'dsh-v'+manifest.artifacts[1].version);
   assert.match(manifest.artifacts[1].sourceCommit,/^[a-f0-9]{40,64}$/);
 });
