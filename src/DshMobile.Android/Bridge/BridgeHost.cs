@@ -5,6 +5,7 @@ using DshMobile.Application;
 using DshMobile.Application.Runtime;
 using DshMobile.Application.Ui;
 using DshMobile.Core.Contracts;
+using DshMobile.Core.Diagnostics;
 using DshMobile.Core.Files;
 using DshMobile.Native;
 using DshMobile.Runtime;
@@ -267,15 +268,25 @@ public sealed class BridgeHost : IDisposable, IDiagnosticsLog
     /// Foreground service, sandbox, then DSH, by the C# host and supervised by <see cref="RuntimeCoordinator"/>: a failed
     /// start is cleaned up and releases the service; a failed stop keeps it (PR-00 defect 3).
     /// </summary>
-    public Task RunStartAsync() => RunExclusive("start", async () =>
+    public Task RunStartAsync()
     {
-        var r = await Runtime.StartAsync(DshProfile.Web, CancellationToken.None).ConfigureAwait(false);
-        Report(r.Ok, r.Code, r.Message);
-        var s = r.Snapshot;
-        Append(r.Ok
-            ? $"start: ok sandbox={s.State} dsh={s.Harness} version={s.DshVersion ?? "-"} gen={s.Generation}"
-            : $"start FAILED {r.Code}{(r.UpstreamCode is null ? "" : "/" + r.UpstreamCode)}: {r.Message} (state={s.State} dsh={s.Harness})");
-    });
+        // Observability only (docs/STARTUP_PERF.md): Logcat gets startup-perf records for this run while detailed
+        // diagnostics are on; the in-app operation log and every existing message stay exactly as they were.
+        var trace = UiPrefs.StartupTraceEnabled(_context) ? StartupTrace.Start(line => Log.Info(LogTag, line)) : StartupTrace.Disabled;
+        var clicked = trace.Mark();
+        return RunExclusive("start", async () =>
+        {
+            trace.EmitSpan("ui.click_to_bridge", clicked);
+            var r = await Runtime.StartAsync(DshProfile.Web, CancellationToken.None, trace).ConfigureAwait(false);
+            Report(r.Ok, r.Code, r.Message);
+            var s = r.Snapshot;
+            Append(r.Ok
+                ? $"start: ok sandbox={s.State} dsh={s.Harness} version={s.DshVersion ?? "-"} gen={s.Generation}"
+                : $"start FAILED {r.Code}{(r.UpstreamCode is null ? "" : "/" + r.UpstreamCode)}: {r.Message} (state={s.State} dsh={s.Harness})");
+            trace.EmitSpan("bridge.complete", clicked, r.Ok ? StartupTrace.Ok : StartupTrace.Failed,
+                r.Ok ? null : new Dictionary<string, object?> { ["code"] = r.Code });
+        }, startupTrace: trace);
+    }
 
     public Task RunStopAsync() => RunExclusive("stop", async () =>
     {
@@ -449,8 +460,9 @@ public sealed class BridgeHost : IDisposable, IDiagnosticsLog
         Append($"{what}: " + f.Describe(s.State.ToString(), s.Harness.ToString(), Runtime.Host?.TokenRevision is not null));
     }
 
-    private async Task RunExclusive(string name, Func<Task> body, bool reportBusy = false)
+    private async Task RunExclusive(string name, Func<Task> body, bool reportBusy = false, StartupTrace? startupTrace = null)
     {
+        var started = startupTrace?.Mark();
         if (Interlocked.CompareExchange(ref _busy, 1, 0) != 0)
         {
             if (reportBusy)
@@ -460,6 +472,10 @@ public sealed class BridgeHost : IDisposable, IDiagnosticsLog
             else
             {
                 Append($"{name}: skipped, another operation is running");
+            }
+            if (startupTrace is not null && started is { } busyMark)
+            {
+                startupTrace.EmitSpan("bridge.complete", busyMark, StartupTrace.Busy);
             }
             return;
         }
@@ -475,6 +491,10 @@ public sealed class BridgeHost : IDisposable, IDiagnosticsLog
             Report(false, "EXCEPTION", $"{e.GetType().Name}: {e.Message}");
             Append($"{name}: EXCEPTION {e.GetType().Name}: {e.Message}");
             Log.Error(LogTag, e.ToString());
+            if (startupTrace is not null && started is { } failedMark)
+            {
+                startupTrace.EmitSpan("bridge.complete", failedMark, StartupTrace.Failed, new Dictionary<string, object?> { ["code"] = "EXCEPTION" });
+            }
         }
         finally
         {

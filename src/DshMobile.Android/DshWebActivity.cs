@@ -7,6 +7,7 @@ using AndroidX.Activity;
 using AndroidX.AppCompat.App;
 using DshMobile.App.Bridge;
 using DshMobile.App.Ui;
+using DshMobile.Core.Diagnostics;
 using DshMobile.App.WebUi;
 using Google.Android.Material.ProgressIndicator;
 using Log = Android.Util.Log;
@@ -36,6 +37,11 @@ public sealed class DshWebActivity : AppCompatActivity
     protected override void OnCreate(Bundle? savedInstanceState)
     {
         base.OnCreate(savedInstanceState);
+
+        // Observability only (docs/STARTUP_PERF.md): DSH being READY does not mean the page is loaded or usable, so the
+        // WebView load gets its own run id and its own records.
+        var trace = UiPrefs.StartupTraceEnabled(this) ? StartupTrace.Start(line => Log.Info(BridgeHost.LogTag, line)) : StartupTrace.Disabled;
+        var activitySpan = trace.Measure("web.activity_create");
 
         Edges.Enable(Window!);
         SetContentView(Resource.Layout.activity_web);
@@ -69,8 +75,10 @@ public sealed class DshWebActivity : AppCompatActivity
                 {
                     OpenFileChooser(types, multiple);
                 }
-            }));
+            }),
+            trace);
         _csharp.Attach(_webView);
+        activitySpan.End();
 
         // Predictive back (default for targetSdk 36+): navigate WebView history first, then leave.
         OnBackPressedDispatcher.AddCallback(this, new BackCallback(this));

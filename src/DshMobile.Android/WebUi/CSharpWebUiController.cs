@@ -1,5 +1,6 @@
 using Android.Content;
 using Android.Webkit;
+using DshMobile.Core.Diagnostics;
 using DshMobile.Core.WebUi;
 using DshMobile.Runtime;
 using DshMobile.Runtime.Hosting;
@@ -20,11 +21,17 @@ namespace DshMobile.App.WebUi;
 /// </list>
 /// Main thread only (WebView requirement).
 /// </summary>
-internal sealed class CSharpWebUiController(IDshTokenSource tokens, Action<string, string> onState, Action<string[], bool> onFileChooser)
+internal sealed class CSharpWebUiController(
+    IDshTokenSource tokens,
+    Action<string, string> onState,
+    Action<string[], bool> onFileChooser,
+    StartupTrace? trace = null)
 {
     private readonly IDshTokenSource _tokens = tokens;
     private readonly Action<string, string> _onState = onState;
     private readonly Action<string[], bool> _onFileChooser = onFileChooser;
+    private readonly StartupTrace? _trace = trace;
+    private double? _loadMark;
     private readonly string _base = RuntimeConstants.DshBaseUrl + "/";
     private readonly DshOriginPolicy _policy = DshOriginPolicy.Create(RuntimeConstants.DshBaseUrl);
     private WebView? _view;
@@ -112,6 +119,8 @@ internal sealed class CSharpWebUiController(IDshTokenSource tokens, Action<strin
         }
         _loadedRevision = revision;
         _onState("LOADING", "/");
+        _loadMark = _trace?.Mark();
+        _trace?.EmitSpan("web.load_url", _loadMark!.Value, details: new Dictionary<string, object?> { ["revision"] = revision });
         view.LoadUrl(WebUiPolicy.UrlWithToken(_base, token));
     }
 
@@ -123,6 +132,15 @@ internal sealed class CSharpWebUiController(IDshTokenSource tokens, Action<strin
 
     /// <summary>Path only: query strings (which may carry the token) never leave this class.</summary>
     private static string SafePath(Android.Net.Uri? uri) => string.IsNullOrEmpty(uri?.Path) ? "/" : uri.Path!;
+
+    /// <summary>Timing for one main-frame document load; a navigation that starts a new load refreshes the mark.</summary>
+    private void Mark(string stage, string? result = null, IReadOnlyDictionary<string, object?>? details = null)
+    {
+        if (_trace is { Enabled: true } && _loadMark is { } started)
+        {
+            _trace.EmitSpan(stage, started, result ?? StartupTrace.Ok, details);
+        }
+    }
 
     private sealed class Client(CSharpWebUiController owner) : WebViewClient
     {
@@ -153,11 +171,23 @@ internal sealed class CSharpWebUiController(IDshTokenSource tokens, Action<strin
             }
         }
 
+        public override void OnPageStarted(WebView? view, string? url, Android.Graphics.Bitmap? favicon)
+        {
+            owner.Mark("web.page_start");
+        }
+
+        public override void OnPageCommitVisible(WebView? view, string? url) => owner.Mark("web.commit_visible");
+
         public override void OnPageFinished(WebView? view, string? url)
         {
             if (url is not null && owner._policy.IsTrusted(url))
             {
+                owner.Mark("web.page_finish");
                 owner._onState("LOADED", SafePath(Android.Net.Uri.Parse(url)));
+            }
+            else
+            {
+                owner.Mark("web.page_finish", StartupTrace.Failed);
             }
         }
 
