@@ -97,7 +97,7 @@ public sealed class RuntimeStateMachine
             to,
             harness ?? _current.Harness,
             generation,
-            dshVersion ?? _current.DshVersion,
+            observed ? dshVersion : dshVersion ?? _current.DshVersion,
             keepError ? errorCode : null,
             keepError ? errorMessage : null,
             _time.GetUtcNow());

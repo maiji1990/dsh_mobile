@@ -225,6 +225,7 @@ public sealed class HomeFragment : Fragment, ITabRoot
         var (text, icon) = action switch
         {
             HomeAction.ImportRuntime => (Resource.String.home_action_import, Resource.Drawable.ic_upload),
+            HomeAction.ImportDsh => (Resource.String.home_action_import_dsh, Resource.Drawable.ic_download),
             HomeAction.Start => (_shown?.Phase == HomePhase.Failed ? Resource.String.home_action_retry : Resource.String.home_action_start, Resource.Drawable.ic_play),
             HomeAction.OpenDsh => (Resource.String.home_action_open, Resource.Drawable.ic_open_in_new),
             _ => (Resource.String.home_action_stop, Resource.Drawable.ic_stop),
@@ -239,6 +240,9 @@ public sealed class HomeFragment : Fragment, ITabRoot
         {
             case HomeAction.ImportRuntime:
                 StartActivityForResult(RuntimeImportFlow.PickIntent(), RuntimeImportFlow.RequestCode);
+                break;
+            case HomeAction.ImportDsh:
+                StartActivityForResult(RuntimeImportFlow.PickDshIntent(), RuntimeImportFlow.DshRequestCode);
                 break;
             case HomeAction.Start:
                 _ = _bridge.RunStartAsync();
@@ -255,9 +259,17 @@ public sealed class HomeFragment : Fragment, ITabRoot
     public override void OnActivityResult(int requestCode, int resultCode, Intent? data)
     {
         base.OnActivityResult(requestCode, resultCode, data);
-        if (requestCode == RuntimeImportFlow.RequestCode && resultCode == (int)Android.App.Result.Ok && data?.Data is { } uri)
+        if (resultCode != (int)Android.App.Result.Ok || data?.Data is not { } uri)
         {
-            _ = RuntimeImportFlow.ImportAsync(RequireContext(), uri);
+            return;
+        }
+        if (requestCode == RuntimeImportFlow.RequestCode)
+        {
+            _ = RuntimeImportFlow.ImportAsync(uri);
+        }
+        else if (requestCode == RuntimeImportFlow.DshRequestCode)
+        {
+            _ = RuntimeImportFlow.ImportDshAsync(uri);
         }
     }
 

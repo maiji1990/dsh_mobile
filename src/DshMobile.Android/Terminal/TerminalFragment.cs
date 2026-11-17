@@ -377,7 +377,7 @@ public sealed class TerminalFragment : Fragment, ITabRoot
         }
         try
         {
-            await _sessions.CreateAsync(_rows > 0 ? _rows : 24, _cols > 0 ? _cols : 80, CancellationToken.None).ConfigureAwait(false);
+            await _bridge.Runtime.CreateTerminalAsync(_rows > 0 ? _rows : 24, _cols > 0 ? _cols : 80, CancellationToken.None).ConfigureAwait(false);
         }
         catch (GuestPtyException e)
         {

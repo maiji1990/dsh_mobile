@@ -157,16 +157,18 @@ public sealed class RuntimeBundleInspectorTests(ITestOutputHelper output) : IDis
     [Fact]
     public async Task PinnedRealBundle_VerifiesWhenFetched()
     {
-        const string name = "dshapp-runtime-debian-arm64-0.1.0.zip";
+        var pin = File.ReadLines(Repo.PathOf("runtime-bundle", "runtime-assets.lock"))
+            .Select(line => line.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries))
+            .Single(fields => fields.Length == 3 && fields[0].StartsWith("dsh", StringComparison.Ordinal) &&
+                fields[0].EndsWith(".zip", StringComparison.Ordinal));
+        var name = pin[0];
         var path = Repo.PathOf("artifacts", "runtime", "downloads", name);
         if (!File.Exists(path))
         {
             output.WriteLine($"NOT RUN: {path} not fetched (pwsh runtime-bundle/fetch-runtime.ps1)");
             return;
         }
-        var locked = File.ReadLines(Repo.PathOf("runtime-bundle", "runtime-assets.lock"))
-            .Select(l => l.Split(' ', StringSplitOptions.RemoveEmptyEntries))
-            .Single(p => p.Length >= 2 && p[0] == name)[1];
+        var locked = pin[1];
         await using (var fs = File.OpenRead(path))
         {
             Assert.Equal(locked, Convert.ToHexStringLower(await SHA256.HashDataAsync(fs)));

@@ -17,7 +17,7 @@ DSH 原样运行在 App 私有目录里的 Debian 沙箱（PRoot）中；App 负
 | **插件** | 通过 DSH 自己的 `dsh plugin` 安装 / 卸载 Cordis 插件；装入的包不是可加载插件时自动回滚 |
 | **手机操控（实验）** | 让 DSH 通过 `ui_*` 工具读取和操作手机界面；每次写操作都需要你本人批准 |
 | **远程主机** | 通过 SSH 连接你自己电脑或服务器上的 DSH：端口转发、远端 DSH 启停 |
-| **运行环境维护** | 导入运行环境包（逐层校验）、安装内置 DSH、回滚到上一版 |
+| **运行环境维护** | 导入运行环境包（逐层校验）、导入 DSH 层、回滚到上一版 |
 
 界面为 Material 3，底部四栏：**首页 / 终端 / 文件 / 更多**（横屏 / 宽屏时为左侧导航栏）。主题跟随系统深浅色，Android 12+ 按壁纸取色。诊断、模式探测、PTY 自检与日志在
 「更多 → 开发者选项」里，默认隐藏，在「关于」上连点 7 次开启（[ADR-0021](docs/ADR/0021-product-ui-material3.md)）。
@@ -39,11 +39,11 @@ DSH 原样运行在 App 私有目录里的 Debian 沙箱（PRoot）中；App 负
 沙箱会立即退出（`DSH_EXITED`），只能看界面。
 
 1. 安装 APK（目前需[从源码构建](#从源码构建)）。
-2. 首页点「导入运行环境包」，选择 `dshmobile-runtime-debian-arm64-*.zip`。导入会逐层校验 SHA-256，并安装 App 内置的 DSH。
-3. 点「启动 DSH」，就绪后点「打开 DSH」。
+2. 首页点「导入运行环境包」，选择 Runtime Release 中的 `dshmobile-runtime-debian-arm64-*.zip`。导入会逐层校验 SHA-256。
+3. 首页点「导入 DSH 层」，选择本项目 DSH Release 中的 `<版本>.tar.zst`。保留下载时的文件名。
+4. 点「启动 DSH」，就绪后点「打开 DSH」。
 
-运行环境包由本仓库的 `runtime-bundle/build-runtime.sh` 构建（[ADR-0020](docs/ADR/0020-self-built-runtime-layers.md)），已经通过本仓库独立 GitHub Releases 发布；
-`runtime-bundle/fetch-runtime.ps1` 从本仓库的锁定制品下载最新**已审核并发布**的 Runtime 和 DSH 包。旧 DSHBox 离线包仍可作为兼容性测试输入，但不再作为默认下载源。参见 [自动升级与发布流程](docs/RELEASE_AUTOMATION.md)。
+运行环境和 DSH 层由本仓库构建并分别发布。当前锁定版本的下载地址见 [runtime-assets.lock](runtime-bundle/runtime-assets.lock)，发布流程见 [ADR-0020](docs/ADR/0020-self-built-runtime-layers.md) 和 [自动升级与发布流程](docs/RELEASE_AUTOMATION.md)。
 
 ## 从源码构建
 
@@ -61,7 +61,7 @@ DSH 原样运行在 App 私有目录里的 Debian 沙箱（PRoot）中；App 负
 pwsh native/build-native.ps1
 ```
 
-下载运行层（APK 内置的 DSH 层与 android-side 层，约 300 MB，按 `runtime-bundle/runtime-assets.lock` 校验；不入库）：
+下载并校验锁定的运行环境包，为 APK 暂存其中的 `android-side` 层：
 
 ```bash
 pwsh runtime-bundle/fetch-runtime.ps1
@@ -77,6 +77,12 @@ dotnet build DshMobile.slnx -c Debug
 
 ```bash
 dotnet build src/DshMobile.Android/DshMobile.Android.csproj -c Debug -t:Install
+```
+
+如果要用 `adb install -r` 直接覆盖安装，先构建包含 .NET 程序集的 Release APK，再安装生成的 `*-Signed.apk`。
+
+```bash
+dotnet build src/DshMobile.Android/DshMobile.Android.csproj -c Release -p:EmbedAssembliesIntoApk=true
 ```
 
 ### 自建运行层

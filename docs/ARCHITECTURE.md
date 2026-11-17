@@ -43,7 +43,7 @@ MainActivity ─▶ BridgeHost ─▶ RuntimeCoordinator ─▶ DshHost ─▶ e
      └─ AndroidForegroundService (specialUse)   PRoot → Debian 13 → Node 24 → DSH (web, 127.0.0.1:3080)
 ```
 
-- APK 携带 `assets/dsh/<ver>.tar.zst` 与 `assets/runtime/android-side.tar.zst`；base / node 由运行环境包导入（`LayerInstaller`）。
+- APK 携带 `assets/runtime/android-side.tar.zst`；base / node 由运行环境包导入（`LayerInstaller`），DSH 层不进 APK（ADR-0027：设备端导入 `runtime.import.dsh` 或在线更新）。
 - APK 还携带原样复制自 DSHBox v1.5.1 的 guest 资产（链接垫片、corepack 缓存），由 `GuestAssetProvisioner` 在每次 guest 使用前确保到位。
 - `extractNativeLibs=true`：PRoot 以可执行文件方式从 nativeLibraryDir 启动（W^X）。
 

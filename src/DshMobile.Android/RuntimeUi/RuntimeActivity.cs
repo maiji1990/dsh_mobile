@@ -11,8 +11,8 @@ namespace DshMobile.App.RuntimeUi;
 
 /// <summary>
 /// Runtime screen (ADR-0021): what is installed (from <see cref="RuntimeStatusReader"/>, read from disk) and the three
-/// maintenance actions — import a runtime bundle, re-install the bundled DSH layer (MIGRATION row 17), roll back to the
-/// previous runtime body (row 18, confirmed first). Every result is the coordinator's own code.
+/// maintenance actions — import a runtime bundle, import the DSH layer (ADR-0027: it is no longer bundled with the APK),
+/// roll back to the previous runtime body (row 18, confirmed first). Every result is the coordinator's own code.
 /// </summary>
 [Activity(Label = "@string/more_runtime", Exported = false)]
 public sealed class RuntimeActivity : DshActivity
@@ -101,19 +101,19 @@ public sealed class RuntimeActivity : DshActivity
             var progress = _bridge.Progress is { } p ? (p.Total > 0 ? Rows.Fmt(this, Resource.String.home_detail_progress, p.Step, (int)Math.Clamp(p.Done * 100 / p.Total, 0, 100)) : p.Step) : null;
             Rows.Add(_content, Resource.Drawable.ic_refresh, Rows.Fmt(this, Resource.String.home_title_busy, OperationNames.Label(this, op)), progress);
         }
-        else if (_bridge.LastOutcome is { } last && last.Operation is HomeStatus.ImportOperation or "runtime.prepare" or "runtime.rollback" or "update.check" or "update.install")
+        else if (_bridge.LastOutcome is { } last && last.Operation is HomeStatus.ImportOperation or HomeStatus.ImportDshOperation or "runtime.rollback" or "update.check" or "update.install")
         {
             var row = Rows.Add(_content, last.Ok ? Resource.Drawable.ic_check_circle : Resource.Drawable.ic_error,
                 Rows.Fmt(this, last.Ok ? Resource.String.runtime_last_ok : Resource.String.runtime_last_failed, OperationNames.Label(this, last.Operation)),
-                last.Ok ? OkDetail(last) : OperationNames.Error(last.Code, last.Message));
+                last.Ok ? (last.Operation == HomeStatus.ImportDshOperation ? last.Message : null) : OperationNames.Error(last.Code, last.Message));
             row.Subtitle.SetTextIsSelectable(true);
         }
 
         Rows.Header(_content, GetString(Resource.String.runtime_section_actions));
         Action(Resource.Drawable.ic_upload, Resource.String.runtime_import, Resource.String.runtime_import_sub, busy,
             () => StartActivityForResult(RuntimeImportFlow.PickIntent(), RuntimeImportFlow.RequestCode));
-        Action(Resource.Drawable.ic_build, Resource.String.runtime_repair, Resource.String.runtime_repair_sub, busy,
-            () => _ = _bridge.RunPrepareAsync());
+        Action(Resource.Drawable.ic_download, Resource.String.runtime_import_dsh, Resource.String.runtime_import_dsh_sub, busy,
+            () => StartActivityForResult(RuntimeImportFlow.PickDshIntent(), RuntimeImportFlow.DshRequestCode));
         Action(Resource.Drawable.ic_history, Resource.String.runtime_rollback, Resource.String.runtime_rollback_sub, busy, ConfirmRollback);
         Rows.Add(_content, 0, "", GetString(Resource.String.runtime_bundle_note)).Title.Visibility = ViewStates.Gone;
 
@@ -222,22 +222,6 @@ public sealed class RuntimeActivity : DshActivity
             .Show();
     }
 
-    /// <summary>What a successful "install bundled DSH" actually did (it may have kept the installed layer).</summary>
-    private string? OkDetail(OperationOutcome last)
-    {
-        if (last.Operation != "runtime.prepare")
-        {
-            return null;
-        }
-        var o = PrepareOutcome.Parse(last.Message);
-        return o.Kind switch
-        {
-            PrepareKind.Installed => Rows.Fmt(this, Resource.String.runtime_prepare_installed, o.Version ?? "?"),
-            PrepareKind.Kept => Rows.Fmt(this, Resource.String.runtime_prepare_kept, o.Version ?? "?"),
-            _ => last.Message,
-        };
-    }
-
     private Rows.Row Action(int icon, int title, int subtitle, bool busy, Action onClick)
     {
         var row = Rows.Add(_content, icon, GetString(title), subtitle == 0 ? null : GetString(subtitle), () =>
@@ -276,9 +260,17 @@ public sealed class RuntimeActivity : DshActivity
     protected override void OnActivityResult(int requestCode, Result resultCode, Intent? data)
     {
         base.OnActivityResult(requestCode, resultCode, data);
-        if (requestCode == RuntimeImportFlow.RequestCode && resultCode == Result.Ok && data?.Data is { } uri)
+        if (resultCode != Result.Ok || data?.Data is not { } uri)
         {
-            _ = RuntimeImportFlow.ImportAsync(this, uri);
+            return;
+        }
+        if (requestCode == RuntimeImportFlow.RequestCode)
+        {
+            _ = RuntimeImportFlow.ImportAsync(uri);
+        }
+        else if (requestCode == RuntimeImportFlow.DshRequestCode)
+        {
+            _ = RuntimeImportFlow.ImportDshAsync(uri);
         }
     }
 }

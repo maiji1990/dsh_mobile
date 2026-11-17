@@ -11,7 +11,7 @@ public static class OperationNames
         HomeStatus.StartOperation => Resource.String.op_start,
         HomeStatus.StopOperation => Resource.String.op_stop,
         HomeStatus.ImportOperation => Resource.String.op_import,
-        "runtime.prepare" => Resource.String.op_prepare,
+        HomeStatus.ImportDshOperation => Resource.String.op_import_dsh,
         "runtime.rollback" => Resource.String.op_rollback,
         "diagnostics" => Resource.String.op_diagnostics,
         "info" => Resource.String.op_info,

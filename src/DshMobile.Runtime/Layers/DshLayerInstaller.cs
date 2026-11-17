@@ -16,6 +16,7 @@ public static class DshLayerErrorCodes
     public const string Sha256Mismatch = "DSH_SHA256_MISMATCH";
     public const string BundleInvalid = "DSH_BUNDLE_INVALID";
     public const string InstallFailed = "DSH_INSTALL_FAILED";
+    public const string HealthFailed = "DSH_HEALTH_FAILED";
 }
 
 /// <summary>Outcome of a DSH layer install. <paramref name="Version"/> is the installed version afterwards.</summary>
@@ -139,11 +140,11 @@ public sealed class DshLayerInstaller(RuntimeLayout layout, Func<string, bool>? 
         return new DshLayerDecision(!keep, current, newVersion);
     }
 
-    public Task<DshLayerResult> InstallFromFileAsync(string bundlePath, string? expectedSha256, string? newVersion, bool allowDowngrade, CancellationToken ct, bool holdForProbe = false)
+    public Task<DshLayerResult> InstallFromFileAsync(string bundlePath, string? expectedSha256, string? newVersion, bool allowDowngrade, CancellationToken ct, bool holdForProbe = false, bool verifyPackageVersion = false)
     {
         ArgumentException.ThrowIfNullOrEmpty(bundlePath);
         return File.Exists(bundlePath)
-            ? InstallAsync(() => File.OpenRead(bundlePath), expectedSha256, newVersion, allowDowngrade, ct, holdForProbe)
+            ? InstallCoreAsync(() => File.OpenRead(bundlePath), expectedSha256, newVersion, allowDowngrade, ct, holdForProbe, verifyPackageVersion)
             : Task.FromResult(new DshLayerResult(false, DshLayerErrorCodes.BundleNotFound, $"dsh bundle not found: {bundlePath}", InstalledVersion(), false, 0));
     }
 
@@ -153,7 +154,10 @@ public sealed class DshLayerInstaller(RuntimeLayout layout, Func<string, bool>? 
     /// </summary>
     /// <param name="holdForProbe">vNext PR-05: stop at <c>probing</c> (old layer kept aside) instead of committing; the caller
     /// runs a health check and then calls <see cref="CommitProbed"/> or <see cref="AbortProbed"/>.</param>
-    public async Task<DshLayerResult> InstallAsync(Func<Stream> open, string? expectedSha256, string? newVersion, bool allowDowngrade, CancellationToken ct, bool holdForProbe = false)
+    public Task<DshLayerResult> InstallAsync(Func<Stream> open, string? expectedSha256, string? newVersion, bool allowDowngrade, CancellationToken ct, bool holdForProbe = false) =>
+        InstallCoreAsync(open, expectedSha256, newVersion, allowDowngrade, ct, holdForProbe, verifyPackageVersion: false);
+
+    private async Task<DshLayerResult> InstallCoreAsync(Func<Stream> open, string? expectedSha256, string? newVersion, bool allowDowngrade, CancellationToken ct, bool holdForProbe, bool verifyPackageVersion)
     {
         ArgumentNullException.ThrowIfNull(open);
         var sw = Stopwatch.StartNew();
@@ -162,8 +166,7 @@ public sealed class DshLayerInstaller(RuntimeLayout layout, Func<string, bool>? 
         {
             return Fail(DshLayerErrorCodes.InstallFailed, "an earlier interrupted DSH install could not be recovered: " + recovery.Message, sw);
         }
-        var decision = Decide(newVersion, allowDowngrade);
-        if (!decision.Install)
+        if (!verifyPackageVersion && Decide(newVersion, allowDowngrade) is { Install: false } decision)
         {
             return new DshLayerResult(true, "OK", $"installed {decision.Installed} >= incoming {newVersion}", decision.Installed, false, sw.ElapsedMilliseconds);
         }
@@ -171,7 +174,7 @@ public sealed class DshLayerInstaller(RuntimeLayout layout, Func<string, bool>? 
         var staging = StagingDir;
         try
         {
-            if (expectedSha256 is not null && !await Sha256MatchesAsync(open, expectedSha256, ct).ConfigureAwait(false))
+            if (!verifyPackageVersion && expectedSha256 is not null && !await Sha256MatchesAsync(open, expectedSha256, ct).ConfigureAwait(false))
             {
                 return Fail(DshLayerErrorCodes.Sha256Mismatch, "dsh bundle failed SHA-256 verification", sw);
             }
@@ -205,7 +208,20 @@ public sealed class DshLayerInstaller(RuntimeLayout layout, Func<string, bool>? 
             {
                 return Fail(DshLayerErrorCodes.BundleInvalid, "Selected file is not a valid DSH layer package (missing node_modules/@deepseek-ai/dsh/lib/bin.js)", sw);
             }
-            var discovered = VersionFromPackage(staging);
+            var discovered = ReadPackageVersion(staging, productOnly: verifyPackageVersion);
+            if (verifyPackageVersion)
+            {
+                if (discovered is null || !string.Equals(discovered, newVersion?.TrimStart('v'), StringComparison.Ordinal))
+                {
+                    return Fail(DshLayerErrorCodes.BundleInvalid, $"DSH package version ({discovered ?? "missing"}) does not match the archive name ({newVersion})", sw);
+                }
+                var current = InstalledVersion();
+                if (!allowDowngrade && current is not null && Versions.Compare(WithoutBuildMetadata(current), WithoutBuildMetadata(discovered)) >= 0)
+                {
+                    return new DshLayerResult(true, "OK", $"installed {current} >= incoming {discovered}", current, false, sw.ElapsedMilliseconds);
+                }
+                newVersion = discovered;
+            }
 
             // Stage 2 (journaled): old -> aside, staging -> dsh, version record, then the old layer is retired.
             var version = !string.IsNullOrWhiteSpace(newVersion) ? newVersion : discovered ?? "unknown";
@@ -229,7 +245,7 @@ public sealed class DshLayerInstaller(RuntimeLayout layout, Func<string, bool>? 
                 Directory.CreateDirectory(Path.Combine(dsh, RuntimeConstants.LayerStateDir));
                 Ops.WriteFile(Path.Combine(dsh, VersionFile), version); // no newline, no BOM
             }
-            catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+            catch (Exception e) when (!verifyPackageVersion && (e is IOException or UnauthorizedAccessException))
             {
             }
             if (holdForProbe)
@@ -451,12 +467,50 @@ public sealed class DshLayerInstaller(RuntimeLayout layout, Func<string, bool>? 
     }
 
     /// <summary>
+    /// The version encoded in a DSH layer archive name — the release artifact's shape <c>&lt;version&gt;.tar.zst</c>
+    /// (or <c>.tar.gz</c>), with an optional legacy <c>-patched</c> marker removed. Returns null for malformed names.
+    /// </summary>
+    public static string? VersionFromFileName(string fileName)
+    {
+        var name = Path.GetFileName(fileName);
+        if (name.EndsWith(".tar.zst", StringComparison.Ordinal))
+        {
+            name = name[..^".tar.zst".Length];
+        }
+        else if (name.EndsWith(".tar.gz", StringComparison.Ordinal))
+        {
+            name = name[..^".tar.gz".Length];
+        }
+        else
+        {
+            return null;
+        }
+        if (name.EndsWith("-patched", StringComparison.Ordinal))
+        {
+            name = name[..^"-patched".Length];
+        }
+        // The pinned DSH releases use numeric major.minor.patch with an optional prerelease or build suffix.
+        return System.Text.RegularExpressions.Regex.IsMatch(name, @"\Av?(0|[1-9][0-9]{0,8})\.(0|[1-9][0-9]{0,8})\.(0|[1-9][0-9]{0,8})(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?(\+[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?\z",
+            System.Text.RegularExpressions.RegexOptions.CultureInvariant | System.Text.RegularExpressions.RegexOptions.NonBacktracking) ? name : null;
+    }
+
+    private static string WithoutBuildMetadata(string version)
+    {
+        var index = version.IndexOf('+', StringComparison.Ordinal);
+        return index < 0 ? version : version[..index];
+    }
+
+    /// <summary>
     /// The real product version from <c>node_modules/@deepseek-ai/dsh/package.json</c>, else the layer-root stub
     /// <c>package.json</c>; both BOM-tolerant (the shipped stub starts with a UTF-8 BOM). Unreadable files are skipped.
     /// </summary>
-    public static string? VersionFromPackage(string dshDirRoot)
+    public static string? VersionFromPackage(string dshDirRoot) => ReadPackageVersion(dshDirRoot, productOnly: false);
+
+    private static string? ReadPackageVersion(string dshDirRoot, bool productOnly)
     {
-        foreach (var rel in (string[])["node_modules/@deepseek-ai/dsh/package.json", "package.json"])
+        const string productPackage = "node_modules/@deepseek-ai/dsh/package.json";
+        string[] candidates = productOnly ? [productPackage] : [productPackage, "package.json"];
+        foreach (var rel in candidates)
         {
             var pkg = Path.Combine(dshDirRoot, rel);
             if (!File.Exists(pkg))
@@ -469,6 +523,12 @@ public sealed class DshLayerInstaller(RuntimeLayout layout, Func<string, bool>? 
                     new JsonDocumentOptions { AllowTrailingCommas = true, CommentHandling = JsonCommentHandling.Skip });
                 if (doc.RootElement.ValueKind == JsonValueKind.Object && doc.RootElement.TryGetProperty("version", out var v))
                 {
+                    if (productOnly && (v.ValueKind != JsonValueKind.String ||
+                        !doc.RootElement.TryGetProperty("name", out var name) || name.ValueKind != JsonValueKind.String ||
+                        !name.ValueEquals("@deepseek-ai/dsh")))
+                    {
+                        return null;
+                    }
                     // org.json optString: strings as-is, other values by their JSON text.
                     var text = v.ValueKind == JsonValueKind.String ? v.GetString() : v.GetRawText();
                     if (!string.IsNullOrEmpty(text))

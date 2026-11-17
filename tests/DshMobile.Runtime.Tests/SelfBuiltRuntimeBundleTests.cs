@@ -18,12 +18,13 @@ public sealed class SelfBuiltRuntimeBundleTests(ITestOutputHelper output) : IDis
     private string? BuiltBundle()
     {
         var dist = Repo.PathOf("artifacts", "runtime-build", "dist");
-        var zip = Directory.Exists(dist) ? Directory.EnumerateFiles(dist, "dshmobile-runtime-*.zip").OrderDescending().FirstOrDefault() : null;
-        if (zip is null)
+        var zip = Path.Combine(dist, $"dshmobile-runtime-debian-arm64-{LockValue("BUNDLE_VERSION")}.zip");
+        if (!File.Exists(zip))
         {
             // The runtime-layers workflow sets this so a missing build output fails instead of passing as "NOT RUN".
-            Assert.True(Environment.GetEnvironmentVariable("DSHM_REQUIRE_SELF_BUILT") != "1", $"DSHM_REQUIRE_SELF_BUILT=1 but no dshmobile-runtime-*.zip in {dist}");
-            output.WriteLine($"NOT RUN: no dshmobile-runtime-*.zip in {dist} (bash runtime-bundle/build-runtime.sh)");
+            Assert.True(Environment.GetEnvironmentVariable("DSHM_REQUIRE_SELF_BUILT") != "1", $"DSHM_REQUIRE_SELF_BUILT=1 but {zip} is missing");
+            output.WriteLine($"NOT RUN: {zip} is missing (bash runtime-bundle/build-runtime.sh)");
+            return null;
         }
         return zip;
     }
@@ -66,7 +67,7 @@ public sealed class SelfBuiltRuntimeBundleTests(ITestOutputHelper output) : IDis
         var dshTar = Path.Combine(dist, $"{dshVersion}.tar.zst");
         var sha = File.ReadLines(Path.Combine(dist, "SHA256SUMS")).Select(l => l.Split("  ")).Single(p => p[1] == Path.GetFileName(dshTar))[0];
         var dshInstaller = new DshLayerInstaller(layout, LayerExtractor.AndroidLikeHost);
-        var d = await dshInstaller.InstallFromFileAsync(dshTar, sha, dshVersion, allowDowngrade: false, CancellationToken.None);
+        var d = await dshInstaller.InstallFromFileAsync(dshTar, sha, dshVersion, allowDowngrade: false, CancellationToken.None, verifyPackageVersion: true);
         Assert.True(d.Ok, $"{d.Code}: {d.Message}");
         Assert.Equal(dshVersion, dshInstaller.InstalledVersion());
         Assert.True(File.Exists(Path.Combine(dshInstaller.DshDir, DshLayerInstaller.BinJs)));

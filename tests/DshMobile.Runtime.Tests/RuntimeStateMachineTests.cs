@@ -79,6 +79,18 @@ public sealed class RuntimeStateMachineTests : IDisposable
     }
 
     [Fact]
+    public void Observe_MissingLayerClearsTheStoredVersion()
+    {
+        var journal = new InMemoryRuntimeJournal();
+        var sm = new RuntimeStateMachine(journal, "test");
+        sm.Observe(RuntimeState.Ready, HarnessState.Stopped, "0.2.1", "disk");
+        sm.Observe(RuntimeState.Ready, HarnessState.Stopped, null, "disk");
+        sm.Observe(RuntimeState.Ready, HarnessState.Stopped, null, "disk");
+        Assert.Null(sm.Current.DshVersion);
+        Assert.Equal(2, journal.ReadTail(10).Count);
+    }
+
+    [Fact]
     public void FileJournal_SurvivesRestart_AndInterruptedOperationBecomesFailed()
     {
         var path = Path.Combine(_dir, "j.jsonl");

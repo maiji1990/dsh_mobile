@@ -1,10 +1,14 @@
 using System.Diagnostics;
+using DshMobile.App.Files;
+using DshMobile.App.Ui;
 using DshMobile.Application;
 using DshMobile.Application.Runtime;
 using DshMobile.Application.Ui;
 using DshMobile.Core.Contracts;
+using DshMobile.Core.Files;
 using DshMobile.Native;
 using DshMobile.Runtime;
+using DshMobile.Runtime.Layers;
 using Microsoft.Extensions.DependencyInjection;
 using Log = Android.Util.Log;
 
@@ -159,67 +163,86 @@ public sealed class BridgeHost : IDisposable, IDiagnosticsLog
         }
     });
 
-    /// <summary>Installs the APK-bundled DSH layer when base/node exist (MIGRATION row 17, C# RuntimePreparer).</summary>
-    public Task RunPrepareAsync() => RunExclusive("runtime.prepare", async () =>
+    /// <summary>Copies a selected document to private cache and imports it under the same operation lock.</summary>
+    public Task RunPickedImportAsync(Android.Net.Uri uri, bool dsh)
     {
-        var r = await Runtime.PrepareAsync(CancellationToken.None).ConfigureAwait(false);
-        // The legacy prepare is ok even when the DSH layer was not installed (kept, failed, no layers); the UI says which.
-        var o = r.Ok ? PrepareOutcome.Parse(r.Message) : null;
-        if (o is { Failed: true })
+        var operation = dsh ? HomeStatus.ImportDshOperation : HomeStatus.ImportOperation;
+        return RunExclusive(operation, () => Task.Run(async () =>
         {
-            Report(false, o.Code ?? RuntimeErrorCodes.Upstream, o.Detail);
-        }
-        else
-        {
-            Report(r.Ok, r.Code, r.Message);
-        }
-        if (!r.Ok)
-        {
-            Append($"prepare FAILED {r.Code}: {r.Message}"); // the coordinator already logged the steps on success
-        }
-    });
+            DirectoryInfo? staging = null;
+            try
+            {
+                string path;
+                try
+                {
+                    var resolver = _context.ContentResolver!;
+                    var name = WorkspaceFileSystem.SanitizeFileName(DocumentPicker.DisplayName(resolver, uri));
+                    if (dsh && DshLayerInstaller.VersionFromFileName(name) is null)
+                    {
+                        Report(false, RuntimeErrorCodes.BadRequest, $"expected <version>.tar.zst or <version>.tar.gz: {name}");
+                        return;
+                    }
 
-    /// <summary>
-    /// Imports a runtime bundle zip (base/node/android-side) with the C# LayerInstaller. <paramref name="zipPath"/>
-    /// comes from the system picker copy (MainActivity); without it, falls back to the app-specific external directory
-    /// where a developer can adb-push the bundle: the self-built <c>dshmobile-runtime-*.zip</c> (ADR-0020) first, else an
-    /// older DSHBox <c>dshapp-runtime-*.zip</c>.
-    /// </summary>
-    public Task RunImportAsync(string? zipPath = null, bool deleteAfter = false) => RunExclusive("runtime.import", async () =>
-    {
-        var dir = _context.GetExternalFilesDir(null)?.AbsolutePath;
-        var zip = zipPath ?? (dir is null ? null : new[] { "dshmobile-runtime-*.zip", "dshapp-runtime-*.zip" }
-            .Select(p => Directory.EnumerateFiles(dir, p).OrderDescending().FirstOrDefault())
-            .FirstOrDefault(z => z is not null));
-        if (zip is null)
-        {
-            Report(false, RuntimeErrorCodes.BundleNotFound, "no runtime bundle");
-            Append($"import: no dshmobile-runtime-*.zip (or dshapp-runtime-*.zip) in {dir ?? "(external files dir unavailable)"}");
-            return;
-        }
-        Append($"import: {Path.GetFileName(zip)} ({new FileInfo(zip).Length / 1024 / 1024} MiB) ...");
-        var sw = Stopwatch.StartNew();
-        try
-        {
-            var progress = new Progress<RuntimeProgress>(p =>
-            {
-                Volatile.Write(ref _progress, p);
-                Changed?.Invoke(this, EventArgs.Empty);
-            });
-            var r = await Runtime.InstallAsync(new RuntimePackage(zip), progress, CancellationToken.None).ConfigureAwait(false);
-            Report(r.Ok, r.Code, r.Message);
-            Append($"import: took {sw.Elapsed.TotalSeconds:F1} s");
-            Append(r.Ok ? "import: ok" : $"import FAILED {r.Code}{(r.UpstreamCode is null ? "" : "/" + r.UpstreamCode)}: {r.Message}");
-            await LogStatusAsync("status").ConfigureAwait(false);
-        }
-        finally
-        {
-            if (deleteAfter)
-            {
-                File.Delete(zip);
+                    staging = Directory.CreateDirectory(Path.Combine(_context.CacheDir!.AbsolutePath, "runtime-import", Guid.NewGuid().ToString("N")));
+                    path = Path.Combine(staging.FullName, name);
+                    Append($"import: copying {name} from picker ...");
+                    await using var input = resolver.OpenInputStream(uri) ?? throw new IOException("cannot open picked file");
+                    await using var output = File.Create(path);
+                    await input.CopyToAsync(output).ConfigureAwait(false);
+                }
+                catch (Exception e) when (e is IOException or UnauthorizedAccessException or Java.Lang.Exception)
+                {
+                    Report(false, RuntimeErrorCodes.BundleUnreadable, $"{e.GetType().Name}: {e.Message}");
+                    Append($"import: copy failed: {e.Message}");
+                    return;
+                }
+
+                if (dsh)
+                {
+                    await ImportDshAsync(path).ConfigureAwait(false);
+                }
+                else
+                {
+                    await ImportRuntimeAsync(path).ConfigureAwait(false);
+                }
             }
-        }
-    });
+            finally
+            {
+                try
+                {
+                    staging?.Delete(recursive: true);
+                }
+                catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+                {
+                    Append($"import: could not remove the cache copy: {e.Message}");
+                }
+            }
+        }), reportBusy: true);
+    }
+
+    private async Task ImportRuntimeAsync(string path)
+    {
+        var progress = new Progress<RuntimeProgress>(p =>
+        {
+            Volatile.Write(ref _progress, p);
+            Changed?.Invoke(this, EventArgs.Empty);
+        });
+        var r = await Runtime.InstallAsync(new RuntimePackage(path), progress, CancellationToken.None).ConfigureAwait(false);
+        Report(r.Ok, r.Code, r.Message);
+        Append(r.Ok ? "import: ok" : $"import FAILED {r.Code}{(r.UpstreamCode is null ? "" : "/" + r.UpstreamCode)}: {r.Message}");
+        await LogStatusAsync("status").ConfigureAwait(false);
+    }
+
+    private async Task ImportDshAsync(string path)
+    {
+        var r = await Runtime.InstallDshFromFileAsync(path, CancellationToken.None).ConfigureAwait(false);
+        var detail = r.Ok
+            ? Rows.Fmt(_context, r.Changed ? Resource.String.runtime_dsh_import_installed : Resource.String.runtime_dsh_import_kept, r.Version ?? "?")
+            : r.Message;
+        Report(r.Ok, r.Code, detail);
+        Append(r.Ok ? $"dsh import: {(r.Changed ? $"installed {r.Version}" : $"kept {r.Version}")}" : $"dsh import FAILED {r.Code}: {r.Message}");
+        await LogStatusAsync("status").ConfigureAwait(false);
+    }
 
     /// <summary>MIGRATION row 18: the C# rollback to the previous runtime body (refused while anything runs).</summary>
     public Task RunRollbackAsync() => RunExclusive("runtime.rollback", async () =>
@@ -426,11 +449,18 @@ public sealed class BridgeHost : IDisposable, IDiagnosticsLog
         Append($"{what}: " + f.Describe(s.State.ToString(), s.Harness.ToString(), Runtime.Host?.TokenRevision is not null));
     }
 
-    private async Task RunExclusive(string name, Func<Task> body)
+    private async Task RunExclusive(string name, Func<Task> body, bool reportBusy = false)
     {
         if (Interlocked.CompareExchange(ref _busy, 1, 0) != 0)
         {
-            Append($"{name}: skipped, another operation is running");
+            if (reportBusy)
+            {
+                Fail(name, RuntimeErrorCodes.InvalidTransition, "another operation is running; retry the import after it completes");
+            }
+            else
+            {
+                Append($"{name}: skipped, another operation is running");
+            }
             return;
         }
         Volatile.Write(ref _operation, name);

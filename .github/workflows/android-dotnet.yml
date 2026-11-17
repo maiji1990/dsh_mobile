@@ -71,8 +71,9 @@ jobs:
         run: node tooling/run-node-tests.mjs tests/terminal-web
 
       # Release assets are checksum-pinned to this repository, not copied from DSHBox.
-      # This stages android-side and DSH into APK assets; base/node remain separately downloadable.
-      - name: Stage pinned Runtime and DSH assets
+      # This stages android-side into the APK assets; base/node are imported on the device and
+      # the DSH layer is imported / updated online (ADR-0027).
+      - name: Stage pinned runtime assets (android-side)
         shell: pwsh
         run: |
           ./runtime-bundle/fetch-runtime.ps1

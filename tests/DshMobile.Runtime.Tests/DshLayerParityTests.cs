@@ -123,140 +123,18 @@ public sealed class DshLayerParityTests : IDisposable
         Assert.False(Directory.Exists(installer.StagingDir));
     }
 
-    // ------------------------------------------------------------------ bundled asset selection (RuntimeController.kt)
+    // ------------------------------------------------------------------ imported archive naming (ADR-0027)
 
     [Theory]
-    [InlineData(new[] { "0.2.1-rc.5.tar.zst", "0.2.1-rc.5.tar.zst.sha256" }, "0.2.1-rc.5.tar.zst", "0.2.1-rc.5", true)]
-    [InlineData(new[] { "1.0.0-patched.tar.gz" }, "1.0.0-patched.tar.gz", "1.0.0", false)]
-    [InlineData(new[] { "a.tar.gz", "b.tar.zst" }, "b.tar.zst", "b", false)]
-    [InlineData(new[] { "x-patched.tar.zst.sha256", "x-patched.tar.zst" }, "x-patched.tar.zst", "x", true)]
-    public void BundledAsset_SelectionMatchesLegacy(string[] entries, string tarball, string version, bool sidecar)
-    {
-        var a = BundledDsh.Select(entries);
-        Assert.NotNull(a);
-        Assert.Equal(tarball, a.Tarball);
-        Assert.Equal(version, a.Version);
-        Assert.Equal(sidecar, a.HasSidecar);
-        Assert.Equal($"dsh/{tarball}", a.AssetPath);
-    }
-
-    [Fact]
-    public void BundledAsset_NoneWithoutATarball()
-    {
-        Assert.Null(BundledDsh.Select(null));
-        Assert.Null(BundledDsh.Select([]));
-        Assert.Null(BundledDsh.Select(["README", "x.tar", "x.zip"]));
-    }
-
-    [Theory]
-    [InlineData("abc  build/x.tar.zst\n", "abc")]
-    [InlineData("  ABC\n", "ABC")]
-    [InlineData("\n", "")]
-    public void Sidecar_FirstTokenLikeKotlin(string text, string expected) => Assert.Equal(expected, BundledDsh.ParseSidecar(text));
-
-    private sealed class FakeAssets(Dictionary<string, byte[]> files) : IBundledAssets
-    {
-        public int Opens { get; private set; }
-
-        public IReadOnlyList<string> List(string dir) =>
-            files.Keys.Where(k => k.StartsWith(dir + "/", StringComparison.Ordinal) && !k[(dir.Length + 1)..].Contains('/'))
-                .Select(k => k[(dir.Length + 1)..]).ToList();
-
-        public Stream Open(string path)
-        {
-            Opens++;
-            return files.TryGetValue(path, out var b) ? new MemoryStream(b) : throw new FileNotFoundException(path);
-        }
-    }
-
-    private static FakeAssets Assets(string version, bool sidecar = true, string? sha = null)
-    {
-        var tar = File.ReadAllBytes(Repo.PathOf("tests", "TestVectors", "bundles", "dsh-good.tar"));
-        var map = new Dictionary<string, byte[]> { [$"dsh/{version}.tar.zst"] = tar, ["runtime/android-side.tar.zst"] = [1] };
-        if (sidecar)
-        {
-            map[$"dsh/{version}.tar.zst.sha256"] = Encoding.UTF8.GetBytes((sha ?? Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(tar))) + "  out/dsh.tar.zst\n");
-        }
-        return new FakeAssets(map);
-    }
-
-    [Fact]
-    public async Task Provision_InstallsThenKeeps_WithLegacyStepTexts()
-    {
-        var files = Path.Combine(_dir, "files");
-        Directory.CreateDirectory(files);
-        var installer = new DshLayerInstaller(new RuntimeLayout(files, null, "/lib"), LayerExtractor.AndroidLikeHost);
-        var assets = Assets("1.2.0");
-        Assert.True(BundledDsh.Plan(assets, installer).WouldInstall);
-        var (step, r) = await BundledDsh.ProvisionAsync(assets, installer, CancellationToken.None);
-        Assert.Equal("DSH 1.2.0 installed", step);
-        Assert.True(r!.Changed);
-        var opens = assets.Opens;
-        (step, _) = await BundledDsh.ProvisionAsync(assets, installer, CancellationToken.None);
-        Assert.Equal("DSH kept at 1.2.0", step);
-        Assert.Equal(opens, assets.Opens); // kept: the 90 MB asset is not even opened
-        Assert.False(BundledDsh.Plan(assets, installer).WouldInstall);
-    }
-
-    [Fact]
-    public async Task Provision_BadSidecar_IsAFailedStepNotAFailedPrepare()
-    {
-        var files = Path.Combine(_dir, "files");
-        Directory.CreateDirectory(files);
-        var installer = new DshLayerInstaller(new RuntimeLayout(files, null, "/lib"), LayerExtractor.AndroidLikeHost);
-        var (step, r) = await BundledDsh.ProvisionAsync(Assets("1.2.0", sha: new string('0', 64)), installer, CancellationToken.None);
-        Assert.Equal("DSH provision failed: DSH_SHA256_MISMATCH dsh bundle failed SHA-256 verification", step);
-        Assert.False(r!.Ok);
-        Assert.Equal("no DSH baseline in APK", (await BundledDsh.ProvisionAsync(new FakeAssets([]), installer, CancellationToken.None)).Step);
-    }
-
-    private static void InstalledRuntime(string files)
-    {
-        var rc = Path.Combine(files, "runtime", "runtime-current");
-        Directory.CreateDirectory(Path.Combine(rc, "base"));
-        Directory.CreateDirectory(Path.Combine(rc, "android-side", "bin"));
-        File.WriteAllText(Path.Combine(rc, "android-side", "bin", "proot"), "elf");
-        File.WriteAllText(Path.Combine(rc, "runtime-profile.json"),
-            """{"bundle":{"version":"1"},"layers":[{"name":"base","sha256":"aa"}],"assembly":["base"]}""");
-    }
-
-    [Fact]
-    public async Task Prepare_RuntimeMissing_SkipsTheDshLayer()
-    {
-        var files = Path.Combine(_dir, "files");
-        Directory.CreateDirectory(files);
-        var layout = new RuntimeLayout(files, null, Path.Combine(_dir, "nolib"));
-        var r = await RuntimePreparer.PrepareAsync(layout, Assets("1.2.0"), CancellationToken.None, LayerExtractor.AndroidLikeHost);
-        Assert.True(r.Ok);
-        Assert.Equal([RuntimePreparer.NoEmbeddedRuntime, RuntimePreparer.LayersMissing], r.Steps);
-        Assert.False(new DshLayerInstaller(layout).IsInstalled);
-    }
-
-    [Fact]
-    public async Task Prepare_InstalledRuntime_ProvisionsAndHealsTheSentinel()
-    {
-        var files = Path.Combine(_dir, "files");
-        InstalledRuntime(files);
-        var layout = new RuntimeLayout(files, null, Path.Combine(_dir, "nolib"));
-        var r = await RuntimePreparer.PrepareAsync(layout, Assets("1.2.0"), CancellationToken.None, LayerExtractor.AndroidLikeHost);
-        Assert.True(r.Ok);
-        Assert.Equal([RuntimePreparer.NoEmbeddedRuntime, "DSH 1.2.0 installed"], r.Steps);
-        Assert.Equal("1.2.0", r.DshVersion);
-        Assert.True(r.DshChanged);
-        Assert.Equal("aa", File.ReadAllText(Path.Combine(layout.LayerDir("base"), ".dshmobile", "layer-base.sha256")));
-    }
-
-    [Fact]
-    public async Task Prepare_ApkEmbeddingAFullRuntime_IsRefusedNotSkipped()
-    {
-        var files = Path.Combine(_dir, "files");
-        Directory.CreateDirectory(files);
-        var assets = new FakeAssets(new() { ["runtime/runtime-profile.json"] = [1], ["runtime/base.tar.zst"] = [1] });
-        var r = await RuntimePreparer.PrepareAsync(new RuntimeLayout(files, null, "/lib"), assets, CancellationToken.None);
-        Assert.False(r.Ok);
-        Assert.Equal(RuntimeErrorCodes.NotImplemented, r.Code);
-        // ...but not once the slot is complete (legacy installIfAbsent: nothing to do).
-        InstalledRuntime(files);
-        Assert.False(RuntimePreparer.EmbeddedRuntimeWouldInstall(new RuntimeLayout(files, null, "/lib"), assets));
-    }
+    [InlineData("0.2.1-rc.5.tar.zst", "0.2.1-rc.5")]
+    [InlineData("1.0.0-patched.tar.gz", "1.0.0")]
+    [InlineData("dsh.tar.zst", null)]
+    [InlineData("dir/2.0.0.tar.zst", "2.0.0")]
+    [InlineData("x.tar", null)]
+    [InlineData("x.zip", null)]
+    [InlineData("x.tar.zst.sha256", null)]
+    [InlineData(".tar.zst", null)]
+    [InlineData("README", null)]
+    public void VersionFromFileName_MatchesTheReleaseArtifactShape(string fileName, string? version) =>
+        Assert.Equal(version, DshLayerInstaller.VersionFromFileName(fileName));
 }

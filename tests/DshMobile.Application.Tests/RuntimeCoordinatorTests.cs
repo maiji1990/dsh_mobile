@@ -11,7 +11,8 @@ namespace DshMobile.Application.Tests;
 /// <summary>
 /// The C#-only coordinator (PR-10, ADR-0018): state read from disk, start / stop through the C# host (a
 /// <see cref="FakeDshHost"/> here, or the real <see cref="DshHost"/> where its preconditions are the subject), import with the
-/// layer installer and its installed-tree check, prepare from the APK assets, rollback, plugin changes and self-test.
+/// layer installer and its installed-tree check, DSH layer import from a file (ADR-0027), rollback, plugin changes and
+/// self-test.
 /// </summary>
 public sealed class RuntimeCoordinatorTests : IDisposable
 {
@@ -32,15 +33,6 @@ public sealed class RuntimeCoordinatorTests : IDisposable
         public void Note(string line) => Lines.Add(line);
 
         public void Report(ShadowReport report) => Reports.Add(report);
-    }
-
-    private sealed class FakeAssets(Dictionary<string, byte[]> files) : IBundledAssets
-    {
-        public IReadOnlyList<string> List(string dir) =>
-            files.Keys.Where(k => k.StartsWith(dir + "/", StringComparison.Ordinal)).Select(k => k[(dir.Length + 1)..]).ToList();
-
-        public Stream Open(string path) =>
-            files.TryGetValue(path, out var b) ? new MemoryStream(b) : throw new FileNotFoundException("no asset " + path);
     }
 
     private readonly string _dir = Directory.CreateTempSubdirectory("dshm-coord-").FullName;
@@ -377,27 +369,16 @@ public sealed class RuntimeCoordinatorTests : IDisposable
 
     // ------------------------------------------------------------------ import (MIGRATION rows 14-16)
 
-    private static FakeAssets DshAssets()
-    {
-        var tar = File.ReadAllBytes(FixtureBundle("dsh-good.tar"));
-        var sha = Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(tar));
-        return new FakeAssets(new()
-        {
-            ["dsh/1.2.0.tar.zst"] = tar,
-            ["dsh/1.2.0.tar.zst.sha256"] = System.Text.Encoding.UTF8.GetBytes(sha + "  dsh.tar.zst\n"),
-            ["runtime/android-side.tar.zst"] = [1],
-        });
-    }
-
     [Fact]
-    public async Task Install_InstallsVerifiesAndPrepares()
+    public async Task Install_InstallsAndVerifies()
     {
         var layout = Layout(LibDirWithProot());
-        var c = Coordinator(layout, DshAssets());
+        var c = Coordinator(layout);
         var r = await c.InstallAsync(new RuntimePackage(FixtureBundle("good.zip")), null, CancellationToken.None);
         Assert.True(r.Ok, r.Message);
         Assert.True(File.Exists(Path.Combine(layout.LayerDir("base"), "etc", "os-release")));
-        Assert.Equal("1.2.0", new DshLayerInstaller(layout).InstalledVersion());
+        // ADR-0027: the DSH layer is not bundled with the APK; it is imported separately.
+        Assert.Null(new DshLayerInstaller(layout).InstalledVersion());
         var verify = Assert.Single(_log.Reports);
         Assert.Equal(LayerExtractShadowCheck.InstallSlice, verify.Slice);
         Assert.Equal(ShadowVerdict.Agree, verify.Verdict);
@@ -408,7 +389,7 @@ public sealed class RuntimeCoordinatorTests : IDisposable
     [Fact]
     public async Task Install_CorruptBundle_IsFailedWithTheUpstreamCode()
     {
-        var c = Coordinator(assets: DshAssets());
+        var c = Coordinator();
         var r = await c.InstallAsync(new RuntimePackage(FixtureBundle("corrupt-node.zip")), null, CancellationToken.None);
         Assert.False(r.Ok);
         Assert.Equal(RuntimeErrorCodes.Upstream, r.Code);
@@ -423,21 +404,9 @@ public sealed class RuntimeCoordinatorTests : IDisposable
     {
         var path = Path.Combine(_dir, "bundle.zip");
         await File.WriteAllTextAsync(path, "not a zip");
-        var r = await Coordinator(assets: DshAssets()).InstallAsync(new RuntimePackage(path), null, CancellationToken.None);
+        var r = await Coordinator().InstallAsync(new RuntimePackage(path), null, CancellationToken.None);
         Assert.False(r.Ok);
         Assert.Equal(BundleErrorCodes.NotAZip, r.UpstreamCode);
-    }
-
-    [Fact]
-    public async Task Install_PrepareFailure_IsNotReportedAsSuccess()
-    {
-        // No APK assets: the layers install, but runtime.prepare cannot run, so the import is not complete.
-        var c = Coordinator(Layout(LibDirWithProot()));
-        var r = await c.InstallAsync(new RuntimePackage(FixtureBundle("good.zip")), null, CancellationToken.None);
-        Assert.False(r.Ok);
-        Assert.Equal("RUNTIME_IMPORT_UNVERIFIED", r.Code);
-        Assert.StartsWith("runtime.prepare failed", r.Message, StringComparison.Ordinal);
-        Assert.Equal(RuntimeState.Failed, c.State.Current.State);
     }
 
     [Fact]
@@ -503,9 +472,7 @@ public sealed class RuntimeCoordinatorTests : IDisposable
         Assert.False(Directory.Exists(Path.Combine(failed, "base", "etc")));
     }
 
-    // ------------------------------------------------------------------ runtime.prepare / bundled DSH (MIGRATION row 17)
-
-    private const string Step1 = "no full layered runtime in APK (expected; base/node come from import)";
+    // ------------------------------------------------------------------ DSH layer import (ADR-0027)
 
     private RuntimeLayout InstalledLayout(string? dshVersion = null)
     {
@@ -519,42 +486,151 @@ public sealed class RuntimeCoordinatorTests : IDisposable
         return layout;
     }
 
+    /// <summary>The good DSH layer fixture under the release artifact's name (<c>&lt;version&gt;.tar.zst</c>).</summary>
+    private string DshBundle(string name)
+    {
+        var dest = Path.Combine(_dir, name);
+        using var compressor = new ZstdSharp.Compressor();
+        File.WriteAllBytes(dest, compressor.Wrap(File.ReadAllBytes(FixtureBundle("dsh-good.tar"))));
+        return dest;
+    }
+
     [Fact]
-    public async Task Prepare_InstallsTheBundledLayer_ThenKeepsIt()
+    public async Task InstallDsh_FromFile_Installs_ThenKeepsTheSameVersion()
     {
         var layout = InstalledLayout();
-        var c = Coordinator(layout, DshAssets());
-        var r = await c.PrepareAsync(CancellationToken.None);
+        var c = Coordinator(layout);
+        var path = DshBundle("1.3.0.tar.zst");
+        var r = await c.InstallDshFromFileAsync(path, CancellationToken.None);
         Assert.True(r.Ok, r.Message);
-        Assert.Equal($"{Step1}; DSH 1.2.0 installed", r.Message);
-        Assert.Equal("1.2.0", new DshLayerInstaller(layout).InstalledVersion());
-        Assert.Equal($"{Step1}; DSH kept at 1.2.0", (await c.PrepareAsync(CancellationToken.None)).Message);
-        Assert.Empty(_log.Reports);
+        Assert.True(r.Changed);
+        Assert.Equal("1.3.0", r.Version);
+        Assert.Equal("1.3.0", new DshLayerInstaller(layout).InstalledVersion());
+        Assert.Equal("1.3.0", c.State.Current.DshVersion);
+
+        var same = await c.InstallDshFromFileAsync(path, CancellationToken.None);
+        Assert.True(same.Ok, same.Message);
+        Assert.False(same.Changed);
+        Assert.Equal("1.3.0", same.Version);
+        Assert.Empty(_calls);
     }
 
     [Fact]
-    public async Task Prepare_RefusesToReplaceTheLayerWhileRunning_ButKeepingIsFine()
+    public async Task InstallDsh_OlderPackage_KeepsInstalledVersion()
+    {
+        var c = Coordinator(InstalledLayout("1.4.0"));
+        var r = await c.InstallDshFromFileAsync(DshBundle("1.3.0.tar.zst"), CancellationToken.None);
+        Assert.True(r.Ok, r.Message);
+        Assert.False(r.Changed);
+        Assert.Equal("1.4.0", r.Version);
+        Assert.Empty(_calls);
+    }
+
+    [Theory]
+    [InlineData("9.9.9.tar.zst")]
+    [InlineData("1.0.0.tar.zst")]
+    public async Task InstallDsh_RenamedPackage_IsRejectedBeforeVersionArbitration(string name)
+    {
+        var c = Coordinator(InstalledLayout("1.4.0"));
+        var r = await c.InstallDshFromFileAsync(DshBundle(name), CancellationToken.None);
+        Assert.False(r.Ok);
+        Assert.Equal(DshLayerErrorCodes.BundleInvalid, r.Code);
+        Assert.Equal("1.4.0", r.Version);
+        Assert.Empty(_calls);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task InstallDsh_Replacement_CommitsOnlyAfterHealthCheck(bool healthy)
+    {
+        var layout = InstalledLayout("1.2.0");
+        var c = Coordinator(layout);
+        var layer = new DshLayerInstaller(layout);
+        _host!.OnStart = () =>
+        {
+            Assert.True(layer.IsHeldForProbe);
+            Assert.Equal("1.2.0", File.ReadAllText(Path.Combine(layer.AsideDir, DshLayerInstaller.VersionFile)));
+            return new DshHostResult(healthy, healthy ? RuntimeErrorCodes.Ok : "DSH_EXITED", null);
+        };
+
+        var r = await c.InstallDshFromFileAsync(DshBundle("1.3.0.tar.zst"), CancellationToken.None);
+
+        Assert.Equal(healthy, r.Ok);
+        Assert.Equal(healthy, r.Changed);
+        Assert.Equal(healthy ? RuntimeErrorCodes.Ok : DshLayerErrorCodes.HealthFailed, r.Code);
+        Assert.Equal(healthy ? "1.3.0" : "1.2.0", layer.InstalledVersion());
+        Assert.Equal(layer.InstalledVersion(), c.State.Current.DshVersion);
+        Assert.Equal(healthy ? ["host.start", "host.stop"] : new[] { "host.start" }, _calls);
+        Assert.False(File.Exists(layer.JournalFile));
+        Assert.False(Directory.Exists(layer.AsideDir));
+        Assert.False(_fg.Held);
+    }
+
+    [Fact]
+    public async Task InstallDsh_ProbeStopFails_RetainsOldLayerUntilStopped()
+    {
+        var layout = InstalledLayout("1.2.0");
+        var c = Coordinator(layout);
+        var layer = new DshLayerInstaller(layout);
+        _host!.OnStop = () => new DshHostResult(false, "DSH_STOP_FAILED", "process still alive");
+
+        var r = await c.InstallDshFromFileAsync(DshBundle("1.3.0.tar.zst"), CancellationToken.None);
+        Assert.False(r.Ok);
+        Assert.Equal(DshLayerErrorCodes.HealthFailed, r.Code);
+        Assert.True(_fg.Held);
+        Assert.True(layer.IsHeldForProbe);
+        Assert.True(Directory.Exists(layer.AsideDir));
+
+        _host.OnStop = null;
+        var stopped = await c.StopAsync(CancellationToken.None);
+        Assert.True(stopped.Ok);
+        Assert.Equal("1.2.0", stopped.Snapshot.DshVersion);
+        Assert.False(_fg.Held);
+        Assert.False(File.Exists(layer.JournalFile));
+    }
+
+    [Fact]
+    public async Task InstallDsh_InvalidLayer_IsBundleInvalid()
+    {
+        var layout = InstalledLayout();
+        var c = Coordinator(layout);
+        var path = Path.Combine(_dir, "1.2.0.tar.zst");
+        File.Copy(FixtureBundle("dsh-invalid.tar"), path, overwrite: true);
+        var r = await c.InstallDshFromFileAsync(path, CancellationToken.None);
+        Assert.False(r.Ok);
+        Assert.Equal(DshLayerErrorCodes.BundleInvalid, r.Code);
+        Assert.False(new DshLayerInstaller(layout).IsInstalled);
+    }
+
+    [Fact]
+    public async Task InstallDsh_NotADshArchiveName_IsBadRequest()
+    {
+        var c = Coordinator(InstalledLayout());
+        var r = await c.InstallDshFromFileAsync(DshBundle("dsh-layer.zip"), CancellationToken.None);
+        Assert.False(r.Ok);
+        Assert.Equal(RuntimeErrorCodes.BadRequest, r.Code);
+    }
+
+    [Fact]
+    public async Task InstallDsh_MissingFile_IsBundleNotFound()
+    {
+        var c = Coordinator(InstalledLayout());
+        var r = await c.InstallDshFromFileAsync(Path.Combine(_dir, "1.0.0.tar.zst"), CancellationToken.None);
+        Assert.False(r.Ok);
+        Assert.Equal(DshLayerErrorCodes.BundleNotFound, r.Code);
+    }
+
+    [Fact]
+    public async Task InstallDsh_WhileTheHostRuns_IsRefused()
     {
         var layout = InstalledLayout("1.0.0");
-        var c = Coordinator(layout, DshAssets());
+        var c = Coordinator(layout);
         Assert.True((await c.StartAsync(DshProfile.Web, CancellationToken.None)).Ok);
-        var refused = await c.PrepareAsync(CancellationToken.None);
-        Assert.False(refused.Ok);
-        Assert.Equal(RuntimeErrorCodes.InvalidTransition, refused.Code);
-        Assert.Equal("1.0.0", new DshLayerInstaller(layout).InstalledVersion());
-
-        File.WriteAllText(Path.Combine(layout.LayerDir("dsh"), ".dshmobile", "version"), "9.0.0");
-        var kept = await c.PrepareAsync(CancellationToken.None);
-        Assert.True(kept.Ok, kept.Message);
-        Assert.EndsWith("DSH kept at 9.0.0", kept.Message, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public async Task Prepare_WithoutAssets_IsNotImplemented()
-    {
-        var r = await Coordinator(InstalledLayout()).PrepareAsync(CancellationToken.None);
+        var r = await c.InstallDshFromFileAsync(DshBundle("9.9.9.tar.zst"), CancellationToken.None);
         Assert.False(r.Ok);
-        Assert.Equal(RuntimeErrorCodes.NotImplemented, r.Code);
+        Assert.Equal(RuntimeErrorCodes.InvalidTransition, r.Code);
+        Assert.Equal("1.0.0", new DshLayerInstaller(layout).InstalledVersion());
     }
 
     // ------------------------------------------------------------------ guest commands

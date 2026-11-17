@@ -26,6 +26,8 @@ public enum HomeAction
 {
     None,
     ImportRuntime,
+    /// <summary>The runtime body is installed but the DSH layer is not (ADR-0027: it is imported separately).</summary>
+    ImportDsh,
     Start,
     OpenDsh,
     Stop,
@@ -53,6 +55,7 @@ public sealed record HomeStatus(
     public const string StartOperation = "start";
     public const string StopOperation = "stop";
     public const string ImportOperation = "runtime.import";
+    public const string ImportDshOperation = "runtime.import.dsh";
 
     /// <param name="snapshot">The runtime journal.</param>
     /// <param name="operation">The operation running now, or null.</param>
@@ -80,7 +83,8 @@ public sealed record HomeStatus(
         {
             RuntimeState.NotInstalled => Make(HomePhase.NotInstalled, HomeAction.ImportRuntime),
             RuntimeState.Staging => Make(HomePhase.Busy),
-            RuntimeState.Ready => Make(HomePhase.Stopped, HomeAction.Start),
+            // The body is installed; without a DSH layer (ADR-0027) the next step is importing one, not starting.
+            RuntimeState.Ready => Make(HomePhase.Stopped, snapshot.DshVersion is null ? HomeAction.ImportDsh : HomeAction.Start),
             RuntimeState.Starting or RuntimeState.Recovering => Make(HomePhase.Starting, HomeAction.None, HomeAction.Stop),
             RuntimeState.Running => snapshot.Harness switch
             {
@@ -90,8 +94,13 @@ public sealed record HomeStatus(
                 _ => Make(HomePhase.Failed, HomeAction.Start, HomeAction.Stop),
             },
             RuntimeState.Stopping => Make(HomePhase.Stopping),
-            // An import that failed may have left no runtime: retry the import, otherwise retry the start.
-            RuntimeState.Failed => Make(HomePhase.Failed, last?.Operation == ImportOperation ? HomeAction.ImportRuntime : HomeAction.Start),
+            // An import that failed may have left no runtime (retry that import), otherwise retry the start.
+            RuntimeState.Failed => Make(HomePhase.Failed, last?.Operation switch
+            {
+                ImportOperation => HomeAction.ImportRuntime,
+                ImportDshOperation => HomeAction.ImportDsh,
+                _ => HomeAction.Start,
+            }),
             _ => Make(HomePhase.Failed),
         };
     }

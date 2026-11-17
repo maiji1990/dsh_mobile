@@ -4,8 +4,9 @@ using DshMobile.Runtime.Layers;
 namespace DshMobile.App.Bridge;
 
 /// <summary>
-/// The APK assets for the C# preparer (bundled DSH layer under <c>assets/dsh</c>). Read-only; <c>.zst</c> assets are
-/// stored uncompressed (csproj), so the 90 MB layer streams without an extra copy into the cache.
+/// The APK assets for the guest-asset provisioner (<c>assets/dshmobile</c>, <c>assets/toolchain-cache</c>; the bundled
+/// DSH layer under <c>assets/dsh</c> is gone since ADR-0027). Read-only; <c>.zst</c> assets are stored uncompressed
+/// (csproj), so they stream without an extra copy into the cache.
 /// </summary>
 internal sealed class AndroidBundledAssets(AssetManager assets) : IBundledAssets
 {

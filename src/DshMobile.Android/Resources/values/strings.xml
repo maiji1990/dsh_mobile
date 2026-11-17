@@ -192,7 +192,7 @@
     <string name="home_title_stopping">正在停止 DSH…</string>
     <string name="home_title_failed">DSH 未能运行</string>
     <string name="home_title_busy">正在%1$s…</string>
-    <string name="home_detail_not_installed">导入运行环境包（dshmobile-runtime-debian-arm64-*.zip）后即可启动 DSH。导入时会逐层校验，并安装 App 内置的 DSH。</string>
+    <string name="home_detail_not_installed">导入运行环境包（dshmobile-runtime-debian-arm64-*.zip）后即可启动 DSH。导入时会逐层校验。</string>
     <string name="home_detail_stopped">运行环境已就绪</string>
     <string name="home_detail_stopped_version">DSH %1$s · 运行环境已就绪</string>
     <string name="home_detail_starting">正在启动 Linux 沙箱与 DSH，通常需要几十秒。可以离开本页，DSH 会在后台继续启动。</string>
@@ -202,6 +202,7 @@
     <string name="home_detail_busy">请稍候，完成后这里会显示结果。</string>
     <string name="home_detail_progress">%1$s · %2$d%%</string>
     <string name="home_action_import">导入运行环境包</string>
+    <string name="home_action_import_dsh">导入 DSH 层</string>
     <string name="home_action_start">启动 DSH</string>
     <string name="home_action_retry">重新启动</string>
     <string name="home_action_open">打开 DSH</string>
@@ -212,12 +213,12 @@
     <string name="home_shortcut_automation_on">手机操控中继已开启</string>
     <string name="home_shortcut_remote_sub">连接电脑上的 DSH</string>
     <string name="home_shortcut_plugins_sub">安装与管理 Cordis 插件</string>
-    <string name="home_shortcut_runtime_sub">版本、导入、修复与回滚</string>
+    <string name="home_shortcut_runtime_sub">版本、导入与回滚</string>
 
     <string name="op_start">启动 DSH</string>
     <string name="op_stop">停止 DSH</string>
     <string name="op_import">导入运行环境</string>
-    <string name="op_prepare">安装内置 DSH</string>
+    <string name="op_import_dsh">导入 DSH 层</string>
     <string name="op_rollback">回滚运行环境</string>
     <string name="op_diagnostics">运行诊断</string>
     <string name="op_info">读取设备信息</string>
@@ -262,7 +263,7 @@
     <string name="more_remote">远程主机</string>
     <string name="more_remote_sub">通过 SSH 连接你自己电脑或服务器上的 DSH</string>
     <string name="more_runtime">运行环境</string>
-    <string name="more_runtime_sub">DSH 版本、导入运行环境包、修复与回滚</string>
+    <string name="more_runtime_sub">DSH 版本、导入运行环境包 / DSH 层与回滚</string>
     <string name="more_about">关于 DSH Mobile</string>
     <string name="more_about_sub">版本 %1$s</string>
     <string name="more_licenses">开源许可</string>
@@ -286,11 +287,11 @@
     <string name="runtime_ok">正常</string>
     <string name="runtime_missing">缺失</string>
     <string name="runtime_import">导入运行环境包</string>
-    <string name="runtime_import_sub">选择 dshmobile-runtime-*.zip；逐层校验后安装，并安装内置 DSH。DSH 须已停止。</string>
-    <string name="runtime_repair">安装内置 DSH</string>
-    <string name="runtime_repair_sub">DSH 层缺失或比 App 内置的旧时安装内置版本；已是同版或更新时保持不变。工作区与插件不受影响；DSH 须已停止。</string>
-    <string name="runtime_prepare_installed">已安装 DSH %1$s</string>
-    <string name="runtime_prepare_kept">已装 DSH %1$s 不比内置旧，保持不变</string>
+    <string name="runtime_import_sub">选择 dshmobile-runtime-*.zip；逐层校验后安装。DSH 须已停止。</string>
+    <string name="runtime_import_dsh">导入 DSH 层</string>
+    <string name="runtime_import_dsh_sub">选择本项目 Release 的 &lt;版本&gt;.tar.zst。替换前会校验包内版本并检查新版本能否启动。请先停止 DSH 和终端。</string>
+    <string name="runtime_dsh_import_installed">已安装 DSH %1$s</string>
+    <string name="runtime_dsh_import_kept">已保留 DSH %1$s</string>
     <string name="runtime_rollback">回滚到上一版</string>
     <string name="runtime_rollback_sub">换回上一次导入前的运行环境；没有上一版时会如实报告。</string>
     <string name="runtime_rollback_confirm_title">回滚运行环境？</string>

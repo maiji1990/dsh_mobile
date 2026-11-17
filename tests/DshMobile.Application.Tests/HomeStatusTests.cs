@@ -8,8 +8,8 @@ public sealed class HomeStatusTests
 {
     private static readonly DateTimeOffset At = new(2026, 11, 15, 0, 0, 0, TimeSpan.Zero);
 
-    private static RuntimeSnapshot Snap(RuntimeState state, HarnessState harness = HarnessState.Stopped, string? code = null) =>
-        new(state, harness, 1, "0.2.1-rc.5", code, code is null ? null : "why", At);
+    private static RuntimeSnapshot Snap(RuntimeState state, HarnessState harness = HarnessState.Stopped, string? code = null, string? version = "0.2.1-rc.5") =>
+        new(state, harness, 1, version, code, code is null ? null : "why", At);
 
     private static OperationOutcome Outcome(string op, bool ok, string code = "OK") => new(op, ok, code, ok ? null : "message", At);
 
@@ -48,10 +48,22 @@ public sealed class HomeStatusTests
         }
     }
 
+    [Fact]
+    public void ReadyWithoutADshLayer_OffersTheDshImport_ADR0027()
+    {
+        // The runtime body is installed but the DSH layer is not (no longer bundled with the APK): the next step is
+        // importing one, not a start that would fail on the missing layer.
+        var s = HomeStatus.From(Snap(RuntimeState.Ready, version: null), null, null);
+        Assert.Equal(HomePhase.Stopped, s.Phase);
+        Assert.Equal(HomeAction.ImportDsh, s.Primary);
+        Assert.Null(s.DshVersion);
+    }
+
     [Theory]
     [InlineData(HomeStatus.StartOperation, HomePhase.Starting)]
     [InlineData(HomeStatus.StopOperation, HomePhase.Stopping)]
     [InlineData(HomeStatus.ImportOperation, HomePhase.Busy)]
+    [InlineData(HomeStatus.ImportDshOperation, HomePhase.Busy)]
     [InlineData("diagnostics", HomePhase.Busy)]
     public void RunningOperation_WinsOverTheJournal_AndOffersNoButtons(string operation, HomePhase phase)
     {
@@ -68,9 +80,11 @@ public sealed class HomeStatusTests
     public void FailedJournal_KeepsItsCode_AndRetriesTheImportThatFailed()
     {
         var afterImport = HomeStatus.From(Snap(RuntimeState.Failed, code: "RUNTIME_IMPORT_UNVERIFIED"), null, Outcome(HomeStatus.ImportOperation, ok: false, "RUNTIME_IMPORT_UNVERIFIED"));
+        var afterDshImport = HomeStatus.From(Snap(RuntimeState.Failed, code: "DSH_BUNDLE_INVALID"), null, Outcome(HomeStatus.ImportDshOperation, ok: false, "DSH_BUNDLE_INVALID"));
         var afterStart = HomeStatus.From(Snap(RuntimeState.Failed, code: "DSH_EXITED"), null, Outcome(HomeStatus.StartOperation, ok: false, "DSH_EXITED"));
 
         Assert.Equal(("RUNTIME_IMPORT_UNVERIFIED", HomeAction.ImportRuntime), (afterImport.ErrorCode, afterImport.Primary));
+        Assert.Equal(("DSH_BUNDLE_INVALID", HomeAction.ImportDsh), (afterDshImport.ErrorCode, afterDshImport.Primary));
         Assert.Equal(("DSH_EXITED", HomeAction.Start), (afterStart.ErrorCode, afterStart.Primary));
         // The journal already shows the failure; the card does not repeat it as a separate notice.
         Assert.Null(afterImport.FailedOperation);

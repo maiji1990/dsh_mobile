@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Security.Cryptography;
 using DshMobile.Application.Shadow;
 using DshMobile.Application.Terminal;
 using DshMobile.Core.Contracts;
@@ -14,9 +15,9 @@ namespace DshMobile.Application.Runtime;
 
 /// <summary>
 /// Supervises runtime operations, all in C# since PR-10 (ADR-0018): the <see cref="DshHost"/> starts and owns the sandbox
-/// and DSH processes, the runtime state is read from disk (<see cref="RuntimeStatusReader"/>), imports, the bundled DSH
-/// layer, rollback, guest commands, plugins, probes and the terminal go through the C# layers. Keeps the PR-00 fix of the
-/// former bridge flow:
+/// and DSH processes, the runtime state is read from disk (<see cref="RuntimeStatusReader"/>), imports of the runtime
+/// body and of the DSH layer (ADR-0027), rollback, guest commands, plugins, probes and the terminal go through the C#
+/// layers. Keeps the PR-00 fix of the former bridge flow:
 /// <list type="bullet">
 /// <item>start fails -> whatever was started is gone, then the foreground service is released; state Failed.</item>
 /// <item>DSH given up by the health loop -> sandbox kept (terminal / diagnostics still work), service kept; harness Failed.</item>
@@ -108,6 +109,20 @@ public sealed class RuntimeCoordinator : IDisposable
 
     /// <summary>Whether the running DSH was spawned with the <c>ui_*</c> layer registered (null: unknown / not hosted).</summary>
     public bool? HostUiToolsAtStart => HostOwnsProcesses ? _host!.UiToolsAtStart : null;
+
+    /// <summary>Opens and registers a terminal while layer replacement and its health check are excluded.</summary>
+    public async Task<TerminalSessionInfo> CreateTerminalAsync(int rows, int columns, CancellationToken ct)
+    {
+        await _op.WaitAsync(ct).ConfigureAwait(false);
+        try
+        {
+            return await Terminals.CreateAsync(rows, columns, ct).ConfigureAwait(false);
+        }
+        finally
+        {
+            _op.Release();
+        }
+    }
 
     private async Task<ProotPtySession> OpenTerminalAsync(int rows, int columns, CancellationToken ct)
     {
@@ -244,45 +259,6 @@ public sealed class RuntimeCoordinator : IDisposable
         State.Observe(actual.State, actual.Harness, actual.DshVersion, Implementation);
     }
 
-    /// <summary><c>runtime.prepare</c>: installs the APK-bundled DSH layer when base/node are installed (MIGRATION row 17).</summary>
-    public async Task<RuntimeInstallResult> PrepareAsync(CancellationToken ct)
-    {
-        await _op.WaitAsync(ct).ConfigureAwait(false);
-        try
-        {
-            await SyncAsync(ct).ConfigureAwait(false);
-            return await PrepareCoreAsync(ct).ConfigureAwait(false);
-        }
-        finally
-        {
-            _op.Release();
-        }
-    }
-
-    /// <summary>
-    /// Caller holds the operation lock. Refuses to replace the DSH layer while sandbox / DSH processes are alive;
-    /// keeping it is fine.
-    /// </summary>
-    private async Task<RuntimeInstallResult> PrepareCoreAsync(CancellationToken ct)
-    {
-        if (_assets is null)
-        {
-            return new RuntimeInstallResult(false, RuntimeErrorCodes.NotImplemented, "prepare needs the APK assets");
-        }
-        var installer = new DshLayerInstaller(_layout, _options.HostPathExists);
-        var alive = HostOwnsProcesses || State.Current.State is RuntimeState.Running or RuntimeState.Starting or RuntimeState.Stopping;
-        if (alive && BundledDsh.Plan(_assets, installer).WouldInstall)
-        {
-            _log.Note("runtime.prepare: refused, the bundled DSH layer would be replaced while processes are alive");
-            return new RuntimeInstallResult(false, RuntimeErrorCodes.InvalidTransition, "stop DSH before the bundled DSH layer is replaced");
-        }
-        var r = await RuntimePreparer.PrepareAsync(_layout, _assets, ct, _options.HostPathExists).ConfigureAwait(false);
-        var text = string.Join("; ", r.Steps);
-        _log.Note(r.Ok ? $"runtime.prepare: ok ({text})" : $"runtime.prepare FAILED {r.Code}: {r.Message}");
-        // The journal's DSH version follows the next state read (the installed layer's version record).
-        return new RuntimeInstallResult(r.Ok, r.Code, r.Ok ? text : r.Message);
-    }
-
     /// <summary>
     /// Starts the runtime with the C# <see cref="DshHost"/> (web profile only). A start whose preconditions fail returns
     /// their error code.
@@ -294,74 +270,80 @@ public sealed class RuntimeCoordinator : IDisposable
         try
         {
             await SyncAsync(ct).ConfigureAwait(false);
-            if (profile.Name != RuntimeConstants.DshWebProfile)
-            {
-                return Refused($"the host starts only the '{RuntimeConstants.DshWebProfile}' profile");
-            }
-            if (_host is { State: DshHostState.Ready })
-            {
-                _log.Note("start: host already ready");
-                return new RuntimeStartResult(true, RuntimeErrorCodes.Ok, "already running", State.Current);
-            }
-            // Only a host that still owns processes (health loop gave up, sandbox kept). A failed START also ends in
-            // Failed but owns nothing.
-            if (_host is { State: DshHostState.Failed, OwnsProcesses: true } failed)
-            {
-                // DSH was given up with the sandbox kept: restart the whole host; nothing of it can be reused safely.
-                _log.Note("start: the host failed earlier (sandbox kept); stopping it before a fresh start");
-                var stopped = await StopHostAsync(failed, ct).ConfigureAwait(false);
-                if (!stopped.Ok)
-                {
-                    return stopped;
-                }
-            }
-            if (State.Current.State is RuntimeState.Running or RuntimeState.Starting)
-            {
-                return Refused($"cannot start while the runtime is {State.Current.State}");
-            }
-            // An install interrupted by process death leaves a journal: finish or undo it before DSH runs on the layer.
-            var recovery = new DshLayerInstaller(_layout, _options.HostPathExists).Recover(keepProbing: _dshProbeHeld);
-            if (recovery.Action is not ("none" or "held"))
-            {
-                _log.Note($"start: interrupted DSH layer install {recovery.Action}{(recovery.Message is { } m ? ": " + m : "")}");
-            }
-            if (!recovery.Ok)
-            {
-                return new RuntimeStartResult(false, DshLayerErrorCodes.InstallFailed, "the DSH layer is mid-install and could not be recovered: " + recovery.Message, State.Current);
-            }
-            // The runtime body of an interrupted import was settled by SyncAsync; if that failed, nothing runs on it.
-            if (_bodyRecovery is { Ok: false } body)
-            {
-                return new RuntimeStartResult(false, LayerInstaller.ImportFailed, "the runtime body is mid-import and could not be recovered: " + body.Message, State.Current);
-            }
-            if (!State.TryTransition(RuntimeState.Starting, "start requested", HarnessState.Stopped))
-            {
-                return Refused($"cannot start while {State.Current.State}");
-            }
-            _host ??= CreateHost();
-            _foreground.Acquire();
-            var sw = Stopwatch.StartNew();
-            await EnsureGuestAssetsAsync(ct).ConfigureAwait(false);
-            _log.Note("start: DshHost");
-            var r = await _host.StartAsync(ct).ConfigureAwait(false);
-            _log.Note(r.Ok ? $"host: ready in {sw.Elapsed.TotalSeconds:F1} s" : $"host: FAILED {r.Code}: {r.Message}");
-            if (!r.Ok)
-            {
-                // The host already killed whatever it started; companions that follow the sandbox stop too, then nothing
-                // is left for the service to keep alive.
-                await NotifyHostStoppingAsync(CancellationToken.None).ConfigureAwait(false);
-                NotifySandboxStopping();
-                _foreground.Release();
-                State.TryTransition(RuntimeState.Failed, "host start failed", HarnessState.Stopped, r.Code, r.Message);
-                return new RuntimeStartResult(false, r.Code, r.Message, State.Current);
-            }
-            State.TryTransition(RuntimeState.Running, "host ready", HarnessState.Ready);
-            return new RuntimeStartResult(true, RuntimeErrorCodes.Ok, null, State.Current);
+            return await StartHostAsync(profile, ct).ConfigureAwait(false);
         }
         finally
         {
             _op.Release();
         }
+    }
+
+    /// <summary>Caller holds the operation lock and has synchronized the runtime state.</summary>
+    private async Task<RuntimeStartResult> StartHostAsync(DshProfile profile, CancellationToken ct)
+    {
+        if (profile.Name != RuntimeConstants.DshWebProfile)
+        {
+            return Refused($"the host starts only the '{RuntimeConstants.DshWebProfile}' profile");
+        }
+        if (_host is { State: DshHostState.Ready })
+        {
+            _log.Note("start: host already ready");
+            return new RuntimeStartResult(true, RuntimeErrorCodes.Ok, "already running", State.Current);
+        }
+        // Only a host that still owns processes (health loop gave up, sandbox kept). A failed START also ends in
+        // Failed but owns nothing.
+        if (_host is { State: DshHostState.Failed, OwnsProcesses: true } failed)
+        {
+            // DSH was given up with the sandbox kept: restart the whole host; nothing of it can be reused safely.
+            _log.Note("start: the host failed earlier (sandbox kept); stopping it before a fresh start");
+            var stopped = await StopHostAsync(failed, ct).ConfigureAwait(false);
+            if (!stopped.Ok)
+            {
+                return stopped;
+            }
+        }
+        if (State.Current.State is RuntimeState.Running or RuntimeState.Starting)
+        {
+            return Refused($"cannot start while the runtime is {State.Current.State}");
+        }
+        // An install interrupted by process death leaves a journal: finish or undo it before DSH runs on the layer.
+        var recovery = new DshLayerInstaller(_layout, _options.HostPathExists).Recover(keepProbing: _dshProbeHeld);
+        if (recovery.Action is not ("none" or "held"))
+        {
+            _log.Note($"start: interrupted DSH layer install {recovery.Action}{(recovery.Message is { } m ? ": " + m : "")}");
+        }
+        if (!recovery.Ok)
+        {
+            return new RuntimeStartResult(false, DshLayerErrorCodes.InstallFailed, "the DSH layer is mid-install and could not be recovered: " + recovery.Message, State.Current);
+        }
+        // The runtime body of an interrupted import was settled by SyncAsync; if that failed, nothing runs on it.
+        if (_bodyRecovery is { Ok: false } body)
+        {
+            return new RuntimeStartResult(false, LayerInstaller.ImportFailed, "the runtime body is mid-import and could not be recovered: " + body.Message, State.Current);
+        }
+        if (!State.TryTransition(RuntimeState.Starting, "start requested", HarnessState.Stopped))
+        {
+            return Refused($"cannot start while {State.Current.State}");
+        }
+        _host ??= CreateHost();
+        _foreground.Acquire();
+        var sw = Stopwatch.StartNew();
+        await EnsureGuestAssetsAsync(ct).ConfigureAwait(false);
+        _log.Note("start: DshHost");
+        var r = await _host.StartAsync(ct).ConfigureAwait(false);
+        _log.Note(r.Ok ? $"host: ready in {sw.Elapsed.TotalSeconds:F1} s" : $"host: FAILED {r.Code}: {r.Message}");
+        if (!r.Ok)
+        {
+            // The host already killed whatever it started; companions that follow the sandbox stop too, then nothing
+            // is left for the service to keep alive.
+            await NotifyHostStoppingAsync(CancellationToken.None).ConfigureAwait(false);
+            NotifySandboxStopping();
+            _foreground.Release();
+            State.TryTransition(RuntimeState.Failed, "host start failed", HarnessState.Stopped, r.Code, r.Message);
+            return new RuntimeStartResult(false, r.Code, r.Message, State.Current);
+        }
+        State.TryTransition(RuntimeState.Running, "host ready", HarnessState.Ready);
+        return new RuntimeStartResult(true, RuntimeErrorCodes.Ok, null, State.Current);
     }
 
     public async Task<RuntimeStartResult> StopAsync(CancellationToken ct)
@@ -371,7 +353,13 @@ public sealed class RuntimeCoordinator : IDisposable
         {
             if (_host is { OwnsProcesses: true } host)
             {
-                return await StopHostAsync(host, ct).ConfigureAwait(false);
+                var result = await StopHostAsync(host, ct).ConfigureAwait(false);
+                if (result.Ok && !_dshProbeHeld && new DshLayerInstaller(_layout).IsHeldForProbe)
+                {
+                    await SyncAsync(CancellationToken.None).ConfigureAwait(false);
+                    return result with { Snapshot = State.Current };
+                }
+                return result;
             }
             await SyncAsync(ct).ConfigureAwait(false);
             // Nothing hosted: the C# terminal opens its own PRoot shells without a started sandbox, so they can be the only
@@ -456,8 +444,8 @@ public sealed class RuntimeCoordinator : IDisposable
 
     /// <summary>
     /// Imports a runtime bundle with the <see cref="LayerInstaller"/>; the installed tree is then checked against a fresh
-    /// dry-run of the same ZIP (report <c>runtime.layer-install</c>), the bundled DSH layer is provisioned, and the result
-    /// must pass the install check.
+    /// dry-run of the same ZIP (report <c>runtime.layer-install</c>) and the result must pass the install check (the
+    /// DSH layer is no longer bundled with the APK, ADR-0027: it is imported separately or updated online).
     /// </summary>
     public async Task<RuntimeInstallResult> InstallAsync(RuntimePackage package, IProgress<RuntimeProgress>? progress, CancellationToken ct)
     {
@@ -486,12 +474,11 @@ public sealed class RuntimeCoordinator : IDisposable
             _reports.Report(verify);
             _log.Note($"verify {verify.Slice}: {verify.Verdict} ({verify.Detail}; {verify.CSharpMs} ms)");
 
-            var prepare = await PrepareCoreAsync(ct).ConfigureAwait(false);
+            // Reading the facts also heals layer sentinels (RuntimeStatusReader's install check, legacy isRuntimeInstalled).
             var facts = await ReadFactsAsync(ct).ConfigureAwait(false);
-            if (verify.Verdict != ShadowVerdict.Agree || !prepare.Ok || !facts.RuntimeInstalled)
+            if (verify.Verdict != ShadowVerdict.Agree || !facts.RuntimeInstalled)
             {
                 var why = verify.Verdict != ShadowVerdict.Agree ? $"installed tree check {verify.Verdict}"
-                    : !prepare.Ok ? $"runtime.prepare failed: {prepare.Message}"
                     : $"runtime install check: {facts.InstallReason}";
                 State.TryTransition(RuntimeState.Failed, "import incomplete", HarnessState.Stopped, "RUNTIME_IMPORT_UNVERIFIED", why);
                 return new RuntimeInstallResult(false, "RUNTIME_IMPORT_UNVERIFIED", why);
@@ -502,6 +489,108 @@ public sealed class RuntimeCoordinator : IDisposable
         finally
         {
             _op.Release();
+        }
+    }
+
+    /// <summary>
+    /// ADR-0027: installs a DSH layer archive the user picked (<c>&lt;version&gt;.tar.zst</c>, the Release artifact's
+    /// shape) with <see cref="DshLayerInstaller.InstallFromFileAsync"/>. The package version must match the archive name.
+    /// Replacements keep the previous layer aside until the host health check passes. The operation lock is held across
+    /// extraction, the health check, and commit or restore. Running DSH and terminal sessions must be stopped first.
+    /// </summary>
+    public async Task<DshLayerResult> InstallDshFromFileAsync(string bundlePath, CancellationToken ct)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(bundlePath);
+        await _op.WaitAsync(ct).ConfigureAwait(false);
+        try
+        {
+            await SyncAsync(ct).ConfigureAwait(false);
+            var installer = new DshLayerInstaller(_layout, _options.HostPathExists);
+            if (HostOwnsProcesses || Terminals.Pids.Count != 0 || State.Current.State is RuntimeState.Running or RuntimeState.Starting or RuntimeState.Stopping)
+            {
+                return new DshLayerResult(false, RuntimeErrorCodes.InvalidTransition, "stop DSH and its terminals before importing a DSH layer", installer.InstalledVersion(), false, 0);
+            }
+            if (_dshProbeHeld)
+            {
+                return new DshLayerResult(false, RuntimeErrorCodes.InvalidTransition, "a DSH layer health check is already in progress", installer.InstalledVersion(), false, 0);
+            }
+            var fileName = Path.GetFileName(bundlePath);
+            var version = DshLayerInstaller.VersionFromFileName(fileName);
+            if (version is null)
+            {
+                return new DshLayerResult(false, RuntimeErrorCodes.BadRequest, $"not a DSH layer archive (expected <version>.tar.zst or <version>.tar.gz): {fileName}", installer.InstalledVersion(), false, 0);
+            }
+            if (!File.Exists(bundlePath))
+            {
+                return new DshLayerResult(false, DshLayerErrorCodes.BundleNotFound, $"dsh bundle not found: {bundlePath}", installer.InstalledVersion(), false, 0);
+            }
+            // Hash the picked file here and pin the digest: the installer then refuses a source that changed between
+            // verification and extraction (the integrity check of a user-provided file).
+            string sha;
+            try
+            {
+                await using var stream = File.OpenRead(bundlePath);
+                sha = Convert.ToHexStringLower(await SHA256.HashDataAsync(stream, ct).ConfigureAwait(false));
+            }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+            {
+                return new DshLayerResult(false, DshLayerErrorCodes.InstallFailed, $"cannot read the picked DSH layer: {e.Message}", installer.InstalledVersion(), false, 0);
+            }
+            var holdForProbe = installer.IsInstalled;
+            var r = await installer.InstallFromFileAsync(bundlePath, sha, version, allowDowngrade: false, ct, holdForProbe, verifyPackageVersion: true)
+                .ConfigureAwait(false);
+            if (holdForProbe && r.Ok && r.Changed)
+            {
+                r = await CheckDshReplacementAsync(installer, r).ConfigureAwait(false);
+            }
+            else
+            {
+                await SyncAsync(CancellationToken.None).ConfigureAwait(false);
+            }
+            _log.Note(r.Ok
+                ? $"dsh import: {(r.Changed ? $"installed {r.Version}" : $"kept {r.Version}")} (from {fileName})"
+                : $"dsh import FAILED {r.Code}: {r.Message}");
+            return r;
+        }
+        finally
+        {
+            _op.Release();
+        }
+    }
+
+    /// <summary>Caller owns the operation lock. A held layer is restored on the next sync if the probe is interrupted.</summary>
+    private async Task<DshLayerResult> CheckDshReplacementAsync(DshLayerInstaller installer, DshLayerResult installed)
+    {
+        _dshProbeHeld = true;
+        try
+        {
+            await SyncAsync(CancellationToken.None).ConfigureAwait(false);
+            var start = await StartHostAsync(DshProfile.Web, CancellationToken.None).ConfigureAwait(false);
+            var problem = !start.Ok ? $"start: {start.Code} {start.Message}"
+                : start.Snapshot.DshVersion != installed.Version ? $"running version is {start.Snapshot.DshVersion ?? "unknown"}, expected {installed.Version}"
+                : null;
+            if (_host is { OwnsProcesses: true } host)
+            {
+                var stop = await StopHostAsync(host, CancellationToken.None).ConfigureAwait(false);
+                if (!stop.Ok)
+                {
+                    return installed with { Ok = false, Code = DshLayerErrorCodes.HealthFailed, Changed = false,
+                        Message = $"probe stop failed: {stop.Code} {stop.Message}; stop DSH to restore the previous layer" };
+                }
+            }
+            var finished = problem is null ? installer.CommitProbed() : installer.AbortProbed();
+            if (problem is not null || !finished.Ok)
+            {
+                return installed with { Ok = false, Code = finished.Ok ? DshLayerErrorCodes.HealthFailed : DshLayerErrorCodes.InstallFailed,
+                    Version = installer.InstalledVersion(), Changed = false,
+                    Message = finished.Ok ? $"DSH health check failed ({problem}); previous layer restored" : $"Could not finalize DSH import: {finished.Message}" };
+            }
+            return installed with { Message = null };
+        }
+        finally
+        {
+            _dshProbeHeld = false;
+            await SyncAsync(CancellationToken.None).ConfigureAwait(false);
         }
     }
 

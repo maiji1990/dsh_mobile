@@ -1,9 +1,10 @@
 #!/usr/bin/env pwsh
 # Downloads the runtime layers pinned in runtime-assets.lock, verifies SHA-256, and stages them as
 #   artifacts/runtime/android-assets/runtime/android-side.tar.zst(+.sha256)   -> APK assets/runtime/
-#   artifacts/runtime/android-assets/dsh/<version>.tar.zst(+.sha256)           -> APK assets/dsh/
 #   artifacts/runtime/downloads/dshmobile-runtime-*.zip                        -> imported on device (base/node)
 # Bundle zips are the self-built dshmobile-runtime-*.zip (ADR-0020) or DSHBox's older dshapp-runtime-*.zip.
+# The DSH layer is NOT staged into the APK anymore (ADR-0027): it is imported on the device (runtime.import.dsh)
+# or updated online; its lock entry stays as the upstream pin record only.
 # Nothing here is committed (artifacts/runtime/ is gitignored).
 param([switch]$Force)
 $ErrorActionPreference = 'Stop'
@@ -11,13 +12,18 @@ $repo = Split-Path -Parent $PSScriptRoot
 $out = Join-Path $repo 'artifacts/runtime'
 $downloads = Join-Path $out 'downloads'
 $assets = Join-Path $out 'android-assets'
-New-Item -ItemType Directory -Force $downloads, (Join-Path $assets 'runtime'), (Join-Path $assets 'dsh') | Out-Null
+New-Item -ItemType Directory -Force $downloads, (Join-Path $assets 'runtime') | Out-Null
 
 function Get-Sha256([string]$path) { (Get-FileHash -Algorithm SHA256 $path).Hash.ToLowerInvariant() }
 
 $lock = Get-Content (Join-Path $PSScriptRoot 'runtime-assets.lock') | Where-Object { $_ -and -not $_.StartsWith('#') }
 foreach ($line in $lock) {
     $name, $sha, $url = $line -split '\s+'
+    if ($name -like '*.tar.zst') {
+        # DSH layer (ADR-0027): not bundled with the APK; imported on the device or updated online.
+        Write-Host "skip $name (DSH layer: import on the device / update online, ADR-0027)"
+        continue
+    }
     $file = Join-Path $downloads $name
     if ($Force -or -not (Test-Path $file) -or (Get-Sha256 $file) -ne $sha) {
         for ($i = 1; $i -le 6; $i++) {
@@ -32,11 +38,7 @@ foreach ($line in $lock) {
     if ($got -ne $sha) { throw "SHA-256 mismatch for ${name}: got $got, want $sha" }
     Write-Host "verified $name"
 
-    if ($name -like '*.tar.zst') {
-        # DSH layer: shipped in the APK under assets/dsh/ with a "<sha>  <file>" sidecar.
-        Copy-Item $file (Join-Path $assets "dsh/$name") -Force
-        "$sha  $name" | Set-Content -NoNewline -Encoding ascii (Join-Path $assets "dsh/$name.sha256")
-    } elseif ($name -like 'dshmobile-runtime-*.zip' -or $name -like 'dshapp-runtime-*.zip') {
+    if ($name -like 'dshmobile-runtime-*.zip' -or $name -like 'dshapp-runtime-*.zip') {
         # Only android-side goes into the APK (DSHBox >= 1.4 layout); base/node are imported on device.
         Add-Type -AssemblyName System.IO.Compression.FileSystem
         $zip = [IO.Compression.ZipFile]::OpenRead($file)
