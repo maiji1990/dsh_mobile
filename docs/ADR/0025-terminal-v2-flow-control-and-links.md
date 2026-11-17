@@ -1,6 +1,6 @@
 # ADR-0025：终端 V2——输出流控（页面确认）与终端链接策略
 
-- 状态：已接受（2026-11-16，vNext PR-08 第一段）；**无真机证据**，真机验收见下「验收」
+- 状态：已接受（2026-11-16，vNext PR-08 第一段）；**无真机证据**，真机验收见下「验收」。**已被 [ADR-0028](0028-remove-native-terminal-and-plugin-pages.md) 取代**：终端页已删除，本 ADR 仅作历史记录（将来若重建终端，流控与链接策略需重新评估）
 - 关联：PR-06 C# 终端（xterm.js + C# PTY，WebMessagePort 传字节）；[ADR-0021](0021-product-ui-material3.md)（界面）；
   AGENTS.md 规则 9（真机证据）、11（安全不削弱）、12（Material 3 与截图级验收）
 
