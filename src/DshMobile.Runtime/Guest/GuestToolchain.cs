@@ -1,13 +1,13 @@
 // Ported from this repo's native/native-bridge/src/main/java/dshmobile/nativebridge/GuestToolchain.kt, itself ported from
-// DSHBox v1.5.1 SandboxService (provisionCorepackCache, DSH_CLI_SHIM, PNPM_CLI_SHIM; GPL-3.0-or-later). The wrapper texts
-// are kept byte for byte (tests pin them against the Kotlin source). Registered in docs/UPSTREAMS.md.
+// DSHBox v1.5.1 SandboxService (provisionCorepackCache, DSH_CLI_SHIM, PNPM_CLI_SHIM; GPL-3.0-or-later).
+// The pnpm wrapper now runs the pinned package directly. Registered in docs/UPSTREAMS.md.
 
 namespace DshMobile.Runtime.Guest;
 
 /// <summary>
-/// Makes <c>dsh</c> and <c>pnpm</c> usable inside the guest (TASK-009): <c>dsh plugin …</c> forwards to pnpm and the device
-/// has no global pnpm, only Node's corepack. The wrappers live in <c>user-data/.dsh/dshmobile/bin</c>, which the DSH role
-/// and the plugin commands put on the guest PATH; the offline corepack cache (pnpm 11.1.2) is unpacked into guest
+/// Makes <c>dsh</c> and <c>pnpm</c> usable inside the guest (TASK-009). The wrappers live in
+/// <c>user-data/.dsh/dshmobile/bin</c>, which the DSH role and plugin commands put on the guest PATH.
+/// The bundled pnpm 11.1.2 runs directly on Node. Its archived Corepack cache is unpacked into guest
 /// <c>/opt/dshmobile-cache/corepack</c>. Not ported (as legacy): DSHBox's apt/dpkg wrappers and the opencode wrapper.
 /// </summary>
 public static class GuestToolchain
@@ -15,6 +15,7 @@ public static class GuestToolchain
     public const string AssetDir = "toolchain-cache";
     public const string CorepackAsset = "corepack-pnpm-11.1.2.tar.zst";
     public const string ReadyMarker = ".ready-sha256";
+    internal const string PnpmEntryPoint = "v1/pnpm/11.1.2/bin/pnpm.mjs";
 
     /// <summary>Host directory of the corepack cache (guest <c>/opt/dshmobile-cache/corepack</c>).</summary>
     public static string CorepackDir(RuntimeLayout layout) => Path.Combine(layout.GuestCacheDir, "corepack");
@@ -37,15 +38,17 @@ public static class GuestToolchain
         """;
 
     /// <summary>
-    /// Same as DSHBox's PNPM_CLI_SHIM: corepack pnpm pinned to the bundled 11.1.2 (offline), store kept where the profile
+    /// Runs the bundled pnpm directly on Node, including Node versions without Corepack. The store stays where the profile
     /// already recorded it (pnpm compares storeDir as a string and fails with ERR_PNPM_UNEXPECTED_STORE otherwise), copy
     /// imports (hard links / clones fail with EACCES on Android), registry left to the caller.
     /// </summary>
-    public const string PnpmShim = """
+    public const string PnpmShim = $$"""
         #!/bin/sh
-        # DSH Mobile: `pnpm` via Node's bundled corepack (no global pnpm on device).
-        if [ -d /opt/dshmobile-cache ]; then
-          export COREPACK_HOME=/opt/dshmobile-cache/corepack
+        # DSH Mobile: use the pinned pnpm package from the APK cache.
+        PNPM="/opt/dshmobile-cache/corepack/{{PnpmEntryPoint}}"
+        if [ ! -f "$PNPM" ]; then
+          printf '%s\n' 'dshmobile: bundled pnpm entry point is missing' >&2
+          exit 127
         fi
         STORE=""
         if [ -f ./.modules.yaml ]; then
@@ -70,7 +73,7 @@ public static class GuestToolchain
         export pnpm_config_store_dir="$STORE"
         export pnpm_config_package_import_method=copy
         mkdir -p "$STORE" 2>/dev/null || true
-        exec /usr/local/bin/corepack pnpm "$@"
+        exec /usr/local/bin/node "$PNPM" "$@"
         """;
 
     /// <summary>
@@ -147,7 +150,7 @@ public static class GuestToolchain
         }
         var cache = CorepackDir(layout);
         var marker = Path.Combine(cache, ReadyMarker);
-        if (Directory.Exists(cache) && File.Exists(marker) && File.ReadAllText(marker).Trim() == expected)
+        if (File.Exists(Path.Combine(cache, PnpmEntryPoint)) && File.Exists(marker) && File.ReadAllText(marker).Trim() == expected)
         {
             return (false, null);
         }
@@ -175,7 +178,7 @@ public static class GuestToolchain
                 }
                 if (!Convert.ToHexStringLower(hash.GetHashAndReset()).Equals(expected, StringComparison.OrdinalIgnoreCase))
                 {
-                    return (false, "corepack cache sha256 mismatch; pnpm would fall back to a network download");
+                    return (false, "corepack cache sha256 mismatch");
                 }
             }
             var unpacked = Path.Combine(stage, "out");
@@ -183,6 +186,10 @@ public static class GuestToolchain
             if (!extracted.Ok)
             {
                 return (false, $"corepack cache extraction failed: {extracted.Code}: {extracted.Message}");
+            }
+            if (!File.Exists(Path.Combine(unpacked, PnpmEntryPoint)))
+            {
+                return (false, "bundled pnpm entry point is missing from the corepack cache");
             }
             if (Directory.Exists(cache))
             {

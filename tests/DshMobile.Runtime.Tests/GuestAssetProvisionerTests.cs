@@ -1,3 +1,4 @@
+using System.Formats.Tar;
 using System.Security.Cryptography;
 using System.Text.RegularExpressions;
 using DshMobile.Core.Contracts;
@@ -42,10 +43,20 @@ public sealed partial class GuestAssetProvisionerTests : IDisposable
     private static readonly byte[] Shim = "export const shim = 1;\n"u8.ToArray();
     private static readonly byte[] ShimSo = [0x7F, (byte)'E', (byte)'L', (byte)'F', 1, 2, 3];
 
-    /// <summary>APK assets with a corepack "cache" (any tar works: the extractor sniffs the container) and its sidecar.</summary>
+    /// <summary>APK assets with a pnpm cache fixture and its checksum sidecar.</summary>
     private static FakeAssets Assets(string? sha = null)
     {
-        var tar = File.ReadAllBytes(Repo.PathOf("tests", "TestVectors", "bundles", "dsh-good.tar"));
+        using var stream = new MemoryStream();
+        using (var writer = new TarWriter(stream, TarEntryFormat.Ustar, leaveOpen: true))
+        {
+            using var entryPoint = new MemoryStream("export {};\n"u8.ToArray());
+            writer.WriteEntry(new UstarTarEntry(TarEntryType.RegularFile, GuestToolchain.PnpmEntryPoint)
+            {
+                DataStream = entryPoint,
+                ModificationTime = DateTimeOffset.UnixEpoch,
+            });
+        }
+        var tar = stream.ToArray();
         return new FakeAssets(new Dictionary<string, byte[]>
         {
             [GuestAssetProvisioner.LinkShimAsset] = Shim,
@@ -72,7 +83,7 @@ public sealed partial class GuestAssetProvisionerTests : IDisposable
         Assert.True(UiFacadeAssets.Intact(layout.GuestCacheDir));
         var corepack = GuestToolchain.CorepackDir(layout);
         Assert.True(File.Exists(Path.Combine(corepack, GuestToolchain.ReadyMarker)));
-        Assert.NotEmpty(Directory.EnumerateFileSystemEntries(corepack).Where(p => !p.EndsWith(GuestToolchain.ReadyMarker, StringComparison.Ordinal)));
+        Assert.True(File.Exists(Path.Combine(corepack, GuestToolchain.PnpmEntryPoint)));
         Assert.True(File.Exists(Path.Combine(GuestToolchain.ShimBinDir(layout), "dsh")));
         Assert.True(File.Exists(Path.Combine(GuestToolchain.ShimBinDir(layout), "pnpm")));
         Assert.True(File.Exists(Path.Combine(GuestToolchain.ShimBinDir(layout), "xdg-user-dir")));
@@ -92,6 +103,27 @@ public sealed partial class GuestAssetProvisionerTests : IDisposable
         var r = await GuestAssetProvisioner.EnsureAsync(layout, Assets(), CancellationToken.None);
         Assert.Equal(["link-shim.mjs"], r.Written);
         Assert.Equal(Shim, File.ReadAllBytes(layout.ShimFile));
+    }
+
+    [Fact]
+    public async Task Ensure_RewritesLegacyPnpmShim_AndRepairsMissingCacheEntryPoint()
+    {
+        var layout = Layout();
+        var assets = Assets();
+        var initial = await GuestAssetProvisioner.EnsureAsync(layout, assets, CancellationToken.None);
+        Assert.True(initial.Ok, initial.Describe());
+        var entryPoint = Path.Combine(GuestToolchain.CorepackDir(layout), GuestToolchain.PnpmEntryPoint);
+        var shim = Path.Combine(GuestToolchain.ShimBinDir(layout), "pnpm");
+        File.Delete(entryPoint);
+        File.WriteAllText(shim, "#!/bin/sh\nexec /usr/local/bin/corepack pnpm \"$@\"\n");
+
+        var repaired = await GuestAssetProvisioner.EnsureAsync(layout, assets, CancellationToken.None);
+
+        Assert.True(repaired.Ok, repaired.Describe());
+        Assert.True(File.Exists(entryPoint));
+        var wrapper = await File.ReadAllTextAsync(shim);
+        Assert.Contains("exec /usr/local/bin/node \"$PNPM\" \"$@\"", wrapper);
+        Assert.DoesNotContain("/usr/local/bin/corepack", wrapper);
     }
 
     [Fact]
@@ -130,13 +162,13 @@ public sealed partial class GuestAssetProvisionerTests : IDisposable
         Assert.Equal("/opt/dshmobile-cache/dshmobile/dsh-e2e.mjs", GuestAssetProvisioner.GuestE2e);
     }
 
-    // ------------------------------------------------------------------ pinned against the former GuestToolchain.kt
+    // ------------------------------------------------------------------ pinned wrapper text
 
     /// <summary>
-    /// The wrapper texts of this repository's bridge GuestToolchain.kt at 128c2ea (DSH_SHIM / PNPM_SHIM after Kotlin's
-    /// trimIndent and <c>${'$'}</c> -> <c>$</c>), pinned when PR-10 removed the bridge (ADR-0018).
+    /// The dsh wrapper matches the former bridge at 128c2ea (ADR-0018). The pnpm wrapper retains the bridge's
+    /// store selection and copy mode, with the pinned pnpm entry point run directly by Node.
     /// </summary>
-    private static readonly Dictionary<string, string> LegacyShims = new()
+    private static readonly Dictionary<string, string> ExpectedShims = new()
     {
         // Raw literals take the checkout's line endings (CRLF on a Windows `* text=auto` checkout); the wrappers are LF.
         ["dsh"] = DshShim.ReplaceLineEndings("\n") + "\n",
@@ -158,9 +190,11 @@ exec /usr/local/bin/node --expose-internals $SHIM "$BIN" "$@"
 
     private const string PnpmShim = """
 #!/bin/sh
-# DSH Mobile: `pnpm` via Node's bundled corepack (no global pnpm on device).
-if [ -d /opt/dshmobile-cache ]; then
-  export COREPACK_HOME=/opt/dshmobile-cache/corepack
+# DSH Mobile: use the pinned pnpm package from the APK cache.
+PNPM="/opt/dshmobile-cache/corepack/v1/pnpm/11.1.2/bin/pnpm.mjs"
+if [ ! -f "$PNPM" ]; then
+  printf '%s\n' 'dshmobile: bundled pnpm entry point is missing' >&2
+  exit 127
 fi
 STORE=""
 if [ -f ./.modules.yaml ]; then
@@ -185,17 +219,17 @@ fi
 export pnpm_config_store_dir="$STORE"
 export pnpm_config_package_import_method=copy
 mkdir -p "$STORE" 2>/dev/null || true
-exec /usr/local/bin/corepack pnpm "$@"
+exec /usr/local/bin/node "$PNPM" "$@"
 """;
 
     [Theory]
     [InlineData("dsh")]
     [InlineData("pnpm")]
-    public async Task Shims_AreTheLegacyTextByteForByte(string file)
+    public async Task Shims_MatchThePinnedTextAndMode(string file)
     {
         var layout = Layout();
         GuestToolchain.WriteShims(layout);
-        Assert.Equal(LegacyShims[file], (await File.ReadAllTextAsync(Path.Combine(GuestToolchain.ShimBinDir(layout), file))).Replace("\r\n", "\n", StringComparison.Ordinal));
+        Assert.Equal(ExpectedShims[file], (await File.ReadAllTextAsync(Path.Combine(GuestToolchain.ShimBinDir(layout), file))).Replace("\r\n", "\n", StringComparison.Ordinal));
         if (!OperatingSystem.IsWindows())
         {
             Assert.True(File.GetUnixFileMode(Path.Combine(GuestToolchain.ShimBinDir(layout), file)).HasFlag(UnixFileMode.OtherExecute));

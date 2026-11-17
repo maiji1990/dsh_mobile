@@ -21,7 +21,7 @@
 | `sdk` profile | 握手通过（真机·当前 C#（11-16），模式探测）；会话待测 | JSON-RPC `initialize` → `deepseek-harness-sdk-runtime`，`shutdown` → `{}`，exit 0；会话/提示需模型凭据，未验证 |
 | `sdk-minimal` profile | 握手通过（真机·当前 C#（11-16），模式探测）；会话待测 | 同 sdk 握手（initialize 5.1 s） |
 | `acp` profile | 握手通过（真机·当前 C#（11-16），模式探测）；会话待测 | ACP v1 `initialize` → `deepseek-harness-acp`、能力声明；stdin EOF 正常退出 0；会话/提示需模型凭据，未验证 |
-| `plugin` 命令 | 部分：`plugin list` 通过（真机·当前 C#（11-16））；add / remove **待复测**（仅 PR-10 前真机） | 离线 pnpm 11.1.2（corepack 缓存）+ dsh/pnpm 包装；`plugin list` / `add` / `remove` exit 0（用 `is-number` 验证安装与卸载）；安全模式、源选择未做 |
+| `plugin` 命令 | 部分：`plugin list` 通过（真机·当前 C#（11-17））；add / remove **待复测**（仅 PR-10 前真机） | Node `26.13.1` 直接运行随包 pnpm `11.1.2`，DSH 与中继运行时插件页输出 `list: OK`（[真机记录](../migration/parity/2026-11-17-PTP-AN10-A17-plugin-node26.md)）。历史验收用 `is-number` 验证安装与卸载 |
 | Cordis profile / bundle / patch | 部分 | 五个 shipped profile 的 `--dump-config` 均成功合成；patch / bundle 切换未测 |
 | Model Providers / 凭据 | 未开始 | |
 | Session / Resume / Fork | 未开始（真机） | 需模型凭据；WebUI 已可承载；跨进程续接由 PR-07 驱动检查（headless / sdk / acp），真机待执行；默认工作区创建失败已修复（`xdg-user-dir`，真机待验） |
