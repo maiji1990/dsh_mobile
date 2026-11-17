@@ -2,6 +2,7 @@
 // (provisionGuestAssets; GPL-3.0-or-later, partly from DSHBox v1.5.1 SandboxService). Registered in docs/UPSTREAMS.md.
 
 using System.Security.Cryptography;
+using DshMobile.Core.Diagnostics;
 using DshMobile.Runtime.Automation;
 using DshMobile.Runtime.Layers;
 
@@ -71,15 +72,19 @@ public static class GuestAssetProvisioner
     }
 
     /// <param name="assets">The APK assets (link shim, corepack cache); null on hosts without them (the two steps then fail visibly).</param>
-    public static async Task<GuestAssetReport> EnsureAsync(RuntimeLayout layout, IBundledAssets? assets, CancellationToken ct)
+    /// <param name="trace">Startup timing (observability only); null records nothing.</param>
+    public static async Task<GuestAssetReport> EnsureAsync(RuntimeLayout layout, IBundledAssets? assets, CancellationToken ct, StartupTrace? trace = null)
     {
         ArgumentNullException.ThrowIfNull(layout);
         var written = new List<string>();
         var failures = new List<string>();
 
+        var shimSpan = trace?.Measure("guest_assets.shim");
+        var shimBefore = written.Count;
         if (assets is null)
         {
             failures.Add("link shim: no APK assets");
+            shimSpan?.End(StartupTrace.Failed);
         }
         else
         {
@@ -95,7 +100,10 @@ public static class GuestAssetProvisioner
                     written.Add(LinkShimSoName);
                 }
             });
+            shimSpan?.End(details: new Dictionary<string, object?> { ["written"] = written.Count - shimBefore });
         }
+        var scriptsSpan = trace?.Measure("guest_assets.scripts");
+        var scriptsBefore = written.Count;
         Step(failures, "probe / e2e scripts", () =>
         {
             var dir = UiFacadeAssets.HostDir(layout.GuestCacheDir);
@@ -116,13 +124,14 @@ public static class GuestAssetProvisioner
                 written.Add($"ui_* scripts ({n})");
             }
         });
+        scriptsSpan?.End(details: new Dictionary<string, object?> { ["written"] = written.Count - scriptsBefore });
         if (assets is null)
         {
             failures.Add("corepack cache: no APK assets");
         }
         else
         {
-            var (changed, error) = await GuestToolchain.ProvisionCorepackAsync(layout, assets, ct).ConfigureAwait(false);
+            var (changed, error) = await GuestToolchain.ProvisionCorepackAsync(layout, assets, ct, trace).ConfigureAwait(false);
             if (error is not null)
             {
                 failures.Add(error);
@@ -132,13 +141,17 @@ public static class GuestAssetProvisioner
                 written.Add("corepack cache (pnpm 11.1.2)");
             }
         }
+        var wrappersSpan = trace?.Measure("guest_assets.wrappers");
+        var wrappers = 0;
         Step(failures, "guest wrappers", () =>
         {
             if (GuestToolchain.WriteShims(layout) is var n and > 0)
             {
+                wrappers = n;
                 written.Add($"dsh/pnpm/xdg-user-dir wrappers ({n})");
             }
         });
+        wrappersSpan?.End(details: new Dictionary<string, object?> { ["written"] = wrappers });
         return new GuestAssetReport(written, failures);
     }
 

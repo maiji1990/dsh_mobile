@@ -2,6 +2,8 @@
 // DSHBox v1.5.1 SandboxService (provisionCorepackCache, DSH_CLI_SHIM, PNPM_CLI_SHIM; GPL-3.0-or-later).
 // The pnpm wrapper now runs the pinned package directly. Registered in docs/UPSTREAMS.md.
 
+using DshMobile.Core.Diagnostics;
+
 namespace DshMobile.Runtime.Guest;
 
 /// <summary>
@@ -134,7 +136,29 @@ public static class GuestToolchain
     /// into a private stage that is renamed into place. <c>Changed</c>: the cache was (re)unpacked; <c>Error</c>: why it
     /// could not be (the previous cache, if any, is left as it was).
     /// </summary>
-    public static async Task<(bool Changed, string? Error)> ProvisionCorepackAsync(RuntimeLayout layout, Layers.IBundledAssets assets, CancellationToken ct)
+    public static async Task<(bool Changed, string? Error)> ProvisionCorepackAsync(
+        RuntimeLayout layout,
+        Layers.IBundledAssets assets,
+        CancellationToken ct,
+        StartupTrace? trace = null)
+    {
+        var span = trace?.Measure("guest_assets.corepack");
+        try
+        {
+            var (changed, error) = await ProvisionCorepackCoreAsync(layout, assets, ct).ConfigureAwait(false);
+            span?.End(
+                error is null ? StartupTrace.Ok : StartupTrace.Failed,
+                new Dictionary<string, object?> { ["cacheHit"] = error is null && !changed, ["extracted"] = changed });
+            return (changed, error);
+        }
+        catch
+        {
+            span?.End(StartupTrace.Failed);
+            throw;
+        }
+    }
+
+    private static async Task<(bool Changed, string? Error)> ProvisionCorepackCoreAsync(RuntimeLayout layout, Layers.IBundledAssets assets, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(layout);
         ArgumentNullException.ThrowIfNull(assets);

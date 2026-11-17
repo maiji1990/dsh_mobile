@@ -1,3 +1,4 @@
+using DshMobile.Core.Diagnostics;
 using DshMobile.Runtime.Hosting;
 
 namespace DshMobile.Application.Tests;
@@ -23,7 +24,7 @@ internal sealed class FakeDshHost(List<string> calls) : IDshHost
 
     public event EventHandler? StateChanged;
 
-    public Task<DshHostResult> StartAsync(CancellationToken ct)
+    public Task<DshHostResult> StartAsync(CancellationToken ct, StartupTrace? trace = null)
     {
         calls.Add("host.start");
         var r = OnStart?.Invoke() ?? new DshHostResult(true, "OK", null);

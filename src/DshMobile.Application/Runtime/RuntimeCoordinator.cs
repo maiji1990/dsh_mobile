@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Security.Cryptography;
 using DshMobile.Application.Shadow;
+using DshMobile.Core.Diagnostics;
 using DshMobile.Core.Contracts;
 using DshMobile.Runtime;
 using DshMobile.Runtime.Automation;
@@ -142,10 +143,10 @@ public sealed class RuntimeCoordinator : IDisposable
     /// Stages the host files every guest path expects (link shim, probe / ui_* scripts, corepack cache, dsh / pnpm
     /// wrappers). Failures are logged and do not stop the caller; they show up as the guest command's own failure.
     /// </summary>
-    private async Task<GuestAssetReport> EnsureGuestAssetsAsync(CancellationToken ct)
+    private async Task<GuestAssetReport> EnsureGuestAssetsAsync(CancellationToken ct, StartupTrace? trace = null)
     {
         MigrateNamesOnce();
-        var r = await GuestAssetProvisioner.EnsureAsync(_layout, _assets, ct).ConfigureAwait(false);
+        var r = await GuestAssetProvisioner.EnsureAsync(_layout, _assets, ct, trace).ConfigureAwait(false);
         if (r.Written.Count > 0 || !r.Ok)
         {
             _log.Note($"guest assets: {r.Describe()}");
@@ -222,14 +223,19 @@ public sealed class RuntimeCoordinator : IDisposable
     /// Starts the runtime with the C# <see cref="DshHost"/> (web profile only). A start whose preconditions fail returns
     /// their error code.
     /// </summary>
-    public async Task<RuntimeStartResult> StartAsync(DshProfile profile, CancellationToken ct)
+    public async Task<RuntimeStartResult> StartAsync(DshProfile profile, CancellationToken ct, StartupTrace? trace = null)
     {
         ArgumentNullException.ThrowIfNull(profile);
+        var queued = trace?.Mark();
         await _op.WaitAsync(ct).ConfigureAwait(false);
         try
         {
-            await SyncAsync(ct).ConfigureAwait(false);
-            return await StartHostAsync(profile, ct).ConfigureAwait(false);
+            if (trace is not null && queued is { } mark)
+            {
+                trace.EmitSpan("coordinator.lock_wait", mark);
+            }
+            await trace.TraceAsync("coordinator.sync", () => SyncAsync(ct)).ConfigureAwait(false);
+            return await StartHostAsync(profile, ct, trace).ConfigureAwait(false);
         }
         finally
         {
@@ -238,7 +244,7 @@ public sealed class RuntimeCoordinator : IDisposable
     }
 
     /// <summary>Caller holds the operation lock and has synchronized the runtime state.</summary>
-    private async Task<RuntimeStartResult> StartHostAsync(DshProfile profile, CancellationToken ct)
+    private async Task<RuntimeStartResult> StartHostAsync(DshProfile profile, CancellationToken ct, StartupTrace? trace = null)
     {
         if (profile.Name != RuntimeConstants.DshWebProfile)
         {
@@ -280,16 +286,27 @@ public sealed class RuntimeCoordinator : IDisposable
         {
             return new RuntimeStartResult(false, LayerInstaller.ImportFailed, "the runtime body is mid-import and could not be recovered: " + body.Message, State.Current);
         }
-        if (!State.TryTransition(RuntimeState.Starting, "start requested", HarnessState.Stopped))
+        if (!trace.TraceSync("coordinator.journal", () => State.TryTransition(RuntimeState.Starting, "start requested", HarnessState.Stopped)))
         {
             return Refused($"cannot start while {State.Current.State}");
         }
         _host ??= CreateHost();
         _foreground.Acquire();
         var sw = Stopwatch.StartNew();
-        await EnsureGuestAssetsAsync(ct).ConfigureAwait(false);
+        var guestSpan = trace?.Measure("guest_assets.total");
+        GuestAssetReport guest;
+        try
+        {
+            guest = await EnsureGuestAssetsAsync(ct, trace).ConfigureAwait(false);
+        }
+        catch
+        {
+            guestSpan?.End(StartupTrace.Failed);
+            throw;
+        }
+        guestSpan?.End(guest.Ok ? StartupTrace.Ok : StartupTrace.Failed, new Dictionary<string, object?> { ["written"] = guest.Written.Count });
         _log.Note("start: DshHost");
-        var r = await _host.StartAsync(ct).ConfigureAwait(false);
+        var r = await _host.StartAsync(ct, trace).ConfigureAwait(false);
         _log.Note(r.Ok ? $"host: ready in {sw.Elapsed.TotalSeconds:F1} s" : $"host: FAILED {r.Code}: {r.Message}");
         if (!r.Ok)
         {
