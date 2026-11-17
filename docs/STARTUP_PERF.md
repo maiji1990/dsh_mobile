@@ -1,6 +1,6 @@
 # 启动性能观测（STARTUP_PERF）
 
-> 状态：解析工具、测试与本文档已落地；**所有真实耗时数据仍然「待真机验证」**（[AGENTS.md](../AGENTS.md) 规则 9）。本工具只读取 logcat 文本，不参与启动流程，也不改变任何启动语义。
+> 状态：解析工具、测试与本文档已落地；**2026-11-17 已在 PTP-AN10 / Android 17 上完成 A/B/C 各 10 次真机采集**，结果与 CSV 见[真机记录](../migration/parity/2026-11-17-PTP-AN10-A17-startup-perf.md)（B 场景 `bridge.complete` P50 16.6 s，其中 97.6% 是 DSH 初始化）。D–F 场景、可交互测点与跟踪开销仍**待真机验证**（[AGENTS.md](../AGENTS.md) 规则 9）。本工具只读取 logcat 文本，不参与启动流程，也不改变任何启动语义。
 
 ## 目的与边界
 
@@ -239,7 +239,7 @@ P50/P95 使用 nearest-rank：升序排序后 `idx = ceil(p * n) - 1`（`p = 0.5
 - **基准混用风险**：`sinceStartMs` 是全局时刻，`elapsedMs` 按阶段起点；分组是跨基准的估算。
 - **样本与丢行**：logcat 环形缓冲可能丢行；失败/取消的 `runId` 可能缺阶段，工具会跳过而不是补值。
 - **单次方差大**：少于 10 次的结论不具代表性；P95 在小样本下等于最大值。
-- **所有真实耗时待真机验证**：本文不提供任何“已达标”数字；CI/模拟器结果不能替代真机（规则 9）。
+- **真机数据范围**：目前只有一台设备（PTP-AN10 / Android 17）、A/B/C 各 10 次；D–F 场景、可交互测点、跟踪开销都没有数据，CI/模拟器结果不能替代真机（规则 9）。
 
 ## 相关文件
 
@@ -250,6 +250,7 @@ P50/P95 使用 nearest-rank：升序排序后 `idx = ceil(p * n) - 1`（`p = 0.5
 - DSH 宿主/HTTP 就绪：[src/DshMobile.Runtime/Hosting/DshHost.cs](../src/DshMobile.Runtime/Hosting/DshHost.cs)
 - guest 资产：[src/DshMobile.Runtime/Guest/GuestAssetProvisioner.cs](../src/DshMobile.Runtime/Guest/GuestAssetProvisioner.cs)
 - WebView 阶段：[src/DshMobile.Android/WebUi/CSharpWebUiController.cs](../src/DshMobile.Android/WebUi/CSharpWebUiController.cs)、[src/DshMobile.Android/DshWebActivity.cs](../src/DshMobile.Android/DshWebActivity.cs)
+- 首次真机测量（A/B/C 各 10 次 + CSV）：[migration/parity/2026-11-17-PTP-AN10-A17-startup-perf.md](../migration/parity/2026-11-17-PTP-AN10-A17-startup-perf.md)
 - 真机证据规则：[AGENTS.md](../AGENTS.md)、[docs/COMPATIBILITY.md](COMPATIBILITY.md)、[docs/TEST_PLAN.md](TEST_PLAN.md)
 
 最后更新：2026-11-17
