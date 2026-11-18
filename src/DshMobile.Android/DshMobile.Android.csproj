@@ -12,6 +12,11 @@
     <!-- .NET 11 Android defaults to CoreCLR. Do not set UseMonoRuntime / RunAOTCompilation (ADR-0001). -->
     <PublishAot>false</PublishAot>
     <TrimMode>full</TrimMode>
+    <!--
+      Diagnostic build only (docs/STARTUP_EXPERIMENTS.md): dotnet build -p:DshDiagnostics=true adds DSH_DIAGNOSTICS, which
+      compiles the E1-E4 experiment screen. A normal Release build has no such entry.
+    -->
+    <DefineConstants Condition="'$(DshDiagnostics)' == 'true'">$(DefineConstants);DSH_DIAGNOSTICS</DefineConstants>
   </PropertyGroup>
 
   <!--

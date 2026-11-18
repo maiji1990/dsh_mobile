@@ -357,4 +357,26 @@
     <string name="remote_key_hint">把下面这一行加入远端的 authorized_keys。私钥只在 Android Keystore 内，不可导出。</string>
     <string name="remote_not_connected_title">未连接</string>
     <string name="remote_connected_title">已连接</string>
+
+    <!-- 诊断构建：启动实验 E1–E4（docs/STARTUP_EXPERIMENTS.md） -->
+    <string name="dev_experiments">启动实验（诊断）</string>
+    <string name="dev_experiments_sub">E1–E4 根因对照测试；仅诊断构建可见</string>
+    <string name="dev_experiments_title">启动实验（诊断）</string>
+    <string name="dev_experiments_section">运行套件</string>
+    <string name="dev_experiments_status">状态与输出</string>
+    <string name="dev_experiments_e1e2">E1 + E2（各 10 次）</string>
+    <string name="dev_experiments_e1e2_sub">PRoot / Node 最小成本、DSH CLI 入口；记录进程退出耗时</string>
+    <string name="dev_experiments_e2">E2 单独（各 10 次）</string>
+    <string name="dev_experiments_e2_sub">DSH CLI 快速路径与配置加载（--version / --help / --dump-config）</string>
+    <string name="dev_experiments_e23">E2-3 单独（--dump-config）</string>
+    <string name="dev_experiments_e23_sub">只重测配置加载这一项；需要先修参数时使用</string>
+    <string name="dev_experiments_e3">E3（各 10 次）</string>
+    <string name="dev_experiments_e3_sub">生产配置 / 隔离最小配置 / 隔离 + 覆盖层；记录首次 HTTP 就绪</string>
+    <string name="dev_experiments_e4">E4（A 10 次 + B / C）</string>
+    <string name="dev_experiments_e4_sub">Compile cache 关闭 / 冷 / 热；缓存未落盘时如实标记</string>
+    <string name="dev_experiments_all">全部（E1→E2→E3→E4）</string>
+    <string name="dev_experiments_all_sub">按方案顺序执行，一次只跑一个套件</string>
+    <string name="dev_experiments_cancel">取消当前实验</string>
+    <string name="dev_experiments_cancel_sub">结束子进程树，删除本次实验的隔离目录</string>
+    <string name="dev_experiments_running">正在运行；DSH 必须已停止，3080 端口必须空闲。</string>
 </resources>
