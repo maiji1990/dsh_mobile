@@ -156,6 +156,50 @@ public sealed class ProotCommandBuilder(RuntimeLayout layout)
         }).Select(o => o.Guest).ToList();
     }
 
+    /// <summary>
+    /// Diagnostics only (docs/STARTUP_EXPERIMENTS.md): the production layered prefix, but with the workspace and
+    /// guest-cache binds pointed at experiment directories, so an isolated Web start can never read or write user data.
+    /// Production start/stop never calls this.
+    /// </summary>
+    public IReadOnlyList<string> DiagnosticPrefix(string workspaceDir, string? guestCacheDir)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(workspaceDir);
+        Directory.CreateDirectory(workspaceDir);
+        var argv = new List<string>
+        {
+            ProotBinary,
+            "--rootfs=" + BaseRootfs,
+            "--bind=/system", "--bind=/apex", "--bind=/proc", "--bind=/dev",
+        };
+        if (Directory.Exists(NodeLayerDir))
+        {
+            argv.Add($"--bind={NodeLayerDir}:/usr/local");
+        }
+        if (Directory.Exists(DshLayerDir))
+        {
+            argv.Add($"--bind={DshLayerDir}:/opt/dshapp/runtime");
+        }
+        if (Directory.Exists(layout.ShimDir))
+        {
+            argv.Add($"--bind={layout.ShimDir}:{RuntimeConstants.LinkShimGuestDir}");
+        }
+        if (Directory.Exists(layout.PilotEntryDir))
+        {
+            argv.Add($"--bind={layout.PilotEntryDir}:/opt/pilot");
+        }
+        if (Directory.Exists(layout.BrowserEntryDir))
+        {
+            argv.Add($"--bind={layout.BrowserEntryDir}:/opt/browser");
+        }
+        if (guestCacheDir is not null)
+        {
+            Directory.CreateDirectory(guestCacheDir);
+            argv.Add($"--bind={guestCacheDir}:{RuntimeConstants.GuestCacheDir}");
+        }
+        argv.Add($"--bind={workspaceDir}:{RuntimeConstants.SandboxWorkspace}");
+        return argv;
+    }
+
     /// <summary><c>layeredProotPrefix</c> (no share-area or extra binds: this app configures none).</summary>
     private List<string> LayeredPrefix(string? shim, string? pilot, string? browser, string? guestCache)
     {

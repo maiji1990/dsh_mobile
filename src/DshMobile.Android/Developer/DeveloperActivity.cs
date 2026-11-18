@@ -54,6 +54,10 @@ public sealed class DeveloperActivity : DshActivity
         Tool(content, Resource.Drawable.ic_build, Resource.String.dev_diag, Resource.String.dev_diag_sub, () => _ = _bridge.RunDiagnosticsAsync());
         Tool(content, Resource.Drawable.ic_code, Resource.String.dev_probe, Resource.String.dev_probe_sub, () => _ = _bridge.RunProbesAsync());
         Tool(content, Resource.Drawable.ic_terminal, Resource.String.dev_pty, Resource.String.dev_pty_sub, ConfirmPtyProbe);
+#if DSH_DIAGNOSTICS
+        Tool(content, Resource.Drawable.ic_code, Resource.String.dev_experiments, Resource.String.dev_experiments_sub,
+            () => StartActivity(new Intent(this, typeof(StartupExperimentActivity))));
+#endif
         Tool(content, Resource.Drawable.ic_info, Resource.String.dev_update, Resource.String.dev_update_sub, ChooseUpdateChannel);
 
         Rows.Header(content, GetString(Resource.String.developer_section_log));
