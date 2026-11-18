@@ -154,6 +154,7 @@
 | 2026-11-15 | DSHBox | `v1.5.1`（子模块） | `v1.5.1`（仅 Release 运行层 + 原样资产） | PR-10 / ADR-0018：删除子模块、Gradle 构建、Bridge AAR 与浏览器栈；guest 资产改由 App 打包；源码契约扫描改为钉值 |
 | 2026-11-17 | deepseek-ai/deepseek-harness | 0.2.1-rc.5 | 0.2.2-rc.3 | tag dsh-v0.2.2-rc.3 commit 38a6a5c965aa99ab525161efb7cc5cf1fe62fced；npm-lock SHA256 ebe6866b2a395da431e5315d62169f9bf77ad0b98df606e7ebf452f5d4251e70；profiles/MCP/真机待验 |
 | 2026-11-17 | Node.js | 24.19.0 | 26.13.1 | 官方 arm64 SHA256 89e1853138db51e8b82d3e98ba9c0d3f2956a28e5e55ea1b7e12d25aae92d5dd；CI Smoke 暴露 Node 26 依赖 libatomic.so.1（Debian 包 libatomic1），已补充到 minbase 包清单；ARM64/DSH/真机待验，stable 禁止自动放行 |
+| 2026-11-18 | deepseek-ai/deepseek-harness | 0.2.2-rc.3 | 0.2.2-rc.4 | tag dsh-v0.2.2-rc.4 commit 3f321d32bfe382212a8ed8785c1d47a5a300aa23；npm-lock SHA256 070c7d1ba5ab7e30f2428a1ceab3956f911a3118efb2d6fca6b67254d4366195；profiles/MCP/真机待验 |
 
 ## 2026-11-16：本仓库自主发行与上游跟踪
 
