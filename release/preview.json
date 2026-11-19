@@ -11,14 +11,14 @@
     },
     {
       "kind": "dsh",
-      "version": "0.2.2-rc.3",
+      "version": "0.2.2-rc.4",
       "abi": "arm64",
-      "file": "0.2.2-rc.3.tar.zst",
-      "releaseTag": "dsh-0.2.2-rc.3",
+      "file": "0.2.2-rc.4.tar.zst",
+      "releaseTag": "dsh-0.2.2-rc.4",
       "requiresNode": "26.x",
       "sourceRepo": "deepseek-ai/deepseek-harness",
-      "sourceTag": "dsh-v0.2.2-rc.3",
-      "sourceCommit": "38a6a5c965aa99ab525161efb7cc5cf1fe62fced"
+      "sourceTag": "dsh-v0.2.2-rc.4",
+      "sourceCommit": "3f321d32bfe382212a8ed8785c1d47a5a300aa23"
     }
   ]
 }
