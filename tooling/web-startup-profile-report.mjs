@@ -21,11 +21,12 @@ export const ERROR_CODES = Object.freeze(['PROFILE_TIMEOUT', 'PROFILE_WRITE_FAIL
 export const PROFILE_STATES = Object.freeze(['present', 'missing', 'empty', 'invalid']);
 export const CATEGORY_ORDER = Object.freeze([
   'idle-or-wait',
-  'v8-compile',
+  'program-unattributed',
   'gc',
   'module-resolution',
   'module-eval',
-  'native-or-unknown',
+  'explicit-native',
+  'unattributed-no-url',
   'app-initialization',
 ]);
 
@@ -303,13 +304,17 @@ export function pairOffOn(records) {
   };
 }
 
-/** Maps one V8 call frame to the fixed E5 category. Only the frame url/functionName is consulted. */
+// The (program) pseudo-frame is NOT proof of V8 compilation. A missing URL is not
+// proof of native execution. E5's 2026-11-19 report used those labels incorrectly;
+// keep the historical CSV/matrix unchanged, and reprocess private profiles with
+// these conservative categories (docs/WEB_STARTUP_DIAGNOSIS.md).
+/** Classify the sampled leaf frame only; the ancestor context is reported separately. */
 function categoryForFrame(frame) {
   const source = isPlainObject(frame) ? frame : {};
   const functionName = typeof source.functionName === 'string' ? source.functionName : '';
   const url = typeof source.url === 'string' ? source.url : '';
   if (functionName === '(idle)') return 'idle-or-wait';
-  if (functionName === '(program)') return 'v8-compile';
+  if (functionName === '(program)') return 'program-unattributed';
   if (functionName === '(garbage collector)') return 'gc';
   if (url.includes('node:internal/modules')
     || functionName.includes('require')
@@ -322,7 +327,8 @@ function categoryForFrame(frame) {
     || /\.(?:mjs|js|cjs)(?:[?#]|$)/.test(url)) {
     return 'module-eval';
   }
-  if (functionName === '(native)' || url === '') return 'native-or-unknown';
+  if (functionName === '(native)') return 'explicit-native';
+  if (url === '') return 'unattributed-no-url';
   return 'app-initialization';
 }
 
@@ -340,23 +346,54 @@ export function categorizeProfile(profile) {
   if (samples.length === 0) return { ok: false, code: 'empty' };
 
   const frames = new Map();
+  const parent = new Map();
   for (const node of nodes) {
     if (!isPlainObject(node)) continue;
     const id = finiteInteger(node.id);
     if (id === null) continue;
     frames.set(id, isPlainObject(node.callFrame) ? node.callFrame : {});
+    if (Array.isArray(node.children)) {
+      for (const child of node.children) {
+        const childId = finiteInteger(child);
+        if (childId !== null && !parent.has(childId)) parent.set(childId, id);
+      }
+    }
   }
 
   const categories = Object.fromEntries(CATEGORY_ORDER.map((category) => [category, { samples: 0, timeUs: 0 }]));
+  // Extra evidence, never added to category totals. This answers "what was the
+  // closest identifiable caller of an unclassified leaf?" -- NOT "what took time?"
+  const contextOrder = ['module-resolution', 'module-eval', 'app-initialization', 'no-classified-ancestor'];
+  const unmappedCallerContexts = Object.fromEntries(contextOrder.map((category) => [category, { samples: 0, timeUs: 0 }]));
   let totalUs = 0;
+  let unmappedUs = 0;
   for (let i = 0; i < samples.length; i += 1) {
     const weight = finiteNumber(timeDeltas[i]);
     const timeUs = weight === null || weight < 0 ? 0 : weight;
     totalUs += timeUs;
-    const frame = frames.get(samples[i]) ?? {};
+    const sampleId = finiteInteger(samples[i]);
+    const frame = frames.get(sampleId) ?? {};
     const category = categoryForFrame(frame);
     categories[category].samples += 1;
     categories[category].timeUs += timeUs;
+    if (category === 'explicit-native' || category === 'unattributed-no-url') {
+      unmappedUs += timeUs;
+      let caller = sampleId;
+      let context = 'no-classified-ancestor';
+      const visited = new Set();
+      while (caller !== null && parent.has(caller) && !visited.has(caller)) {
+        visited.add(caller);
+        caller = parent.get(caller);
+        const callerCategory = categoryForFrame(frames.get(caller) ?? {});
+        if (callerCategory === 'module-resolution' || callerCategory === 'module-eval'
+          || callerCategory === 'app-initialization') {
+          context = callerCategory;
+          break;
+        }
+      }
+      unmappedCallerContexts[context].samples += 1;
+      unmappedCallerContexts[context].timeUs += timeUs;
+    }
   }
   if (totalUs <= 0) return { ok: false, code: 'invalid' };
   return {
@@ -365,6 +402,8 @@ export function categorizeProfile(profile) {
     totalUs,
     durationMs: totalUs / 1000,
     categories,
+    unmappedUs,
+    unmappedCallerContexts,
   };
 }
 
@@ -415,6 +454,32 @@ export function aggregateCategories(profileResults) {
       share: round(median(bucket.shares) ?? 0, 4),
       runs: bucket.runs,
     }));
+}
+
+/**
+ * Caller-context association for explicitly-native or URL-unattributed sampled leaves.
+ * Parent links are supplied by V8 profile nodes[].children. This is a call-site hint,
+ * not an attribution of native time to I/O or module resolution. No names/paths leave
+ * this module, only fixed categories and numeric ratios.
+ */
+export function aggregateUnmappedCallerContexts(profileResults) {
+  const results = (Array.isArray(profileResults) ? profileResults : [])
+    .map(value => isPlainObject(value) && value.ok === true ? value : categorizeProfile(value))
+    .filter(value => value?.ok === true && Number.isFinite(value.unmappedUs) && value.unmappedUs > 0);
+  const order = ['module-resolution', 'module-eval', 'app-initialization', 'no-classified-ancestor'];
+  if (!results.length) return [];
+  return order.map(category => {
+    let samples = 0;
+    let timeUs = 0;
+    const shares = [];
+    for (const result of results) {
+      const bucket = result.unmappedCallerContexts?.[category] ?? { samples: 0, timeUs: 0 };
+      samples += bucket.samples;
+      timeUs += bucket.timeUs;
+      shares.push(bucket.timeUs / result.unmappedUs);
+    }
+    return { category, samples, timeMs: round(timeUs / 1000, 3), share: round(median(shares) ?? 0, 4) };
+  }).filter(row => row.samples > 0);
 }
 
 function buildProfileIntegrity(records) {
@@ -489,6 +554,7 @@ function analyze(records, parsed) {
   const overhead = pairOffOn(records);
   const profileIntegrity = buildProfileIntegrity(records);
   const categories = aggregateCategories(records.profileResults ?? []);
+  const unmappedCallerContexts = aggregateUnmappedCallerContexts(records.profileResults ?? []);
   const cpuElu = buildCpuElu(records);
   const failed = records.filter((record) => record.result !== 'ok').length;
   const errorCodes = {};
@@ -505,6 +571,7 @@ function analyze(records, parsed) {
     variants,
     overhead,
     categories,
+    unmappedCallerContexts,
     profileIntegrity,
     cpuElu,
     dataQuality: {
@@ -620,6 +687,12 @@ export function toMatrix(summary, generatedAt = new Date().toISOString()) {
       timeMs: category.timeMs,
       share: category.share,
     })),
+    unmappedCallerContexts: (result.unmappedCallerContexts ?? []).map((context) => ({
+      category: context.category,
+      samples: context.samples,
+      timeMs: context.timeMs,
+      share: context.share,
+    })),
     dataQuality: {
       skipped: quality.skipped ?? 0,
       invalidEnums: quality.invalidEnums ?? 0,
@@ -657,6 +730,7 @@ export function formatSummary(summary) {
   const overhead = result.overhead ?? {};
   const integrity = result.profileIntegrity ?? {};
   const categories = result.categories ?? [];
+  const unmappedCallerContexts = result.unmappedCallerContexts ?? [];
   const cpuElu = result.cpuElu ?? [];
   const quality = result.dataQuality ?? {};
 
@@ -740,7 +814,16 @@ export function formatSummary(summary) {
       + pad(fixed(category.timeMs), 12) + ' ' + pad(ratioText(category.share * 100), 9) + ' ' + category.runs);
   }
   if (categories.length === 0) lines.push('(none: no readable profile files)');
-  lines.push('note: categories come from stack frame url/functionName only; raw frames are never printed.');
+  lines.push('note: (program) is NOT V8 compile; no-URL frames are NOT proven native. Classifications are leaf-frame heuristics, NOT syscall attribution.');
+
+  lines.push('');
+  lines.push('[unattributed caller contexts] (nearest classified ancestor; share of explicit-native + no-URL samples only)');
+  for (const context of unmappedCallerContexts) {
+    lines.push(pad(context.category, 25) + ' samples=' + context.samples
+      + ' time=' + fixed(context.timeMs) + ' ms share=' + ratioText(context.share * 100));
+  }
+  if (!unmappedCallerContexts.length) lines.push('(none: no available caller-context evidence)');
+  lines.push('note: caller association does NOT prove where CPU time was consumed; raw paths/functions are never printed.');
 
   lines.push('');
   lines.push('[data quality]');

@@ -11,6 +11,7 @@ import { fileURLToPath } from 'node:url';
 import {
   CSV_COLUMNS,
   aggregateCategories,
+  aggregateUnmappedCallerContexts,
   categorizeProfile,
   formatSummary,
   median,
@@ -307,13 +308,14 @@ test('categorizeProfile maps every frame by url/functionName and weights samples
   const time = (category) => result.categories[category].timeUs;
   const samples = (category) => result.categories[category].samples;
   assert.equal(time('idle-or-wait'), 1000);
-  assert.equal(time('v8-compile'), 2000);
+  assert.equal(time('program-unattributed'), 2000);
   assert.equal(time('gc'), 3000);
   assert.equal(time('module-resolution'), 13000);
   assert.equal(samples('module-resolution'), 2);
   assert.equal(time('module-eval'), 13000);
   assert.equal(samples('module-eval'), 2);
-  assert.equal(time('native-or-unknown'), 6000);
+  assert.equal(time('explicit-native'), 6000);
+  assert.equal(time('unattributed-no-url'), 0);
   assert.equal(time('app-initialization'), 7000);
   assert.equal(JSON.stringify(result).includes('node_modules'), false);
   assert.equal(JSON.stringify(result).includes('app://bundle'), false);
@@ -337,6 +339,56 @@ test('categorizeProfile distinguishes empty, invalid and weighted profiles', () 
   assert.equal(weighted.totalUs, 600);
   assert.equal(weighted.categories['app-initialization'].samples, 3);
   assert.equal(weighted.categories['app-initialization'].timeUs, 600);
+});
+
+
+test('pseudo program and missing-url frames are not misreported as compile or native', () => {
+  const result = categorizeProfile(cpuProfile([
+    { functionName: '(program)', url: '', deltaUs: 4000 },
+    { functionName: 'CplusplusCallback', url: '', deltaUs: 6000 },
+    { functionName: '(native)', url: '', deltaUs: 3000 },
+  ]));
+  assert.equal(result.categories['program-unattributed'].timeUs, 4000);
+  assert.equal(result.categories['unattributed-no-url'].timeUs, 6000);
+  assert.equal(result.categories['explicit-native'].timeUs, 3000);
+  assert.equal(result.unmappedUs, 9000);
+  assert.equal(result.unmappedCallerContexts['no-classified-ancestor'].timeUs, 9000);
+});
+
+test('unclassified leaf associates with nearest named caller without double-counting sample time', () => {
+  const profile = {
+    nodes: [
+      { id: 1, callFrame: { functionName: 'Module._resolveFilename', url: 'node:internal/modules/cjs/loader' }, children: [2] },
+      { id: 2, callFrame: { functionName: 'hostCallback', url: '' }, children: [] },
+      { id: 3, callFrame: { functionName: 'userEntry', url: 'file:///opt/dshapp/runtime/app.js' }, children: [4] },
+      { id: 4, callFrame: { functionName: '(native)', url: '' }, children: [] },
+    ],
+    samples: [2, 4],
+    timeDeltas: [3000, 7000],
+  };
+  const result = categorizeProfile(profile);
+  assert.equal(result.ok, true);
+  assert.equal(result.totalUs, 10000);
+  assert.equal(result.unmappedUs, 10000);
+  assert.equal(result.unmappedCallerContexts['module-resolution'].timeUs, 3000);
+  assert.equal(result.unmappedCallerContexts['module-eval'].timeUs, 7000);
+  const context = aggregateUnmappedCallerContexts([result]);
+  assert.equal(context.find(item => item.category === 'module-resolution').share, 0.3);
+  assert.equal(context.find(item => item.category === 'module-eval').share, 0.7);
+  assert.equal(JSON.stringify(result).includes('opt/dshapp'), false);
+  assert.equal(JSON.stringify(context).includes('userEntry'), false);
+});
+
+test('broken caller cycles cannot hang the attribution pass', () => {
+  const profile = {
+    nodes: [
+      { id: 1, callFrame: { functionName: 'callback', url: '' }, children: [2] },
+      { id: 2, callFrame: { functionName: 'callback', url: '' }, children: [1] },
+    ],
+    samples: [1], timeDeltas: [500],
+  };
+  const result = categorizeProfile(profile);
+  assert.equal(result.unmappedCallerContexts['no-classified-ancestor'].timeUs, 500);
 });
 
 test('aggregateCategories totals samples/time and medians per-run shares with zeros included', () => {

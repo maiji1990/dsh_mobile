@@ -320,3 +320,34 @@ CSV / 摘要 / matrix **绝不能**包含：
 结论：Web 启动是 **CPU 忙型**（ELU 100%、CPU 约 2/3 wall），不是空闲等待；样本主要落在 `native-or-unknown`，
 JS 侧模块解析 + 求值约 27%。inspector 无法证明 native 部分里有多少是 PRoot 文件访问——需要单独的 P2 机制旁证，
 不能把该分类直接解释为 syscall 耗时。采样本身开销 9.6%，因此 PROFILE 行只用于归因，不能代表正式版耗时。
+
+
+## E5 聚合口径修正（2026-11-19；与历史测试区分）
+
+上一轮分类器把 V8 的 `(program)` 伪帧直接标为 `v8-compile`，并把没有源码 URL 的全部栈帧并入
+`native-or-unknown`。**这两个标签都不能作为归因证据**。历史 2026-11-19 真机报告及 CSV/matrix
+保留原样，不覆盖、不伪造重算结果；旧报告的「编译 0.1%」「原生 67%」不能用于生产优化决策。
+
+修正后的离线报告分类为 `program-unattributed`、`explicit-native`、`unattributed-no-url`
+（`module-resolution` 和 `module-eval` 仍是启发式 leaf 分类）。同时新增
+`[unattributed caller contexts]`，利用 V8 的 `nodes[].children` 识别未归因叶子帧的
+**最近可分类调用者**，输出 `module-resolution` / `module-eval` / `app-initialization` /
+`no-classified-ancestor` 四个固定标签及数字。该关联**不能证明 CPU 消耗在调用者，也不能证明 PRoot I/O**；
+只用于确定下一步应深入查看哪类调用链，不与 primary categories 的耗时相加。
+
+原始 `.cpuprofile` 没有上传到 GitHub，因此 GitHub CI 无法重建修正后的真机分布。
+在之前的开发机 `artifacts/startup-profiles/` 保存原始 10 个 `.cpuprofile` 的前提下，
+使用**同一份 E5 JSONL** 与原始 profile 文件重新运行：
+
+```bash
+node tooling/web-startup-profile-report.mjs \
+  --log artifacts/e5/E5.jsonl \
+  --profiles artifacts/startup-profiles \
+  --out artifacts/e5/E5.reclassified.csv \
+  --summary artifacts/e5/E5.reclassified.summary.md \
+  --matrix artifacts/e5/E5.reclassified.matrix.json
+```
+
+只提交脱敏 CSV、summary、matrix；不要提交原始 `.cpuprofile`。如果目录或 JSONL 已丢失，
+明确标记 `not-reclassifiable`，不要从历史百分比反推新分类。**本修复只改离线解释，不改变 Web 启动、
+PRoot、Inspector、权限或用户会话，也不声称改善启动耗时。**
