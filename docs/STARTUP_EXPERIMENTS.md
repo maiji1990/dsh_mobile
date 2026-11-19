@@ -1,6 +1,6 @@
 # 启动实验诊断（STARTUP_EXPERIMENTS）
 
-> 状态：记录格式（JSONL schema 1）、C# 诊断器（固定变体、隔离目录、超时/取消/清理）、[report 工具](../tooling/startup-experiment-report.mjs)与[测试](../tests/tooling/startup-experiment-report.test.mjs)已落地；**2026-11-18 已在 Honor PTP-AN10 / Android 17 上完成 T0 + E1/E2/E3/E4 + T1 的首轮真机采集**，结果见[真机记录](../migration/parity/2026-11-18-PTP-AN10-A17-startup-experiments.md)（下文有摘要）。D–F 场景、CPU profile、compile cache 真实落盘后的收益仍**待真机验证**（[AGENTS.md](../AGENTS.md) 规则 9）。本诊断独立于生产启动，默认构建里没有入口，也不改变任何启动语义、权限审批或安全校验。
+> 状态：记录格式（JSONL schema 1）、C# 诊断器（固定变体、隔离目录、超时/取消/清理）、[report 工具](../tooling/startup-experiment-report.mjs)与[测试](../tests/tooling/startup-experiment-report.test.mjs)已落地；**2026-11-18 已在 Honor PTP-AN10 / Android 17 上完成 T0 + E1/E2/E3/E4 + T1 的首轮真机采集**，结果见[真机记录](../migration/parity/2026-11-18-PTP-AN10-A17-startup-experiments.md)（下文有摘要）。D–F 场景、CPU profile、compile cache 真实落盘后的收益仍**待真机验证**（[AGENTS.md](../AGENTS.md) 规则 9）。E5 Web Profile 的采集协议、报告工具与验收口径见 [WEB_STARTUP_DIAGNOSIS](WEB_STARTUP_DIAGNOSIS.md)；该切片**尚无真机 E5 数据**。本诊断独立于生产启动，默认构建里没有入口，也不改变任何启动语义、权限审批或安全校验。
 
 ## 目的与边界
 
@@ -119,7 +119,7 @@ E3-P 是生产配置对照：它使用与生产相同的命令、生产 `user-da
 
 - E1/E2 的 P50 与 E3/E4 的 P50 **不能相加**，也不能说「E2 + E3 = 用户等待」；Web 起点、探针轮询（约 100 ms）和超时边界都不同。
 - 同一个实验内才允许做配对差值；跨实验、跨 kind 一律 `not comparable`。
-- `durationMs` 是统一终点列；web 变体另有 `httpReadyMs`（同一终点），E4 的 A/C 配对按 `httpReadyMs` 计算，避免把 exit 行混进来。
+- `durationMs` 是统一终点列；**web 变体（E3/E4）的统计与配对统一用 `httpReadyMs`**（同一终点），exit 变体（E1/E2）继续用 `durationMs`。`httpReadyMs` 为 null 的 web 行不进入成功样本，也不参与配对，避免把 exit 行或未就绪行混进来。
 
 ## 记录字段（JSONL schema 1）
 
@@ -138,7 +138,7 @@ E3-P 是生产配置对照：它使用与生产相同的命令、生产 `user-da
 | `durationMs` | number | 失败/拒绝/无终点时 null | exit：Host 发起 → 进程退出；web：Host 发起 → 首次 HTTP 就绪 |
 | `spawnMs` | number | `Process.Start` 失败时 null | 仅 `Process.Start` 自身耗时，与 guest 工作分开 |
 | `guestFirstMarkerMs` | number | 没有 marker、marker 未出现或无法计时时 **必须 null** | guest 输出固定 marker 的时刻（相对本次发起） |
-| `httpReadyMs` | number | 仅 web；exit 或未就绪时 null | 首次 HTTP 就绪；E4 配对用这一列 |
+| `httpReadyMs` | number | 仅 web；exit 或未就绪时 null | 首次 HTTP 就绪；web 变体的统计与配对用这一列 |
 | `httpStatus` | int | 仅 web；未拿到时 null | 首次 HTTP 状态码（如 200/401） |
 | `userCpuMs` | number | 拿不到时 null，不估算 | 用户态 CPU 时间 |
 | `systemCpuMs` | number | 拿不到时 null，不估算 | 内核态 CPU 时间 |
@@ -251,10 +251,14 @@ CSV 列顺序固定为 **22 列**（前 5 列是元数据，缺失写空）：
 
 ### 5. 摘要（stderr）包含什么
 
-1. `[variants]`：每个 variant 一行，`kind`、`成功/尝试`、P50、P95、min/max。只统计 `result = ok` 且 `durationMs` 非 null 的样本；nearest-rank，P50/P95 保留 1 位小数。
-2. `[paired differences]`：只有同一 `experiment` + 同一 `kind`、且 `iteration` 能一一对应时才逐对相减（后者减前者），输出 `n`、配对 P50 差值、P95 差值，并写 `paired, same endpoint`。不同 kind 或无法配对写 `not comparable`；不同 endpoint 的 P50 绝不直接相减。
+1. `[variants]`：每个 variant 一行，`kind`、`成功/尝试`、P50、P95、min/max。exit 只统计 `result = ok` 且 `durationMs` 非 null 的样本；**web 只统计 `result = ok` 且 `httpReadyMs` 非 null 的样本**。nearest-rank，P50/P95 保留 1 位小数。
+2. `[paired differences]`：只有同一 `experiment` + 同一 `kind`、且 `iteration` 能一一对应时才逐对相减（后者减前者），输出 `n`、配对 P50 差值、P95 差值，并写 `paired, same endpoint`。**差值按 kind 选终点：exit 用 `durationMs`，web 用 `httpReadyMs`**。不同 kind 或无法配对写 `not comparable`；不同 endpoint 的 P50 绝不直接相减。
 3. `[E1/E2 screening]`：E1-2 的 P50 是否 > 1000 ms，E2-1 / E2-2 的 P50 是否 > 1000 ms；结尾固定写「这是筛查，不是因果结论」。
-4. `[E4 cache]`：A 与 C 按 `webReadyMs` 做同样的配对差值。若 C 的 `cacheFileCount` 为 null 或 0，或 `cacheMode != warm`，必须打印 `E4-C not-evaluable: 缓存未证明落盘`，并且不给出热启动结论。
+4. `[E4 cache]`：A 与 C 按 `httpReadyMs` 做同样的配对差值。结论依据是 `webCacheVerified` 三态，而不是只看文件数：
+   - `verified`：只有记录里显式 `webCacheVerified === true`（新数据将来提供；旧记录没有该字段）；
+   - `unavailable`：所有 `cacheFileCount` 为 null 或缺失；
+   - `unverified`：有文件数（例如 > 0）但没有 Web 模块覆盖证明。
+   旧数据通常落在 `unverified`，必须打印 `webCacheVerified: unverified: Web 模块覆盖未证明`，不给出热启动收益结论。`cacheEvaluable` 字段保留以兼容旧消费者，但不是结论依据。
 5. `[data quality]`：跳过行数（按原因分解）、缺字段计数、`result != ok` 行数；每个 variant 成功样本 < 10 时打印 `insufficient samples`。
 
 ### 6. matrix JSON
@@ -278,7 +282,8 @@ CSV 列顺序固定为 **22 列**（前 5 列是元数据，缺失写空）：
           "p95Ms": 1200.0,
           "minMs": 700.1,
           "maxMs": 1200.0,
-          "cacheEvaluable": false
+          "cacheEvaluable": false,
+          "webCacheVerified": "unavailable"
         }
       ],
       "notes": [
@@ -287,7 +292,7 @@ CSV 列顺序固定为 **22 列**（前 5 列是元数据，缺失写空）：
       ]
     }
 
-`cacheEvaluable` 只有 E4-C 可能为 `true`；其它变体固定 `false`。`generatedAt` 是工具运行时刻，不是采集时刻。
+`cacheEvaluable` 只有 E4-C 可能为 `true`；其它变体固定 `false`，保留它只为兼容旧消费者。`webCacheVerified` 每个 variant 都有，取值为 `verified` / `unverified` / `unavailable`：只有记录显式 `webCacheVerified === true` 才是 `verified`，`cacheFileCount` 全为 null/缺失是 `unavailable`，其余是 `unverified`。**E4 的结论只看 `webCacheVerified`，不看 `cacheEvaluable`。** `generatedAt` 是工具运行时刻，不是采集时刻。
 
 ## 判定规则与决策门槛（方案第 11 节）
 
@@ -300,7 +305,7 @@ CSV 列顺序固定为 **22 列**（前 5 列是元数据，缺失写空）：
 | G2 DSH 入口 | E2-1 或 E2-2 P50 > 1000 ms | DSH 模块解析/命令表加载是一阶成本 | 用 E2-2 vs E2-3 看 `--help` → `--dump-config` 的配置/插件增量 |
 | G3 生产配置 | E3-P vs E3-0，同 kind、可配对，配对 P50 差值明显 | 生产配置/用户数据可能影响 Web 启动 | 先查配置、插件、MCP、工作区；不要直接改生产启动 |
 | G4 覆盖层 | E3-1 vs E3-0，同 kind、可配对，配对 P50 差值明显 | overlay / patch 有可测成本 | 检查已登记覆盖层；保持安全校验不变 |
-| G5 缓存 | E4-C 证明 `cacheMode=warm` 且 `cacheFileCount > 0`，且 A/C 的配对差值稳定 | compile cache 是候选优化点 | 只有在 T1 生产路径复测后才考虑接入；否则记录 not-evaluable |
+| G5 缓存 | E4-C 的 `webCacheVerified = verified`（显式 Web 模块覆盖证明），且 A/C 的 `httpReadyMs` 配对差值稳定 | compile cache 是候选优化点 | 只有在 T1 生产路径复测后才考虑接入；`unverified` / `unavailable` 一律记录「Web 模块覆盖未证明」 |
 | G6 生产回归 | T1 vs T0，同 kind、同 endpoint、可配对，且样本足够 | 变更是否真的改善了生产启动 | 保留或回退；不以 E1–E4 的局部差值代替 T1 |
 
 使用规则：
@@ -308,7 +313,7 @@ CSV 列顺序固定为 **22 列**（前 5 列是元数据，缺失写空）：
 - 先看 `result` 和样本量：`result != ok` 不进入 P50/P95；成功样本 < 10 先补采。
 - 只看同一 `(experiment, kind)` 的配对差值；跨实验、跨 kind、iteration 对不齐都写 `not comparable`。
 - 1000 ms 是筛查阈值，不是「超过就改、低于就安全」的发布门槛。
-- E4-C 没证明缓存落盘时，`E4-C not-evaluable: 缓存未证明落盘` 就是最终结论；不得把 A/C 的差值解释成热启动收益。
+- E4-C 的 `webCacheVerified` 不是 `verified` 时，摘要里的 `unverified: Web 模块覆盖未证明` / `unavailable: cacheFileCount 全为 null` 就是最终结论；不得把 A/C 的差值解释成热启动收益。
 - T1 是唯一能对「生产启动是否变快/变慢」下结论的格子；E1–E4 只回答「哪一层值得查」。
 
 ## 隐私禁记清单
@@ -350,7 +355,7 @@ E3/E4 的终点是**首次 HTTP 状态**，不是 `onPageFinished`，更不是�
 
 - 同一轮矩阵固定设备、ROM、APK commit、Node/DSH runtime 版本；不同构建不要混在同一个结论里。
 - 每次测量前确认 DSH 已停止、3080 空闲；E3-P 会使用生产配置，先备份重要数据。
-- E4-B 的冷缓存只有 1 次是设计使然（重置缓存后第一次），不计算 P50；如果 `cacheFileCount = 0`，E4-C 直接记 `not-evaluable`，不要补跑成「热」。
+- E4-B 的冷缓存只有 1 次是设计使然（重置缓存后第一次），不计算 P50；如果 `cacheFileCount = 0` 或没有显式 `webCacheVerified=true`，E4-C 记 `unverified: Web 模块覆盖未证明`，不要补跑成「热」。
 - 成功样本 < 10 时报告会写 `insufficient samples`；先补采，不要用 3–5 次的结果下结论（小样本 P95 等于最大值）。
 - 没有真机日志/JSONL 的格子写「待真机验证」，CI、模拟器、chroot 数据不能替代真机（规则 9）。
 
@@ -360,10 +365,10 @@ E3/E4 的终点是**首次 HTTP 状态**，不是 `onPageFinished`，更不是�
 - **PRoot 下无法 strace**：PRoot 自己处理 syscall/路径翻译，`strace` 通过 PRoot 不可用或不可信；本工具不做 syscall 级归因。
 - **HTTP 就绪 ≠ 页面可交互**：健康探针约 100 ms 轮询 + 250/600 ms 连接/读取超时，`httpReadyMs` 有量化误差；不要用它判断首屏体验。
 - **Web 进程被探针后结束**：E3/E4 拿到首个 HTTP 状态后主动结束进程，`exitCode` 不能当作 DSH 正常退出；E4-B 的缓存落盘也必须以文件计数为准，不能假设进程退出会 flush。
-- **E4-C 可能证明不了缓存**：如果预热后 `cacheFileCount = 0`，工具只能写 `not-evaluable`；这不是失败，而是「没有证据」。
+- **E4-C 可能证明不了缓存**：如果预热后 `cacheFileCount = 0` 或没有显式 `webCacheVerified=true`，工具只能写 `unverified: Web 模块覆盖未证明`；这不是失败，而是「没有证据」。
 - **E3-P 会碰生产配置**：它是生产配置对照，可能写日志/会话；重要设备先备份，或只跑 E3-0/E3-1。
 - **单次方差大**：少于 10 次的结果不具代表性；P95 在小样本下就是最大值。
-- **真机覆盖**：当前没有 E1–E4 的真机数据；Android 17 / 厂商 ROM 的 PRoot、调度、温控差异只能靠真机矩阵覆盖。
+- **真机覆盖**：E1–E4 已有 2026-11-18 的首轮真机数据；E5 Web Profile **尚无真机数据**。Android 17 / 厂商 ROM 的 PRoot、调度、温控差异只能靠真机矩阵覆盖。
 
 ## 相关文件
 
@@ -378,6 +383,7 @@ E3/E4 的终点是**首次 HTTP 状态**，不是 `onPageFinished`，更不是�
 - 诊断构建开关：[src/DshMobile.Android/DshMobile.Android.csproj](../src/DshMobile.Android/DshMobile.Android.csproj)
 - PRoot 前缀与隔离 bind：[src/DshMobile.Runtime/Guest/ProotCommandBuilder.cs](../src/DshMobile.Runtime/Guest/ProotCommandBuilder.cs)
 - 生产启动观测：[docs/STARTUP_PERF.md](STARTUP_PERF.md)、[tooling/startup-perf.mjs](../tooling/startup-perf.mjs)
+- E5 Web Profile 协议与验收：[docs/WEB_STARTUP_DIAGNOSIS.md](WEB_STARTUP_DIAGNOSIS.md)、[tooling/web-startup-profile-report.mjs](../tooling/web-startup-profile-report.mjs)
 - 规则与证据要求：[AGENTS.md](../AGENTS.md)（规则 5、9、11）、[docs/TEST_PLAN.md](TEST_PLAN.md)、[docs/COMPATIBILITY.md](COMPATIBILITY.md)
 
-最后更新：2026-11-18
+最后更新：2026-11-19

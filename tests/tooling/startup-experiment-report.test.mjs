@@ -16,6 +16,7 @@ import {
   summarize,
   toCsv,
   toMatrix,
+  webCacheStatus,
 } from '../../tooling/startup-experiment-report.mjs';
 
 const repo = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -50,6 +51,7 @@ function rec(variant, durationMs = 100, extra = {}) {
     cacheMode: 'unknown',
     cacheFileCount: null,
     cacheBytes: null,
+    webCacheVerified: null,
     startedAt: '2026-11-18T02:03:04.567Z',
     note: null,
     ...extra,
@@ -274,36 +276,37 @@ test('E1/E2 screening states the 1000 ms threshold and says it is screening, not
   assert.match(text, /这是筛查，不是因果结论/);
 });
 
-for (const [name, override] of [
-  ['cacheFileCount=0', { cacheFileCount: 0 }],
-  ['cacheFileCount=null', { cacheFileCount: null }],
-  ['cacheMode!=warm', { cacheFileCount: 12, cacheMode: 'cold' }],
+for (const [name, override, status] of [
+  ['cacheFileCount=0', { cacheFileCount: 0 }, 'unverified'],
+  ['cacheFileCount=null', { cacheFileCount: null }, 'unavailable'],
+  ['cacheMode!=warm', { cacheFileCount: 12, cacheMode: 'cold' }, 'unverified'],
 ]) {
-  test('E4-C is not evaluable when ' + name, () => {
+  test('E4-C has no conclusion when ' + name, () => {
     const records = [
       rec('E4-A', 1000, { iteration: 1, cacheMode: 'off' }),
       rec('E4-C', 800, { iteration: 1, cacheMode: 'warm', cacheFileCount: 12, cacheBytes: 4096, ...override }),
     ];
     const summary = summarize(records);
     assert.equal(summary.e4.cacheEvaluable, false);
-    assert.equal(summary.e4.message, 'E4-C not-evaluable: 缓存未证明落盘');
+    assert.equal(summary.e4.webCacheVerified, status);
     assert.equal(summary.e4.pair, null);
     const text = formatSummary(summary);
-    assert.match(text, /E4-C not-evaluable: 缓存未证明落盘/);
+    assert.match(text, /webCacheVerified: (unverified|unavailable): .*Web 模块覆盖未证明/);
     assert.doesNotMatch(text, /收益/);
     assert.doesNotMatch(text, /E4-A vs E4-C/);
   });
 }
 
-test('E4-A vs E4-C uses webReadyMs only after the warm cache is proven on disk', () => {
+test('E4-A vs E4-C uses httpReadyMs only after Web cache coverage is verified', () => {
   const records = [
     rec('E4-A', 1000, { iteration: 1, httpReadyMs: 1000, cacheMode: 'off' }),
     rec('E4-A', 1200, { iteration: 2, httpReadyMs: 1200, cacheMode: 'off' }),
-    rec('E4-C', 800, { iteration: 1, httpReadyMs: 800, cacheMode: 'warm', cacheFileCount: 12, cacheBytes: 4096 }),
-    rec('E4-C', 900, { iteration: 2, httpReadyMs: 900, cacheMode: 'warm', cacheFileCount: 12, cacheBytes: 4096 }),
+    rec('E4-C', 800, { iteration: 1, httpReadyMs: 800, cacheMode: 'warm', cacheFileCount: 12, cacheBytes: 4096, webCacheVerified: true }),
+    rec('E4-C', 900, { iteration: 2, httpReadyMs: 900, cacheMode: 'warm', cacheFileCount: 12, cacheBytes: 4096, webCacheVerified: true }),
   ];
   const summary = summarize(records);
   assert.equal(summary.e4.cacheEvaluable, true);
+  assert.equal(summary.e4.webCacheVerified, 'verified');
   assert.equal(summary.e4.cacheFiles, 12);
   assert.equal(summary.e4.cacheBytes, 4096);
   assert.equal(summary.e4.pair.comparable, true);
@@ -311,20 +314,116 @@ test('E4-A vs E4-C uses webReadyMs only after the warm cache is proven on disk',
   assert.equal(summary.e4.pair.p50Diff, -300);
   assert.equal(summary.e4.pair.p95Diff, -200);
   const text = formatSummary(summary);
-  assert.match(text, /E4-A vs E4-C \(webReadyMs\): paired, same endpoint; n=2; ΔP50=-300\.0 ms; ΔP95=-200\.0 ms/);
+  assert.match(text, /E4-A vs E4-C \(httpReadyMs\): paired, same endpoint; n=2; ΔP50=-300\.0 ms; ΔP95=-200\.0 ms/);
   assert.match(text, /E4-C cache: mode=warm, files=12, bytes=4096/);
+  assert.match(text, /webCacheVerified: verified/);
 });
 
-test('E4-A vs E4-C is not comparable when webReadyMs is missing', () => {
+test('E4-A vs E4-C is not comparable when httpReadyMs is missing', () => {
   const records = [
     rec('E4-A', 1000, { iteration: 1, httpReadyMs: null, cacheMode: 'off' }),
-    rec('E4-C', 800, { iteration: 1, httpReadyMs: 800, cacheMode: 'warm', cacheFileCount: 12 }),
+    rec('E4-C', 800, { iteration: 1, httpReadyMs: 800, cacheMode: 'warm', cacheFileCount: 12, webCacheVerified: true }),
   ];
   const summary = summarize(records);
   assert.equal(summary.e4.cacheEvaluable, true);
+  assert.equal(summary.e4.webCacheVerified, 'verified');
   assert.equal(summary.e4.pair.comparable, false);
   assert.equal(summary.e4.pair.reason, 'no paired iterations');
-  assert.match(formatSummary(summary), /E4-A vs E4-C \(webReadyMs\): not comparable/);
+  assert.match(formatSummary(summary), /E4-A vs E4-C \(httpReadyMs\): not comparable/);
+});
+
+test('web variant statistics and paired differences use httpReadyMs, not durationMs', () => {
+  const records = [
+    rec('E3-0', 5000, { iteration: 1, httpReadyMs: 16000 }),
+    rec('E3-0', 5100, { iteration: 2, httpReadyMs: null }),
+    rec('E3-1', 7000, { iteration: 1, httpReadyMs: 17000 }),
+  ];
+  const summary = summarize(records);
+  const group = summary.groups.find((item) => item.variant === 'E3-0');
+  assert.equal(group.metric, 'httpReadyMs');
+  assert.equal(group.successes, 1);
+  assert.equal(group.p50, 16000);
+  assert.equal(group.min, 16000);
+  assert.equal(group.max, 16000);
+  const pair = summary.pairs.find((item) => item.a === 'E3-0' && item.b === 'E3-1');
+  assert.equal(pair.metric, 'httpReadyMs');
+  assert.equal(pair.comparable, true);
+  assert.equal(pair.n, 1);
+  assert.equal(pair.p50Diff, 1000);
+  assert.match(formatSummary(summary), /E3-0\s+web\s+1\/2\s+16000\.0/);
+  assert.match(formatSummary(summary), /E3-0 vs E3-1: paired, same endpoint; n=1; ΔP50=\+1000\.0 ms/);
+});
+
+test('exit variants keep durationMs even when a web metric is present', () => {
+  const summary = summarize([
+    rec('E1-2', 120, { iteration: 1, httpReadyMs: 9999 }),
+  ]);
+  const group = summary.groups.find((item) => item.variant === 'E1-2');
+  assert.equal(group.metric, 'durationMs');
+  assert.equal(group.p50, 120);
+});
+
+test('E4 old rows without webCacheVerified stay unverified and never claim a gain', () => {
+  const records = [
+    rec('E4-A', 1000, { iteration: 1, cacheMode: 'off' }),
+    rec('E4-C', 800, { iteration: 1, cacheMode: 'warm', cacheFileCount: 12, cacheBytes: 4096 }),
+  ];
+  const summary = summarize(records);
+  assert.equal(summary.e4.cacheEvaluable, true);
+  assert.equal(summary.e4.webCacheVerified, 'unverified');
+  assert.equal(summary.e4.pair, null);
+  assert.equal(summary.e4.message, 'E4-C unverified: Web 模块覆盖未证明');
+  const text = formatSummary(summary);
+  assert.match(text, /webCacheVerified: unverified: Web 模块覆盖未证明/);
+  assert.doesNotMatch(text, /收益/);
+  assert.doesNotMatch(text, /E4-A vs E4-C/);
+  const matrix = toMatrix(summary, {}, '2026-11-18T00:00:00.000Z');
+  const c = matrix.variants.find((item) => item.variant === 'E4-C');
+  assert.equal(c.cacheEvaluable, true);
+  assert.equal(c.webCacheVerified, 'unverified');
+});
+
+test('E4 is unavailable when every cacheFileCount is null', () => {
+  const records = [
+    rec('E4-A', 1000, { iteration: 1, cacheMode: 'off' }),
+    rec('E4-C', 800, { iteration: 1, cacheMode: 'warm', cacheFileCount: null, cacheBytes: null }),
+  ];
+  const summary = summarize(records);
+  assert.equal(summary.e4.cacheEvaluable, false);
+  assert.equal(summary.e4.webCacheVerified, 'unavailable');
+  assert.equal(summary.e4.pair, null);
+  const text = formatSummary(summary);
+  assert.match(text, /webCacheVerified: unavailable: cacheFileCount 全为 null（Web 模块覆盖未证明）/);
+  assert.doesNotMatch(text, /收益/);
+});
+
+test('webCacheStatus is verified only when every row carries webCacheVerified=true', () => {
+  assert.equal(webCacheStatus([]), 'unavailable');
+  assert.equal(webCacheStatus([{ webCacheVerified: true, cacheFileCount: 12 }]), 'verified');
+  assert.equal(webCacheStatus([
+    { webCacheVerified: true, cacheFileCount: 12 },
+    { webCacheVerified: true, cacheFileCount: 12 },
+  ]), 'verified');
+  assert.equal(webCacheStatus([{ webCacheVerified: null, cacheFileCount: 12 }]), 'unverified');
+  assert.equal(webCacheStatus([
+    { webCacheVerified: true, cacheFileCount: 12 },
+    { webCacheVerified: null, cacheFileCount: 12 },
+  ]), 'unverified');
+  assert.equal(webCacheStatus([{ webCacheVerified: null, cacheFileCount: null }]), 'unavailable');
+  assert.equal(webCacheStatus([{ webCacheVerified: null }]), 'unavailable');
+  assert.equal(webCacheStatus([{ webCacheVerified: false, cacheFileCount: 0 }]), 'unverified');
+});
+
+test('matrix exposes webCacheVerified per variant', () => {
+  const summary = summarize([
+    rec('E1-0', 100, { iteration: 1 }),
+    rec('E4-A', 1000, { iteration: 1, cacheMode: 'off' }),
+    rec('E4-C', 800, { iteration: 1, cacheMode: 'warm', cacheFileCount: 12, webCacheVerified: true }),
+  ]);
+  const matrix = toMatrix(summary, {}, '2026-11-18T00:00:00.000Z');
+  assert.equal(matrix.variants.find((item) => item.variant === 'E1-0').webCacheVerified, 'unavailable');
+  assert.equal(matrix.variants.find((item) => item.variant === 'E4-A').webCacheVerified, 'unavailable');
+  assert.equal(matrix.variants.find((item) => item.variant === 'E4-C').webCacheVerified, 'verified');
 });
 
 test('CSV has the fixed 22 columns in the documented order', () => {
@@ -387,13 +486,16 @@ test('matrix JSON has the documented schema, metadata, variants and notes', () =
   assert.equal(matrix.dsh, '0.2');
   assert.deepEqual(Object.keys(matrix.variants[0]), [
     'experiment', 'variant', 'kind', 'attempts', 'successes', 'p50Ms', 'p95Ms', 'minMs', 'maxMs', 'cacheEvaluable',
+    'webCacheVerified',
   ]);
   const e1 = matrix.variants.find((item) => item.variant === 'E1-0');
   assert.equal(e1.p50Ms, 100);
   assert.equal(e1.p95Ms, 100);
   assert.equal(e1.cacheEvaluable, false);
+  assert.equal(e1.webCacheVerified, 'unavailable');
   const c = matrix.variants.find((item) => item.variant === 'E4-C');
   assert.equal(c.cacheEvaluable, true);
+  assert.equal(c.webCacheVerified, 'unverified');
   assert.ok(matrix.notes.some((note) => /not an SLA/.test(note)));
 });
 
