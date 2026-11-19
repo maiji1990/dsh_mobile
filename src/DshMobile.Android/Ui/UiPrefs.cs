@@ -54,4 +54,41 @@ public static class UiPrefs
         editor.PutString(ChannelKey, channel == "preview" ? "preview" : "stable");
         editor.Apply();
     }
+
+    private const string AutoCheckKey = "auto_check_updates";
+    private const string LastAutoCheckKey = "last_auto_check_utc_ms";
+
+    /// <summary>ADR-0029: 自动检查通道清单的最小节流间隔（6 小时）。</summary>
+    public static readonly TimeSpan AutoCheckInterval = TimeSpan.FromHours(6);
+
+    /// <summary>启动 / 回到前台时是否静默检查签名通道清单（默认开启；只读拉取清单，不自动安装）。</summary>
+    public static bool AutoCheckUpdatesEnabled(Context context) =>
+        context.GetSharedPreferences(File, FileCreationMode.Private)!.GetBoolean(AutoCheckKey, true);
+
+    public static void SetAutoCheckUpdatesEnabled(Context context, bool enabled)
+    {
+        var editor = context.GetSharedPreferences(File, FileCreationMode.Private)!.Edit()!;
+        editor.PutBoolean(AutoCheckKey, enabled);
+        editor.Apply();
+    }
+
+    public static long LastAutoCheckUtcMs(Context context) =>
+        context.GetSharedPreferences(File, FileCreationMode.Private)!.GetLong(LastAutoCheckKey, 0L);
+
+    public static void SetLastAutoCheckUtcMs(Context context, long utcMs)
+    {
+        var editor = context.GetSharedPreferences(File, FileCreationMode.Private)!.Edit()!;
+        editor.PutLong(LastAutoCheckKey, utcMs);
+        editor.Apply();
+    }
+
+    public static bool ShouldAutoCheckUpdates(Context context, DateTimeOffset nowUtc)
+    {
+        if (!AutoCheckUpdatesEnabled(context))
+        {
+            return false;
+        }
+        var lastMs = LastAutoCheckUtcMs(context);
+        return nowUtc.ToUnixTimeMilliseconds() - lastMs >= (long)AutoCheckInterval.TotalMilliseconds;
+    }
 }

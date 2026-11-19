@@ -127,7 +127,7 @@ public sealed class UpdateCheckerTests : IDisposable
     public async Task NoTrustedKey_IsReported_WithoutGoingOnline()
     {
         var source = new FakeSource(() => throw new InvalidOperationException("must not fetch"));
-        var r = await Checker(_ => source, ReleaseTrust.BuiltIn).CheckAsync("stable", CancellationToken.None);
+        var r = await Checker(_ => source, ReleaseTrust.FromBase64()).CheckAsync("stable", CancellationToken.None);
         Assert.Equal(UpdateErrorCodes.NoTrustedKeys, r.Code);
         Assert.Equal(0, source.Fetches);
         Assert.Equal("update check (stable) FAILED UPDATE_NO_TRUSTED_KEYS: this build pins no release public key; online updates are unavailable",

@@ -53,7 +53,23 @@ public sealed class UpdateCoordinator : IDisposable
     public UpdateState? SettleInterrupted() => _state.SettleInterrupted(_time.GetUtcNow());
 
     /// <param name="stopConfirmed">The user agreed to stop DSH for the update.</param>
-    public async Task<UpdateResult> InstallDshAsync(ReleaseDiscoveryResult check, string channel, bool stopConfirmed, IProgress<UpdateProgress>? progress, CancellationToken ct)
+    public Task<UpdateResult> InstallDshAsync(ReleaseDiscoveryResult check, string channel, bool stopConfirmed, IProgress<UpdateProgress>? progress, CancellationToken ct) =>
+        InstallCoreAsync(check, channel, stopConfirmed, dshOnly: true, progress, ct);
+
+    /// <summary>
+    /// ADR-0029: 按 <see cref="UpdatePlanner.Plan"/> 执行在线安装事务（支持 Runtime 单项、DSH 单项、以及 Runtime + DSH 联合安装）。
+    /// 所有涉及的层均以 <c>holdForProbe</c> 模式暂存旧层，经端到端健康探测通过后才依次提交；任一步失败或中途强杀均自动恢复到更新前状态。
+    /// </summary>
+    public Task<UpdateResult> InstallPlanAsync(ReleaseDiscoveryResult check, string channel, bool stopConfirmed, IProgress<UpdateProgress>? progress, CancellationToken ct) =>
+        InstallCoreAsync(check, channel, stopConfirmed, dshOnly: false, progress, ct);
+
+    private async Task<UpdateResult> InstallCoreAsync(
+        ReleaseDiscoveryResult check,
+        string channel,
+        bool stopConfirmed,
+        bool dshOnly,
+        IProgress<UpdateProgress>? progress,
+        CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(check);
         if (!await _one.WaitAsync(0, CancellationToken.None).ConfigureAwait(false))
@@ -66,31 +82,73 @@ public sealed class UpdateCoordinator : IDisposable
             {
                 return new UpdateResult(false, check.Code, check.Message ?? "no verified release", "", null);
             }
-            if (UpdatePlanner.Plan(check.Choices).Dsh is not { } target)
+            var plan = UpdatePlanner.Plan(check.Choices);
+            var targetRuntime = dshOnly ? null : plan.Runtime;
+            var targetDsh = plan.Dsh;
+            if (targetRuntime is null && targetDsh is null)
             {
-                return new UpdateResult(false, UpdateTransactionCodes.NothingToInstall, "no applicable DSH update", "", null);
+                return new UpdateResult(false, UpdateTransactionCodes.NothingToInstall, dshOnly ? "no applicable DSH update" : "no applicable update", "", null);
             }
+
+            var targetKind = targetRuntime is not null && targetDsh is not null ? "runtime+dsh"
+                : targetRuntime is not null ? targetRuntime.Kind
+                : targetDsh!.Kind;
+            var targetVersion = targetRuntime is not null && targetDsh is not null ? $"{targetRuntime.Version}+{targetDsh.Version}"
+                : targetRuntime is not null ? targetRuntime.Version
+                : targetDsh!.Version;
+            var targetSha = (targetDsh ?? targetRuntime)!.Sha256;
+            var totalBytes = (targetRuntime?.Size ?? 0) + (targetDsh?.Size ?? 0);
+
             var started = _time.GetUtcNow();
             void Record(string phase, string? code = null, string? message = null)
             {
-                _state.Write(new UpdateState(phase, target.Kind, target.Version, target.Sha256, channel, started, _time.GetUtcNow(), code, message));
+                _state.Write(new UpdateState(phase, targetKind, targetVersion, targetSha, channel, started, _time.GetUtcNow(), code, message));
                 progress?.Report(new UpdateProgress(phase, message));
             }
             UpdateResult End(bool ok, string code, string? message, string phase, bool restarted = false)
             {
                 Record(phase, ok ? null : code, message);
-                return new UpdateResult(ok, code, message, phase, _runtime.State.Current.DshVersion, restarted);
+                var installedVersion = targetRuntime is not null && targetDsh is null
+                    ? InstalledVersionsReader.Read(_runtime.Layout, "0.0.0").Runtime ?? _runtime.State.Current.DshVersion
+                    : _runtime.State.Current.DshVersion;
+                return new UpdateResult(ok, code, message, phase, installedVersion, restarted);
             }
 
             // 1. Download (the only cancellable phase).
             Record(UpdatePhases.Downloading);
-            var dl = await _downloader.DownloadAsync(release, target,
-                progress is null ? null : new Relay(p => progress.Report(new UpdateProgress(UpdatePhases.Downloading, null, p.Received, p.Total))), ct).ConfigureAwait(false);
-            if (!dl.Ok)
+            DownloadResult? runtimeDownload = null;
+            if (targetRuntime is not null)
             {
-                return End(false, dl.Code, dl.Message, UpdatePhases.Failed);
+                runtimeDownload = await _downloader.DownloadAsync(
+                    release,
+                    targetRuntime,
+                    progress is null ? null : new Relay(p => progress.Report(new UpdateProgress(UpdatePhases.Downloading, targetRuntime.Archive, p.Received, totalBytes))),
+                    ct).ConfigureAwait(false);
+                if (!runtimeDownload.Ok)
+                {
+                    return End(false, runtimeDownload.Code, runtimeDownload.Message, UpdatePhases.Failed);
+                }
             }
-            Record(UpdatePhases.Verified, message: $"{target.Archive} sha256 {target.Sha256[..12]}…");
+
+            DownloadResult? dshDownload = null;
+            if (targetDsh is not null)
+            {
+                var baseBytes = targetRuntime?.Size ?? 0;
+                dshDownload = await _downloader.DownloadAsync(
+                    release,
+                    targetDsh,
+                    progress is null ? null : new Relay(p => progress.Report(new UpdateProgress(UpdatePhases.Downloading, targetRuntime is null ? null : targetDsh.Archive, baseBytes + p.Received, totalBytes))),
+                    ct).ConfigureAwait(false);
+                if (!dshDownload.Ok)
+                {
+                    return End(false, dshDownload.Code, dshDownload.Message, UpdatePhases.Failed);
+                }
+            }
+
+            var verifiedDetail = targetRuntime is not null && targetDsh is not null
+                ? $"{targetRuntime.Archive} sha256 {targetRuntime.Sha256[..12]}… + {targetDsh.Archive} sha256 {targetDsh.Sha256[..12]}…"
+                : $"{(targetDsh ?? targetRuntime)!.Archive} sha256 {targetSha[..12]}…";
+            Record(UpdatePhases.Verified, message: verifiedDetail);
 
             // 2. Stop what runs on the layer, only with the user's consent. From here on nothing is cancellable.
             var wasRunning = _runtime.HostOwnsProcesses || _runtime.State.Current.State is RuntimeState.Running or RuntimeState.Starting;
@@ -110,37 +168,94 @@ public sealed class UpdateCoordinator : IDisposable
 
             // 3. Swap, held.
             Record(UpdatePhases.Swapping);
-            var installed = await _runtime.InstallDshUpdateAsync(dl.File!, CancellationToken.None).ConfigureAwait(false);
-            if (!installed.Ok)
+            var runtimeHeld = false;
+            if (runtimeDownload is not null)
             {
-                var r = End(false, installed.Code, installed.Message, UpdatePhases.Failed);
-                return wasRunning ? await RestartAsync(r).ConfigureAwait(false) : r;
+                var rtInstalled = await _runtime.InstallRuntimeUpdateAsync(runtimeDownload.File!, null, CancellationToken.None).ConfigureAwait(false);
+                if (!rtInstalled.Ok)
+                {
+                    var r = End(false, rtInstalled.Code, rtInstalled.Message, UpdatePhases.Failed);
+                    return wasRunning ? await RestartAsync(r).ConfigureAwait(false) : r;
+                }
+                runtimeHeld = true;
             }
-            if (!installed.Changed)
+
+            var dshHeld = false;
+            DshMobile.Runtime.Layers.DshLayerResult? dshInstalled = null;
+            if (dshDownload is not null)
             {
-                var r = End(true, RuntimeErrorCodes.Ok, $"DSH {installed.Version} is already installed", UpdatePhases.Committed);
+                dshInstalled = await _runtime.InstallDshUpdateAsync(dshDownload.File!, CancellationToken.None).ConfigureAwait(false);
+                if (!dshInstalled.Ok)
+                {
+                    if (runtimeHeld)
+                    {
+                        _ = await _runtime.FinishRuntimeUpdateAsync(commit: false, CancellationToken.None).ConfigureAwait(false);
+                    }
+                    var r = End(false, dshInstalled.Code, dshInstalled.Message, UpdatePhases.Failed);
+                    return wasRunning ? await RestartAsync(r).ConfigureAwait(false) : r;
+                }
+                dshHeld = dshInstalled.Changed;
+            }
+
+            if (!runtimeHeld && !dshHeld)
+            {
+                var r = End(true, RuntimeErrorCodes.Ok, $"DSH {dshInstalled!.Version} is already installed", UpdatePhases.Committed);
                 return wasRunning ? await RestartAsync(r).ConfigureAwait(false) : r;
             }
 
-            // 4. Health check on the new layer.
-            Record(UpdatePhases.Probing);
-            var (healthy, why) = await ProbeAsync(target.Version).ConfigureAwait(false);
+            // 4. Health check on the new layer(s).
+            var expectedDshVersion = targetDsh?.Version ?? _runtime.State.Current.DshVersion;
+            var healthy = true;
+            var why = "ready";
+            if (expectedDshVersion is not null)
+            {
+                Record(UpdatePhases.Probing);
+                (healthy, why) = await ProbeAsync(expectedDshVersion).ConfigureAwait(false);
+            }
+
             if (healthy)
             {
-                var commit = await _runtime.FinishDshUpdateAsync(commit: true, CancellationToken.None).ConfigureAwait(false);
-                var r = commit.Ok
-                    ? End(true, RuntimeErrorCodes.Ok, $"DSH {target.Version} installed and healthy", UpdatePhases.Committed)
-                    : End(false, UpdateTransactionCodes.RollbackFailed, "health check passed but the commit failed: " + commit.Message, UpdatePhases.Failed);
+                var rtCommit = runtimeHeld
+                    ? await _runtime.FinishRuntimeUpdateAsync(commit: true, CancellationToken.None).ConfigureAwait(false)
+                    : new DshMobile.Runtime.Layers.RuntimeBodyRecovery(true, "none", null);
+                var dshCommit = dshHeld
+                    ? await _runtime.FinishDshUpdateAsync(commit: true, CancellationToken.None).ConfigureAwait(false)
+                    : new DshMobile.Runtime.Layers.DshLayerRecovery(true, "none", null);
+                var commitOk = rtCommit.Ok && dshCommit.Ok;
+                var okLabel = targetRuntime is not null && targetDsh is not null
+                    ? $"Runtime {targetRuntime.Version} and DSH {targetDsh.Version} installed and healthy"
+                    : targetRuntime is not null
+                        ? $"Runtime {targetRuntime.Version} installed and healthy"
+                        : $"DSH {targetDsh!.Version} installed and healthy";
+                var r = commitOk
+                    ? End(true, RuntimeErrorCodes.Ok, okLabel, UpdatePhases.Committed)
+                    : End(false, UpdateTransactionCodes.RollbackFailed, "health check passed but the commit failed: " + (rtCommit.Message ?? dshCommit.Message), UpdatePhases.Failed);
                 return wasRunning ? await RestartAsync(r).ConfigureAwait(false) : r;
             }
 
-            // 5. Unhealthy: the old layer goes back.
+            // 5. Unhealthy: the old layer(s) go back in reverse order.
             Record(UpdatePhases.RollingBack, UpdateTransactionCodes.HealthFailed, why);
-            var undo = await _runtime.FinishDshUpdateAsync(commit: false, CancellationToken.None).ConfigureAwait(false);
-            var failed = undo.Ok
-                ? End(false, UpdateTransactionCodes.HealthFailed, $"DSH {target.Version} failed its health check ({why}); the previous layer was restored", UpdatePhases.Failed)
-                : End(false, UpdateTransactionCodes.RollbackFailed, $"health check failed ({why}) and restoring failed: {undo.Message}; retried on the next start", UpdatePhases.Failed);
-            return wasRunning && undo.Ok ? await RestartAsync(failed).ConfigureAwait(false) : failed;
+            var dshUndo = dshHeld
+                ? await _runtime.FinishDshUpdateAsync(commit: false, CancellationToken.None).ConfigureAwait(false)
+                : new DshMobile.Runtime.Layers.DshLayerRecovery(true, "none", null);
+            var rtUndo = runtimeHeld
+                ? await _runtime.FinishRuntimeUpdateAsync(commit: false, CancellationToken.None).ConfigureAwait(false)
+                : new DshMobile.Runtime.Layers.RuntimeBodyRecovery(true, "none", null);
+            var undoOk = dshUndo.Ok && rtUndo.Ok;
+            var failSubject = targetRuntime is not null && targetDsh is not null
+                ? $"Runtime {targetRuntime.Version} + DSH {targetDsh.Version}"
+                : targetRuntime is not null
+                    ? $"Runtime {targetRuntime.Version}"
+                    : $"DSH {targetDsh!.Version}";
+            var restoredWhat = targetRuntime is not null && targetDsh is not null
+                ? "the previous layers were restored"
+                : targetRuntime is not null
+                    ? "the previous runtime body was restored"
+                    : "the previous layer was restored";
+            var failed = undoOk
+                ? End(false, UpdateTransactionCodes.HealthFailed, $"{failSubject} failed its health check ({why}); {restoredWhat}", UpdatePhases.Failed)
+                : End(false, UpdateTransactionCodes.RollbackFailed, $"health check failed ({why}) and restoring failed: {dshUndo.Message ?? rtUndo.Message}; retried on the next start", UpdatePhases.Failed);
+            return wasRunning && undoOk ? await RestartAsync(failed).ConfigureAwait(false) : failed;
         }
         finally
         {

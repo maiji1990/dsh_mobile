@@ -359,4 +359,32 @@ public sealed class RuntimeBodyFaultInjectionTests : IDisposable
         Assert.Null(again.Inspection);
         Assert.True(File.Exists(i.JournalFile));
     }
+
+    [Fact]
+    public async Task Held_KeepsTheOldBodyAside_ThenCommitOrAbortSettlesIt_ADR0029()
+    {
+        var files = Files(withPrevious: false);
+        var before = Snapshot(files);
+        var i = Installer(files);
+        var r = await i.InstallAsync(Bundle, null, CancellationToken.None, holdForProbe: true);
+        Assert.True(r.Ok, r.Message);
+        Assert.True(i.IsHeldForProbe);
+        Assert.True(File.Exists(Path.Combine(i.AsideDir, "base", "old.txt")));
+        Assert.Equal(new RuntimeBodyRecovery(true, "held", null), i.Recover(keepProbing: true));
+        Assert.True(i.IsHeldForProbe);
+
+        // 中止（或非持有探测的进程恢复）应完整恢复旧运行时主体。
+        var aborted = i.AbortProbed();
+        Assert.Equal(new RuntimeBodyRecovery(true, "restored", null), aborted);
+        Assert.False(i.IsHeldForProbe);
+        Assert.Equal(before, Snapshot(files));
+        AssertSettled(i);
+
+        // 再次暂存并提交，旧运行时主体应被退役。
+        Assert.True((await i.InstallAsync(Bundle, null, CancellationToken.None, holdForProbe: true)).Ok);
+        Assert.True(i.CommitProbed().Ok);
+        Assert.False(i.IsHeldForProbe);
+        Assert.True(File.Exists(Path.Combine(Rc(files), "base", "etc", "os-release")));
+        AssertSettled(i);
+    }
 }

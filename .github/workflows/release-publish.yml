@@ -1,6 +1,9 @@
 name: release-publish
 
-# vNext PR-02 / ADR-0022: signs and publishes a channel's release manifest. Manual only.
+# vNext PR-02 / ADR-0022 / ADR-0029: signs and publishes a channel's release manifest.
+# - preview: runs automatically on main when release/preview.json or release-trusted-keys.txt changes, weekly to refresh
+#   the 30-day validity window, or via workflow_dispatch.
+# - stable: manual workflow_dispatch only, gated by device acceptance_evidence in migration/parity/*.md.
 #
 # What it publishes: release/<channel>.json (a reviewed spec) names artifacts that already sit in versioned releases of
 # this public repository (runtime-<v> / dsh-<v>, published by runtime-layers.yml). This workflow downloads them
@@ -12,6 +15,14 @@ name: release-publish
 # DSHM_RELEASE_SIGNING_KEY = the PKCS#8 PEM from `node tooling/release-manifest-sign.mjs keygen <dir outside the repo>`.
 # The private key never enters the repository, logs or artifacts; only the sign step sees it.
 on:
+  push:
+    branches: [main]
+    paths:
+      - release/preview.json
+      - src/DshMobile.Runtime/Updates/release-trusted-keys.txt
+  schedule:
+    # Weekly re-sign of preview so the 30-day manifest validity window does not expire between upstream updates.
+    - cron: "24 4 * * 1"
   workflow_dispatch:
     inputs:
       channel:
@@ -32,7 +43,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: release-publish-${{ inputs.channel }}
+  group: release-publish-${{ inputs.channel || 'preview' }}
   cancel-in-progress: false
 
 jobs:
@@ -44,8 +55,9 @@ jobs:
     outputs:
       manifest_sha256: ${{ steps.sign.outputs.manifest_sha256 }}
     env:
-      CHANNEL: ${{ inputs.channel }}
-      SPEC: release/${{ inputs.channel }}.json
+      CHANNEL: ${{ inputs.channel || 'preview' }}
+      EXPIRES_DAYS: ${{ inputs.expires_days || '30' }}
+      SPEC: release/${{ inputs.channel || 'preview' }}.json
       KEYS: src/DshMobile.Runtime/Updates/release-trusted-keys.txt
     steps:
       - uses: actions/checkout@v4
@@ -81,7 +93,7 @@ jobs:
           done
 
       - name: Build the manifest
-        run: node tooling/release-manifest-build.mjs --spec "$SPEC" --dir dl --channel "$CHANNEL" --expires-days "${{ inputs.expires_days }}" --out out/release-manifest.json
+        run: node tooling/release-manifest-build.mjs --spec "$SPEC" --dir dl --channel "$CHANNEL" --expires-days "$EXPIRES_DAYS" --out out/release-manifest.json
 
       - name: Sign
         id: sign
@@ -94,7 +106,7 @@ jobs:
           node tooling/release-manifest-sign.mjs verify out/release-manifest.json --keys "$KEYS" --channel "$CHANNEL"
           echo "manifest_sha256=$(sha256sum out/release-manifest.json | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
 
-      - name: Publish to release channel-${{ inputs.channel }}
+      - name: Publish to release channel-${{ inputs.channel || 'preview' }}
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -119,7 +131,7 @@ jobs:
     permissions:
       contents: read
     env:
-      CHANNEL: ${{ inputs.channel }}
+      CHANNEL: ${{ inputs.channel || 'preview' }}
       KEYS: src/DshMobile.Runtime/Updates/release-trusted-keys.txt
       EXPECTED: ${{ needs.publish.outputs.manifest_sha256 }}
     steps:

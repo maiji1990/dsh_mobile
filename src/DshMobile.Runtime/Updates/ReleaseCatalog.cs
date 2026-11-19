@@ -36,27 +36,34 @@ public static class ReleaseCatalog
         ArgumentNullException.ThrowIfNull(installed);
         ArgumentException.ThrowIfNullOrEmpty(deviceAbi);
         var rows = new List<ReleaseChoice>();
+        // 先评估 runtime 行：若本次存在可应用的 runtime 更新（或全新安装）且声明了 providesNode，
+        // 则后续评估 dsh 行时允许使用该 Node 版本满足 requiresNode（ADR-0029 联合安装）。
+        string? pendingRuntimeNode = null;
         foreach (var kind in ReleaseKinds.All)
         {
             var current = installed.Of(kind);
             var offers = manifest.Artifacts
                 .Where(a => a.Kind == kind && a.Abi == deviceAbi)
                 .OrderByDescending(a => a.Version, Comparer<string>.Create(Versions.Compare))
-                .Select(a => new ReleaseOffer(a, BlockedBy(a, installed)))
+                .Select(a => new ReleaseOffer(a, BlockedBy(a, installed, kind == ReleaseKinds.Dsh ? pendingRuntimeNode : null)))
                 .ToList();
             var update = offers.FirstOrDefault(o => o.BlockedBy is null && (current is null || Versions.IsNewer(o.Artifact.Version, current)))?.Artifact;
+            if (kind == ReleaseKinds.Runtime)
+            {
+                pendingRuntimeNode = update?.ProvidesNode;
+            }
             rows.Add(new ReleaseChoice(kind, current, offers, update));
         }
         return rows;
     }
 
-    private static string? BlockedBy(ReleaseArtifact a, InstalledVersions installed)
+    private static string? BlockedBy(ReleaseArtifact a, InstalledVersions installed, string? pendingRuntimeNode = null)
     {
         if (a.MinAppVersion is { } min && Versions.Compare(installed.App, min) < 0)
         {
             return $"needs app {min} or newer (installed {installed.App})";
         }
-        if (a.RequiresNode is { } node && !NodeMatches(node, installed.Node))
+        if (a.RequiresNode is { } node && !NodeMatches(node, installed.Node) && !NodeMatches(node, pendingRuntimeNode))
         {
             return $"needs Node {node} (installed {installed.Node ?? "none"})";
         }

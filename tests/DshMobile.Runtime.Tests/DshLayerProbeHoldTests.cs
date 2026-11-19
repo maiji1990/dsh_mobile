@@ -146,21 +146,26 @@ public sealed class DshLayerProbeHoldTests : IDisposable
         null, null, kind == "dsh" ? "deepseek-ai/deepseek-harness" : null, kind == "dsh" ? "dsh-v" + version : null, kind == "dsh" ? new string('d', 40) : null);
 
     [Fact]
-    public void Planner_InstallsOnlyTheDshUpdate_AndExplainsEveryOtherRow()
+    public void Planner_InstallsRuntimeAndDshUpdates_AndExplainsEveryOtherRow()
     {
+        var rt = A("runtime", "0.3.0");
         var dsh = A("dsh", "0.2.2");
         var blocked = A("dsh", "0.3.0");
         var plan = UpdatePlanner.Plan([
-            new ReleaseChoice("runtime", "0.2.0", [new ReleaseOffer(A("runtime", "0.3.0"), null)], A("runtime", "0.3.0")),
+            new ReleaseChoice("runtime", "0.2.0", [new ReleaseOffer(rt, null)], rt),
             new ReleaseChoice("node", null, [], null),
             new ReleaseChoice("dsh", "0.2.1", [new ReleaseOffer(blocked, "needs Node 26.x (installed 24.19.0)"), new ReleaseOffer(dsh, null)], dsh),
             new ReleaseChoice("app", "0.1.0", [new ReleaseOffer(A("app", "0.2.0"), null)], A("app", "0.2.0")),
         ]);
+        Assert.Equal(rt, plan.Runtime);
         Assert.Equal(dsh, plan.Dsh);
-        Assert.Equal(3, plan.Notes.Count);
-        Assert.Contains(plan.Notes, n => n.StartsWith("runtime 0.3.0: UPDATE_KIND_NOT_SUPPORTED online", StringComparison.Ordinal));
+        Assert.True(plan.HasWork);
+        Assert.Equal(2, plan.Notes.Count);
         Assert.Contains("dsh 0.3.0: needs Node 26.x (installed 24.19.0)", plan.Notes);
         Assert.Contains(plan.Notes, n => n.StartsWith("app 0.2.0: UPDATE_KIND_NOT_SUPPORTED", StringComparison.Ordinal));
-        Assert.Null(UpdatePlanner.Plan([new ReleaseChoice("dsh", "0.2.2", [new ReleaseOffer(dsh, null)], null)]).Dsh);
+        var nothing = UpdatePlanner.Plan([new ReleaseChoice("dsh", "0.2.2", [new ReleaseOffer(dsh, null)], null)]);
+        Assert.Null(nothing.Dsh);
+        Assert.Null(nothing.Runtime);
+        Assert.False(nothing.HasWork);
     }
 }

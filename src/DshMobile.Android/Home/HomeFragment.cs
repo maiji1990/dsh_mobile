@@ -10,15 +10,17 @@ using DshMobile.Application.Ui;
 using DshMobile.Runtime.Automation.Relay;
 using Google.Android.Material.Button;
 using Google.Android.Material.Card;
+using Google.Android.Material.Dialog;
 using Google.Android.Material.ProgressIndicator;
 using Fragment = AndroidX.Fragment.App.Fragment;
 
 namespace DshMobile.App.Home;
 
 /// <summary>
-/// Home tab (ADR-0021): one status card that says where DSH is and offers the one next step (import → start → open),
-/// a notice for an operation that failed without the journal showing it, and shortcuts to the feature screens. Words,
-/// colours and buttons come from <see cref="HomeStatus"/>; the runtime journal stays the source of truth.
+/// Home tab (ADR-0021 / ADR-0029): one status card that says where DSH is and offers the one next step
+/// (online install / import → start → open), a notice for an operation that failed without the journal showing it,
+/// an optional update-available banner, and shortcuts to the feature screens. Words, colours and buttons come from
+/// <see cref="HomeStatus"/>; the runtime journal stays the source of truth.
 /// </summary>
 public sealed class HomeFragment : Fragment, ITabRoot
 {
@@ -29,8 +31,13 @@ public sealed class HomeFragment : Fragment, ITabRoot
     private LinearProgressIndicator _progress = null!;
     private MaterialButton _primary = null!, _secondary = null!;
     private View _failure = null!;
+    private View _updateBanner = null!;
+    private TextView _updateBannerTitle = null!, _updateBannerDetail = null!;
+    private MaterialButton _updateBannerInstall = null!, _updateBannerDetails = null!;
     private TextView? _automationSubtitle;
     private HomeStatus? _shown;
+    private DshMobile.Runtime.Updates.UpdatePlan? _bannerPlan;
+    private bool _secondaryCancelsDownload;
     private int _renderPosted;
 
     public override View OnCreateView(LayoutInflater inflater, ViewGroup? container, Bundle? savedInstanceState)
@@ -48,8 +55,29 @@ public sealed class HomeFragment : Fragment, ITabRoot
         _failure = view.FindViewById(Resource.Id.failure_card)!;
         _failureTitle = view.FindViewById<TextView>(Resource.Id.failure_title)!;
         _failureDetail = view.FindViewById<TextView>(Resource.Id.failure_detail)!;
+        _updateBanner = view.FindViewById(Resource.Id.update_banner_card)!;
+        _updateBannerTitle = view.FindViewById<TextView>(Resource.Id.update_banner_title)!;
+        _updateBannerDetail = view.FindViewById<TextView>(Resource.Id.update_banner_detail)!;
+        _updateBannerInstall = view.FindViewById<MaterialButton>(Resource.Id.update_banner_install)!;
+        _updateBannerDetails = view.FindViewById<MaterialButton>(Resource.Id.update_banner_details)!;
         _primary.Click += (_, _) => Act(_shown?.Primary ?? HomeAction.None);
-        _secondary.Click += (_, _) => Act(_shown?.Secondary ?? HomeAction.None);
+        _secondary.Click += (_, _) =>
+        {
+            if (_secondaryCancelsDownload)
+            {
+                _bridge.CancelUpdate();
+                return;
+            }
+            Act(_shown?.Secondary ?? HomeAction.None);
+        };
+        _updateBannerDetails.Click += (_, _) => StartActivity(new Intent(RequireContext(), typeof(RuntimeActivity)));
+        _updateBannerInstall.Click += (_, _) =>
+        {
+            if (_bannerPlan is { HasWork: true } plan && !_bridge.IsBusy)
+            {
+                UpdateUi.ShowConfirmInstallDialog(RequireContext(), _bridge, plan);
+            }
+        };
 
         var grid = view.FindViewById<GridLayout>(Resource.Id.shortcuts)!;
         _automationSubtitle = Shortcut(grid, Resource.Drawable.ic_phone, Resource.String.more_automation, Resource.String.home_shortcut_automation_sub, typeof(AutomationActivity));
@@ -180,7 +208,19 @@ public sealed class HomeFragment : Fragment, ITabRoot
         }
 
         Button(_primary, s.Primary);
-        Button(_secondary, s.Secondary);
+        _secondaryCancelsDownload = busy
+            && _bridge.CurrentOperation == HomeStatus.UpdateInstallOperation
+            && _bridge.Progress is { Step: DshMobile.Runtime.Updates.UpdatePhases.Downloading };
+        if (_secondaryCancelsDownload)
+        {
+            _secondary.Visibility = ViewStates.Visible;
+            _secondary.SetText(Resource.String.update_cancel);
+            _secondary.SetIconResource(Resource.Drawable.ic_close);
+        }
+        else
+        {
+            Button(_secondary, s.Secondary);
+        }
 
         if (s.FailedOperation is { } f)
         {
@@ -192,6 +232,8 @@ public sealed class HomeFragment : Fragment, ITabRoot
         {
             _failure.Visibility = ViewStates.Gone;
         }
+
+        RenderUpdateBanner(ctx, s, busy);
 
         if (_automationSubtitle is not null)
         {
@@ -222,8 +264,14 @@ public sealed class HomeFragment : Fragment, ITabRoot
         b.Visibility = ViewStates.Visible;
         var (text, icon) = action switch
         {
+            HomeAction.OnlineInstall => _shown?.Phase switch
+            {
+                HomePhase.NotInstalled => (Resource.String.home_action_online_setup, Resource.Drawable.ic_download),
+                HomePhase.Failed => (Resource.String.home_action_online_retry, Resource.Drawable.ic_download),
+                _ => (Resource.String.home_action_online_dsh, Resource.Drawable.ic_download),
+            },
             HomeAction.ImportRuntime => (Resource.String.home_action_import, Resource.Drawable.ic_upload),
-            HomeAction.ImportDsh => (Resource.String.home_action_import_dsh, Resource.Drawable.ic_download),
+            HomeAction.ImportDsh => (Resource.String.home_action_import_dsh, Resource.Drawable.ic_upload),
             HomeAction.Start => (_shown?.Phase == HomePhase.Failed ? Resource.String.home_action_retry : Resource.String.home_action_start, Resource.Drawable.ic_play),
             HomeAction.OpenDsh => (Resource.String.home_action_open, Resource.Drawable.ic_open_in_new),
             _ => (Resource.String.home_action_stop, Resource.Drawable.ic_stop),
@@ -232,10 +280,36 @@ public sealed class HomeFragment : Fragment, ITabRoot
         b.SetIconResource(icon);
     }
 
+    private void RenderUpdateBanner(Context ctx, HomeStatus status, bool busy)
+    {
+        var channel = UiPrefs.UpdateChannel(ctx);
+        if (!busy
+            && status.Phase is not HomePhase.NotInstalled
+            && status.DshVersion is not null
+            && _bridge.LastCheck is { Ok: true } check
+            && _bridge.LastCheckChannel == channel)
+        {
+            var plan = DshMobile.Runtime.Updates.UpdatePlanner.Plan(check.Choices);
+            if (plan.HasWork)
+            {
+                _bannerPlan = plan;
+                _updateBanner.Visibility = ViewStates.Visible;
+                _updateBannerTitle.Text = Rows.Fmt(ctx, Resource.String.home_update_banner_title, UpdateUi.DescribePlan(plan));
+                _updateBannerDetail.Text = Rows.Fmt(ctx, Resource.String.update_install_plan_sub, UpdateUi.DigestHint(plan), UpdateUi.TotalMiB(plan));
+                return;
+            }
+        }
+        _bannerPlan = null;
+        _updateBanner.Visibility = ViewStates.Gone;
+    }
+
     private void Act(HomeAction action)
     {
         switch (action)
         {
+            case HomeAction.OnlineInstall:
+                _ = StartOnlineInstallFlowAsync();
+                break;
             case HomeAction.ImportRuntime:
                 StartActivityForResult(RuntimeImportFlow.PickIntent(), RuntimeImportFlow.RequestCode);
                 break;
@@ -252,6 +326,40 @@ public sealed class HomeFragment : Fragment, ITabRoot
                 _ = _bridge.RunStopAsync();
                 break;
         }
+    }
+
+    /// <summary>ADR-0029: 首页一键在线初始化流程——先拉取并验签通道清单，再向用户展示摘要并确认安装。</summary>
+    private async Task StartOnlineInstallFlowAsync()
+    {
+        var context = Context;
+        if (context is null)
+        {
+            return;
+        }
+        var channel = UiPrefs.UpdateChannel(context);
+        var check = await _bridge.RunUpdateCheckForResultAsync(channel).ConfigureAwait(false);
+        Activity?.RunOnUiThread(() =>
+        {
+            if (View is null || Context is not { } ctx || check is not { Ok: true })
+            {
+                return;
+            }
+            var plan = DshMobile.Runtime.Updates.UpdatePlanner.Plan(check.Choices);
+            if (!plan.HasWork)
+            {
+                var detail = plan.Notes.Count > 0
+                    ? string.Join('\n', plan.Notes)
+                    : DshMobile.Runtime.Updates.UpdateTransactionCodes.NothingToInstall;
+                new MaterialAlertDialogBuilder(ctx)
+                    .SetIcon(Resource.Drawable.ic_info)!
+                    .SetTitle(Resource.String.update_nothing_title)!
+                    .SetMessage(detail)!
+                    .SetPositiveButton(Android.Resource.String.Ok, (_, _) => { })!
+                    .Show();
+                return;
+            }
+            UpdateUi.ShowConfirmInstallDialog(ctx, _bridge, plan);
+        });
     }
 
     public override void OnActivityResult(int requestCode, int resultCode, Intent? data)

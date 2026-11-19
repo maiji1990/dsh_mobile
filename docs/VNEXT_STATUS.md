@@ -74,7 +74,7 @@ C# 路径；PR-10 之后的 C# 唯一实现只有两次真机验收：
 | **已通过（真机 · 当前 C#）** | 启动 → READY → WebUI → 停止无残留；web 与 sdk / sdk-minimal / acp **握手**、plugin list（原 App 插件页，已按 [ADR-0028](ADR/0028-remove-native-terminal-and-plugin-pages.md) 移除）；终端多会话 / ^C=130 / 重放 / resize / 横屏（终端页已按 [ADR-0028](ADR/0028-remove-native-terminal-and-plugin-pages.md) 移除，属历史证据）、PTY 自检 PASS；文件页浏览与受保护 `.dsh`；运行层导入 + 装后核对、回滚（需手工建 `previous/`）；手机操控只读 + 页内 / 悬浮审批卡（`FLAG_SECURE`）；深色模式；ADR-0019 数据迁移；覆盖安装杀进程后 journal `RUNTIME_INTERRUPTED` 恢复 |
 | **待复测（只有 PR-10 前真机证据）** | Release full-trim 冷启动（TASK-002）；SAF 导入 / 导出；插件 add / remove 与安装守卫（该页面已按 ADR-0028 删除，不再复测）；手机操控写操作；前台服务后台 90 s 存活；远程主机（SSH → Windows OpenSSH，远端 `dsh web` 启停） |
 | **待测（从未真机验证）** | #41 之后的 PTY 自检；DSH 层换层中途强杀 / 低磁盘；中文 IME / vim / tmux / 大输出（随终端页移除，不再测）；WebUI 401 恢复 / 文件选择 / 下载；通知栏审批面；Android 10 / 14；16 KB 页；Linux sshd；Tailscale |
-| **阻断** | 模型凭据相关：headless 真实任务、Session / Resume / Fork、工具调用与审批、MCP 工具被模型调用、Subagent / Agent Team（PR-07）；DSH 默认工作区无法创建（guest 无 `xdg-user-dir`；**PR-07 已修复，真机待验**）；在线更新：`ReleaseTrust.BuiltIn` 为空 → `UPDATE_NO_TRUSTED_KEYS`（PR-02），无下载器 / 安装事务 / UI（PR-04 … 06） |
+| **阻断** | 模型凭据相关：headless 真实任务、Session / Resume / Fork、工具调用与审批、MCP 工具被模型调用、Subagent / Agent Team（PR-07）；DSH 默认工作区无法创建（guest 无 `xdg-user-dir`；**PR-07 已修复，真机待验**）；在线更新：公钥已于 11-19 钉入，代码（下载器 / 安装事务 / UI，PR-04 … 06、ADR-0029）全部就绪，但**真机一键在线安装从未验收**，且 `channel-preview` 清单尚未在 `main` 上签发 |
 
 FEATURES.md 各行的状态列已按上表改写（证据列保留原始记录）；COMPATIBILITY.md 删除了已不存在的 Gradle / AGP / Kotlin 工具链行。
 
@@ -152,8 +152,8 @@ FEATURES.md 各行的状态列已按上表改写（证据列保留原始记录�
 | 公开发布位置 | 已定：本仓库已公开，通道清单在 release `channel-stable` / `channel-preview`（ADR-0022 修订） |
 | 防重放下限持久化 + 只读检查接入 App | 已实现（`ReleaseAcceptanceStore`、`UpdateChecker`、开发者选项「检查更新（只读）」）；单测；**无真机证据** |
 | `release-publish.yml` | 已实现；本地演练通过；**未运行**（需 environment `release-signing` + secret + 公钥 + 至少一个运行层 Release） |
-| 发布公钥 | **待负责人**：`release-trusted-keys.txt` 为空 → App 如实报 `UPDATE_NO_TRUSTED_KEYS`、不联网；工作流门禁失败 |
-| 首个通道清单 | 依赖 PR-03（运行层 / DSH 层在本仓库发布版本化 Release）与公钥 |
+| 发布公钥 | **已钉**（2026-11-19）：`ed25519:705aea09994abd46`；私钥只在 environment `release-signing` 的 `DSHM_RELEASE_SIGNING_KEY`（已配置，必审人本人 + 仅 `main` 可部署）。App 不再报 `UPDATE_NO_TRUSTED_KEYS`，**真机待验** |
+| 首个通道清单 | 依赖项已齐（运行层 / DSH 层 Release 存在，公钥 + 私钥已配置）；仍需把本文变更合并到 `main` 触发 `release-publish.yml`，或手动 dispatch |
 
 PR-02 验收门禁（方案）：匿名拉取两文件并正确验签（工作流 verify job）；伪造 / 篡改 / 过期 / 回放 / preview 冒充 stable 全部拒绝（单测已覆盖，
 真机待公钥就绪后用开发者选项复核）；私钥不进 APK 或 Actions artifact（签名只在一个步骤以 secret 注入）。
@@ -213,7 +213,7 @@ chroot 探测未覆盖终端 / 子进程工具，**真机上自建 DSH 层从未
 | UI：四行、检查 / 下载 / 安装 / 取消 / 重试 / 回滚 / 复制诊断；进度分阶段；停止前提示；App 走 PackageInstaller | 运行环境页「在线更新」：通道、检查、四行、安装（确认框）、下载中取消、重试（再点续传）、上次更新、复制诊断；进度显示阶段与字节；**回滚按钮未做**（ADR-0024 后果）；App 更新未做 |
 
 验收（方案）：无网络 / 无公钥 / 无 Release / 过期错签 / 磁盘不足 / 下载中断 / 安装中强杀均有正确提示——单测覆盖各错误码；**界面与真机均未验证**
-（今天无发布公钥，检查即报 `UPDATE_NO_TRUSTED_KEYS`，安装路径在真机上无法走通，直到 PR-02 的公钥与 PR-03 的 Release 就绪）。
+（公钥已于 11-19 钉入、Release 已存在，因此 `UPDATE_NO_TRUSTED_KEYS` 不再是当前预期；但 `channel-preview` 首次签发与真机一键安装仍未验证，不得据此宣称在线更新已在真机通过）。
 
 ## 10. PR-07 状态（Harness Agent E2E，发布硬门禁）
 

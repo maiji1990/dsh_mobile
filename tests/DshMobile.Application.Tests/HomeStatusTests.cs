@@ -14,7 +14,7 @@ public sealed class HomeStatusTests
     private static OperationOutcome Outcome(string op, bool ok, string code = "OK") => new(op, ok, code, ok ? null : "message", At);
 
     [Theory]
-    [InlineData(RuntimeState.NotInstalled, HarnessState.Stopped, HomePhase.NotInstalled, HomeAction.ImportRuntime, HomeAction.None)]
+    [InlineData(RuntimeState.NotInstalled, HarnessState.Stopped, HomePhase.NotInstalled, HomeAction.OnlineInstall, HomeAction.ImportRuntime)]
     [InlineData(RuntimeState.Staging, HarnessState.Stopped, HomePhase.Busy, HomeAction.None, HomeAction.None)]
     [InlineData(RuntimeState.Ready, HarnessState.Stopped, HomePhase.Stopped, HomeAction.Start, HomeAction.None)]
     [InlineData(RuntimeState.Starting, HarnessState.Starting, HomePhase.Starting, HomeAction.None, HomeAction.Stop)]
@@ -49,13 +49,13 @@ public sealed class HomeStatusTests
     }
 
     [Fact]
-    public void ReadyWithoutADshLayer_OffersTheDshImport_ADR0027()
+    public void ReadyWithoutADshLayer_OffersOnlineInstallAndLocalImport_ADR0027_ADR0029()
     {
-        // The runtime body is installed but the DSH layer is not (no longer bundled with the APK): the next step is
-        // importing one, not a start that would fail on the missing layer.
+        // 主体已装但缺少 DSH 层时，主按钮提供在线下载 DSH，次级按钮保留本地导入兜底。
         var s = HomeStatus.From(Snap(RuntimeState.Ready, version: null), null, null);
         Assert.Equal(HomePhase.Stopped, s.Phase);
-        Assert.Equal(HomeAction.ImportDsh, s.Primary);
+        Assert.Equal(HomeAction.OnlineInstall, s.Primary);
+        Assert.Equal(HomeAction.ImportDsh, s.Secondary);
         Assert.Null(s.DshVersion);
     }
 
@@ -81,10 +81,12 @@ public sealed class HomeStatusTests
     {
         var afterImport = HomeStatus.From(Snap(RuntimeState.Failed, code: "RUNTIME_IMPORT_UNVERIFIED"), null, Outcome(HomeStatus.ImportOperation, ok: false, "RUNTIME_IMPORT_UNVERIFIED"));
         var afterDshImport = HomeStatus.From(Snap(RuntimeState.Failed, code: "DSH_BUNDLE_INVALID"), null, Outcome(HomeStatus.ImportDshOperation, ok: false, "DSH_BUNDLE_INVALID"));
+        var afterOnline = HomeStatus.From(Snap(RuntimeState.Failed, code: "UPDATE_HEALTH_FAILED"), null, Outcome(HomeStatus.UpdateInstallOperation, ok: false, "UPDATE_HEALTH_FAILED"));
         var afterStart = HomeStatus.From(Snap(RuntimeState.Failed, code: "DSH_EXITED"), null, Outcome(HomeStatus.StartOperation, ok: false, "DSH_EXITED"));
 
         Assert.Equal(("RUNTIME_IMPORT_UNVERIFIED", HomeAction.ImportRuntime), (afterImport.ErrorCode, afterImport.Primary));
         Assert.Equal(("DSH_BUNDLE_INVALID", HomeAction.ImportDsh), (afterDshImport.ErrorCode, afterDshImport.Primary));
+        Assert.Equal(("UPDATE_HEALTH_FAILED", HomeAction.OnlineInstall), (afterOnline.ErrorCode, afterOnline.Primary));
         Assert.Equal(("DSH_EXITED", HomeAction.Start), (afterStart.ErrorCode, afterStart.Primary));
         // The journal already shows the failure; the card does not repeat it as a separate notice.
         Assert.Null(afterImport.FailedOperation);

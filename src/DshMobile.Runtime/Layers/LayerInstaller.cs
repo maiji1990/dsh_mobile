@@ -47,19 +47,25 @@ public sealed class LayerInstaller(RuntimeLayout layout, Func<string, bool>? hos
     private const string PhaseBegin = "begin";
     private const string PhasePlaced = "placed";
 
+    /// <summary>
+    /// ADR-0029: 新运行时主体已就位但尚未提交——旧层仍暂存在 <see cref="AsideDir"/>，等待装后核对与健康检查。
+    /// <see cref="CommitProbed"/> 提交并退役旧层，<see cref="AbortProbed"/>（或非持有探测进程调用的 <see cref="Recover"/>）恢复旧层。
+    /// </summary>
+    private const string PhaseProbing = "probing";
+
     /// <summary>Distinct from the legacy <c>runtime-bundle-staging</c>, so the two importers never share a directory.</summary>
     public string StagingDir => Path.Combine(layout.FilesDir, "dshmobile-bundle-staging");
 
     /// <summary>Where the current body waits while the new one is placed (inside <c>runtime-current</c>).</summary>
     public string AsideDir => Path.Combine(layout.RuntimeCurrentDir, "dshmobile-body-old");
 
-    /// <summary>Write-ahead record of a body swap in progress (<c>phase=begin|placed</c>, <c>old=</c> items); absent when none is.</summary>
+    /// <summary>Write-ahead record of a body swap in progress (<c>phase=begin|placed|probing</c>, <c>old=</c> items); absent when none is.</summary>
     public string JournalFile => Path.Combine(layout.RuntimeCurrentDir, "dshmobile-body-install.journal");
 
     /// <summary>The filesystem primitives of the swap (tests inject faults).</summary>
     internal LayerFileOps Ops { get; init; } = LayerFileOps.Real;
 
-    public async Task<LayerInstallResult> InstallAsync(string zipPath, IProgress<RuntimeProgress>? progress, CancellationToken ct)
+    public async Task<LayerInstallResult> InstallAsync(string zipPath, IProgress<RuntimeProgress>? progress, CancellationToken ct, bool holdForProbe = false)
     {
         ArgumentException.ThrowIfNullOrEmpty(zipPath);
         var sw = Stopwatch.StartNew();
@@ -106,7 +112,7 @@ public sealed class LayerInstaller(RuntimeLayout layout, Func<string, bool>? hos
             {
                 return new LayerInstallResult(false, "BUNDLE_NO_BASE", "Runtime bundle missing base layer", inspection, extracted, sw.ElapsedMilliseconds);
             }
-            var (swapped, swapMessage) = SwapRuntimeBody(staging);
+            var (swapped, swapMessage) = SwapRuntimeBody(staging, holdForProbe);
             return new LayerInstallResult(swapped, swapped ? "OK" : ImportFailed, swapMessage, inspection, extracted, sw.ElapsedMilliseconds);
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException or InvalidDataException)
@@ -190,7 +196,7 @@ public sealed class LayerInstaller(RuntimeLayout layout, Func<string, bool>? hos
     /// Ok when the new body is in place (the message then says whether retiring the old one is still pending); otherwise
     /// the message says why not and whether the old body is back or its recovery is pending.
     /// </summary>
-    private (bool Ok, string? Message) SwapRuntimeBody(string staging)
+    private (bool Ok, string? Message) SwapRuntimeBody(string staging, bool holdForProbe = false)
     {
         var runtimeDir = layout.RuntimeCurrentDir;
         // RuntimeController creates runtime-current before every import (UPSTREAMS: fresh-install rename failure).
@@ -237,6 +243,11 @@ public sealed class LayerInstaller(RuntimeLayout layout, Func<string, bool>? hos
             var undo = Recover();
             return (false, failure + "; " + (undo.Ok ? "the previous runtime body was kept" : "restoring the previous body failed, retried on the next import or start: " + undo.Message));
         }
+        if (holdForProbe)
+        {
+            WriteJournal(PhaseProbing, old);
+            return (true, "installed; held for the update health check (old runtime body kept aside)");
+        }
         WriteJournal(PhasePlaced, old);
         var done = Recover(); // retires the old body and drops the journal
         return (true, done.Ok ? null : "new body installed; retiring the old one is retried on the next import or start: " + done.Message);
@@ -275,7 +286,7 @@ public sealed class LayerInstaller(RuntimeLayout layout, Func<string, bool>? hos
     /// nothing else is touched, except aside items whose live item is missing, which are put back.
     /// <c>previous/</c> is never created. The caller makes sure no runtime process uses the body.
     /// </summary>
-    public RuntimeBodyRecovery Recover()
+    public RuntimeBodyRecovery Recover(bool keepProbing = false)
     {
         var runtimeDir = layout.RuntimeCurrentDir;
         var aside = AsideDir;
@@ -312,6 +323,10 @@ public sealed class LayerInstaller(RuntimeLayout layout, Func<string, bool>? hos
                 return new RuntimeBodyRecovery(true, "restored", "aside body without a journal put back");
             }
             var (phase, old) = journal.Value;
+            if (phase == PhaseProbing && keepProbing)
+            {
+                return new RuntimeBodyRecovery(true, "held", null);
+            }
             string action;
             if (phase == PhasePlaced)
             {
@@ -351,6 +366,31 @@ public sealed class LayerInstaller(RuntimeLayout layout, Func<string, bool>? hos
             return new RuntimeBodyRecovery(false, "failed", e.Message);
         }
     }
+
+    /// <summary>当前是否有处于 <c>probing</c> 阶段的运行时主体安装（新层已就位、旧层暂存 aside、等待健康检查）。</summary>
+    public bool IsHeldForProbe => ReadJournal() is { Phase: PhaseProbing };
+
+    /// <summary>健康检查通过：提交暂存的运行时主体安装（退役旧层并删除日志）。</summary>
+    public RuntimeBodyRecovery CommitProbed()
+    {
+        if (ReadJournal() is not { Phase: PhaseProbing, Old: var old })
+        {
+            return new RuntimeBodyRecovery(false, "failed", "no runtime body install is held for a health check");
+        }
+        try
+        {
+            WriteJournal(PhasePlaced, old);
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            return new RuntimeBodyRecovery(false, "failed", "cannot commit: " + e.Message);
+        }
+        return Recover();
+    }
+
+    /// <summary>健康检查未通过（或中止）：恢复旧运行时主体并丢弃新层。</summary>
+    public RuntimeBodyRecovery AbortProbed() =>
+        IsHeldForProbe ? Recover(keepProbing: false) : new RuntimeBodyRecovery(false, "failed", "no runtime body install is held for a health check");
 
     /// <summary>
     /// Legacy end state for the replaced body, idempotent so a recovery can repeat it after dying halfway: an old item

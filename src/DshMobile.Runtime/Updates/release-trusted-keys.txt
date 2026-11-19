@@ -5,4 +5,7 @@
 # published: one list, so the app and the publisher can never disagree. Adding a key is its own reviewed commit that
 # also records the keyId in ADR-0022. Rotation: add the new key, sign with both, ship, then remove the old one.
 #
-# No key yet: until one is added, every update check reports UPDATE_NO_TRUSTED_KEYS and does not go online.
+# ed25519:705aea09994abd46 — release signing key pinned 2026-11-19 (private half lives only in the GitHub
+# environment release-signing as DSHM_RELEASE_SIGNING_KEY; never in this repository). An empty list is a refusal
+# (UPDATE_NO_TRUSTED_KEYS), never a silent fallback.
+/IaeXQfBnZ+cL46wELkLmzMA7+2wRkxZllI430zdmBQ=

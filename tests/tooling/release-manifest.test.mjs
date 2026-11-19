@@ -39,6 +39,8 @@ test('spec errors are refused before anything is signed', () => {
     [(s) => { s.artifacts[0].file = 'runtime.sh'; }, /plain file name/],
     [(s) => { s.artifacts[0].kind = 'plugin'; }, /kind must be one of/],
     [(s) => { s.artifacts[0].version = 'latest'; }, /version is malformed/],
+    [(s) => { s.artifacts[0].providesNode = 'latest'; }, /providesNode is malformed/],
+    [(s) => { s.artifacts[1].providesNode = '26.13.1'; }, /providesNode is only valid for runtime/],
     [(s) => { s.artifacts.push({ ...s.artifacts[0] }); }, /listed twice/],
     [(s) => { s.repository = 'not a repo'; }, /owner\/name/],
     [(s) => { s.artifacts = []; }, /non-empty/],

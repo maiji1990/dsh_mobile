@@ -96,6 +96,18 @@ public sealed class MainActivity : AppCompatActivity
         }
     }
 
+    protected override void OnStart()
+    {
+        base.OnStart();
+        // ADR-0029: 回到前台时按节流间隔静默检查签名通道清单（仅只读拉取清单，不下载不安装）。
+        if (UiPrefs.ShouldAutoCheckUpdates(this, DateTimeOffset.UtcNow))
+        {
+            var channel = UiPrefs.UpdateChannel(this);
+            _ = DshMobileApplication.Current.Bridge.RunAutoUpdateCheckAsync(channel,
+                () => UiPrefs.SetLastAutoCheckUtcMs(this, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()));
+        }
+    }
+
     public override void OnConfigurationChanged(Android.Content.Res.Configuration newConfig)
     {
         base.OnConfigurationChanged(newConfig);

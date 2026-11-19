@@ -88,10 +88,16 @@ public sealed class BridgeHost : IDisposable, IDiagnosticsLog
     /// <summary>Online DSH layer update (vNext PR-05 / PR-06).</summary>
     public DshMobile.Application.Updates.UpdateCoordinator UpdateInstaller { get; }
 
-    /// <summary>The last update check of this process and its channel (the update UI's rows); null before the first check.</summary>
-    public DshMobile.Runtime.Updates.ReleaseDiscoveryResult? LastCheck { get; private set; }
+    /// <summary>本进程最近一次更新检查的结果与通道，原子读写以避免跨线程撕裂。</summary>
+    private sealed record CheckSnapshot(string Channel, DshMobile.Runtime.Updates.ReleaseDiscoveryResult Result);
 
-    public string? LastCheckChannel { get; private set; }
+    private CheckSnapshot? _lastCheck;
+    private int _autoCheckRunning;
+
+    /// <summary>The last update check of this process and its channel (the update UI's rows); null before the first check.</summary>
+    public DshMobile.Runtime.Updates.ReleaseDiscoveryResult? LastCheck => Volatile.Read(ref _lastCheck)?.Result;
+
+    public string? LastCheckChannel => Volatile.Read(ref _lastCheck)?.Channel;
 
     private CancellationTokenSource? _updateCts;
 
@@ -317,31 +323,82 @@ public sealed class BridgeHost : IDisposable, IDiagnosticsLog
     /// vNext PR-02 (read-only): fetches and verifies the channel's signed release manifest and logs what could be
     /// updated. Installs nothing. Without a pinned release key this reports UPDATE_NO_TRUSTED_KEYS and does not go online.
     /// </summary>
-    public Task RunUpdateCheckAsync(string channel) => RunExclusive("update.check", async () =>
+    public Task RunUpdateCheckAsync(string channel) => RunUpdateCheckForResultAsync(channel);
+
+    /// <summary>执行一次前景更新检查并返回验证结果（供首页在线初始化确认弹窗使用）。</summary>
+    public async Task<DshMobile.Runtime.Updates.ReleaseDiscoveryResult?> RunUpdateCheckForResultAsync(string channel)
     {
-        using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(2));
-        var r = await Updates.CheckAsync(channel, cts.Token).ConfigureAwait(false);
-        LastCheck = r;
-        LastCheckChannel = channel;
-        Report(r.Ok, r.Code, r.Message);
-        foreach (var line in DshMobile.Application.Updates.UpdateChecker.Describe(channel, r))
+        DshMobile.Runtime.Updates.ReleaseDiscoveryResult? result = null;
+        await RunExclusive(HomeStatus.UpdateCheckOperation, async () =>
         {
-            Append(line);
-        }
-    });
+            using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(2));
+            var r = await Updates.CheckAsync(channel, cts.Token).ConfigureAwait(false);
+            Volatile.Write(ref _lastCheck, new CheckSnapshot(channel, r));
+            result = r;
+            Report(r.Ok, r.Code, r.Message);
+            foreach (var line in DshMobile.Application.Updates.UpdateChecker.Describe(channel, r))
+            {
+                Append(line);
+            }
+        }).ConfigureAwait(false);
+        return result;
+    }
 
     /// <summary>
-    /// vNext PR-05 / PR-06: downloads, verifies and installs the DSH update of the last check (<see cref="LastCheck"/>),
-    /// with a health check and automatic restore of the old layer. <paramref name="stopConfirmed"/>: the user agreed that a
-    /// running DSH is stopped. Cancellable only while downloading (<see cref="CancelUpdate"/>).
+    /// ADR-0029: 启动或回到前台时的静默只读检查。不占用前景操作锁、不弹出失败卡片、不下载制品；
+    /// 仅当内置公钥已配置且清单验签通过时刷新 <see cref="LastCheck"/> 以在首页提示新版本。
     /// </summary>
-    public Task RunDshUpdateAsync(bool stopConfirmed) => RunExclusive("update.install", async () =>
+    public async Task RunAutoUpdateCheckAsync(string channel, Action? onCompleted = null)
     {
-        if (LastCheck is not { } check || LastCheckChannel is not { } channel)
+        if (DshMobile.Runtime.Updates.ReleaseTrust.BuiltIn.IsEmpty || IsBusy)
+        {
+            return;
+        }
+        if (Interlocked.CompareExchange(ref _autoCheckRunning, 1, 0) != 0)
+        {
+            return;
+        }
+        try
+        {
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+            var r = await Updates.CheckAsync(channel, cts.Token).ConfigureAwait(false);
+            if (r.Ok)
+            {
+                Volatile.Write(ref _lastCheck, new CheckSnapshot(channel, r));
+                onCompleted?.Invoke();
+                foreach (var line in DshMobile.Application.Updates.UpdateChecker.Describe(channel, r))
+                {
+                    Append($"auto-{line}");
+                }
+                Changed?.Invoke(this, EventArgs.Empty);
+            }
+            else
+            {
+                Append($"auto-update check ({channel}) skipped/failed {r.Code}: {r.Message}");
+            }
+        }
+        catch (Exception e) when (e is OperationCanceledException or IOException or HttpRequestException)
+        {
+            Append($"auto-update check ({channel}) failed: {e.Message}");
+        }
+        finally
+        {
+            Volatile.Write(ref _autoCheckRunning, 0);
+        }
+    }
+
+    /// <summary>
+    /// vNext PR-05 / PR-06 / ADR-0029: 按 <see cref="LastCheck"/> 下载、校验并在线安装 Runtime 和/或 DSH 更新，
+    /// 经健康探测通过后提交，失败自动恢复旧层。仅下载阶段可取消（<see cref="CancelUpdate"/>）。
+    /// </summary>
+    public Task RunUpdateInstallAsync(bool stopConfirmed) => RunExclusive(HomeStatus.UpdateInstallOperation, async () =>
+    {
+        if (Volatile.Read(ref _lastCheck) is not { } snapshot)
         {
             Report(false, DshMobile.Runtime.Updates.UpdateTransactionCodes.NothingToInstall, "check for updates first");
             return;
         }
+        var (channel, check) = snapshot;
         using var cts = new CancellationTokenSource();
         Volatile.Write(ref _updateCts, cts);
         try
@@ -351,9 +408,15 @@ public sealed class BridgeHost : IDisposable, IDiagnosticsLog
                 Volatile.Write(ref _progress, new RuntimeProgress(p.Phase, p.Received, p.Total));
                 Changed?.Invoke(this, EventArgs.Empty);
             });
-            var r = await UpdateInstaller.InstallDshAsync(check, channel, stopConfirmed, progress, cts.Token).ConfigureAwait(false);
+            var r = await UpdateInstaller.InstallPlanAsync(check, channel, stopConfirmed, progress, cts.Token).ConfigureAwait(false);
             Report(r.Ok, r.Code, r.Message);
-            Append(r.Ok ? $"update: {r.Message} (DSH {r.InstalledVersion ?? "-"})" : $"update FAILED {r.Code} at {r.Phase}: {r.Message} (DSH {r.InstalledVersion ?? "-"})");
+            Append(r.Ok ? $"update: {r.Message} (installed {r.InstalledVersion ?? "-"})" : $"update FAILED {r.Code} at {r.Phase}: {r.Message} (installed {r.InstalledVersion ?? "-"})");
+            if (r.Ok && check.Ok && check.Manifest is { } manifest)
+            {
+                var installedNow = DshMobile.Runtime.Updates.InstalledVersionsReader.Read(Layout, AppVersion(_context));
+                var updatedChoices = DshMobile.Runtime.Updates.ReleaseCatalog.Evaluate(manifest, installedNow, DeviceAbi());
+                Volatile.Write(ref _lastCheck, new CheckSnapshot(channel, check with { Choices = updatedChoices }));
+            }
             await LogStatusAsync("status").ConfigureAwait(false);
         }
         finally
@@ -361,6 +424,9 @@ public sealed class BridgeHost : IDisposable, IDiagnosticsLog
             Volatile.Write(ref _updateCts, null);
         }
     });
+
+    /// <summary>兼容旧调用点，转发到 <see cref="RunUpdateInstallAsync"/>。</summary>
+    public Task RunDshUpdateAsync(bool stopConfirmed) => RunUpdateInstallAsync(stopConfirmed);
 
     /// <summary>Cancels a running update download (later phases are not cancellable and ignore this).</summary>
     public void CancelUpdate()

@@ -47,6 +47,9 @@ public sealed class RuntimeCoordinator : IDisposable
     /// <summary>The last <see cref="SyncAsync"/>'s settling of an interrupted body import; null when it did not run (host owns processes).</summary>
     private RuntimeBodyRecovery? _bodyRecovery;
 
+    /// <summary>当前进程是否持有处于 <c>probing</c> 阶段的运行时主体安装（在线更新健康检查中）。</summary>
+    private bool _bodyProbeHeld;
+
     /// <summary>This process holds a DSH layer install at <c>probing</c> (its update health check is running).</summary>
     private bool _dshProbeHeld;
 
@@ -74,6 +77,8 @@ public sealed class RuntimeCoordinator : IDisposable
         _assets = bundledAssets;
         _hostFactory = hostFactory ?? ((l, note, t) => new DshHost(l, note, t));
     }
+
+    public RuntimeLayout Layout => _layout;
 
     public RuntimeStateMachine State { get; }
 
@@ -330,7 +335,7 @@ public sealed class RuntimeCoordinator : IDisposable
             if (_host is { OwnsProcesses: true } host)
             {
                 var result = await StopHostAsync(host, ct).ConfigureAwait(false);
-                if (result.Ok && !_dshProbeHeld && new DshLayerInstaller(_layout).IsHeldForProbe)
+                if (result.Ok && ((!_dshProbeHeld && new DshLayerInstaller(_layout).IsHeldForProbe) || (!_bodyProbeHeld && new LayerInstaller(_layout).IsHeldForProbe)))
                 {
                     await SyncAsync(CancellationToken.None).ConfigureAwait(false);
                     return result with { Snapshot = State.Current };
@@ -683,11 +688,98 @@ public sealed class RuntimeCoordinator : IDisposable
         }
     }
 
+    /// <summary>
+    /// ADR-0029: 在线安装已下载并校验的 Runtime 基础包，并以 <c>holdForProbe</c> 模式暂存旧层以便执行装后树核对与健康检查。
+    /// 若装后树核对或安装检查未通过，立即在方法内回滚到旧层并返回失败；成功后由调用方通过 <see cref="FinishRuntimeUpdateAsync"/> 提交或回滚。
+    /// </summary>
+    public async Task<RuntimeInstallResult> InstallRuntimeUpdateAsync(
+        DshMobile.Runtime.Updates.VerifiedArtifact file,
+        IProgress<RuntimeProgress>? progress,
+        CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(file);
+        await _op.WaitAsync(ct).ConfigureAwait(false);
+        try
+        {
+            await SyncAsync(ct).ConfigureAwait(false);
+            if (HostOwnsProcesses || State.Current.State is RuntimeState.Running or RuntimeState.Starting or RuntimeState.Stopping)
+            {
+                return new RuntimeInstallResult(false, RuntimeErrorCodes.InvalidTransition, "stop DSH before the runtime bundle is updated");
+            }
+            if (file.Artifact.Kind != DshMobile.Runtime.Updates.ReleaseKinds.Runtime)
+            {
+                return new RuntimeInstallResult(false, RuntimeErrorCodes.BadRequest, $"not a runtime bundle: {file.Artifact.Kind}");
+            }
+            if (!DshMobile.Runtime.Updates.ArtifactStore.Matches(file.FilePath, file.Artifact, ct))
+            {
+                return new RuntimeInstallResult(false, DshMobile.Runtime.Updates.DownloadErrorCodes.Sha256Mismatch, "the downloaded runtime bundle changed after verification");
+            }
+            var installer = new LayerInstaller(_layout, _options.HostPathExists);
+            var installed = await installer.InstallAsync(file.FilePath, progress, ct, holdForProbe: true).ConfigureAwait(false);
+            if (!installed.Ok)
+            {
+                _log.Note($"runtime update FAILED {installed.Code}: {installed.Message}");
+                await SyncAsync(CancellationToken.None).ConfigureAwait(false);
+                return new RuntimeInstallResult(false, installed.Code, installed.Message, installed.Code);
+            }
+            _bodyProbeHeld = true;
+
+            var verify = await LayerExtractShadowCheck.RunAsync(file.FilePath, installed.Inspection!, _layout, _options.HostPathExists, _time, ct).ConfigureAwait(false);
+            verify = verify with { Slice = LayerExtractShadowCheck.InstallSlice };
+            _reports.Report(verify);
+            _log.Note($"verify {verify.Slice}: {verify.Verdict} ({verify.Detail}; {verify.CSharpMs} ms)");
+
+            var facts = await ReadFactsAsync(ct).ConfigureAwait(false);
+            if (verify.Verdict != ShadowVerdict.Agree || !facts.RuntimeInstalled)
+            {
+                var why = verify.Verdict != ShadowVerdict.Agree
+                    ? $"installed tree check {verify.Verdict}"
+                    : $"runtime install check: {facts.InstallReason}";
+                var aborted = installer.AbortProbed();
+                _bodyProbeHeld = false;
+                _log.Note($"runtime update FAILED RUNTIME_IMPORT_UNVERIFIED: {why} (abort: {aborted.Action})");
+                await SyncAsync(CancellationToken.None).ConfigureAwait(false);
+                return new RuntimeInstallResult(false, "RUNTIME_IMPORT_UNVERIFIED", why);
+            }
+
+            _log.Note($"runtime update: installed {file.Artifact.Version}, held for the health check");
+            await SyncAsync(CancellationToken.None).ConfigureAwait(false);
+            return new RuntimeInstallResult(true, RuntimeErrorCodes.Ok, null);
+        }
+        finally
+        {
+            _op.Release();
+        }
+    }
+
+    /// <summary>提交（健康检查通过）或回滚（健康检查未通过）由 <see cref="InstallRuntimeUpdateAsync"/> 暂存的 Runtime 基础包。</summary>
+    public async Task<RuntimeBodyRecovery> FinishRuntimeUpdateAsync(bool commit, CancellationToken ct)
+    {
+        await _op.WaitAsync(ct).ConfigureAwait(false);
+        try
+        {
+            if (HostOwnsProcesses)
+            {
+                return new RuntimeBodyRecovery(false, "failed", "stop DSH before the held runtime body is committed or restored");
+            }
+            var installer = new LayerInstaller(_layout, _options.HostPathExists);
+            var r = commit ? installer.CommitProbed() : installer.AbortProbed();
+            _bodyProbeHeld = false;
+            _log.Note(r.Ok ? $"runtime update: {(commit ? "committed" : "previous runtime body restored")}" : $"runtime update: finish FAILED: {r.Message}");
+            await SyncAsync(ct).ConfigureAwait(false);
+            return r;
+        }
+        finally
+        {
+            _op.Release();
+        }
+    }
+
     /// <summary>Finishes or undoes an interrupted body import (<see cref="LayerInstaller.Recover"/>) and notes what it did.</summary>
     private RuntimeBodyRecovery RecoverRuntimeBody()
     {
-        var r = new LayerInstaller(_layout, _options.HostPathExists).Recover();
-        if (r.Action != "none")
+        var r = new LayerInstaller(_layout, _options.HostPathExists).Recover(keepProbing: _bodyProbeHeld);
+        if (r.Action is not ("none" or "held"))
         {
             _log.Note($"runtime body: interrupted import {r.Action}{(r.Message is { } m ? ": " + m : "")}");
         }

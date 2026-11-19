@@ -4,6 +4,8 @@
 状态取值：`未开始` / `接口已定义` / `影子比对中`（旧实现决策、C# 只读比对）/ `C# 默认（待删旧）` / `已完成（旧依赖已删）`。
 “已验证”只写有证据的：`向量`（`tests/TestVectors` 新旧双跑）/ `单测` / `真机`（附日志位置）。
 
+**2026-11-19 · [ADR-0029](ADR/0029-online-runtime-update-and-auto-channel-push.md) GitHub 通道自动发布、Runtime 在线事务安装与首页在线初始化**：`release-publish.yml` 新增 `release/preview.json` / `release-trusted-keys.txt` 合并触发与每周自动续签 `preview` 通道；`runtime` 清单制品新增可选 `providesNode` 元数据，`ReleaseCatalog` / `UpdatePlanner` 支持 `Runtime` 单项、`DSH` 单项与 `Runtime + DSH` 联合在线安装；`LayerInstaller` 新增 `probing` 阶段（`holdForProbe` / `CommitProbed` / `AbortProbed` / `Recover(keepProbing)`）；`UpdateCoordinator.InstallPlanAsync` 联合事务支持端到端健康探测与逆序自动回滚；首页 `NotInstalled` / 缺 DSH 时主按钮提供在线下载入口（保留本地导入次按钮），启动 / 回前台节流自动检查清单并在首页展示新版本横幅。**当前仅通过单测与编译，无真机证据**（仍需仓库负责人生成并钉入发布公钥与签名私钥后方可完成真机在线验收）。
+
 **2026-11-17 · [ADR-0027](ADR/0027-remove-bundled-dsh-import-instead.md)**：APK 资产只允许暂存的 `android-side` 层，`runtime.prepare` 已删除。首次安装分别导入运行环境和 DSH 层。离线导入校验包内版本与文件名，已有同版或更高版时保留。替换旧层时先运行健康检查，通过后提交，失败则恢复。**已验证** Android 17 arm64 上的 Release APK 覆盖安装、导入 DSH `0.2.2-rc.3` 并启动（[真机记录](../migration/parity/2026-11-17-PTP-AN10-A17-dsh-import.md)）。首次安装及异常路径真机待测，下表内置 DSH 的记录为历史证据。
 
 **2026-11-17 · 插件工具链**：Honor PTP-AN10（Android 17，Node `26.13.1`）插件页复现 `corepack: not found`（退出码 127）。`GuestToolchain` 改由 Node 直接运行 APK 缓存中已校验的 pnpm `11.1.2`，缓存入口缺失时重新解包，并自动替换旧包装。桌面离线列表通过，修复版 Release 覆盖安装后，在中继和 DSH 都运行时，真机插件页输出 `list: OK`（[真机记录](../migration/parity/2026-11-17-PTP-AN10-A17-plugin-node26.md)）。
