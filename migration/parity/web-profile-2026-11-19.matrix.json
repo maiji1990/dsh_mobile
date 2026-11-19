@@ -1,0 +1,94 @@
+{
+  "schema": 1,
+  "generatedAt": "2026-11-19T01:09:38.986Z",
+  "records": 20,
+  "variants": [
+    {
+      "variant": "E5-OFF",
+      "attempts": 10,
+      "successes": 10,
+      "p50Ms": 16311,
+      "p95Ms": 18054,
+      "minMs": 14416.1,
+      "maxMs": 18054,
+      "profileFiles": {
+        "present": 0,
+        "missing": 10,
+        "empty": 0,
+        "invalid": 0
+      }
+    },
+    {
+      "variant": "E5-PROFILE",
+      "attempts": 10,
+      "successes": 10,
+      "p50Ms": 17846.1,
+      "p95Ms": 20042.7,
+      "minMs": 13145,
+      "maxMs": 20042.7,
+      "profileFiles": {
+        "present": 10,
+        "missing": 0,
+        "empty": 0,
+        "invalid": 0
+      }
+    }
+  ],
+  "overhead": {
+    "n": 10,
+    "medianMs": 1565.8,
+    "p50Ms": 1523.4,
+    "p95Ms": 4212.5,
+    "percent": 9.6,
+    "acceptable": false
+  },
+  "categories": [
+    {
+      "category": "idle-or-wait",
+      "samples": 96,
+      "timeMs": 110.852,
+      "share": 0.0001
+    },
+    {
+      "category": "v8-compile",
+      "samples": 298,
+      "timeMs": 292.811,
+      "share": 0.0015
+    },
+    {
+      "category": "gc",
+      "samples": 1787,
+      "timeMs": 2619.049,
+      "share": 0.014
+    },
+    {
+      "category": "module-resolution",
+      "samples": 37527,
+      "timeMs": 37198.416,
+      "share": 0.2006
+    },
+    {
+      "category": "module-eval",
+      "samples": 13357,
+      "timeMs": 13160.321,
+      "share": 0.0709
+    },
+    {
+      "category": "native-or-unknown",
+      "samples": 114330,
+      "timeMs": 123519.482,
+      "share": 0.6697
+    },
+    {
+      "category": "app-initialization",
+      "samples": 7628,
+      "timeMs": 7726.31,
+      "share": 0.0417
+    }
+  ],
+  "dataQuality": {
+    "skipped": 0,
+    "invalidEnums": 0,
+    "failed": 0
+  }
+}

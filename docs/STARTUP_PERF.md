@@ -251,6 +251,7 @@ P50/P95 使用 nearest-rank：升序排序后 `idx = ceil(p * n) - 1`（`p = 0.5
 - guest 资产：[src/DshMobile.Runtime/Guest/GuestAssetProvisioner.cs](../src/DshMobile.Runtime/Guest/GuestAssetProvisioner.cs)
 - WebView 阶段：[src/DshMobile.Android/WebUi/CSharpWebUiController.cs](../src/DshMobile.Android/WebUi/CSharpWebUiController.cs)、[src/DshMobile.Android/DshWebActivity.cs](../src/DshMobile.Android/DshWebActivity.cs)
 - 首次真机测量（A/B/C 各 10 次 + CSV）：[migration/parity/2026-11-17-PTP-AN10-A17-startup-perf.md](../migration/parity/2026-11-17-PTP-AN10-A17-startup-perf.md)
+- Web Profile 深度诊断（E5，CPU/ELU/分类）：[WEB_STARTUP_DIAGNOSIS.md](WEB_STARTUP_DIAGNOSIS.md)、[真机记录](../migration/parity/2026-11-19-PTP-AN10-A17-web-profile-diagnosis.md)
 - 根因专项 T0/E1–E4/T1（2026-11-18）：[migration/parity/2026-11-18-PTP-AN10-A17-startup-experiments.md](../migration/parity/2026-11-18-PTP-AN10-A17-startup-experiments.md)（见 [STARTUP_EXPERIMENTS.md](STARTUP_EXPERIMENTS.md)）
 - 真机证据规则：[AGENTS.md](../AGENTS.md)、[docs/COMPATIBILITY.md](COMPATIBILITY.md)、[docs/TEST_PLAN.md](TEST_PLAN.md)
 

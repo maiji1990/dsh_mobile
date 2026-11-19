@@ -78,6 +78,11 @@ function nonEmptyText(value) {
   return typeof value === 'string' && value.length > 0 ? value : null;
 }
 
+/** Web variants end at the first HTTP status, so they use httpReadyMs; exit variants keep durationMs. */
+function metricForKind(kind) {
+  return kind === 'web' ? 'httpReadyMs' : 'durationMs';
+}
+
 function variantIndex(variant) {
   const index = VARIANT_ORDER.indexOf(variant);
   return index < 0 ? VARIANT_ORDER.length : index;
@@ -141,6 +146,7 @@ function normalizeRecord(value, assumeSchema = false) {
       cacheMode,
       cacheFileCount: finiteInteger(value.cacheFileCount),
       cacheBytes: finiteInteger(value.cacheBytes),
+      webCacheVerified: typeof value.webCacheVerified === 'boolean' ? value.webCacheVerified : null,
       startedAt: nonEmptyText(value.startedAt),
     },
   };
@@ -200,28 +206,38 @@ function mapFor(records, metric) {
 
 /**
  * Compares two variants on one metric. Diffs are second minus first and only exist when experiment and kind match and
- * iterations pair one-to-one. Different endpoints are never subtracted, added or averaged.
+ * iterations pair one-to-one. Different endpoints are never subtracted, added or averaged. Without an explicit metric,
+ * the endpoint decides: exit uses durationMs, web uses httpReadyMs.
  */
-export function comparePair(a, b, metric = 'durationMs') {
+export function comparePair(a, b, metric) {
   if (a.kind !== b.kind) {
-    return { comparable: false, reason: 'different endpoint', n: 0, p50Diff: null, p95Diff: null };
+    return { comparable: false, reason: 'different endpoint', metric: null, n: 0, p50Diff: null, p95Diff: null };
   }
   if (a.experiment !== b.experiment) {
-    return { comparable: false, reason: 'different experiment', n: 0, p50Diff: null, p95Diff: null };
+    return { comparable: false, reason: 'different experiment', metric: null, n: 0, p50Diff: null, p95Diff: null };
   }
-  const left = mapFor(a.records, metric);
-  const right = mapFor(b.records, metric);
+  const effectiveMetric = typeof metric === 'string' ? metric : metricForKind(a.kind);
+  const left = mapFor(a.records, effectiveMetric);
+  const right = mapFor(b.records, effectiveMetric);
   if (left.duplicate || right.duplicate) {
-    return { comparable: false, reason: 'iterations do not correspond one-to-one', n: 0, p50Diff: null, p95Diff: null };
+    return {
+      comparable: false,
+      reason: 'iterations do not correspond one-to-one',
+      metric: effectiveMetric,
+      n: 0,
+      p50Diff: null,
+      p95Diff: null,
+    };
   }
   const common = [...left.map.keys()].filter((iteration) => right.map.has(iteration)).sort((x, y) => x - y);
   if (common.length === 0) {
-    return { comparable: false, reason: 'no paired iterations', n: 0, p50Diff: null, p95Diff: null };
+    return { comparable: false, reason: 'no paired iterations', metric: effectiveMetric, n: 0, p50Diff: null, p95Diff: null };
   }
   const diffs = common.map((iteration) => right.map.get(iteration) - left.map.get(iteration)).sort((x, y) => x - y);
   return {
     comparable: true,
     reason: null,
+    metric: effectiveMetric,
     n: diffs.length,
     p50Diff: round1(percentile(diffs, 0.5)),
     p95Diff: round1(percentile(diffs, 0.95)),
@@ -236,24 +252,25 @@ function buildGroups(records) {
         experiment: record.experiment,
         variant: record.variant,
         kind: record.kind,
+        metric: metricForKind(record.kind),
         attempts: 0,
         successes: 0,
-        durationMsValues: [],
+        metricValues: [],
         records: [],
       });
     }
     const group = groups.get(record.variant);
     group.records.push(record);
     group.attempts += 1;
-    if (record.result === 'ok' && record.durationMs !== null) {
+    if (record.result === 'ok' && record[group.metric] !== null) {
       group.successes += 1;
-      group.durationMsValues.push(record.durationMs);
+      group.metricValues.push(record[group.metric]);
     }
   }
   return [...groups.values()]
     .sort((a, b) => variantIndex(a.variant) - variantIndex(b.variant))
     .map((group) => {
-      const sorted = group.durationMsValues.slice().sort((a, b) => a - b);
+      const sorted = group.metricValues.slice().sort((a, b) => a - b);
       return {
         ...group,
         p50: round1(percentile(sorted, 0.5)),
@@ -298,34 +315,71 @@ function buildPairs(groups) {
   return pairs;
 }
 
+/**
+ * Three-state Web cache provenance. Only an explicit webCacheVerified===true on every row makes a variant
+ * verified; all-null cacheFileCount is unavailable; file counts without Web coverage proof are unverified.
+ * Old E1-E4 rows have no webCacheVerified field and therefore never read as verified.
+ */
+export function webCacheStatus(records) {
+  const input = Array.isArray(records) ? records : [];
+  if (input.length === 0) return 'unavailable';
+  if (input.every((record) => record.webCacheVerified === true)) return 'verified';
+  if (input.every((record) => record.cacheFileCount === null || record.cacheFileCount === undefined)) return 'unavailable';
+  return 'unverified';
+}
+
 function evaluateE4(groups) {
   const a = groups.find((group) => group.variant === 'E4-A');
   const c = groups.find((group) => group.variant === 'E4-C');
   if (c === undefined) {
-    return { present: false, cacheEvaluable: false, message: 'E4-C not present', cacheFiles: null, cacheBytes: null, pair: null };
+    return {
+      present: false,
+      cacheEvaluable: false,
+      webCacheVerified: 'unavailable',
+      message: 'E4-C not present',
+      cacheFiles: null,
+      cacheBytes: null,
+      pair: null,
+    };
   }
   const counts = c.records.map((record) => record.cacheFileCount).filter((value) => Number.isFinite(value));
   const cacheFiles = counts.length === 0 ? null : Math.max(...counts);
   const bytes = c.records.map((record) => record.cacheBytes).filter((value) => Number.isFinite(value));
   const cacheBytes = bytes.length === 0 ? null : Math.max(...bytes);
+  // Kept for compatibility with old consumers; the conclusion is driven by webCacheVerified below.
   const cacheEvaluable = c.records.length > 0 && c.records.every((record) =>
     record.cacheMode === 'warm' && Number.isFinite(record.cacheFileCount) && record.cacheFileCount > 0);
-  if (!cacheEvaluable) {
+  const webCacheVerified = webCacheStatus(c.records);
+
+  if (webCacheVerified !== 'verified') {
+    const message = webCacheVerified === 'unavailable'
+      ? 'E4-C unavailable: cacheFileCount 全为 null（Web 模块覆盖未证明）'
+      : 'E4-C unverified: Web 模块覆盖未证明';
     return {
       present: true,
-      cacheEvaluable: false,
-      message: 'E4-C not-evaluable: 缓存未证明落盘',
+      cacheEvaluable,
+      webCacheVerified,
+      message,
       cacheFiles,
       cacheBytes,
       pair: null,
     };
   }
   if (a === undefined) {
-    return { present: true, cacheEvaluable: true, message: 'E4-A not present', cacheFiles, cacheBytes, pair: null };
+    return {
+      present: true,
+      cacheEvaluable,
+      webCacheVerified,
+      message: 'E4-A not present',
+      cacheFiles,
+      cacheBytes,
+      pair: null,
+    };
   }
   return {
     present: true,
-    cacheEvaluable: true,
+    cacheEvaluable,
+    webCacheVerified,
     message: null,
     cacheFiles,
     cacheBytes,
@@ -454,8 +508,11 @@ export function toMatrix(summary, meta = {}, generatedAt = new Date().toISOStrin
     minMs: round1(group.min),
     maxMs: round1(group.max),
     cacheEvaluable: group.variant === 'E4-C' ? Boolean(result.e4?.cacheEvaluable) : false,
+    webCacheVerified: group.variant === 'E4-C' && result.e4?.present
+      ? (result.e4?.webCacheVerified ?? 'unavailable')
+      : webCacheStatus(group.records),
   }));
-  const notes = ['P50/P95 are nearest-rank over result=ok rows with a non-null duration; screening only, not an SLA.'];
+  const notes = ['P50/P95 are nearest-rank over result=ok rows with a non-null endpoint (exit=durationMs, web=httpReadyMs); screening only, not an SLA.'];
   notes.push('Different endpoints (exit vs web) and different experiments are never added or subtracted.');
   if (result.e4?.message) notes.push(result.e4.message);
   if ((result.quality?.insufficient ?? []).length > 0) {
@@ -520,7 +577,7 @@ export function formatSummary(summary, meta = {}) {
   if (context) lines.push(context);
 
   lines.push('');
-  lines.push('[variants] (kind, success/attempt, nearest-rank P50/P95; only result=ok with non-null durationMs)');
+  lines.push('[variants] (kind, success/attempt, nearest-rank P50/P95; exit=durationMs, web=httpReadyMs, result=ok and non-null only)');
   lines.push(pad('variant', 8) + ' ' + pad('kind', 5) + ' ' + pad('success', 12) + ' '
     + pad('P50 ms', 10) + ' ' + pad('P95 ms', 10) + ' ' + pad('min ms', 10) + ' ' + pad('max ms', 10) + ' flag');
   for (const group of result.groups ?? []) {
@@ -554,22 +611,33 @@ export function formatSummary(summary, meta = {}) {
   lines.push('这是筛查，不是因果结论。');
 
   lines.push('');
-  lines.push('[E4 cache] (A vs C on webReadyMs; cache provenance must be proven before a comparison)');
+  lines.push('[E4 cache] (A vs C on httpReadyMs; Web cache coverage must be verified before a comparison)');
   if (result.e4?.present === false) {
     lines.push(result.e4.message ?? 'E4-C not present');
-  } else if (result.e4?.cacheEvaluable === false) {
-    lines.push(result.e4.message ?? 'E4-C not-evaluable: 缓存未证明落盘');
+    lines.push('webCacheVerified: unavailable');
   } else {
-    lines.push('E4-C cache: mode=warm, files=' + (result.e4?.cacheFiles ?? '—') + ', bytes=' + (result.e4?.cacheBytes ?? '—'));
-    if (result.e4?.message) lines.push(result.e4.message);
-    const pair = result.e4?.pair;
-    if (pair?.comparable) {
-      lines.push('E4-A vs E4-C (webReadyMs): paired, same endpoint; n=' + pair.n
-        + '; ΔP50=' + signed(pair.p50Diff) + ' ms; ΔP95=' + signed(pair.p95Diff) + ' ms');
+    lines.push('E4-C cache: ' + (result.e4?.cacheEvaluable ? 'mode=warm, ' : '')
+      + 'files=' + (result.e4?.cacheFiles ?? '—') + ', bytes=' + (result.e4?.cacheBytes ?? '—'));
+    const status = result.e4?.webCacheVerified ?? 'unavailable';
+    if (status === 'verified') {
+      lines.push('webCacheVerified: verified');
+    } else if (status === 'unavailable') {
+      lines.push('webCacheVerified: unavailable: cacheFileCount 全为 null（Web 模块覆盖未证明）');
     } else {
-      lines.push('E4-A vs E4-C (webReadyMs): not comparable (' + pairReason(pair?.reason ?? 'no paired iterations') + ')');
+      lines.push('webCacheVerified: unverified: Web 模块覆盖未证明');
     }
-    lines.push('只陈述配对数据；不给出因果结论。');
+    if (status !== 'verified') {
+      lines.push('结论：' + (result.e4?.message ?? 'E4-C unverified: Web 模块覆盖未证明') + '；不给出热缓存结论。');
+    } else {
+      const pair = result.e4?.pair;
+      if (pair?.comparable) {
+        lines.push('E4-A vs E4-C (httpReadyMs): paired, same endpoint; n=' + pair.n
+          + '; ΔP50=' + signed(pair.p50Diff) + ' ms; ΔP95=' + signed(pair.p95Diff) + ' ms');
+      } else {
+        lines.push('E4-A vs E4-C (httpReadyMs): not comparable (' + pairReason(pair?.reason ?? 'no paired iterations') + ')');
+      }
+      lines.push('只陈述配对数据；不给出因果结论。');
+    }
   }
 
   lines.push('');
