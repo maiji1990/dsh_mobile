@@ -372,6 +372,8 @@
     <string name="dev_experiments_e23_sub">只重测配置加载这一项；需要先修参数时使用</string>
     <string name="dev_experiments_e3">E3（各 10 次）</string>
     <string name="dev_experiments_e3_sub">生产配置 / 隔离最小配置 / 隔离 + 覆盖层；记录首次 HTTP 就绪</string>
+    <string name="dev_experiments_e5">Web Profiler A/B（OFF + ON 各 10 次）</string>
+    <string name="dev_experiments_e5_sub">进程内 V8 CPU 采样 + CPU/ELU 统计；停止用私有目录文件握手，不开 inspector 端口</string>
     <string name="dev_experiments_e4">E4（A 10 次 + B / C）</string>
     <string name="dev_experiments_e4_sub">Compile cache 关闭 / 冷 / 热；缓存未落盘时如实标记</string>
     <string name="dev_experiments_all">全部（E1→E2→E3→E4）</string>

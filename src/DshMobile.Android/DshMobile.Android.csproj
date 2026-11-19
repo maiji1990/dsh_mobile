@@ -28,6 +28,15 @@
     <RuntimeAssetsDir>$(RepoRoot)artifacts\runtime\android-assets\runtime\</RuntimeAssetsDir>
     <AndroidStoreUncompressedFileExtensions>$(AndroidStoreUncompressedFileExtensions);.zst</AndroidStoreUncompressedFileExtensions>
   </PropertyGroup>
+  <!--
+    Web-profile diagnostic preload (docs/WEB_STARTUP_DIAGNOSIS.md). It is NOT an Android asset (the SDK's default
+    AndroidAsset glob would package it in every build, and switching the property off could leave a stale copy in obj).
+    It is embedded in the assembly only with -p:DshDiagnostics=true, next to the #if-gated activity that reads it, so a
+    normal build has neither the file nor the code path.
+  -->
+  <ItemGroup Condition="'$(DshDiagnostics)' == 'true'">
+    <EmbeddedResource Include="Diagnostics/web-profile-preload.mjs" LogicalName="DshMobile.Diagnostics.web-profile-preload.mjs" />
+  </ItemGroup>
   <ItemGroup Condition="Exists('$(RuntimeAssetsDir)android-side.tar.zst') And Exists('$(RuntimeAssetsDir)android-side.tar.zst.sha256')">
     <AndroidAsset Include="$(RuntimeAssetsDir)android-side.tar.zst;$(RuntimeAssetsDir)android-side.tar.zst.sha256" LogicalName="runtime/%(Filename)%(Extension)" />
   </ItemGroup>

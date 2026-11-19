@@ -102,8 +102,30 @@ public sealed class UpstreamPinnedValuesTests
             .Select(f => Path.GetRelativePath(root, f).Replace('\\', '/'))
             .Order(StringComparer.Ordinal);
         Assert.Equal(
-            ["dshmobile/libdshmobile-link.so", "dshmobile/link-shim.mjs", "toolchain-cache/corepack-pnpm-11.1.2.tar.zst", "toolchain-cache/corepack-pnpm-11.1.2.tar.zst.sha256"],
+            [
+                "dshmobile/libdshmobile-link.so",
+                "dshmobile/link-shim.mjs",
+                "toolchain-cache/corepack-pnpm-11.1.2.tar.zst",
+                "toolchain-cache/corepack-pnpm-11.1.2.tar.zst.sha256",
+            ],
             found);
+    }
+
+    /// <summary>
+    /// The Web-profile diagnostic preload (docs/WEB_STARTUP_DIAGNOSIS.md) must never be packaged in a normal build: the
+    /// csproj removes the diagnostics directory by default and adds it only with -p:DshDiagnostics=true.
+    /// </summary>
+    [Fact]
+    public void DiagnosticPreload_IsPackagedOnlyInTheDiagnosticBuild()
+    {
+        var csproj = File.ReadAllText(Repo.PathOf("src", "DshMobile.Android", "DshMobile.Android.csproj"));
+        // Embedded next to the #if-gated activity, added only under the diagnostic property; never an Android asset.
+        Assert.Contains("<EmbeddedResource Include=\"Diagnostics/web-profile-preload.mjs\"", csproj, StringComparison.Ordinal);
+        Assert.Contains("LogicalName=\"DshMobile.Diagnostics.web-profile-preload.mjs\"", csproj, StringComparison.Ordinal);
+        Assert.Contains("Condition=\"'$(DshDiagnostics)' == 'true'\"", csproj, StringComparison.Ordinal);
+        Assert.DoesNotContain("AndroidAsset Include=\"Diagnostics/", csproj, StringComparison.Ordinal);
+        Assert.DoesNotContain("Assets/dshmobile/diagnostics", csproj, StringComparison.Ordinal);
+        Assert.True(File.Exists(Repo.PathOf("src", "DshMobile.Android", "Diagnostics", "web-profile-preload.mjs")));
     }
 
     [Fact]
