@@ -7,7 +7,8 @@
       "abi": "arm64",
       "file": "dshmobile-runtime-debian-arm64-0.2.1.zip",
       "releaseTag": "runtime-0.2.1",
-      "minAppVersion": "0.1.0"
+      "minAppVersion": "0.1.0",
+      "providesNode": "26.13.1"
     },
     {
       "kind": "dsh",

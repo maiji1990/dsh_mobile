@@ -134,10 +134,10 @@ public sealed class ReleaseManifestTests
     // ------------------------------------------------------------------ trust
 
     [Fact]
-    public void BuiltInTrust_IsEmpty_SoNothingIsEverOffered()
+    public void EmptyTrust_OffersNothing_EvenForAValidManifest()
     {
-        Assert.True(ReleaseTrust.BuiltIn.IsEmpty);
-        var v = ReleaseManifestVerifier.Verify(Fixture("release-manifest.json"), Fixture("release-manifest.json.sig"), ReleaseTrust.BuiltIn, "preview", Now);
+        // Independent of which keys this build pins: zero trusted keys is a refusal, not an unverified offer.
+        var v = ReleaseManifestVerifier.Verify(Fixture("release-manifest.json"), Fixture("release-manifest.json.sig"), ReleaseTrust.FromBase64(), "preview", Now);
         Assert.Equal(UpdateErrorCodes.NoTrustedKeys, v.Code);
     }
 
@@ -329,6 +329,32 @@ public sealed class ReleaseManifestTests
         Assert.Equal("0.2.1", dsh.Update?.Version);
     }
 
+    [Fact]
+    public void Catalog_UnblocksDshOffer_WhenPendingRuntimeUpdateProvidesRequiredNode_ADR0029()
+    {
+        var rt26 = Artifact("runtime", "0.2.1");
+        rt26["providesNode"] = "26.13.1";
+        var dsh26 = DshArtifact("0.2.2-rc.4");
+        dsh26["requiresNode"] = "26.x";
+        var manifest = Parsed(rt26, dsh26);
+        Assert.Equal("26.13.1", manifest.Artifacts.Single(a => a.Kind == ReleaseKinds.Runtime).ProvidesNode);
+
+        // 1. 已安装 Node 24 / Runtime 0.2.0：由于存在带 providesNode=26.13.1 的 Runtime 0.2.1 更新，DSH 0.2.2-rc.4 可联合升级。
+        var rows = ReleaseCatalog.Evaluate(manifest, new InstalledVersions("0.1.0", "0.2.0", "24.19.0", "0.2.1-rc.5"), "arm64");
+        Assert.Equal("0.2.1", rows.Single(r => r.Kind == ReleaseKinds.Runtime).Update?.Version);
+        Assert.Equal("0.2.2-rc.4", rows.Single(r => r.Kind == ReleaseKinds.Dsh).Update?.Version);
+
+        // 2. 全新安装（Runtime 与 Node 均为 null）：Runtime 0.2.1 与 DSH 0.2.2-rc.4 可一次性联合在线初始化。
+        var fresh = ReleaseCatalog.Evaluate(manifest, new InstalledVersions("0.1.0", null, null, null), "arm64");
+        var plan = UpdatePlanner.Plan(fresh);
+        Assert.Equal(("0.2.1", "0.2.2-rc.4"), (plan.Runtime?.Version, plan.Dsh?.Version));
+
+        // 3. providesNode 只能出现在 runtime 制品上。
+        var badDsh = DshArtifact("0.2.2-rc.4");
+        badDsh["providesNode"] = "26.13.1";
+        Assert.Equal(UpdateErrorCodes.SchemaInvalid, Verify(Manifest(null, badDsh), new Signer()).Code);
+    }
+
     [Theory]
     [InlineData("24.x", "24.11.0", true)]
     [InlineData("24.x", "v24.1.0", true)]
@@ -377,7 +403,7 @@ public sealed class ReleaseManifestTests
     {
         var handler = new FakeHandler(_ => throw new InvalidOperationException("must not fetch"));
         using var http = new HttpClient(handler);
-        var r = await ReleaseDiscovery.CheckAsync(new HttpReleaseSource(http, ManifestUrl), ReleaseTrust.BuiltIn, "stable",
+        var r = await ReleaseDiscovery.CheckAsync(new HttpReleaseSource(http, ManifestUrl), ReleaseTrust.FromBase64(), "stable",
             new InstalledVersions("0.1.0", null, null, null), "arm64", null, TimeProvider.System, CancellationToken.None);
         Assert.Equal(UpdateErrorCodes.NoTrustedKeys, r.Code);
         Assert.Empty(handler.Requests);

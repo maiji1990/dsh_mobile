@@ -52,7 +52,8 @@ export function buildManifest(spec, { channel, generatedAt, expiresDays, describ
     need(ABI.test(a.abi ?? ''), `${at}.abi is malformed`);
     need(FILE.test(a.file ?? '') && SUFFIXES.some((s) => a.file.endsWith(s)), `${at}.file must be a plain file name ending in ${SUFFIXES.join(' / ')}`);
     need(TAG.test(a.releaseTag ?? ''), `${at}.releaseTag is malformed`);
-    for (const k of ['minAppVersion']) need(a[k] === undefined || VERSION.test(a[k]), `${at}.${k} is malformed`);
+    for (const k of ['minAppVersion', 'providesNode']) need(a[k] === undefined || VERSION.test(a[k]), `${at}.${k} is malformed`);
+    need(a.providesNode === undefined || a.kind === 'runtime', `${at}.providesNode is only valid for runtime artifacts`);
     for (const k of ['requiresNode', 'sourceTag']) need(a[k] === undefined || TOKEN.test(a[k]), `${at}.${k} is malformed`);
     need(a.sourceRepo === undefined || REPO.test(a.sourceRepo), `${at}.sourceRepo is malformed`);
     need(a.sourceCommit === undefined || COMMIT.test(a.sourceCommit), `${at}.sourceCommit must be a full commit hash`);
@@ -71,7 +72,7 @@ export function buildManifest(spec, { channel, generatedAt, expiresDays, describ
       sha256,
       size,
     };
-    for (const k of ['minAppVersion', 'requiresNode', 'sourceRepo', 'sourceTag', 'sourceCommit']) if (a[k] !== undefined) out[k] = a[k];
+    for (const k of ['minAppVersion', 'providesNode', 'requiresNode', 'sourceRepo', 'sourceTag', 'sourceCommit']) if (a[k] !== undefined) out[k] = a[k];
     return out;
   });
   const expiresAt = new Date(Date.parse(generatedAt) + expiresDays * 86400_000).toISOString().replace('.000Z', 'Z');

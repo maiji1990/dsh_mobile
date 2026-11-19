@@ -40,6 +40,7 @@ test('reviewed preview spec matches the App parser input schema', () => {
     assert.equal(p.artifacts[i].releaseTag,tag);
     assert.equal(a.url,'https://github.com/'+p.repository+'/releases/download/'+tag+'/'+a.archive);
   }
+  assert.equal(manifest.artifacts[0].providesNode,'26.13.1');
   assert.equal(manifest.artifacts[1].sourceTag,'dsh-v'+manifest.artifacts[1].version);
   assert.match(manifest.artifacts[1].sourceCommit,/^[a-f0-9]{40,64}$/);
 });

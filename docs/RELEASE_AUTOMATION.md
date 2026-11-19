@@ -12,7 +12,7 @@ Runtime、DSH、APK 分别版本化；所有下载都使用不可变的版本/ S
 4. 两种升级 PR 的检查：Android 测试与 APK 构建，Runtime/DSH 双重 ARM64 构建逐字节比对，App 实际导入/安装和 chroot DSH profile smoke。PR 中不能发布 GitHub Release。
 5. 合并 main 后运行 runtime-layers，再验证成功才自动创建 runtime-<版本> 与 dsh-<版本> 不可变 GitHub 预发行版。已存在的版本不可覆盖。变化但版本未增加则报错。
 6. assets 任务只在两种 Release 均存在且带 SHA256 digest 时生成独立 PR；任一 Release 尚未创建时记录为等待并退出，不错误地生成半成品 PR：runtime-assets.lock 钉本仓库真实下载地址及哈希；release/preview.json 加入真实 DSH provenance.sourceCommit。该 PR 审核合并后 Android CI 会执行 fetch-runtime.ps1，将 android-side 打入 APK；base/node 保持独立下载，DSH 层不进 APK（ADR-0027：设备端导入或在线更新）。
-7. 预览通道：只有配置了 Ed25519 公钥、环境签名私钥以后，才能手动运行 release-publish.yml 选择 preview。其流程包括匿名下载 Release、计算真实摘要、签署 manifest、匿名回读验签。不能未经配置直接声称 OTA 生效。
+7. 预览通道：配置了 Ed25519 公钥、环境签名私钥以后，`release/preview.json` 或 `release-trusted-keys.txt` 合并到 `main` 时会自动运行 `release-publish.yml` 签发 `preview`（并按每周定时自动续签防 30 天过期；也可手动触发）。其流程包括匿名下载 Release、计算真实摘要、签署 manifest、匿名回读验签。未配置公钥或私钥时门禁如实失败，不能未经配置直接声称 OTA 生效。
 8. 稳定通道：真机验证导入、启动、WebUI、终端、MCP、插件、在线更新、回滚等；新增 migration/parity/ 验收记录（包含两个制品版本）；经 PR 更新 release/stable.json；手动运行 release-publish.yml 的 stable + acceptance_evidence，在受保护环境人工批准后签署。
 
 ## 一次性 GitHub 设置（必须由仓库负责人完成）

@@ -25,6 +25,8 @@ public enum HomePhase
 public enum HomeAction
 {
     None,
+    /// <summary>ADR-0029: 从 GitHub 签名通道在线下载并安装缺失的运行环境（Runtime / DSH）。</summary>
+    OnlineInstall,
     ImportRuntime,
     /// <summary>The runtime body is installed but the DSH layer is not (ADR-0027: it is imported separately).</summary>
     ImportDsh,
@@ -56,6 +58,8 @@ public sealed record HomeStatus(
     public const string StopOperation = "stop";
     public const string ImportOperation = "runtime.import";
     public const string ImportDshOperation = "runtime.import.dsh";
+    public const string UpdateCheckOperation = "update.check";
+    public const string UpdateInstallOperation = "update.install";
 
     /// <param name="snapshot">The runtime journal.</param>
     /// <param name="operation">The operation running now, or null.</param>
@@ -81,10 +85,13 @@ public sealed record HomeStatus(
 
         return snapshot.State switch
         {
-            RuntimeState.NotInstalled => Make(HomePhase.NotInstalled, HomeAction.ImportRuntime),
+            // ADR-0029: 首次未安装时主按钮改为在线下载运行环境，次级按钮保留本地导入作为离线兜底。
+            RuntimeState.NotInstalled => Make(HomePhase.NotInstalled, HomeAction.OnlineInstall, HomeAction.ImportRuntime),
             RuntimeState.Staging => Make(HomePhase.Busy),
-            // The body is installed; without a DSH layer (ADR-0027) the next step is importing one, not starting.
-            RuntimeState.Ready => Make(HomePhase.Stopped, snapshot.DshVersion is null ? HomeAction.ImportDsh : HomeAction.Start),
+            // ADR-0027 / ADR-0029: 主体已装但缺少 DSH 层时主按钮改为在线下载 DSH，次级按钮保留本地导入。
+            RuntimeState.Ready => snapshot.DshVersion is null
+                ? Make(HomePhase.Stopped, HomeAction.OnlineInstall, HomeAction.ImportDsh)
+                : Make(HomePhase.Stopped, HomeAction.Start),
             RuntimeState.Starting or RuntimeState.Recovering => Make(HomePhase.Starting, HomeAction.None, HomeAction.Stop),
             RuntimeState.Running => snapshot.Harness switch
             {
@@ -99,6 +106,7 @@ public sealed record HomeStatus(
             {
                 ImportOperation => HomeAction.ImportRuntime,
                 ImportDshOperation => HomeAction.ImportDsh,
+                UpdateInstallOperation => HomeAction.OnlineInstall,
                 _ => HomeAction.Start,
             }),
             _ => Make(HomePhase.Failed),

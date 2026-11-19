@@ -57,7 +57,8 @@ public sealed record ReleaseArtifact(
     string? RequiresNode,
     string? SourceRepo,
     string? SourceTag,
-    string? SourceCommit);
+    string? SourceCommit,
+    string? ProvidesNode = null);
 
 /// <summary>A release manifest whose signature has been verified and whose content passed <see cref="ReleaseManifestParser"/>.</summary>
 public sealed record ReleaseManifest(
@@ -191,6 +192,11 @@ public static partial class ReleaseManifestParser
             throw new ReleaseManifestException($"{at}.size must be 1..{MaxArtifactBytes}");
         }
         var minApp = Optional(a, "minAppVersion", at, VersionToken());
+        var providesNode = Optional(a, "providesNode", at, VersionToken());
+        if (providesNode is not null && kind != ReleaseKinds.Runtime)
+        {
+            throw new ReleaseManifestException($"{at}.providesNode is only valid for runtime artifacts");
+        }
         var requiresNode = Optional(a, "requiresNode", at, Token());
         var repo = Optional(a, "sourceRepo", at, RepoSlug());
         var tag = Optional(a, "sourceTag", at, Token());
@@ -199,7 +205,7 @@ public static partial class ReleaseManifestParser
         {
             throw new ReleaseManifestException($"{at}: a dsh layer must pin sourceRepo, sourceTag and sourceCommit");
         }
-        return new ReleaseArtifact(kind, version, abi, archive, url, sha, size, minApp, requiresNode, repo, tag, commit);
+        return new ReleaseArtifact(kind, version, abi, archive, url, sha, size, minApp, requiresNode, repo, tag, commit, providesNode);
     }
 
     /// <summary>Objects must not repeat a key: parsers disagree on which copy wins, and the signature covers both.</summary>

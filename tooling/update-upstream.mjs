@@ -169,13 +169,14 @@ async function assets(check) {
   const appProps=readFileSync(p('src','DshMobile.Android','PackageIdentity.props'),'utf8');
   const appVersion=/<ApplicationDisplayVersion>([^<]+)<\/ApplicationDisplayVersion>/.exec(appProps)?.[1];
   if(!/^\d+\.\d+\.\d+$/.test(appVersion??''))throw Error('app version cannot be read from PackageIdentity.props');
+  const nodeVersion=locked(t,'NODE_VERSION');
   const spec={
     repository:'maiji1990/dsh_mobile',
     artifacts:[
       {kind:'runtime',version:parts[1].version,abi:'arm64',file:parts[1].file,
-        releaseTag:'runtime-'+parts[1].version,minAppVersion:appVersion},
+        releaseTag:'runtime-'+parts[1].version,minAppVersion:appVersion,providesNode:nodeVersion},
       {kind:'dsh',version:parts[0].version,abi:'arm64',file:parts[0].file,
-        releaseTag:'dsh-'+parts[0].version,requiresNode:locked(t,'NODE_VERSION').split('.')[0]+'.x',
+        releaseTag:'dsh-'+parts[0].version,requiresNode:nodeVersion.split('.')[0]+'.x',
         sourceRepo:provenance.sourceRepo,sourceTag:provenance.sourceTag,sourceCommit:provenance.sourceCommit}
     ]
   };

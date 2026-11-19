@@ -1,6 +1,6 @@
 # ADR-0022：签名发布清单（Ed25519）与只读版本发现
 
-- 状态：提议（2026-11-16；实现已合入代码但**未接 UI、未内置公钥**，生效需负责人生成发布密钥并在单独 PR 中钉入公钥，见「未决」）
+- 状态：提议（2026-11-16；2026-11-19 钉入首把发布公钥 `ed25519:705aea09994abd46`，preview 通道可签发；stable 仍需真机验收证据与人工审核）
 - 关联：vNext 方案 P0-03 / 第 4 节「统一版本清单与手机在线安装」；[ADR-0020](0020-self-built-runtime-layers.md)（运行层自建、Release 待发布）；
   [SECURITY.md](../SECURITY.md) M2「Runtime 层签名清单校验」；AGENTS.md 规则 5（不伪造成功）、规则 10（版本锁定）、规则 11（安全不得削弱）
 
@@ -32,7 +32,7 @@
 6. **发布托管**：源码仓库保持私有；签名的制品与清单发布到**单独的公开位置**（推荐公开仓库 `dsh_mobile_releases` 的 Release 或 CDN），
    App 匿名 https 拉取（`HttpReleaseSource`：只 https、拒绝带凭据的 URL、跳转到非 https 即失败、每个文件 ≤ 1 MiB、不发送 Authorization）。
    不走私有仓库 + OAuth（方案中“仅个人使用”的备选不实现）。
-7. **没有可信钥匙就什么都不提供**：`ReleaseTrust.BuiltIn` 当前为空，发现直接返回 `UPDATE_NO_TRUSTED_KEYS`，连网络都不访问——不伪造“已是最新”。
+7. **没有可信钥匙就什么都不提供**：`ReleaseTrust.BuiltIn` 为空时（尚未钉钥匙，或文件损坏触发 fail-closed），发现直接返回 `UPDATE_NO_TRUSTED_KEYS`，连网络都不访问——不伪造“已是最新”。2026-11-19 已钉入首把钥匙，正常路径不再走该分支，但这条故障安全路径保留。
 
 ## 修订（2026-11-16，vNext PR-02）
 
@@ -70,9 +70,9 @@
 
 ## 未决（需负责人）
 
-1. 用 `node tooling/release-manifest-sign.mjs keygen <仓库外的私密目录>` 生成发布密钥；私钥只放进 environment `release-signing` 的 secret
-   `DSHM_RELEASE_SIGNING_KEY`（并离线备份），不进仓库；公钥（base64）以单独 commit 加入 `release-trusted-keys.txt`，keyId 登记于下。
+1. ~~生成发布密钥~~：已完成（2026-11-19）。`node tooling/release-manifest-sign.mjs keygen <仓库外的私密目录>` 生成；私钥只放进 environment `release-signing`
+   的 secret `DSHM_RELEASE_SIGNING_KEY`（离线备份，不进仓库）；公钥（base64）以单独 commit 加入 `release-trusted-keys.txt`，keyId 登记于下。
 2. ~~确定公开发布位置~~：已定（本仓库，见「修订」）。
 3. ~~清单有效期~~：默认 30 天、上限 90 天；重签节奏 = 每次发布或到期前。
 
-已信任的 keyId：（无）
+已信任的 keyId：`ed25519:705aea09994abd46`（2026-11-19；私钥仅存在于 environment `release-signing` 的 `DSHM_RELEASE_SIGNING_KEY`，轮换时新旧钥匙同签一段再撤旧）

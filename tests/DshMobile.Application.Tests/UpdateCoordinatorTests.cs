@@ -64,6 +64,7 @@ public sealed class UpdateCoordinatorTests : IDisposable
     private readonly InMemoryRuntimeJournal _journal = new();
     private readonly Ed25519PrivateKeyParameters _key;
     private readonly byte[] _layer = File.ReadAllBytes(TestRuntime.RepoPath("tests", "TestVectors", "bundles", "dsh-good.tar"));
+    private readonly byte[] _runtimeBundle = File.ReadAllBytes(TestRuntime.RepoPath("tests", "TestVectors", "bundles", "good.zip"));
     private FakeDshHost _host;
 
     public UpdateCoordinatorTests()
@@ -296,6 +297,80 @@ public sealed class UpdateCoordinatorTests : IDisposable
             Assert.Equal(UpdateTransactionCodes.NothingToInstall, r.Code);
             Assert.Equal(0, server.Requests);
         }
+    }
+
+    private sealed class MultiServer(Func<Uri, byte[]> serve) : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct) =>
+            Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new ByteArrayContent(serve(request.RequestUri!)),
+                RequestMessage = request,
+            });
+    }
+
+    private async Task<ReleaseDiscoveryResult> CombinedDiscovery()
+    {
+        var rtSha = Convert.ToHexStringLower(SHA256.HashData(_runtimeBundle));
+        var dshSha = Convert.ToHexStringLower(SHA256.HashData(_layer));
+        var manifest = Encoding.UTF8.GetBytes($$"""
+            {"schema":1,"channel":"preview","generatedAt":"2026-11-16T00:00:00Z","expiresAt":"2026-12-16T00:00:00Z","artifacts":[
+              {"kind":"runtime","version":"0.2.1","abi":"arm64","archive":"dshmobile-runtime-debian-arm64-0.2.1.zip",
+               "url":"https://github.com/maiji1990/dsh_mobile/releases/download/runtime-0.2.1/dshmobile-runtime-debian-arm64-0.2.1.zip",
+               "sha256":"{{rtSha}}","size":{{_runtimeBundle.Length}},"providesNode":"26.13.1"},
+              {"kind":"dsh","version":"{{Target}}","abi":"arm64","archive":"dsh-{{Target}}.tar.zst",
+               "url":"https://github.com/maiji1990/dsh_mobile/releases/download/dsh-{{Target}}/dsh-{{Target}}.tar.zst",
+               "sha256":"{{dshSha}}","size":{{_layer.Length}},"requiresNode":"26.x",
+               "sourceRepo":"deepseek-ai/deepseek-harness","sourceTag":"dsh-v{{Target}}","sourceCommit":"{{new string('b', 40)}}"}]}
+            """);
+        var message = Encoding.ASCII.GetBytes(ReleaseManifestVerifier.Domain).Concat(manifest).ToArray();
+        var signer = new Ed25519Signer();
+        signer.Init(true, _key);
+        signer.BlockUpdate(message, 0, message.Length);
+        var pub = _key.GeneratePublicKey().GetEncoded();
+        var envelope = Encoding.UTF8.GetBytes($$"""{"schema":1,"signatures":[{"alg":"ed25519","keyId":"{{ReleaseTrust.KeyId(pub)}}","sig":"{{Convert.ToBase64String(signer.GenerateSignature())}}"}]}""");
+        var r = await ReleaseDiscovery.CheckAsync(new Source(new ReleaseFiles(manifest, envelope)), new ReleaseTrust([pub]), "preview",
+            new InstalledVersions("0.1.0", "0.1.0", "24.19.0", "1.0.0"), "arm64", null, _time, CancellationToken.None);
+        Assert.True(r.Ok, $"{r.Code} {r.Message}");
+        return r;
+    }
+
+    private void EnsureNativeProot()
+    {
+        Directory.CreateDirectory(Layout.NativeLibraryDir);
+        File.WriteAllText(Path.Combine(Layout.NativeLibraryDir, "libproot.so"), "fake-proot");
+    }
+
+    [Fact]
+    public async Task CombinedRuntimeAndDshUpdate_CommitsBothWhenHealthy_AndRestoresBothWhenUnhealthy_ADR0029()
+    {
+        EnsureNativeProot();
+        File.WriteAllText(Path.Combine(Layout.LayerDir("base"), "old-base.txt"), "old-base");
+        using var runtime = Coordinator();
+        using var http = new HttpClient(new MultiServer(uri => uri.AbsolutePath.EndsWith(".zip", StringComparison.Ordinal) ? _runtimeBundle : _layer));
+        using var downloader = new ArtifactDownloader(http, new ArtifactStore(Layout), _ => long.MaxValue);
+        using var u = new UpdateCoordinator(runtime, downloader, new UpdateStateStore(Layout), _time);
+
+        // 1. 健康探测失败：DSH 与 Runtime 均自动回滚到旧版本。
+        _host.OnStart = () => new DshHostResult(false, "DSH_START_TIMEOUT", "no READY within 60 s");
+        var failed = await u.InstallPlanAsync(await CombinedDiscovery(), "preview", stopConfirmed: false, null, CancellationToken.None);
+        Assert.False(failed.Ok);
+        Assert.Equal(UpdateTransactionCodes.HealthFailed, failed.Code);
+        Assert.Equal("1.0.0", Dsh.InstalledVersion());
+        Assert.True(File.Exists(Path.Combine(Layout.LayerDir("base"), "old-base.txt")));
+        Assert.False(new LayerInstaller(Layout).IsHeldForProbe);
+        Assert.False(Dsh.IsHeldForProbe);
+
+        // 2. 健康探测通过：Runtime 与 DSH 一并提交。
+        _host.OnStart = null;
+        var ok = await u.InstallPlanAsync(await CombinedDiscovery(), "preview", stopConfirmed: false, null, CancellationToken.None);
+        Assert.True(ok.Ok, $"{ok.Code} {ok.Message}");
+        Assert.Equal((UpdatePhases.Committed, Target), (ok.Phase, ok.InstalledVersion));
+        Assert.Equal(Target, Dsh.InstalledVersion());
+        Assert.False(File.Exists(Path.Combine(Layout.LayerDir("base"), "old-base.txt")));
+        Assert.False(new LayerInstaller(Layout).IsHeldForProbe);
+        Assert.False(Dsh.IsHeldForProbe);
+        AssertUserDataUntouched();
     }
 
     private sealed class SyncProgress(Action<UpdateProgress> on) : IProgress<UpdateProgress>

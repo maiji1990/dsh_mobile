@@ -18,8 +18,8 @@ public static class OperationNames
         "info" => Resource.String.op_info,
         "dsh.probe" => Resource.String.op_probe,
         PtyProbe.Slice => Resource.String.op_pty,
-        "update.check" => Resource.String.op_update_check,
-        "update.install" => Resource.String.op_update_install,
+        HomeStatus.UpdateCheckOperation => Resource.String.op_update_check,
+        HomeStatus.UpdateInstallOperation => Resource.String.op_update_install,
         _ => Resource.String.op_generic,
     })!;
 

@@ -138,15 +138,17 @@ public sealed class UpdateStateStore(RuntimeLayout layout)
     }
 }
 
-/// <summary>One installable step, or why a row cannot be updated online.</summary>
-public sealed record UpdatePlan(ReleaseArtifact? Dsh, IReadOnlyList<string> Notes);
+/// <summary>可在线安装的目标制品（DSH 层与/或 Runtime 基础包），以及不可安装行的原因说明（ADR-0024 / ADR-0029）。</summary>
+public sealed record UpdatePlan(ReleaseArtifact? Dsh, IReadOnlyList<string> Notes, ReleaseArtifact? Runtime = null)
+{
+    /// <summary>是否存在至少一个可在线安装的制品（Runtime 或 DSH）。</summary>
+    public bool HasWork => Runtime is not null || Dsh is not null;
+}
 
 /// <summary>
-/// What can be installed online from a verified discovery (vNext PR-05). Only the DSH layer is installed online in this
-/// slice: it has the held / committed / restored transaction. A runtime bundle update stays an offline import (the body
-/// swap keeps no rollback copy yet, MIGRATION §7), Node ships inside the runtime bundle, and the app itself updates
-/// through Android's package installer (not implemented). Newer DSH versions blocked by their Node requirement are
-/// reported, never installed out of order.
+/// 从已验签的版本目录规划在线安装项（vNext PR-05 / ADR-0029）：支持 DSH 层、Runtime 基础包（base / node / android-side）
+/// 以及两者的联合事务安装（均具备 probing 暂存旧层、健康检查通过后提交、失败自动恢复机制）。
+/// 独立 Node 行随 Runtime 包分发，应用本身需 Android PackageInstaller（暂未接入）。
 /// </summary>
 public static class UpdatePlanner
 {
@@ -154,20 +156,25 @@ public static class UpdatePlanner
     {
         ArgumentNullException.ThrowIfNull(choices);
         var notes = new List<string>();
+        ReleaseArtifact? runtime = null;
         ReleaseArtifact? dsh = null;
         foreach (var c in choices)
         {
             switch (c.Kind)
             {
+                case ReleaseKinds.Runtime:
+                    runtime = c.Update;
+                    foreach (var o in c.Offers.Where(o => o.BlockedBy is not null && (c.Installed is null || Versions.IsNewer(o.Artifact.Version, c.Installed))))
+                    {
+                        notes.Add($"runtime {o.Artifact.Version}: {o.BlockedBy}");
+                    }
+                    break;
                 case ReleaseKinds.Dsh:
                     dsh = c.Update;
                     foreach (var o in c.Offers.Where(o => o.BlockedBy is not null && (c.Installed is null || Versions.IsNewer(o.Artifact.Version, c.Installed))))
                     {
                         notes.Add($"dsh {o.Artifact.Version}: {o.BlockedBy}");
                     }
-                    break;
-                case ReleaseKinds.Runtime when c.Update is { } r:
-                    notes.Add($"runtime {r.Version}: {UpdateTransactionCodes.NotSupported} online; import the bundle offline (Runtime page)");
                     break;
                 case ReleaseKinds.Node when c.Update is { } n:
                     notes.Add($"node {n.Version}: ships in the runtime bundle; {UpdateTransactionCodes.NotSupported} on its own");
@@ -177,6 +184,6 @@ public static class UpdatePlanner
                     break;
             }
         }
-        return new UpdatePlan(dsh, notes);
+        return new UpdatePlan(dsh, notes, runtime);
     }
 }

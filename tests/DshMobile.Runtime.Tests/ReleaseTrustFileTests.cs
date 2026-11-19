@@ -12,7 +12,7 @@ public sealed class ReleaseTrustFileTests
     private static string Built(params string[] parts) => Repo.PathOf(["tests", "TestVectors", "release-manifest", "built", .. parts]);
 
     [Fact]
-    public void BuiltIn_IsLoadedFromTheEmbeddedFile_AndIsEmptyToday()
+    public void BuiltIn_IsLoadedFromTheEmbeddedFile_AndPinsTheRecordedReleaseKey()
     {
         using var s = typeof(ReleaseTrust).Assembly.GetManifestResourceStream(ReleaseTrust.BuiltInResource);
         Assert.NotNull(s);
@@ -20,7 +20,9 @@ public sealed class ReleaseTrustFileTests
         Assert.Equal(source.ReplaceLineEndings("\n"), new StreamReader(s).ReadToEnd().ReplaceLineEndings("\n"));
         // Parses cleanly (a malformed file would silently fall back to "trust nothing" in the app).
         Assert.Equal(ReleaseTrust.Parse(source).KeyIds, ReleaseTrust.BuiltIn.KeyIds);
-        Assert.True(ReleaseTrust.BuiltIn.IsEmpty, "a release key was added: record its keyId in ADR-0022 and update this test");
+        // The pinned key is a reviewed fact, recorded in ADR-0022 (未决 → 已信任的 keyId). Adding or rotating a key
+        // must land here in the same commit: never loosen this back to IsEmpty, and never let it drift from the ADR.
+        Assert.Equal(["ed25519:705aea09994abd46"], ReleaseTrust.BuiltIn.KeyIds);
     }
 
     [Fact]
