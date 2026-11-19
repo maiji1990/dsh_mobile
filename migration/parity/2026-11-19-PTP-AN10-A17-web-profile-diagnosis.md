@@ -100,3 +100,12 @@ B0→B1 的 `bridge.complete` P50 相差 −1.0%，本会话内没有明显渐�
 - `httpReadyMs` 是「首个 HTTP 状态」而非可交互；profile 在 ready 后停止，之后的初始化不在样本内。
 - Profiler 开销 9.6%（over），PROFILE 行的绝对时间不可用于生产对比。
 - 原始 profile 仅本地私有目录与开发机，未提交；本记录只含脱敏聚合。
+## 清理与打包验证（本轮）
+
+- **正常完成**：跑满 20 条记录后，设备上无 `libproot`/`node` 残留，3080 未监听（`/proc/net/tcp` 无 `0C08`）。
+- **取消路径**（在带「取消」修复的诊断构建上实测）：套件运行中点击「取消当前实验」，12 s 后同样无 `libproot`/`node`、3080 释放；
+  JSONL 保留已完成的 3 条记录，界面显示 cancelled。取消行在套件运行期间保持可用（修复前会被一起禁用）。
+- **普通 Release 不含诊断 preload**（同一 obj、三种构建顺序实测，检查预链接程序集里的资源名与 JS 内容标记）：
+  clean normal → 无/无；diagnostic → 有/有；再构建 normal → 无/无。preload 不是 Android asset，只在
+  `-p:DshDiagnostics=true` 时作为 `EmbeddedResource` 加入，读取代码也在同一 `#if DSH_DIAGNOSTICS` 内。
+- 普通 APK 的 zip 中没有任何 `web-profile-preload` 条目。
