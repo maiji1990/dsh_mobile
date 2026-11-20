@@ -26,6 +26,8 @@
      `release-manifest.json` + `.sig`，随后由无密钥的 `verify` 作业匿名回读校验；
    - 若仓库尚未配置可信公钥或 `DSHM_RELEASE_SIGNING_KEY`，门禁步骤如实失败，绝不跳过验签或伪造成功；
    - `stable` 通道保持仅 `workflow_dispatch` 手动触发，强制校验 `migration/parity/*.md` 真机验收记录并经受保护环境人工审批。
+   - **发布环境按通道拆分**（2026-11-20 修订）：`preview` 走 `release-preview`（仅 `main` 部署分支策略、**无**必需审批人），否则 push / 每周定时 / dispatch 触发的运行会永久停在「等待审批」而不签发（2026-11-19 实测卡住 12 小时）；`stable` 仍走 `release-signing`（必需审批人 + 仅 `main`）。两个环境各存一份 `DSHM_RELEASE_SIGNING_KEY`，轮换必须同时更新；私钥仍不进仓库、日志与 Artifact。
+   - 已产生的代价与残余风险：preview 的自动签发只靠「仅 `main` 可部署」这一道防线——能合并到 `main` 的人（即能改本工作流的人）可以令下一次 push 用私钥签名任意清单，这与任何自动签发设计共担，缓解手段是分支保护与评审；`stable` 的人工闸门不受影响。
 2. **清单 `providesNode` 元数据与「Runtime + DSH 组合」目录评估**：
    - `release/<channel>.json` 与 `ReleaseArtifact` 为 `kind == "runtime"` 新增可选字段 `providesNode`（如 `"26.13.1"`，由
      `tooling/update-upstream.mjs` 在 `assets` 对账时从 `runtime-build.lock` 的 `NODE_VERSION` 自动填入，`tooling/release-manifest-build.mjs`

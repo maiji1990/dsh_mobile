@@ -151,8 +151,8 @@ FEATURES.md 各行的状态列已按上表改写（证据列保留原始记录�
 |---|---|
 | 公开发布位置 | 已定：本仓库已公开，通道清单在 release `channel-stable` / `channel-preview`（ADR-0022 修订） |
 | 防重放下限持久化 + 只读检查接入 App | 已实现（`ReleaseAcceptanceStore`、`UpdateChecker`、开发者选项「检查更新（只读）」）；单测；**无真机证据** |
-| `release-publish.yml` | 已实现；本地演练通过；**未运行**（需 environment `release-signing` + secret + 公钥 + 至少一个运行层 Release） |
-| 发布公钥 | **已钉**（2026-11-19）：`ed25519:705aea09994abd46`；私钥只在 environment `release-signing` 的 `DSHM_RELEASE_SIGNING_KEY`（已配置，必审人本人 + 仅 `main` 可部署）。App 不再报 `UPDATE_NO_TRUSTED_KEYS`，**真机待验** |
+| `release-publish.yml` | 已实现；环境与密钥配置完成（`release-preview` / `release-signing` 各持一份 `DSHM_RELEASE_SIGNING_KEY`，2026-11-20）；**首个通道清单尚未签发**——2026-11-19 的两次 main 运行都停在 `release-signing` 的审批上，已按 ADR-0029 拆分环境 |
+| 发布公钥 | **已钉**（2026-11-19）：`ed25519:705aea09994abd46`；私钥在 environment `release-preview` 与 `release-signing` 的 `DSHM_RELEASE_SIGNING_KEY`（均已配置：前者仅 `main` 无必审，后者还有必审人；轮换需同时更新）。App 不再报 `UPDATE_NO_TRUSTED_KEYS`，**真机待验** |
 | 首个通道清单 | 依赖项已齐（运行层 / DSH 层 Release 存在，公钥 + 私钥已配置）；仍需把本文变更合并到 `main` 触发 `release-publish.yml`，或手动 dispatch |
 
 PR-02 验收门禁（方案）：匿名拉取两文件并正确验签（工作流 verify job）；伪造 / 篡改 / 过期 / 回放 / preview 冒充 stable 全部拒绝（单测已覆盖，

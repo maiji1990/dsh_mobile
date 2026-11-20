@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseVersions, updateKey, nextBundleVersion, selectDshTag, sha } from '../../tooling/update-upstream.mjs';
+import { parseVersions, updateKey, nextBundleVersion, selectDshTag, lsRemoteTagNames, sha } from '../../tooling/update-upstream.mjs';
 import { buildManifest } from '../../tooling/release-manifest-build.mjs';
 import { readFileSync } from 'node:fs';
 
@@ -16,6 +16,19 @@ test('source tags are filtered and ordered before npm validation', () => {
   assert.deepEqual(selectDshTag(
     ['unrelated','dsh-v0.2.2-rc.3','dsh-v0.2.2-rc.1','dsh-v0.2.1-rc.5','dsh-v0.2.10'],
     'dsh-v','0.2.1-rc.5'),['0.2.10','0.2.2-rc.3','0.2.2-rc.1']);
+});
+test('ls-remote output yields tag names without peeled duplicates', () => {
+  // Shape of `git ls-remote --tags`: "<sha>\trefs/tags/<name>", plus a "^{}" line for annotated tags.
+  const out = [
+    'aaaa\trefs/tags/dsh-v0.2.2-rc.3',
+    'bbbb\trefs/tags/dsh-v0.2.2-rc.3^{}',
+    'cccc\trefs/tags/dsh-v0.2.2-rc.4',
+    '',
+    'malformed line without a tab',
+  ].join('\n');
+  assert.deepEqual(lsRemoteTagNames(out), ['dsh-v0.2.2-rc.3', 'dsh-v0.2.2-rc.4']);
+  assert.deepEqual(lsRemoteTagNames(''), []);
+  assert.deepEqual(selectDshTag(lsRemoteTagNames(out), 'dsh-v', '0.2.2-rc.3'), ['0.2.2-rc.4']);
 });
 test('lock mutations preserve all unrelated pinned values', () => {
   const original='NODE_VERSION=24.19.0\nDSH_VERSION=0.2.1-rc.5\n';

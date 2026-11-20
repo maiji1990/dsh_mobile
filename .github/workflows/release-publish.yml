@@ -11,8 +11,11 @@ name: release-publish
 # manifest + .sig to the fixed release `channel-<channel>` (the URL the app reads, ReleaseEndpoints), then a second job
 # without any secret reads everything back anonymously and verifies it against the app's own trusted-keys file.
 #
-# Owner setup (once): Settings → Environments → `release-signing` with required reviewers, secret
-# DSHM_RELEASE_SIGNING_KEY = the PKCS#8 PEM from `node tooling/release-manifest-sign.mjs keygen <dir outside the repo>`.
+# Owner setup (once): two environments, both with the secret DSHM_RELEASE_SIGNING_KEY (the PKCS#8 PEM from
+# `node tooling/release-manifest-sign.mjs keygen <dir outside the repo>`); rotate both together.
+#   release-preview — deployment branch main only, NO required reviewers: push/cron must publish unattended, and a
+#                     reviewer gate would leave every automatic run waiting forever (seen 2026-11-19).
+#   release-signing — deployment branch main only + required reviewers: stable only, always a human decision.
 # The private key never enters the repository, logs or artifacts; only the sign step sees it.
 on:
   push:
@@ -49,7 +52,8 @@ concurrency:
 jobs:
   publish:
     runs-on: ubuntu-24.04
-    environment: release-signing
+    # preview publishes itself (push, weekly re-sign, dispatch); stable keeps the human gate.
+    environment: ${{ inputs.channel == 'stable' && 'release-signing' || 'release-preview' }}
     permissions:
       contents: write
     outputs:

@@ -46,6 +46,16 @@ export function nextBundleVersion(current) {
   return m[1]+'.'+m[2]+'.'+(Number(m[3])+1);
 }
 export const sha = (bytes) => createHash('sha256').update(bytes).digest('hex');
+/** Tag names from `git ls-remote --tags` output, peeled ("^{}") duplicates removed. */
+export function lsRemoteTagNames(output) {
+  const names=new Set();
+  for(const line of output.split('\n')){
+    const i=line.indexOf('\trefs/tags/');
+    if(i<0)continue;
+    names.add(line.slice(i+'\trefs/tags/'.length).replace(/\^\{\}$/,''));
+  }
+  return [...names];
+}
 export function selectDshTag(tags, prefix, current) {
   return tags.filter(t=>t.startsWith(prefix))
     .map(t=>t.slice(prefix.length)).filter(t=>/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(t))
@@ -53,9 +63,17 @@ export function selectDshTag(tags, prefix, current) {
 }
 
 async function get(url,{allow404=false}={}) {
-  const r=await fetch(url,{headers:{'Accept':'application/vnd.github+json','User-Agent':'dshmobile-upstream-watch','X-GitHub-Api-Version':'2022-11-28'}});
+  const headers={'Accept':'application/vnd.github+json','User-Agent':'dshmobile-upstream-watch','X-GitHub-Api-Version':'2022-11-28'};
+  // api.github.com is limited to 60 anonymous requests/hour/IP and the shared Actions egress exhausts that
+  // (403, seen 2026-11-19). Authenticate the API host only: the release download URLs must stay anonymous, because
+  // reading them without credentials is the property every device relies on.
+  if(process.env.GITHUB_TOKEN && new URL(url).host==='api.github.com') headers.Authorization='Bearer '+process.env.GITHUB_TOKEN;
+  const r=await fetch(url,{headers});
   if(allow404 && r.status===404) return null;
-  if(!r.ok) throw new Error('upstream GET '+r.status+' '+url);
+  if(!r.ok) {
+    const body=(await r.text().catch(()=>'')).slice(0,300);
+    throw new Error('upstream GET '+r.status+' '+url+' (rate-limit remaining '+(r.headers.get('x-ratelimit-remaining')??'?')+') '+body);
+  }
   return r;
 }
 function lock() {return readFileSync(lockPath,'utf8');}
@@ -98,14 +116,11 @@ async function runtime(check) {
 async function dsh(check) {
   const text=lock(), old=locked(text,'DSH_VERSION'), d=policy.dsh;
   const repo=d.sourceRepo, pref=d.tagPrefix;
-  // Use official upstream tags (not npm latest: that can lag pre-releases).
-  const names=[];
-  for(let page=1;page<=5;page++){
-    const tags=await (await get('https://api.github.com/repos/'+repo+'/tags?per_page=100&page='+page)).json();
-    if(!Array.isArray(tags))throw Error('invalid upstream tags');
-    names.push(...tags.map(x=>x.name));
-    if(tags.length<100)break;
-  }
+  // Use official upstream tags (not npm latest: that can lag pre-releases). Read them with ls-remote instead of
+  // the REST API: a GITHUB_TOKEN installation token cannot read another repository, and anonymous API reads are
+  // rate-limited per IP, which failed with 403 on 2026-11-19. ls-remote needs no credentials and returns every tag.
+  const names=lsRemoteTagNames(command('git',['ls-remote','--tags','https://github.com/'+repo+'.git']));
+  if(names.length===0)throw Error('upstream has no tags: '+repo);
   const candidates=selectDshTag(names,pref,old);
   let version;
   for(const v of candidates){

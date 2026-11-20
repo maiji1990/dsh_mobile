@@ -45,8 +45,8 @@
 - **防重放下限落盘**（决策 4 的“由调用方持久化”）：`ReleaseAcceptanceStore`，`files/dshmobile-runtime/release-acceptance.json`，每通道只升不降；
   文件损坏 → `UPDATE_STATE_UNREADABLE`（不当作空），写失败 → `UPDATE_STATE_WRITE_FAILED`（该次检查不给出候选）。
 - **App 接入（仍只读）**：`UpdateChecker`（Application）+ 开发者选项「检查更新（只读）」；不下载制品、不安装。
-- **发布**：`.github/workflows/release-publish.yml`——规格 `release/<通道>.json` 经 PR 审阅；签名只在 environment `release-signing`（必需审批人）的
-  一个步骤中可见；发布后无密钥的 job 匿名读回并核对签名与每个制品；`stable` 须附写明每个版本号的真机验收记录。
+- **发布**：`.github/workflows/release-publish.yml`——规格 `release/<通道>.json` 经 PR 审阅；签名只在受环境约束的那个步骤中可见
+  （`preview` → `release-preview`，仅 `main` 无必审；`stable` → `release-signing`，必需审批人 + 仅 `main`，见 ADR-0029）；发布后无密钥的 job 匿名读回并核对签名与每个制品；`stable` 须附写明每个版本号的真机验收记录。
 - 清单有效期：工作流默认 30 天、上限 90 天（`expires_days`）；到期前重新运行工作流即重签。
 
 ## 修订（2026-11-16，vNext PR-04：下载）
@@ -70,9 +70,9 @@
 
 ## 未决（需负责人）
 
-1. ~~生成发布密钥~~：已完成（2026-11-19）。`node tooling/release-manifest-sign.mjs keygen <仓库外的私密目录>` 生成；私钥只放进 environment `release-signing`
+1. ~~生成发布密钥~~：已完成（2026-11-19）。`node tooling/release-manifest-sign.mjs keygen <仓库外的私密目录>` 生成；私钥只放进发布环境（`release-preview` / `release-signing`，见 ADR-0029）
    的 secret `DSHM_RELEASE_SIGNING_KEY`（离线备份，不进仓库）；公钥（base64）以单独 commit 加入 `release-trusted-keys.txt`，keyId 登记于下。
 2. ~~确定公开发布位置~~：已定（本仓库，见「修订」）。
 3. ~~清单有效期~~：默认 30 天、上限 90 天；重签节奏 = 每次发布或到期前。
 
-已信任的 keyId：`ed25519:705aea09994abd46`（2026-11-19；私钥仅存在于 environment `release-signing` 的 `DSHM_RELEASE_SIGNING_KEY`，轮换时新旧钥匙同签一段再撤旧）
+已信任的 keyId：`ed25519:705aea09994abd46`（2026-11-19；私钥仅存在于 `release-preview` 与 `release-signing` 两个环境的 `DSHM_RELEASE_SIGNING_KEY`，轮换时两个环境同时换、新旧钥匙同签一段再撤旧）
