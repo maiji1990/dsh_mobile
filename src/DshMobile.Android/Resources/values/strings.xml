@@ -389,6 +389,8 @@
     <string name="dev_experiments_e5_sub">进程内 V8 CPU 采样 + CPU/ELU 统计；停止用私有目录文件握手，不开 inspector 端口</string>
     <string name="dev_experiments_e4">E4（A 10 次 + B / C）</string>
     <string name="dev_experiments_e4_sub">Compile cache 关闭 / 冷 / 热；缓存未落盘时如实标记</string>
+    <string name="dev_experiments_e6">E6（P0 优化对照，各 10 次）</string>
+    <string name="dev_experiments_e6_sub">基线 / --preserve-symlinks / 只读 FS 缓存垫片 / 组合；隔离目录配对测量</string>
     <string name="dev_experiments_all">全部（E1→E2→E3→E4）</string>
     <string name="dev_experiments_all_sub">按方案顺序执行，一次只跑一个套件</string>
     <string name="dev_experiments_cancel">取消当前实验</string>

@@ -41,6 +41,12 @@ public sealed class IsolatedGuestLayout : IDisposable
         // Production wrapper text (dsh / pnpm / xdg-user-dir), written into the isolated home only.
         var isolatedRuntime = new RuntimeLayout(layout.Root, null, production.NativeLibraryDir);
         Guest.GuestToolchain.WriteShims(isolatedRuntime);
+        // 同时将启动期只读 FS 缓存垫片写入隔离缓存目录，供 E6 变体在不触碰生产缓存的情况下加载。
+        var isolatedShimDir = Automation.UiFacadeAssets.HostDir(layout.CacheDir);
+        Directory.CreateDirectory(isolatedShimDir);
+        Guest.GuestAssetProvisioner.WriteIfDifferent(
+            Path.Combine(isolatedShimDir, Guest.GuestAssetProvisioner.StartupFsCacheShimName),
+            Guest.GuestAssetProvisioner.ReadStartupFsCacheShimScript());
         return layout;
     }
 

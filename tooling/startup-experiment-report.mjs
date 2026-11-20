@@ -12,7 +12,7 @@ import { readFileSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-export const EXPERIMENTS = ['E1', 'E2', 'E3', 'E4'];
+export const EXPERIMENTS = ['E1', 'E2', 'E3', 'E4', 'E6'];
 export const KINDS = ['exit', 'web'];
 export const RESULTS = ['ok', 'failed', 'timeout', 'refused', 'setup-error'];
 export const CACHE_MODES = ['off', 'cold', 'warm', 'unknown'];
@@ -34,6 +34,10 @@ const VARIANT_DEFS = [
   ['E4-A', 'E4', 'web'],
   ['E4-B', 'E4', 'web'],
   ['E4-C', 'E4', 'web'],
+  ['E6-0', 'E6', 'web'],
+  ['E6-1', 'E6', 'web'],
+  ['E6-2', 'E6', 'web'],
+  ['E6-3', 'E6', 'web'],
 ];
 
 export const VARIANT_ORDER = VARIANT_DEFS.map(([id]) => id);
@@ -298,7 +302,7 @@ function buildPairs(groups) {
   };
 
   // All within-experiment pairs: same experiment and (for the fixed catalogue) the same endpoint.
-  for (const experiment of ['E1', 'E2', 'E3']) {
+  for (const experiment of ['E1', 'E2', 'E3', 'E6']) {
     const list = groups.filter((group) => group.experiment === experiment);
     for (let i = 0; i < list.length; i += 1) {
       for (let j = i + 1; j < list.length; j += 1) add(list[i], list[j]);

@@ -45,6 +45,7 @@ public sealed class StartupExperimentActivity : DshActivity
         var webRow = Rows.Add(content, Resource.Drawable.ic_code, GetString(Resource.String.dev_experiments_e5),
             GetString(Resource.String.dev_experiments_e5_sub), RunWebProfile);
         _rows.Add(webRow);
+        Row(content, Resource.String.dev_experiments_e6, Resource.String.dev_experiments_e6_sub, [StartupExperiments.SuiteE6]);
         Row(content, Resource.String.dev_experiments_all, Resource.String.dev_experiments_all_sub,
             [StartupExperiments.SuiteE1E2, StartupExperiments.SuiteE3, StartupExperiments.SuiteE4]);
         Row(content, Resource.String.dev_experiments_cancel, Resource.String.dev_experiments_cancel_sub, []);

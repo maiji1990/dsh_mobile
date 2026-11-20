@@ -56,6 +56,17 @@ public static class GuestAssetProvisioner
 
     private const string E2eResource = "DshMobile.Guest.dsh-e2e.mjs";
 
+    /// <summary>P0 启动优化：只读运行层文件系统元数据缓存垫片（本仓库自有，不修改上游 link-shim.mjs）。</summary>
+    public const string StartupFsCacheShimName = "startup-fs-cache-shim.mjs";
+
+    /// <summary>只读运行层缓存垫片在 guest 内的路径。</summary>
+    public const string GuestStartupFsCacheShim = RuntimeConstants.GuestCacheDir + "/" + UiFacadeAssets.HostSubDir + "/" + StartupFsCacheShimName;
+
+    private const string StartupFsCacheShimResource = "DshMobile.Guest.startup-fs-cache-shim.mjs";
+
+    /// <summary>读取内嵌的 <c>Guest/Assets/startup-fs-cache-shim.mjs</c> 字节内容。</summary>
+    public static byte[] ReadStartupFsCacheShimScript() => ReadResource(StartupFsCacheShimResource);
+
     /// <summary>The embedded bytes of this repo's <c>Guest/Assets/dsh-e2e.mjs</c>.</summary>
     public static byte[] ReadE2eScript() => ReadResource(E2eResource);
 
@@ -115,6 +126,10 @@ public static class GuestAssetProvisioner
             if (WriteIfDifferent(Path.Combine(dir, E2eName), ReadE2eScript()))
             {
                 written.Add(E2eName);
+            }
+            if (WriteIfDifferent(Path.Combine(dir, StartupFsCacheShimName), ReadStartupFsCacheShimScript()))
+            {
+                written.Add(StartupFsCacheShimName);
             }
         });
         Step(failures, "ui facade", () =>

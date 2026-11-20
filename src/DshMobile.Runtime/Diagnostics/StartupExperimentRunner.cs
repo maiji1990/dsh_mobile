@@ -106,6 +106,9 @@ public sealed class StartupExperimentRunner
                     case StartupExperiments.SuiteE4:
                         await RunE4Async(reps, root, Emit, ct).ConfigureAwait(false);
                         break;
+                    case StartupExperiments.SuiteE6:
+                        await RunE6Async(reps, root, Emit, ct).ConfigureAwait(false);
+                        break;
                     default:
                         return new ExperimentSuiteResult(false, UnknownSuite, "unknown suite: " + suite, 0, 0);
                 }
@@ -244,6 +247,24 @@ public sealed class StartupExperimentRunner
                 ct.ThrowIfCancellationRequested();
                 using var isolated = IsolatedGuestLayout.Create(_layout, Path.Combine(root, $"C-{i}"));
                 emit(await RunWebAsync(warm, i, isolated, [], cacheHost, "warm", ct, warmFiles.Count, warmFiles.Bytes).ConfigureAwait(false));
+            }
+        }
+    }
+
+    private async Task RunE6Async(int reps, string root, Action<ExperimentRecord> emit, CancellationToken ct)
+    {
+        var order = new[] { "E6-0", "E6-1", "E6-2", "E6-3" };
+        for (var i = 1; i <= reps; i++)
+        {
+            foreach (var id in order)
+            {
+                ct.ThrowIfCancellationRequested();
+                if (!StartupExperiments.TryGet(id, out var variant))
+                {
+                    continue;
+                }
+                using var isolated = IsolatedGuestLayout.Create(_layout, Path.Combine(root, $"iter-{i}-{variant.Id}"));
+                emit(await RunWebAsync(variant, i, isolated, [], cacheHost: null, cacheMode: "unknown", ct).ConfigureAwait(false));
             }
         }
     }
@@ -421,7 +442,7 @@ public sealed class StartupExperimentRunner
         return argv;
     }
 
-    private IReadOnlyList<string> BuildWebArgv(StartupExperimentVariant variant, IsolatedGuestLayout? isolated, IReadOnlyList<string> overlays)
+    internal IReadOnlyList<string> BuildWebArgv(StartupExperimentVariant variant, IsolatedGuestLayout? isolated, IReadOnlyList<string> overlays)
     {
         if (!variant.IsolatedWorkspace)
         {
@@ -434,10 +455,19 @@ public sealed class StartupExperimentRunner
             StartupExperiments.Node,
             "--expose-internals",
         };
+        if (variant.PreserveSymlinks)
+        {
+            argv.Add("--preserve-symlinks");
+        }
         if (File.Exists(_layout.ShimFile))
         {
             argv.Add("--import");
             argv.Add(RuntimeConstants.LinkShimGuestPath);
+        }
+        if (variant.StartupFsCacheShim)
+        {
+            argv.Add("--import");
+            argv.Add(GuestAssetProvisioner.GuestStartupFsCacheShim);
         }
         argv.Add(RuntimeConstants.GuestDshBin);
         argv.Add("--profile");

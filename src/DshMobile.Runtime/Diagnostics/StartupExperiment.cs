@@ -26,13 +26,15 @@ public sealed record StartupExperimentVariant(
     string CacheMode = "unknown",
     bool IncludeRegisteredOverlays = false,
     int TimeoutSeconds = 60,
-    string? Marker = null)
+    string? Marker = null,
+    bool PreserveSymlinks = false,
+    bool StartupFsCacheShim = false)
 {
     public string Kind => Endpoint == ExperimentEndpoint.Exit ? ExperimentRecord.KindExit : ExperimentRecord.KindWeb;
 }
 
 /// <summary>
-/// The E1-E4 catalogue from the root-cause plan (2026-11-18). Ids are stable: the JSONL report and the docs key on them.
+/// The E1-E4 and E6 diagnostic catalogue. Ids are stable: the JSONL report and the docs key on them.
 /// </summary>
 public static class StartupExperiments
 {
@@ -41,6 +43,7 @@ public static class StartupExperiments
     public const string SuiteE2Config = "E2-3";
     public const string SuiteE3 = "E3";
     public const string SuiteE4 = "E4";
+    public const string SuiteE6 = "E6";
 
     public const string Node = "/usr/local/bin/node";
     public const string True = "/bin/true";
@@ -68,6 +71,11 @@ public static class StartupExperiments
         new("E4-A", "E4", ExperimentEndpoint.Web, Node, [], IsolatedWorkspace: true, CacheMode: "off", TimeoutSeconds: 120),
         new("E4-B", "E4", ExperimentEndpoint.Web, Node, [], IsolatedWorkspace: true, CacheMode: "cold", TimeoutSeconds: 120),
         new("E4-C", "E4", ExperimentEndpoint.Web, Node, [], IsolatedWorkspace: true, CacheMode: "warm", TimeoutSeconds: 120),
+        // E6：P0 启动优化配对对照（基线 / 仅 --preserve-symlinks / 仅只读 FS 缓存垫片 / 组合）。
+        new("E6-0", "E6", ExperimentEndpoint.Web, Node, [], IsolatedWorkspace: true, TimeoutSeconds: 120),
+        new("E6-1", "E6", ExperimentEndpoint.Web, Node, [], IsolatedWorkspace: true, TimeoutSeconds: 120, PreserveSymlinks: true),
+        new("E6-2", "E6", ExperimentEndpoint.Web, Node, [], IsolatedWorkspace: true, TimeoutSeconds: 120, StartupFsCacheShim: true),
+        new("E6-3", "E6", ExperimentEndpoint.Web, Node, [], IsolatedWorkspace: true, TimeoutSeconds: 120, PreserveSymlinks: true, StartupFsCacheShim: true),
     ];
 
     public static bool TryGet(string id, out StartupExperimentVariant variant)

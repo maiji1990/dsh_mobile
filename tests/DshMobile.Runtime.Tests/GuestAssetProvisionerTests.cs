@@ -80,6 +80,8 @@ public sealed partial class GuestAssetProvisionerTests : IDisposable
             File.ReadAllBytes(Path.Combine(dshmobile, GuestAssetProvisioner.ProbeName)));
         Assert.Equal(File.ReadAllBytes(Repo.PathOf("src", "DshMobile.Runtime", "Guest", "Assets", "dsh-e2e.mjs")),
             File.ReadAllBytes(Path.Combine(dshmobile, GuestAssetProvisioner.E2eName)));
+        Assert.Equal(File.ReadAllBytes(Repo.PathOf("src", "DshMobile.Runtime", "Guest", "Assets", "startup-fs-cache-shim.mjs")),
+            File.ReadAllBytes(Path.Combine(dshmobile, GuestAssetProvisioner.StartupFsCacheShimName)));
         Assert.True(UiFacadeAssets.Intact(layout.GuestCacheDir));
         var corepack = GuestToolchain.CorepackDir(layout);
         Assert.True(File.Exists(Path.Combine(corepack, GuestToolchain.ReadyMarker)));
@@ -160,6 +162,7 @@ public sealed partial class GuestAssetProvisionerTests : IDisposable
         Assert.Equal(Path.Combine(layout.FilesDir, "guest-cache", "corepack"), GuestToolchain.CorepackDir(layout));
         Assert.Equal("/opt/dshmobile-cache/dshmobile/dsh-probe.mjs", GuestAssetProvisioner.GuestProbe);
         Assert.Equal("/opt/dshmobile-cache/dshmobile/dsh-e2e.mjs", GuestAssetProvisioner.GuestE2e);
+        Assert.Equal("/opt/dshmobile-cache/dshmobile/startup-fs-cache-shim.mjs", GuestAssetProvisioner.GuestStartupFsCacheShim);
     }
 
     // ------------------------------------------------------------------ pinned wrapper text
