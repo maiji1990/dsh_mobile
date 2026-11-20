@@ -51,6 +51,11 @@ jobs:
           node-version: '22.16.0'
       - name: Detect and pin upstream version
         if: github.event_name == 'schedule' || (github.event_name == 'workflow_run' && matrix.component == 'assets') || inputs.component == 'all' || inputs.component == matrix.component
+        env:
+          # Release digests of this repository are read through api.github.com, which answers 403 to anonymous calls
+          # once the shared runner IP exhausts 60 requests/hour (2026-11-19). The token only covers this repository;
+          # upstream tag lists come from git ls-remote, which needs no credentials.
+          GITHUB_TOKEN: ${{ github.token }}
         run: node tooling/update-upstream.mjs --component '${{ matrix.component }}'
       - name: Create reviewable PR
         if: github.event_name == 'schedule' || (github.event_name == 'workflow_run' && matrix.component == 'assets') || inputs.component == 'all' || inputs.component == matrix.component

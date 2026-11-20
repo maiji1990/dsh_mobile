@@ -28,7 +28,12 @@ Settings → Secrets and variables → Actions 新增 UPDATE_PR_TOKEN，推荐 G
     node tooling/release-manifest-sign.mjs keygen <outside-repo-dir>
 
 只把输出的 raw Ed25519 publicKey（base64）通过 PR 写入 src/DshMobile.Runtime/Updates/release-trusted-keys.txt，随后构建并安装包含新公钥的 Android APK。
-在 Settings → Environments 建立 release-signing，添加 required reviewers、环境 Secret DSHM_RELEASE_SIGNING_KEY（完整私钥 PEM）。不要将私钥放进代码、日志或 Artifact。未设置公钥的 App 如实报 UPDATE_NO_TRUSTED_KEYS。将 Preview / Stable 都当成需要验证的签名清单，不要跳过验签。
+在 Settings → Environments 建立**两个**环境，都加环境 Secret `DSHM_RELEASE_SIGNING_KEY`（完整私钥 PEM），轮换时一起更新：
+
+  - `release-preview`：Deployment branches 仅 `main`，**不要**加 required reviewers。push / 每周定时续签 / dispatch 的运行必须能无人值守完成，加了审批人会让每次自动签发都停在「等待审批」（2026-11-19 实测卡住 12 小时）。
+  - `release-signing`：Deployment branches 仅 `main`，并加 required reviewers（单人维护时不要开 Prevent self-review，否则自己的运行无法批准）。仅 `stable` 使用。
+
+不要将私钥放进代码、日志或 Artifact。未设置公钥的 App 如实报 UPDATE_NO_TRUSTED_KEYS。将 Preview / Stable 都当成需要验证的签名清单，不要跳过验签。
 
 ### Workflow 权限
 
