@@ -1,6 +1,6 @@
 # 启动实验诊断（STARTUP_EXPERIMENTS）
 
-> 状态：记录格式（JSONL schema 1）、C# 诊断器（固定变体、隔离目录、超时/取消/清理）、[report 工具](../tooling/startup-experiment-report.mjs)与[测试](../tests/tooling/startup-experiment-report.test.mjs)已落地；**2026-11-18 已在 Honor PTP-AN10 / Android 17 上完成 T0 + E1/E2/E3/E4 + T1 的首轮真机采集**，结果见[真机记录](../migration/parity/2026-11-18-PTP-AN10-A17-startup-experiments.md)（下文有摘要）。D–F 场景、CPU profile、compile cache 真实落盘后的收益仍**待真机验证**（[AGENTS.md](../AGENTS.md) 规则 9）。E5 Web Profile 的采集协议、报告工具与验收口径见 [WEB_STARTUP_DIAGNOSIS](WEB_STARTUP_DIAGNOSIS.md)；该切片**尚无真机 E5 数据**。本诊断独立于生产启动，默认构建里没有入口，也不改变任何启动语义、权限审批或安全校验。
+> 状态：记录格式（JSONL schema 1）、C# 诊断器（固定变体、隔离目录、超时/取消/清理）、[report 工具](../tooling/startup-experiment-report.mjs)与[测试](../tests/tooling/startup-experiment-report.test.mjs)已落地；**2026-11-18 已在 Honor PTP-AN10 / Android 17 上完成 T0 + E1/E2/E3/E4 + T1 的首轮真机采集**，结果见[真机记录](../migration/parity/2026-11-18-PTP-AN10-A17-startup-experiments.md)（下文有摘要）。D–F 场景、CPU profile、compile cache 真实落盘后的收益仍**待真机验证**（[AGENTS.md](../AGENTS.md) 规则 9）。E5 Web Profile 的采集协议、报告工具与验收口径见 [WEB_STARTUP_DIAGNOSIS](WEB_STARTUP_DIAGNOSIS.md)；该切片**尚无真机 E5 数据**。2026-11-20 已在同一设备完成 E6（P0 候选优化）配对采集，结果见[真机报告](../migration/parity/2026-11-20-PTP-AN10-A17-P0-startup.md)。本诊断独立于生产启动，默认构建里没有入口，也不改变任何启动语义、权限审批或安全校验。
 
 ## 目的与边界
 
@@ -43,6 +43,26 @@
 生产配置只多约 0.8 s；compile cache 按「CLI 预热」方式**没有收益**，且 Web 进程被强杀时缓存文件为 0。剩余约 16 s 落在
 DSH Web Profile 自身初始化，下一步应做 CPU profile（§7.1），在此之前不声称具体 V8 热点。注意 T0/T1 本次是 18.8–18.9 s，
 比 2026-11-17 的 16.56 s 慢约 2.3 s（跨天/热状态差异），因此只做同批次、同终点的配对比较。
+
+## E6：P0 候选优化配对结果（2026-11-20，PTP-AN10 / Android 17）
+
+同一设备、同一次会话；隔离最小配置，每变体 10 次，**块内配对**（同一 iteration 内连续跑 E6-0 → E6-1 → E6-2 → E6-3），
+终点统一为 `httpReadyMs`。统计口径与原始数据见[真机报告](../migration/parity/2026-11-20-PTP-AN10-A17-P0-startup.md)。
+
+| 变体 | 内容 | 均值 (ms) | 配对 Δ vs E6-0 | 95% CI | 更快块数 | 符号检验 p |
+|---|---|---:|---:|---|---:|---:|
+| E6-0 | 隔离最小配置基线 | 17142.5 | — | — | — | — |
+| E6-1 | `--preserve-symlinks` | 14487.2 | −2655.4（−15.5%） | [−3196.2, −2114.6] | 10/10 | 0.00195 |
+| E6-2 | 只读 FS 缓存垫片 | 15348.9 | −1793.6（−10.5%） | [−2400.1, −1187.0] | 10/10 | 0.00195 |
+| E6-3 | 两者叠加 | 12476.9 | −4665.6（−27.2%） | [−5211.3, −4119.8] | 10/10 | 0.00195 |
+
+两项候选优化在隔离最小配置下都成立，且**近似可加**（各自收益相加 −4449 ms，实测叠加 −4666 ms，差 217 ms 在噪声内）。
+但这两个开关**都还没有接入生产 argv**（`ProotCommandBuilder` 仍只加 link shim），宿主侧 300 ms 死等 / 探针加速也不在 E6
+覆盖范围内，所以「生产冷启动变快」仍以 T1 vs T0 的配对结果为准（G6）。
+
+生产配对已完成（2026-11-20，同一设备、同一运行层）：宿主侧 P0 改动让 `bridge.complete` 均值从 17 715 ms
+降到 16 879 ms（相邻块配对 n=20，−836 ms / −4.7%，95% CI [−1 405, −267]，p=0.041），且 DSH 自身
+`dsh.first_output` 无差异（生产对照成立）。细节见[生产配对报告](../migration/parity/2026-11-20-PTP-AN10-A17-T1-production-pairing.md)。
 
 ## 诊断入口：只在「开发者选项 + 诊断构建」出现
 
@@ -107,6 +127,10 @@ E3-P 是生产配置对照：它使用与生产相同的命令、生产 `user-da
 | E4-A | E4 | web | 隔离、无 `NODE_COMPILE_CACHE` 到首次 HTTP 状态 | 是 | off | 关闭 compile cache |
 | E4-B | E4 | web | 隔离、空缓存目录到首次 HTTP 状态 | 是 | cold | 冷缓存；运行后统计实际落盘文件 |
 | E4-C | E4 | web | 隔离、已预热 compile cache 到首次 HTTP 状态 | 是 | warm | 热缓存；必须先证明缓存文件 > 0 |
+| E6-0 | E6 | web | 隔离最小配置基线（同 E3-0）到首次 HTTP 状态 | 是 | 不涉及 | P0 优化对照基线 |
+| E6-1 | E6 | web | 隔离 + `--preserve-symlinks` 到首次 HTTP 状态 | 是 | 不涉及 | 验证跳过 ESM `finalizeResolution` `realpathSync` 的收益 |
+| E6-2 | E6 | web | 隔离 + `--import startup-fs-cache-shim.mjs` 到首次 HTTP 状态 | 是 | 不涉及 | 验证只读运行层 FS 元数据缓存垫片收益 |
+| E6-3 | E6 | web | 隔离 + `--preserve-symlinks` + `startup-fs-cache-shim.mjs` 到首次 HTTP 状态 | 是 | 不涉及 | 验证两项 P0 优化叠加收益（2026-11-20 已测耗时；兼容性待验证） |
 
 固定 marker 只有一行：`DSHM_NODE_READY`（`process.stdout.write("DSHM_NODE_READY\n")`）。E1-2 / E1-3 之外的变体没有 marker，`guestFirstMarkerMs` 必须为 `null`。
 
@@ -130,7 +154,7 @@ E3-P 是生产配置对照：它使用与生产相同的命令、生产 `user-da
 | 字段 | 类型 | null / 取值规则 | 含义 |
 |---|---|---|---|
 | `schema` | int | 固定 `1`；其它值跳过并计数 | 记录格式版本 |
-| `experiment` | string | `E1` \| `E2` \| `E3` \| `E4` | 实验组 |
+| `experiment` | string | `E1` \| `E2` \| `E3` \| `E4` \| `E6` | 实验组 |
 | `variant` | string | 固定变体 id，见上表；未知 id 跳过并计数 | 变体 |
 | `kind` | string | `exit` \| `web` | 终点类型，决定能否配对 |
 | `runId` | string | 12 位十六进制随机标识；最小化 `refused` / `setup-error` 行缺失时按 null | 单次测量的关联键，不用于身份 |
