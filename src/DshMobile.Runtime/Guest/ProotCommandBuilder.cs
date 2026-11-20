@@ -114,12 +114,15 @@ public sealed class ProotCommandBuilder(RuntimeLayout layout)
     public IReadOnlyList<string> DshCommand(bool inPlaceRestart = false)
     {
         var shim = File.Exists(layout.ShimFile) ? layout.ShimDir : null;
+        var guestCache = inPlaceRestart ? null : layout.GuestCacheDir;
+        // 仅在 guest-cache 已挂载且只读运行层 FS 缓存垫片已落盘时预加载（P0-2，不修改上游 link-shim.mjs）。
+        var useStartupFsCacheShim = guestCache is not null && File.Exists(GuestAssetProvisioner.StartupFsCacheShimHostPath(layout));
         Directory.CreateDirectory(layout.PilotEntryDir); // pilotHostDir(): mkdirs, as legacy
         var argv = LayeredPrefix(
             shim,
             layout.PilotEntryDir,
             Directory.Exists(layout.BrowserEntryDir) ? layout.BrowserEntryDir : null,
-            inPlaceRestart ? null : layout.GuestCacheDir);
+            guestCache);
         argv.Add("--cwd=/root/projects");
         argv.Add("--kill-on-exit");
         argv.Add("/usr/local/bin/node");
@@ -128,6 +131,11 @@ public sealed class ProotCommandBuilder(RuntimeLayout layout)
         {
             argv.Add("--import");
             argv.Add(RuntimeConstants.LinkShimGuestPath);
+        }
+        if (useStartupFsCacheShim)
+        {
+            argv.Add("--import");
+            argv.Add(GuestAssetProvisioner.GuestStartupFsCacheShim);
         }
         argv.Add(RuntimeConstants.GuestDshBin);
         argv.Add("--profile");

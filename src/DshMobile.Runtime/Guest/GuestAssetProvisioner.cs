@@ -62,6 +62,13 @@ public static class GuestAssetProvisioner
     /// <summary>只读运行层缓存垫片在 guest 内的路径。</summary>
     public const string GuestStartupFsCacheShim = RuntimeConstants.GuestCacheDir + "/" + UiFacadeAssets.HostSubDir + "/" + StartupFsCacheShimName;
 
+    /// <summary>只读运行层缓存垫片在宿主机上的落盘路径。</summary>
+    public static string StartupFsCacheShimHostPath(RuntimeLayout layout)
+    {
+        ArgumentNullException.ThrowIfNull(layout);
+        return Path.Combine(UiFacadeAssets.HostDir(layout.GuestCacheDir), StartupFsCacheShimName);
+    }
+
     private const string StartupFsCacheShimResource = "DshMobile.Guest.startup-fs-cache-shim.mjs";
 
     /// <summary>读取内嵌的 <c>Guest/Assets/startup-fs-cache-shim.mjs</c> 字节内容。</summary>
