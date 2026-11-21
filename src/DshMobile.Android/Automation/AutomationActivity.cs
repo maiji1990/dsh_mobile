@@ -2,7 +2,9 @@ using Android.Content;
 using Android.Views;
 using AndroidX.Core.Widget;
 using DshMobile.App.Bridge;
+using DshMobile.App.LocalNetwork;
 using DshMobile.App.Ui;
+using DshMobile.Application.LocalNetwork;
 using DshMobile.Runtime.Automation;
 using DshMobile.Runtime.Automation.Relay;
 using DshMobile.Runtime.Automation.Relay.Interlock;
@@ -30,6 +32,7 @@ public sealed class AutomationActivity : DshActivity
     private bool _settingSwitch;
     private Rows.Row _a11y = null!;
     private Rows.Row _overlay = null!;
+    private Rows.Row _lan = null!;
     private Rows.Row _shizuku = null!;
     private Rows.Row _tools = null!;
     private Rows.Row _details = null!;
@@ -75,6 +78,10 @@ public sealed class AutomationActivity : DshActivity
         // floating card is then skipped and the notification card asks instead).
         _overlay = Rows.Add(content, Resource.Drawable.ic_open_in_new, GetString(Resource.String.automation_overlay), null, OpenOverlaySettings);
         _overlay.SetTrailing(OpenIcon());
+        // ADR-0032: Android 17 gates LAN traffic (the DSH sandbox shares this UID) behind a runtime permission. The row
+        // is the status and the way back in after a denial - the guest shell cannot show a system prompt by itself.
+        _lan = Rows.Add(content, Resource.Drawable.ic_lan, GetString(Resource.String.lan_title), null, () => _ = RequestLanAsync());
+        _lan.SetTrailing(OpenIcon());
         // ADR-0008: asks Shizuku to show its own grant dialog (the user answers it in Shizuku); never starts Shizuku.
         _shizuku = Rows.Add(content, Resource.Drawable.ic_key, GetString(Resource.String.automation_shizuku), null, ConnectShizuku);
         _tools = Rows.Add(content, Resource.Drawable.ic_extension, GetString(Resource.String.automation_tools));
@@ -110,6 +117,7 @@ public sealed class AutomationActivity : DshActivity
         _page.DescendantFocusability = DescendantFocusability.BeforeDescendants;
         _page.RequestFocus();
         ShowCsRelay();
+        ShowLanPermission();
     }
 
     protected override void OnResume()
@@ -119,6 +127,7 @@ public sealed class AutomationActivity : DshActivity
         WatchCsRelay(true);
         ShowCsRelay();
         ShowOverlayPermission();
+        ShowLanPermission();
         // Upstream uiInForeground(): from now on a pending C# question is asked on this page.
         Relay.CsRelay.PageCardShown = true;
     }
@@ -159,6 +168,29 @@ public sealed class AutomationActivity : DshActivity
         box.AddView(more, lp);
         var card = Rows.Card(content, box);
         ((ViewGroup.MarginLayoutParams)card.LayoutParameters!).TopMargin = Rows.Dp(this, 16);
+    }
+
+    /// <summary>ADR-0032: the LAN row's status line (granted / still needed / unnecessary / broken build).</summary>
+    private void ShowLanPermission()
+    {
+        _lan.SetSubtitle(LocalNetworkAccess.Current(this) switch
+        {
+            LocalNetworkDecision.Granted => GetString(Resource.String.lan_sub_granted),
+            LocalNetworkDecision.NotRequired => GetString(Resource.String.lan_sub_notrequired),
+            LocalNetworkDecision.Undeclared => GetString(Resource.String.lan_sub_undeclared),
+            _ => GetString(Resource.String.lan_sub_denied),
+        });
+    }
+
+    /// <summary>Ask for ACCESS_LOCAL_NETWORK, then show what the answer means; a denial is not an error here.</summary>
+    private async Task RequestLanAsync()
+    {
+        var decision = await LocalNetworkAccess.EnsureAsync(this).ConfigureAwait(true);
+        ShowLanPermission();
+        if (decision == LocalNetworkDecision.NeedsPermission)
+        {
+            Android.Widget.Toast.MakeText(this, GetString(Resource.String.lan_denied_toast), Android.Widget.ToastLength.Long)?.Show();
+        }
     }
 
     private ImageView OpenIcon()

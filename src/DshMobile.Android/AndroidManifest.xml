@@ -2,6 +2,12 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
   <!-- Loopback health checks + DSH's own model/API traffic (TASK-004). -->
   <uses-permission android:name="android.permission.INTERNET" />
+  <!--
+    ADR-0032: Android 17 (API 37) gates local-network access behind this runtime permission for apps targeting 37+.
+    Without it every LAN TCP connection from the app UID - including the PRoot guest's curl/ssh - times out, and
+    `pm grant` cannot help (an undeclared permission cannot be granted). Requested from C#, never assumed.
+  -->
+  <uses-permission android:name="android.permission.ACCESS_LOCAL_NETWORK" />
   <!-- Keeps the Debian/PRoot sandbox and DSH alive while the UI is in the background (plan 6.3). -->
   <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
   <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />

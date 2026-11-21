@@ -2,7 +2,9 @@ using Android.Content;
 using Android.Text;
 using Android.Views;
 using DshMobile.App.Bridge;
+using DshMobile.App.LocalNetwork;
 using DshMobile.App.Ui;
+using DshMobile.Application.LocalNetwork;
 using DshMobile.Core.Contracts;
 using DshMobile.Runtime;
 using DshMobile.Runtime.Remote;
@@ -201,12 +203,21 @@ public sealed class RemoteActivity : DshActivity
         Enable(false);
         try
         {
+            // ADR-0032: a private literal (192.168.x, .local, ...) cannot be reached on Android 17 without the LAN
+            // permission; ask first so the user sees a prompt instead of a 30 s timeout. A public host is not gated,
+            // and a denial still falls through to the real connect so the failure is the platform's, not ours.
+            var lan = LocalNetworkDecision.NotRequired;
+            if (LocalNetworkPolicy.IsPrivateHost(profile.Host))
+            {
+                lan = await LocalNetworkAccess.EnsureAsync(this, profile.Host).ConfigureAwait(true);
+            }
             var connector = CsRemoteConnection.Connector();
             var attempt = await Task.Run(() => connector.ConnectAsync(profile));
             CsRemoteConnection.Set(profile, attempt);
             // The key this attempt was shown is the only one a following trust may pin.
             CsRemoteHosts.Presented(profile, attempt);
-            _bridge.Note($"remote connect: state={attempt.State} code={attempt.Code}");
+            _bridge.Note($"remote connect: state={attempt.State} code={attempt.Code}"
+                + (lan == LocalNetworkDecision.NeedsPermission ? $" lan={LocalNetworkCodes.PermissionDenied}" : string.Empty));
             if (CsRemoteConnection.Status() is { } st)
             {
                 ShowCs(st);

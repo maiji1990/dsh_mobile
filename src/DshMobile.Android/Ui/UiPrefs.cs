@@ -116,4 +116,21 @@ public static class UiPrefs
         var lastMs = LastAutoCheckUtcMs(context);
         return nowUtc.ToUnixTimeMilliseconds() - lastMs >= (long)AutoCheckInterval.TotalMilliseconds;
     }
+
+    private const string LanAskedKey = "lan_permission_asked";
+
+    /// <summary>
+    /// ADR-0032: the LAN permission is offered once, on the first DSH start. Afterwards the prompt does not reappear on
+    /// every start - the "更多 → 局域网访问" row is the explicit way back (a system dialog the user keeps dismissing is
+    /// not a feature).
+    /// </summary>
+    public static bool LanPermissionAsked(Context context) =>
+        context.GetSharedPreferences(File, FileCreationMode.Private)!.GetBoolean(LanAskedKey, false);
+
+    public static void SetLanPermissionAsked(Context context, bool asked)
+    {
+        var editor = context.GetSharedPreferences(File, FileCreationMode.Private)!.Edit()!;
+        editor.PutBoolean(LanAskedKey, asked);
+        editor.Apply();
+    }
 }
