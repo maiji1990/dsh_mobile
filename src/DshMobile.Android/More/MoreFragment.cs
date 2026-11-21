@@ -7,6 +7,7 @@ using DshMobile.App.RuntimeUi;
 using DshMobile.App.Ui;
 using Google.Android.Material.AppBar;
 using Google.Android.Material.Dialog;
+using Google.Android.Material.MaterialSwitch;
 using Fragment = AndroidX.Fragment.App.Fragment;
 
 namespace DshMobile.App.More;
@@ -46,6 +47,12 @@ public sealed class MoreFragment : Fragment, ITabRoot
 
         Rows.Header(_content, GetString(Resource.String.more_section_runtime));
         Rows.Add(_content, Resource.Drawable.ic_storage, GetString(Resource.String.more_runtime), GetString(Resource.String.more_runtime_sub), () => Open(typeof(RuntimeActivity)), chevron: true);
+        // ADR-0031: eager warmup - off by default; the row explains what it costs and what it does not do.
+        var warmup = Rows.Add(_content, Resource.Drawable.ic_refresh, GetString(Resource.String.more_warmup), GetString(Resource.String.more_warmup_sub));
+        var toggle = new MaterialSwitch(ctx) { Checked = UiPrefs.EagerWarmupEnabled(ctx) };
+        toggle.ContentDescription = GetString(Resource.String.more_warmup);
+        toggle.CheckedChange += (_, e) => UiPrefs.SetEagerWarmupEnabled(ctx, e.IsChecked);
+        warmup.SetTrailing(toggle);
 
         Rows.Header(_content, GetString(Resource.String.more_section_app));
         Rows.Add(_content, Resource.Drawable.ic_info, GetString(Resource.String.more_about), Rows.Fmt(ctx, Resource.String.more_about_sub, AppVersion(ctx)), OnVersionTapped);

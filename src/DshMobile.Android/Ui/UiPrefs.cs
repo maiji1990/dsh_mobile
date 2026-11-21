@@ -82,6 +82,31 @@ public static class UiPrefs
         editor.Apply();
     }
 
+    private const string EagerWarmupKey = "eager_warmup";
+
+    /// <summary>
+    /// ADR-0031: 回到 App 时是否在后台静默启动 DSH（默认关闭）。开关只在用户明确打开后生效，失败只写操作日志。
+    /// </summary>
+    public static bool EagerWarmupEnabled(Context context) =>
+        context.GetSharedPreferences(File, FileCreationMode.Private)!.GetBoolean(EagerWarmupKey, false);
+
+    public static void SetEagerWarmupEnabled(Context context, bool enabled)
+    {
+        var editor = context.GetSharedPreferences(File, FileCreationMode.Private)!.Edit()!;
+        editor.PutBoolean(EagerWarmupKey, enabled);
+        editor.Apply();
+    }
+
+    /// <summary>ADR-0031 电源约束：低电量（≤15% 且未充电）或省电模式下不预热，把决定交给用户。</summary>
+    public static (bool LowBattery, bool PowerSave) WarmupPower(Context context)
+    {
+        var power = (Android.OS.PowerManager?)context.GetSystemService(Context.PowerService);
+        var battery = (Android.OS.BatteryManager?)context.GetSystemService(Context.BatteryService);
+        var capacity = battery?.GetIntProperty((int)Android.OS.BatteryProperty.Capacity) ?? 100;
+        var charging = battery?.IsCharging ?? true;
+        return (capacity <= 15 && !charging, power?.IsPowerSaveMode ?? false);
+    }
+
     public static bool ShouldAutoCheckUpdates(Context context, DateTimeOffset nowUtc)
     {
         if (!AutoCheckUpdatesEnabled(context))

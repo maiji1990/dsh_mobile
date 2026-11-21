@@ -18,6 +18,23 @@ public enum DshHostState
 
 public sealed record DshHostResult(bool Ok, string Code, string? Message);
 
+/// <summary>
+/// Observable start/stop milestones of <see cref="DshHost"/> (ADR-0031): the UI shows the real stage instead of a
+/// generic spinner, and never reports READY before <see cref="DshHostState.Ready"/>.
+/// </summary>
+public enum DshHostPhase
+{
+    Idle,
+    SandboxStarting,
+    SandboxReady,
+    DshStarting,
+    DshFirstOutput,
+    DshTokenAvailable,
+    Ready,
+    Stopping,
+    Failed,
+}
+
 /// <summary>Read-only view of the launch token for the C# WebView host. The token never leaves the process.</summary>
 public interface IDshTokenSource
 {
@@ -79,8 +96,12 @@ public sealed class DshHost : IDshTokenSource, IDshHost
     private static readonly TimeSpan SandboxReadyMaxWait = TimeSpan.FromMilliseconds(300);
     private static readonly TimeSpan LoopInterval = TimeSpan.FromSeconds(2);
 
+    private static readonly TimeSpan DefaultGracefulStopTimeout = TimeSpan.FromMilliseconds(1800);
+
     private readonly RuntimeLayout _layout;
     private readonly ProotCommandBuilder _builder;
+    private readonly IGuestTerminator _terminator;
+    private readonly TimeSpan _gracefulStopTimeout;
     private readonly Action<string> _log;
     private readonly TimeProvider _time;
     private readonly DshTokenRevisionTracker _tokens = new();
@@ -96,16 +117,34 @@ public sealed class DshHost : IDshTokenSource, IDshHost
     private int _dshFirstOutput;
 
     public DshHost(RuntimeLayout layout, Action<string> log, TimeProvider? time = null)
+        : this(layout, log, time, null, null)
+    {
+    }
+
+    /// <param name="terminator">
+    /// SIGTERM sender for the graceful stop (ADR-0031); null uses <see cref="PosixGuestTerminator.Instance"/>, which is a
+    /// no-op on Windows and on kernels that refuse the signal.
+    /// </param>
+    /// <param name="gracefulStopTimeout">How long to wait for the SIGTERM to take effect before SIGKILL; default 1.8 s.</param>
+    public DshHost(RuntimeLayout layout, Action<string> log, TimeProvider? time, IGuestTerminator? terminator, TimeSpan? gracefulStopTimeout)
     {
         ArgumentNullException.ThrowIfNull(layout);
         _layout = layout;
         _builder = new ProotCommandBuilder(layout);
         _log = log ?? throw new ArgumentNullException(nameof(log));
         _time = time ?? TimeProvider.System;
+        _terminator = terminator ?? PosixGuestTerminator.Instance;
+        _gracefulStopTimeout = gracefulStopTimeout ?? DefaultGracefulStopTimeout;
         _window = DshWindowState.Fresh(0);
     }
 
     public DshHostState State { get; private set; } = DshHostState.Stopped;
+
+    /// <summary>The last observed milestone of a start or stop (ADR-0031); never READY before <see cref="State"/> is.</summary>
+    public DshHostPhase Phase { get; private set; } = DshHostPhase.Idle;
+
+    /// <summary>Raised on an arbitrary thread when <see cref="Phase"/> changes.</summary>
+    public event EventHandler? PhaseChanged;
 
     public bool IsActive => State is DshHostState.Starting or DshHostState.Ready or DshHostState.Stopping;
 
@@ -164,6 +203,7 @@ public sealed class DshHost : IDshTokenSource, IDshHost
                 return new DshHostResult(false, Conflict, $"a legacy-started PRoot tree is running (sandbox {running.SandboxRootPid?.ToString() ?? "-"}, dsh {running.DshRootPid?.ToString() ?? "-"}); stop it first");
             }
             SetState(DshHostState.Starting);
+            SetPhase(DshHostPhase.SandboxStarting);
 
             var sandboxReady = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
             var sandboxSpawn = trace?.Measure("sandbox.spawn");
@@ -188,11 +228,13 @@ public sealed class DshHost : IDshTokenSource, IDshHost
             }
             sandboxSpawn?.End(details: new Dictionary<string, object?> { ["pid"] = _sandbox.Id });
             await trace.TraceAsync("sandbox.fixed_delay", () => WaitSandboxReadyAsync(_sandbox, sandboxReady.Task, SandboxReadyMaxWait, ct)).ConfigureAwait(false);
+            SetPhase(DshHostPhase.SandboxReady);
             if (_sandbox.HasExited)
             {
                 var code = _sandbox.ExitCode;
                 await KillEverythingAsync().ConfigureAwait(false);
                 SetState(DshHostState.Failed);
+                SetPhase(DshHostPhase.Failed);
                 return new DshHostResult(false, Exited, $"sandbox PRoot exited immediately (exit {code})");
             }
 
@@ -207,6 +249,7 @@ public sealed class DshHost : IDshTokenSource, IDshHost
                 _log($"host: removed {sweep.Removed.Count}/{sweep.Scanned} stale DSH writer lock(s)");
             }
             using var startupWake = new SemaphoreSlim(0, 1);
+            SetPhase(DshHostPhase.DshStarting);
             _dsh = SpawnDsh(trace, () => SignalStartupWake(startupWake));
 
             var ready = await WaitReadyAsync(ct, trace, startupWake).ConfigureAwait(false);
@@ -214,9 +257,11 @@ public sealed class DshHost : IDshTokenSource, IDshHost
             {
                 await KillEverythingAsync().ConfigureAwait(false);
                 SetState(DshHostState.Failed);
+                SetPhase(DshHostPhase.Failed);
                 return ready;
             }
             SetState(DshHostState.Ready);
+            SetPhase(DshHostPhase.Ready);
             _loop = new CancellationTokenSource();
             _loopTask = Task.Run(() => HealthLoopAsync(_loop.Token));
             return ready;
@@ -225,6 +270,7 @@ public sealed class DshHost : IDshTokenSource, IDshHost
         {
             await KillEverythingAsync().ConfigureAwait(false);
             SetState(DshHostState.Failed);
+            SetPhase(DshHostPhase.Failed);
             return new DshHostResult(false, ProotGuestProcess.SpawnFailed, e.Message);
         }
         finally
@@ -243,9 +289,12 @@ public sealed class DshHost : IDshTokenSource, IDshHost
                 return new DshHostResult(true, "OK", "not running");
             }
             SetState(DshHostState.Stopping);
+            SetPhase(DshHostPhase.Stopping);
+            await StopDshGracefullyAsync().ConfigureAwait(false);
             var left = await KillEverythingAsync().ConfigureAwait(false);
             UiToolsAtStart = null;
             SetState(DshHostState.Stopped);
+            SetPhase(DshHostPhase.Idle);
             return left == 0
                 ? new DshHostResult(true, "OK", null)
                 : new DshHostResult(false, Orphans, $"{left} process(es) with a runtime marker still alive after stop");
@@ -349,6 +398,7 @@ public sealed class DshHost : IDshTokenSource, IDshHost
                 {
                     changed = _tokens.Update(token);
                 }
+                SetPhase(DshHostPhase.DshTokenAvailable);
                 if (changed)
                 {
                     _log("host: dsh web launch token refreshed");
@@ -458,6 +508,27 @@ public sealed class DshHost : IDshTokenSource, IDshHost
         }
         catch (OperationCanceledException)
         {
+        }
+    }
+
+    /// <summary>
+    /// ADR-0031: give DSH up to <see cref="_gracefulStopTimeout"/> to leave on SIGTERM (Node flushes its compile cache and
+    /// removes the writer lock) before <see cref="KillEverythingAsync"/> escalates to SIGKILL.
+    /// </summary>
+    private async Task StopDshGracefullyAsync()
+    {
+        var dsh = _dsh;
+        if (dsh is null)
+        {
+            return;
+        }
+        try
+        {
+            await GracefulStop.RunAsync(dsh.Id, _terminator, () => dsh.HasExited, _gracefulStopTimeout, _log).ConfigureAwait(false);
+        }
+        catch (Exception e) when (e is InvalidOperationException or System.ComponentModel.Win32Exception or NotSupportedException)
+        {
+            _log($"host: graceful stop skipped ({e.GetType().Name}); falling back to SIGKILL");
         }
     }
 
@@ -593,6 +664,7 @@ public sealed class DshHost : IDshTokenSource, IDshHost
                     {
                         t.EmitElapsed("dsh.first_output", t.Mark() - _dshSpawnMark, details: new Dictionary<string, object?> { ["stream"] = stream });
                     }
+                    SetPhase(DshHostPhase.DshFirstOutput);
                     onFirstOutput?.Invoke();
                 }
                 onRawLine?.Invoke(line);           // raw: token parsing only, never logged
@@ -608,6 +680,17 @@ public sealed class DshHost : IDshTokenSource, IDshHost
     {
         State = s;
         StateChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    /// <summary>ADR-0031: record a start/stop milestone for the UI. READY is only ever set after <see cref="State"/> is.</summary>
+    private void SetPhase(DshHostPhase phase)
+    {
+        if (Phase == phase)
+        {
+            return;
+        }
+        Phase = phase;
+        PhaseChanged?.Invoke(this, EventArgs.Empty);
     }
 
     private long NowMs() => (long)_time.GetElapsedTime(0).TotalMilliseconds;

@@ -357,8 +357,19 @@ public sealed class RuntimeCoordinator : IDisposable
     {
         var host = _hostFactory(_layout, _log.Note, _time);
         host.StateChanged += (_, _) => OnHostStateChanged(host);
+        // ADR-0031: start/stop milestones for the UI (DshHost only; the test seam stays untouched).
+        if (host is DshHost concrete)
+        {
+            concrete.PhaseChanged += (_, _) => HostPhaseChanged?.Invoke(this, EventArgs.Empty);
+        }
         return host;
     }
+
+    /// <summary>ADR-0031: the C# host's current start/stop milestone, or null when this process never created a host.</summary>
+    public DshHostPhase? HostPhase => (_host as DshHost)?.Phase;
+
+    /// <summary>Raised on an arbitrary thread when <see cref="HostPhase"/> changes.</summary>
+    public event EventHandler? HostPhaseChanged;
 
     /// <summary>
     /// ADR-0015 decision 3: the health loop giving up (DSH stopped, sandbox kept) is journaled as "DSH failed, sandbox

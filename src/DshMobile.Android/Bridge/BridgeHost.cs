@@ -62,8 +62,9 @@ public sealed class BridgeHost : IDisposable, IDiagnosticsLog
                 Append($"c# relay (guest) stopped with the sandbox; ui_* layer {(removed ? "removed" : "left (not ours)")}");
             }
         };
-        // The status line follows the journal.
+        // The status line follows the journal and, while starting, the host's real milestone (ADR-0031).
         Runtime.State.Changed += (_, _) => Changed?.Invoke(this, EventArgs.Empty);
+        Runtime.HostPhaseChanged += (_, _) => Changed?.Invoke(this, EventArgs.Empty);
         var s = Runtime.State.Current;
         Append($"runtime coordinator: impl={RuntimeCoordinator.Implementation} journal={s.State}/{s.Harness} gen={s.Generation}{(s.ErrorCode is null ? "" : " last error " + s.ErrorCode)}");
         // The journal may still say what the previous process saw; align it with the disk.
@@ -118,6 +119,46 @@ public sealed class BridgeHost : IDisposable, IDiagnosticsLog
 
     /// <summary>What the home screen shows: the journal, the running operation and the last outcome.</summary>
     public HomeStatus Status => HomeStatus.From(Runtime.State.Current, CurrentOperation, LastOutcome);
+
+    /// <summary>ADR-0031: the C# host's live start/stop milestone (null when no host exists yet).</summary>
+    public DshMobile.Runtime.Hosting.DshHostPhase? HostPhase => Runtime.HostPhase;
+
+    private int _warmup;
+    private int _userStopped;
+
+    /// <summary>True while the eager warmup is starting DSH without the user's tap.</summary>
+    public bool IsWarmingUp => Volatile.Read(ref _warmup) != 0;
+
+    /// <summary>
+    /// ADR-0031 eager warmup: start DSH in the background so a later tap lands on a READY host. Silent by design - a
+    /// failure only reaches the log. Returns false when <see cref="WarmupPolicy"/> says no or another start already won.
+    /// </summary>
+    public async Task<bool> TryWarmupAsync(bool enabled, bool lowBattery, bool powerSave)
+    {
+        var journal = Runtime.State.Current;
+        var idle = journal is { State: DshMobile.Runtime.RuntimeState.Ready, Harness: DshMobile.Runtime.HarnessState.Stopped };
+        var decision = DshMobile.Application.Runtime.WarmupPolicy.Decide(
+            enabled, Volatile.Read(ref _userStopped) != 0, IsBusy, idle, lowBattery, powerSave);
+        if (decision != DshMobile.Application.Runtime.WarmupDecision.Start)
+        {
+            Append($"warmup: skipped ({decision})");
+            return false;
+        }
+        if (Interlocked.CompareExchange(ref _warmup, 1, 0) != 0)
+        {
+            return false;
+        }
+        Append("warmup: starting DSH in the background (ADR-0031)");
+        try
+        {
+            await RunStartAsync(silent: true).ConfigureAwait(false);
+            return true;
+        }
+        finally
+        {
+            Volatile.Write(ref _warmup, 0);
+        }
+    }
 
     /// <summary>The journal, with the C# host's state while it owns the processes (ADR-0015).</summary>
     public string RuntimeState
@@ -274,8 +315,9 @@ public sealed class BridgeHost : IDisposable, IDiagnosticsLog
     /// Foreground service, sandbox, then DSH, by the C# host and supervised by <see cref="RuntimeCoordinator"/>: a failed
     /// start is cleaned up and releases the service; a failed stop keeps it (PR-00 defect 3).
     /// </summary>
-    public Task RunStartAsync()
+    public Task RunStartAsync(bool silent = false)
     {
+        Volatile.Write(ref _userStopped, 0);
         // Observability only (docs/STARTUP_PERF.md): Logcat gets startup-perf records for this run while detailed
         // diagnostics are on; the in-app operation log and every existing message stay exactly as they were.
         var trace = UiPrefs.StartupTraceEnabled(_context) ? StartupTrace.Start(line => Log.Info(LogTag, line)) : StartupTrace.Disabled;
@@ -284,7 +326,10 @@ public sealed class BridgeHost : IDisposable, IDiagnosticsLog
         {
             trace.EmitSpan("ui.click_to_bridge", clicked);
             var r = await Runtime.StartAsync(DshProfile.Web, CancellationToken.None, trace).ConfigureAwait(false);
-            Report(r.Ok, r.Code, r.Message);
+            if (!silent)
+            {
+                Report(r.Ok, r.Code, r.Message);
+            }
             var s = r.Snapshot;
             Append(r.Ok
                 ? $"start: ok sandbox={s.State} dsh={s.Harness} version={s.DshVersion ?? "-"} gen={s.Generation}"
@@ -298,6 +343,11 @@ public sealed class BridgeHost : IDisposable, IDiagnosticsLog
     {
         var r = await Runtime.StopAsync(CancellationToken.None).ConfigureAwait(false);
         Report(r.Ok, r.Code, r.Message);
+        if (r.Ok)
+        {
+            // ADR-0031: an explicit stop also suppresses the eager warmup for the rest of this app session.
+            Volatile.Write(ref _userStopped, 1);
+        }
         Append(r.Ok ? $"stop: ok ({r.Snapshot.State})" : $"stop FAILED {r.Code}: {r.Message} (state={r.Snapshot.State})");
     });
 
