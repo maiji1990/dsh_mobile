@@ -406,4 +406,17 @@
     <string name="dev_experiments_cancel">取消当前实验</string>
     <string name="dev_experiments_cancel_sub">结束子进程树，删除本次实验的隔离目录</string>
     <string name="dev_experiments_running">正在运行；DSH 必须已停止，3080 端口必须空闲。</string>
+
+    <!-- ADR-0032: Android 17 local network protection (ACCESS_LOCAL_NETWORK). -->
+    <string name="lan_title">局域网访问</string>
+    <string name="lan_sub_granted">已允许：DSH 及其沙箱可以访问手机所在局域网的设备</string>
+    <string name="lan_sub_denied">未允许：沙箱里访问内网地址（192.168.x 等）会超时；点此允许</string>
+    <string name="lan_sub_notrequired">当前系统不需要这项权限（Android 17 起对 targetSdk 37 生效）</string>
+    <string name="lan_sub_undeclared">构建缺少 ACCESS_LOCAL_NETWORK 声明（LAN_PERMISSION_UNDECLARED）</string>
+    <string name="lan_dialog_title">允许局域网访问？</string>
+    <string name="lan_dialog_message">Android 17 起应用默认不能访问局域网。允许后，DSH 沙箱里的 curl/ssh 与「远程主机」才能连接内网设备（如 192.168.x.x）。DSH 的本地网页界面与公网访问不受影响。</string>
+    <string name="lan_dialog_message_host">要连接 %1$s，需要允许局域网访问。Android 17 起应用默认不能访问局域网；不允许的话连接会一直超时。</string>
+    <string name="lan_dialog_allow">允许</string>
+    <string name="lan_dialog_later">暂不</string>
+    <string name="lan_denied_toast">未允许局域网访问：沙箱访问内网地址会超时，可在「更多 → 手机操控 → 局域网访问」里允许</string>
 </resources>

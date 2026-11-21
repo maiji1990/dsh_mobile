@@ -6,6 +6,7 @@ using AndroidX.Core.View;
 using AndroidX.Fragment.App;
 using DshMobile.App.Files;
 using DshMobile.App.Home;
+using DshMobile.App.LocalNetwork;
 using DshMobile.App.More;
 using DshMobile.App.Ui;
 using Google.Android.Material.BottomNavigation;
@@ -132,6 +133,13 @@ public sealed class MainActivity : AppCompatActivity
     {
         base.OnConfigurationChanged(newConfig);
         ApplyWidth(newConfig);
+    }
+
+    /// <summary>ADR-0032: the LAN permission request is answered here; the gate lives in <see cref="LocalNetworkAccess"/>.</summary>
+    public override void OnRequestPermissionsResult(int requestCode, string[] permissions, Permission[] grantResults)
+    {
+        base.OnRequestPermissionsResult(requestCode, permissions, grantResults);
+        LocalNetworkAccess.OnRequestResult(requestCode, grantResults);
     }
 
     /// <summary>Rail or bottom bar for this width; the shown one gets the current tab, then the insets are re-applied.</summary>

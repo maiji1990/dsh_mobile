@@ -3,9 +3,11 @@ using Android.Content.Res;
 using Android.Views;
 using DshMobile.App.Automation;
 using DshMobile.App.Bridge;
+using DshMobile.App.LocalNetwork;
 using DshMobile.App.Remote;
 using DshMobile.App.RuntimeUi;
 using DshMobile.App.Ui;
+using DshMobile.Application.LocalNetwork;
 using DshMobile.Application.Ui;
 using DshMobile.Runtime.Automation.Relay;
 using Google.Android.Material.Button;
@@ -331,7 +333,7 @@ public sealed class HomeFragment : Fragment, ITabRoot
                 StartActivityForResult(RuntimeImportFlow.PickDshIntent(), RuntimeImportFlow.DshRequestCode);
                 break;
             case HomeAction.Start:
-                _ = _bridge.RunStartAsync();
+                _ = StartDshAsync();
                 break;
             case HomeAction.OpenDsh:
                 StartActivity(new Intent(RequireContext(), typeof(DshWebActivity)));
@@ -340,6 +342,32 @@ public sealed class HomeFragment : Fragment, ITabRoot
                 _ = _bridge.RunStopAsync();
                 break;
         }
+    }
+
+    /// <summary>
+    /// ADR-0032: Android 17 needs ACCESS_LOCAL_NETWORK for LAN traffic from this UID (which the PRoot guest shares). The
+    /// prompt belongs to a user action, never to a cold start; a denial must not stop DSH - it only costs LAN access.
+    /// </summary>
+    private async Task StartDshAsync()
+    {
+        var decision = LocalNetworkDecision.NotRequired;
+        if (Activity is { } activity && !UiPrefs.LanPermissionAsked(activity))
+        {
+            UiPrefs.SetLanPermissionAsked(activity, true);
+            try
+            {
+                decision = await LocalNetworkAccess.EnsureAsync(activity).ConfigureAwait(true);
+            }
+            catch (Exception e)
+            {
+                Android.Util.Log.Warn("DshMobile", "lan permission gate failed: " + e.GetType().Name);
+            }
+        }
+        if (decision == LocalNetworkDecision.NeedsPermission && Context is { } ctx)
+        {
+            Android.Widget.Toast.MakeText(ctx, GetString(Resource.String.lan_denied_toast), Android.Widget.ToastLength.Long)?.Show();
+        }
+        await _bridge.RunStartAsync();
     }
 
     /// <summary>ADR-0029: 首页一键在线初始化流程——先拉取并验签通道清单，再向用户展示摘要并确认安装。</summary>

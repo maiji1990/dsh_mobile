@@ -53,6 +53,7 @@
 | 运行层导入 / 回滚 | 待测 | 待测 | 通过（当前 C#，回滚需手工 `previous/`） | |
 | DSH 层换层事务：中途强杀 / 低磁盘 | 待测 | 待测 | 待测 | #41 只有单测 + 故障注入 |
 | 在线更新（发现 / 下载 / 安装 / 回滚） | 阻断 | 阻断 | 阻断 | 无发布公钥（PR-02）、无下载器（PR-04） |
+| 局域网访问（LNP / `ACCESS_LOCAL_NETWORK`） | — | — | 通过（2026-11-21，PTP-AN10 / Android 17；ADR-0032 构建的 App UID） | 报告：[local-network-permission](../migration/parity/2026-11-21-PTP-AN10-A17-local-network-permission.md)。未授权 → App UID 的 LAN TCP 超时（PC 侧零请求）；授权后 → `HTTP/1.0 200`；撤销 → 超时；target 36 新装包 → 200。沙箱内 curl 的复验待正式包重装 |
 
 | 维度 | 状态 | 备注 |
 |---|---|---|
