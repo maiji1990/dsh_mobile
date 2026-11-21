@@ -62,6 +62,22 @@
 - 错误码：`DOWNLOAD_NOT_OFFERED / INSUFFICIENT_SPACE / CACHE_FULL / HTTP_FAILED / INSECURE_REDIRECT / INCOMPLETE / SIZE_MISMATCH /
   SHA256_MISMATCH / WRITE_FAILED / CANCELLED`。下载器不安装、不切换任何东西（PR-05），尚未接入 UI（PR-06）。
 
+## 修订（2026-11-21：github.com 边缘不可达时的 api.github.com 回退）
+
+- **问题（真机复现）**：Honor PTP-AN10 / Android 17 的移动网络上，`github.com` 解析到 `20.247.166.64` 并**超时**
+  （25 s 无字节），而 `api.github.com`（0.7 s）与 `objects.githubusercontent.com`（0.9 s）都正常。旧实现只用
+  `https://github.com/<repo>/releases/download/<tag>/<asset>`，于是「检查更新」30 s 超时并显示
+  `EXCEPTION: TaskCanceledException`。
+- **决策**：新增 `GitHubAssetResolver`（`DshMobile.Runtime.Updates`）。清单与制品下载都先对规范 URL 发一次
+  **6 s 预算**的请求；失败（超时 / 传输错误）时把该 URL 拆成 `owner/repo/tag/asset`，用
+  `GET https://api.github.com/repos/<owner>/<repo>/releases/tags/<tag>`（`Accept: application/vnd.github+json`）
+  找到同名制品的 `assets[].url`，再以 `Accept: application/octet-stream` 下载（API 会 302 到同一 CDN）。
+- **安全边界不变**：回退只改「怎么取字节」。URL 仍必须 https、host 必须是 `api.github.com`（解析结果做了 host 校验），
+  清单仍要验签、制品仍要 SHA-256 与大小校验；不接受清单/插件/Agent 提供的任意地址。
+- **不隐藏失败**：两条路都失败时返回稳定的 `MANIFEST_FETCH_FAILED` 并说明「github.com 超时且 api.github.com 回退未解析」，
+  不再以裸 `EXCEPTION` 形式冒到首页。
+- **续传**：回退只用于**新下载**（`have == 0`）；已有 `.part` 的续传保持对原 URL 的 `Range`/`If-Range`，避免跨 URL 拼接。
+
 ## 后果
 
 - 正面：在线更新的第一道门（来源真实性）在任何下载之前就位；错误码稳定、可在 UI 原样显示；内容规则把发布流水线的错误挡在安装器之外。

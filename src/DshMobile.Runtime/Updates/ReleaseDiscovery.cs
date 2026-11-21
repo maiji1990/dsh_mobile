@@ -49,16 +49,19 @@ public sealed class HttpReleaseSource : IReleaseSource
 
     private async Task<byte[]> GetAsync(Uri uri, CancellationToken ct)
     {
-        using var request = new HttpRequestMessage(HttpMethod.Get, uri);
-        request.Headers.CacheControl = new CacheControlHeaderValue { NoCache = true };
         HttpResponseMessage response;
         try
         {
-            response = await _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
+            response = await SendAsync(uri, ct).ConfigureAwait(false);
         }
         catch (HttpRequestException e)
         {
             throw new ReleaseSourceException(UpdateErrorCodes.FetchFailed, $"{uri.Host}: {e.Message}");
+        }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+        {
+            throw new ReleaseSourceException(UpdateErrorCodes.FetchFailed,
+                $"{uri.Host}: timed out after {GitHubAssetResolver.DirectAttemptTimeout.TotalSeconds:F0} s and the api.github.com fallback did not answer");
         }
         using (response)
         {
@@ -70,6 +73,7 @@ public sealed class HttpReleaseSource : IReleaseSource
             {
                 throw new ReleaseSourceException(UpdateErrorCodes.FetchFailed, $"{uri}: HTTP {(int)response.StatusCode}");
             }
+            // the API asset endpoint redirects to the CDN; the bytes are verified by the caller, so only https matters.
             if (response.Content.Headers.ContentLength > MaxBytes)
             {
                 throw new ReleaseSourceException(UpdateErrorCodes.TooLarge, $"{uri}: {response.Content.Headers.ContentLength} bytes (max {MaxBytes})");
@@ -91,6 +95,43 @@ public sealed class HttpReleaseSource : IReleaseSource
                 return buffer.ToArray();
             }
         }
+    }
+
+    /// <summary>
+    /// Direct attempt (short timeout) then, if the canonical release-download host is unreachable, the same asset through
+    /// <see cref="GitHubAssetResolver"/> (ADR-0022 amendment: some networks block github.com but not api.github.com).
+    /// </summary>
+    private async Task<HttpResponseMessage> SendAsync(Uri uri, CancellationToken ct)
+    {
+        try
+        {
+            return await SendOnceAsync(uri, ct, direct: true, assetMediaType: false).ConfigureAwait(false);
+        }
+        catch (Exception e) when (e is HttpRequestException || (e is OperationCanceledException && !ct.IsCancellationRequested))
+        {
+            var viaApi = await GitHubAssetResolver.ResolveAsync(_http, uri, ct).ConfigureAwait(false);
+            if (viaApi is null)
+            {
+                throw;
+            }
+            return await SendOnceAsync(viaApi, ct, direct: false, assetMediaType: true).ConfigureAwait(false);
+        }
+    }
+
+    private async Task<HttpResponseMessage> SendOnceAsync(Uri uri, CancellationToken ct, bool direct, bool assetMediaType)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Get, uri);
+        request.Headers.CacheControl = new CacheControlHeaderValue { NoCache = true };
+        if (assetMediaType)
+        {
+            GitHubAssetResolver.UseAssetMediaType(request);
+        }
+        using var budget = direct ? CancellationTokenSource.CreateLinkedTokenSource(ct) : null;
+        if (budget is not null)
+        {
+            budget.CancelAfter(GitHubAssetResolver.DirectAttemptTimeout);
+        }
+        return await _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, budget?.Token ?? ct).ConfigureAwait(false);
     }
 }
 
