@@ -106,6 +106,26 @@ public sealed class MainActivity : AppCompatActivity
             _ = DshMobileApplication.Current.Bridge.RunAutoUpdateCheckAsync(channel,
                 () => UiPrefs.SetLastAutoCheckUtcMs(this, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()));
         }
+        // ADR-0031: 到前台时按用户开关与电源约束静默预热 DSH，让点击「启动 DSH」落在已就绪或接近就绪的宿主上。
+        _ = TryEagerWarmupAsync();
+    }
+
+    /// <summary>ADR-0031：预热只做一次决策（开关 / 用户已停止 / 忙 / 运行层未就绪 / 低电量 / 省电），失败只写操作日志。</summary>
+    private async Task TryEagerWarmupAsync()
+    {
+        if (!UiPrefs.EagerWarmupEnabled(this))
+        {
+            return;
+        }
+        var (lowBattery, powerSave) = UiPrefs.WarmupPower(this);
+        try
+        {
+            await DshMobileApplication.Current.Bridge.TryWarmupAsync(true, lowBattery, powerSave).ConfigureAwait(false);
+        }
+        catch (Exception e)
+        {
+            Android.Util.Log.Warn("DshMobile", "eager warmup failed: " + e.GetType().Name);
+        }
     }
 
     public override void OnConfigurationChanged(Android.Content.Res.Configuration newConfig)

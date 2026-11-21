@@ -126,6 +126,20 @@ public sealed class HomeFragment : Fragment, ITabRoot
         }
     }
 
+    /// <summary>
+    /// ADR-0031: while starting, show the host's real milestone instead of one generic sentence. The text never claims
+    /// READY: the ready card comes from <see cref="HomePhase.Ready"/> only.
+    /// </summary>
+    private string StartingDetail() => _bridge.HostPhase switch
+    {
+        DshMobile.Runtime.Hosting.DshHostPhase.SandboxStarting => GetString(Resource.String.home_detail_phase_sandbox),
+        DshMobile.Runtime.Hosting.DshHostPhase.SandboxReady => GetString(Resource.String.home_detail_phase_sandbox_ready),
+        DshMobile.Runtime.Hosting.DshHostPhase.DshStarting => GetString(Resource.String.home_detail_phase_dsh_spawned),
+        DshMobile.Runtime.Hosting.DshHostPhase.DshFirstOutput => GetString(Resource.String.home_detail_phase_first_output),
+        DshMobile.Runtime.Hosting.DshHostPhase.DshTokenAvailable => GetString(Resource.String.home_detail_phase_token),
+        _ => GetString(Resource.String.home_detail_starting),
+    };
+
     private void Render()
     {
         var ctx = RequireContext();
@@ -149,7 +163,7 @@ public sealed class HomeFragment : Fragment, ITabRoot
                 break;
             case HomePhase.Starting:
                 (label, title, icon, iconTint) = (Resource.String.home_label_starting, Resource.String.home_title_starting, Resource.Drawable.ic_play, Resource.Attribute.colorPrimary);
-                detail = GetString(Resource.String.home_detail_starting);
+                detail = StartingDetail();
                 break;
             case HomePhase.WaitingForWebUi:
                 (label, title, icon, iconTint) = (Resource.String.home_label_starting, Resource.String.home_title_waiting, Resource.Drawable.ic_play, Resource.Attribute.colorPrimary);
