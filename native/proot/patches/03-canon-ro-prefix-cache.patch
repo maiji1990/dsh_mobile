@@ -1,0 +1,286 @@
+# ADR-0030 (GPL-2.0-or-later): opt-in PROOT_RO_CACHE_PREFIXES per-process dentry
+# cache in canonicalize() for immutable read-only bind prefixes. Never caches
+# symlinks or paths outside the declared prefixes. PROOT_RO_CACHE_NONEXIST=0
+# keeps DIR/NONDIR caching but never records ENOENT, so a writable bind cannot
+# go stale; production enables that combination (docs/ADR/0029).
+diff --git a/src/path/canon.c b/src/path/canon.c
+index 09d0eed..51a9f39 100644
+--- a/src/path/canon.c
++++ b/src/path/canon.c
+@@ -28,7 +28,9 @@
+ #include <unistd.h>    /* access(2), lstat(2), */
+ #include <string.h>    /* string(3), */
+ #include <assert.h>    /* assert(3), */
++#include <stdint.h>    /* uint64_t, */
+ #include <stdio.h>     /* sscanf(3), */
++#include <stdlib.h>    /* getenv(3), calloc(3), malloc(3), */
+ 
+ #include "path/canon.h"
+ #include "path/path.h"
+@@ -126,6 +128,189 @@ static inline Finality next_component(char component[NAME_MAX], const char **cur
+ 	return NOT_FINAL;
+ }
+ 
++/* ADR-0030: opt-in per-process read-only prefix dentry cache.
++ * Enabled only when PROOT_RO_CACHE_PREFIXES is set (colon-separated absolute
++ * guest prefixes). Symlinks are never cached so symlink escape checks always
++ * run through the original canonicalize() recursion. */
++#define RO_CACHE_MAX_PREFIXES 8
++#define RO_CACHE_BUCKETS 16384u
++#define RO_CACHE_MAX_ENTRIES 12288u
++
++/* ADR-0030: a cached "does not exist" is only safe while nothing can create the
++ * path later. PROOT_RO_CACHE_NONEXIST=0 keeps DIR/NONDIR caching but never
++ * records ENOENT, so a bind the guest can still write stays correct. */
++static int ro_cache_nonexist_state = 0; /* 0=uninitialized, 1=enabled, -1=disabled */
++
++static bool ro_cache_caches_nonexist(void)
++{
++	if (ro_cache_nonexist_state == 0) {
++		const char *env = getenv("PROOT_RO_CACHE_NONEXIST");
++		ro_cache_nonexist_state = (env != NULL && env[0] == '0') ? -1 : 1;
++	}
++	return ro_cache_nonexist_state > 0;
++}
++
++typedef enum {
++	RO_ENTRY_EMPTY = 0,
++	RO_ENTRY_DIR = 1,
++	RO_ENTRY_NONDIR = 2,
++	RO_ENTRY_NONEXIST = 3,
++} RoEntryKind;
++
++typedef struct {
++	uint64_t hash;
++	uint16_t len;
++	uint8_t kind;
++	char *guest_path;
++} RoCacheEntry;
++
++static int ro_cache_init_state = 0; /* 0=uninitialized, -1=disabled, 1=enabled */
++static char ro_cache_prefixes[RO_CACHE_MAX_PREFIXES][PATH_MAX];
++static size_t ro_cache_prefix_lens[RO_CACHE_MAX_PREFIXES];
++static size_t ro_cache_prefix_count = 0;
++static RoCacheEntry *ro_cache_table = NULL;
++static uint32_t ro_cache_count = 0;
++
++static bool ro_cache_enabled(void)
++{
++	if (ro_cache_init_state != 0)
++		return ro_cache_init_state > 0;
++
++	const char *env = getenv("PROOT_RO_CACHE_PREFIXES");
++	if (env == NULL || env[0] == '\0') {
++		ro_cache_init_state = -1;
++		return false;
++	}
++
++	const char *p = env;
++	while (*p != '\0' && ro_cache_prefix_count < RO_CACHE_MAX_PREFIXES) {
++		const char *sep = strchr(p, ':');
++		size_t len = (sep != NULL) ? (size_t) (sep - p) : strlen(p);
++		while (len > 1 && p[len - 1] == '/')
++			len--;
++		if (len >= 2 && len < PATH_MAX && p[0] == '/') {
++			memcpy(ro_cache_prefixes[ro_cache_prefix_count], p, len);
++			ro_cache_prefixes[ro_cache_prefix_count][len] = '\0';
++			ro_cache_prefix_lens[ro_cache_prefix_count] = len;
++			ro_cache_prefix_count++;
++		}
++		if (sep == NULL)
++			break;
++		p = sep + 1;
++	}
++
++	if (ro_cache_prefix_count == 0) {
++		ro_cache_init_state = -1;
++		return false;
++	}
++
++	ro_cache_table = calloc(RO_CACHE_BUCKETS, sizeof(RoCacheEntry));
++	if (ro_cache_table == NULL) {
++		ro_cache_init_state = -1;
++		return false;
++	}
++
++	ro_cache_init_state = 1;
++	return true;
++}
++
++static inline bool ro_cache_extensions_safe(Tracee *tracee)
++{
++	return get_extension(tracee, fake_id0_callback) == NULL
++	    && get_extension(tracee, link2symlink_callback) == NULL
++	    && get_extension(tracee, hidden_files_callback) == NULL;
++}
++
++static inline bool ro_cache_matches_prefix(const char *path, size_t len)
++{
++	size_t i;
++	for (i = 0; i < ro_cache_prefix_count; i++) {
++		size_t plen = ro_cache_prefix_lens[i];
++		if (len == plen && memcmp(path, ro_cache_prefixes[i], plen) == 0)
++			return true;
++		if (len > plen && path[plen] == '/' && memcmp(path, ro_cache_prefixes[i], plen) == 0)
++			return true;
++	}
++	return false;
++}
++
++static inline bool ro_cache_is_clean_absolute(const char *path, size_t len)
++{
++	size_t i;
++	if (len < 2 || len >= PATH_MAX || path[0] != '/' || path[len - 1] == '/')
++		return false;
++	for (i = 0; i < len; i++) {
++		if (path[i] == '/') {
++			if (path[i + 1] == '/')
++				return false;
++			if (path[i + 1] == '.') {
++				if (path[i + 2] == '\0' || path[i + 2] == '/')
++					return false;
++				if (path[i + 2] == '.' && (path[i + 3] == '\0' || path[i + 3] == '/'))
++					return false;
++			}
++		}
++	}
++	return true;
++}
++
++static inline uint64_t ro_cache_hash(const char *path, size_t len)
++{
++	uint64_t h = 14695981039346656037ULL;
++	size_t i;
++	for (i = 0; i < len; i++) {
++		h ^= (unsigned char) path[i];
++		h *= 1099511628211ULL;
++	}
++	return h == 0 ? 1 : h;
++}
++
++static RoEntryKind ro_cache_lookup(const char *path, size_t len)
++{
++	uint64_t h = ro_cache_hash(path, len);
++	uint32_t mask = RO_CACHE_BUCKETS - 1u;
++	uint32_t slot = (uint32_t) h & mask;
++	uint32_t probe;
++	for (probe = 0; probe < RO_CACHE_BUCKETS; probe++) {
++		RoCacheEntry *e = &ro_cache_table[(slot + probe) & mask];
++		if (e->kind == RO_ENTRY_EMPTY)
++			return RO_ENTRY_EMPTY;
++		if (e->hash == h && e->len == len && memcmp(e->guest_path, path, len) == 0)
++			return (RoEntryKind) e->kind;
++	}
++	return RO_ENTRY_EMPTY;
++}
++
++static void ro_cache_insert(const char *path, size_t len, RoEntryKind kind)
++{
++	if (ro_cache_count >= RO_CACHE_MAX_ENTRIES || len >= PATH_MAX)
++		return;
++	uint64_t h = ro_cache_hash(path, len);
++	uint32_t mask = RO_CACHE_BUCKETS - 1u;
++	uint32_t slot = (uint32_t) h & mask;
++	uint32_t probe;
++	for (probe = 0; probe < RO_CACHE_BUCKETS; probe++) {
++		RoCacheEntry *e = &ro_cache_table[(slot + probe) & mask];
++		if (e->kind == RO_ENTRY_EMPTY) {
++			char *copy = malloc(len + 1);
++			if (copy == NULL)
++				return;
++			memcpy(copy, path, len);
++			copy[len] = '\0';
++			e->guest_path = copy;
++			e->hash = h;
++			e->len = (uint16_t) len;
++			e->kind = (uint8_t) kind;
++			ro_cache_count++;
++			return;
++		}
++		if (e->hash == h && e->len == len && memcmp(e->guest_path, path, len) == 0) {
++			e->kind = (uint8_t) kind;
++			return;
++		}
++	}
++}
++
+ /**
+  * Resolve bindings (if any) in @guest_path and copy the translated
+  * path into @host_path.  Also, this function checks that a non-final
+@@ -138,6 +323,22 @@ static inline int substitute_binding_stat(Tracee *tracee, Finality finality, uns
+ {
+ 	struct stat statl;
+ 	int status;
++	bool use_ro_cache = false;
++	size_t guest_len = 0;
++
++	if (tracee->glue_type == 0 && ro_cache_enabled() && ro_cache_extensions_safe(tracee)) {
++		guest_len = strlen(guest_path);
++		if (ro_cache_matches_prefix(guest_path, guest_len)) {
++			use_ro_cache = true;
++			RoEntryKind cached = ro_cache_lookup(guest_path, guest_len);
++			if (cached == RO_ENTRY_DIR)
++				return 0;
++			if (cached == RO_ENTRY_NONDIR)
++				return (!IS_FINAL(finality) ? -ENOTDIR : 0);
++			if (cached == RO_ENTRY_NONEXIST)
++				return (!IS_FINAL(finality) ? -ENOENT : 0);
++		}
++	}
+ 
+ 	strcpy(host_path, guest_path);
+ 	status = substitute_binding(tracee, GUEST, host_path);
+@@ -176,6 +377,15 @@ static inline int substitute_binding_stat(Tracee *tracee, Finality finality, uns
+ 			status = -1;
+ 	}
+ 
++	if (use_ro_cache) {
++		if (status == 0 && S_ISDIR(statl.st_mode))
++			ro_cache_insert(guest_path, guest_len, RO_ENTRY_DIR);
++		else if (status == 0 && !S_ISLNK(statl.st_mode))
++			ro_cache_insert(guest_path, guest_len, RO_ENTRY_NONDIR);
++		else if (status < 0 && errno == ENOENT && ro_cache_caches_nonexist())
++			ro_cache_insert(guest_path, guest_len, RO_ENTRY_NONEXIST);
++	}
++
+ 	/* Return an error if a non-final component isn't a
+ 	 * directory nor a symlink.  The error is "No such
+ 	 * file or directory" if this component doesn't exist,
+@@ -229,6 +439,37 @@ int canonicalize(Tracee *tracee, const char *user_path, bool deref_final,
+ 	/* Canonicalize recursely 'user_path' into 'guest_path'.  */
+ 	cursor = user_path;
+ 	finality = NOT_FINAL;
++
++	/* ADR-0030: fast-path clean absolute paths inside declared read-only prefixes. */
++	if (recursion_level == 0 && tracee->glue_type == 0
++	    && ro_cache_enabled() && ro_cache_extensions_safe(tracee)) {
++		size_t user_len = strlen(user_path);
++		if (ro_cache_is_clean_absolute(user_path, user_len)
++		    && ro_cache_matches_prefix(user_path, user_len)) {
++			RoEntryKind exact = ro_cache_lookup(user_path, user_len);
++			if (exact != RO_ENTRY_EMPTY) {
++				memcpy(guest_path, user_path, user_len + 1);
++				return 0;
++			}
++			const char *last_slash = strrchr(user_path, '/');
++			if (last_slash != NULL && last_slash > user_path) {
++				size_t parent_len = (size_t) (last_slash - user_path);
++				if (ro_cache_matches_prefix(user_path, parent_len)) {
++					RoEntryKind parent_kind = ro_cache_lookup(user_path, parent_len);
++					if (parent_kind == RO_ENTRY_DIR) {
++						memcpy(guest_path, user_path, parent_len);
++						guest_path[parent_len] = '\0';
++						cursor = last_slash + 1;
++					} else if (parent_kind == RO_ENTRY_NONEXIST) {
++						return -ENOENT;
++					} else if (parent_kind == RO_ENTRY_NONDIR) {
++						return -ENOTDIR;
++					}
++				}
++			}
++		}
++	}
++
+ 	while (!IS_FINAL(finality)) {
+ 		Comparison comparison;
+ 		char component[NAME_MAX];

@@ -25,7 +25,7 @@ const RUN = 'a1b2c3d4e5f6';
 const HEADER = 'device,android,apk,node,dsh,experiment,variant,kind,iteration,runId,durationMs,spawnMs,guestFirstMarkerMs,httpReadyMs,httpStatus,exitCode,timedOut,result,cacheMode,cacheFileCount,cacheBytes,startedAt';
 
 function kindOf(variant) {
-  return variant.startsWith('E3') || variant.startsWith('E4') ? 'web' : 'exit';
+  return variant.startsWith('E3') || variant.startsWith('E4') || variant.startsWith('E6') || variant.startsWith('E7') ? 'web' : 'exit';
 }
 
 function rec(variant, durationMs = 100, extra = {}) {
@@ -621,4 +621,41 @@ test('CLI --help prints usage to stdout and exits 0', () => {
   assert.match(result.stdout, /usage:/);
   assert.match(result.stdout, /--matrix/);
   assert.equal(result.stderr, '');
+});
+
+test('E6 variants parse and produce within-experiment paired differences', () => {
+  const rows = [];
+  for (let i = 1; i <= 10; i += 1) {
+    rows.push(rec('E6-0', 16000 + i * 10, { iteration: i }));
+    rows.push(rec('E6-1', 14500 + i * 10, { iteration: i }));
+    rows.push(rec('E6-2', 13000 + i * 10, { iteration: i }));
+    rows.push(rec('E6-3', 11800 + i * 10, { iteration: i }));
+  }
+  const summary = summarize(rows);
+  assert.equal(summary.recordCount, 40);
+  assert.equal(summary.skipped, 0);
+  const p03 = summary.pairs.find((pair) => pair.a === 'E6-0' && pair.b === 'E6-3');
+  assert.ok(p03, 'expected E6-0 vs E6-3 paired entry');
+  assert.equal(p03.comparable, true);
+  assert.equal(p03.n, 10);
+  assert.equal(p03.p50Diff, -4200);
+});
+
+test('E7 variants parse and produce within-experiment paired differences', () => {
+  const rows = [];
+  for (let i = 1; i <= 10; i += 1) {
+    rows.push(rec('E7-0', 15000 + i * 10, { iteration: i }));
+    rows.push(rec('E7-1', 14600 + i * 10, { iteration: i }));
+    rows.push(rec('E7-2', 11000 + i * 10, { iteration: i }));
+    rows.push(rec('E7-3', 10600 + i * 10, { iteration: i }));
+    rows.push(rec('E7-4', 9400 + i * 10, { iteration: i }));
+  }
+  const summary = summarize(rows);
+  assert.equal(summary.recordCount, 50);
+  assert.equal(summary.skipped, 0);
+  const p04 = summary.pairs.find((pair) => pair.a === 'E7-0' && pair.b === 'E7-4');
+  assert.ok(p04, 'expected E7-0 vs E7-4 paired entry');
+  assert.equal(p04.comparable, true);
+  assert.equal(p04.n, 10);
+  assert.equal(p04.p50Diff, -5600);
 });

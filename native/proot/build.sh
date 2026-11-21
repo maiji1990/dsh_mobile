@@ -61,6 +61,15 @@ done < "$here/sources.lock"
 talloc_src="${src[talloc]}"; shmem_src="${src[libandroid-shmem]}"; proot_src="${src[proot]}/src"
 [[ ! -e "$talloc_src/config.h" ]] || die "talloc tree unexpectedly has a config.h; compat/talloc/config.h would be shadowed"
 
+# ADR-0030: 解包 PRoot 源码后按字典序应用本仓库可追溯补丁（使用 GIT_CEILING_DIRECTORIES 防止寻到外层仓库 .git）。
+if [[ -d "$here/patches" ]]; then
+  while IFS= read -r pf; do
+    [[ -n "$pf" ]] || continue
+    GIT_CEILING_DIRECTORIES="$(dirname "${src[proot]}")" git -C "${src[proot]}" apply "$pf"
+    echo "proot patch applied: $(basename "$pf")"
+  done < <(LC_ALL=C find "$here/patches" -maxdepth 1 -type f -name '*.patch' | LC_ALL=C sort)
+fi
+
 ld_shared=(-s -Wl,--as-needed -Wl,-z,max-page-size=16384 -Wl,-z,common-page-size=16384 -Wl,-z,relro -Wl,-z,now
            -Wl,-z,noexecstack -Wl,--build-id=sha1)
 out_root="$repo/artifacts/native/proot"

@@ -57,6 +57,7 @@ public sealed class StartupExperimentTests : IDisposable
         Assert.StartsWith(root, isolated.WorkspaceDir, StringComparison.Ordinal);
         Assert.StartsWith(root, isolated.CacheDir, StringComparison.Ordinal);
         Assert.True(File.Exists(Path.Combine(isolated.WorkspaceDir, ".dsh", "dshmobile", "bin", "dsh")));
+        Assert.True(File.Exists(Path.Combine(isolated.CacheDir, "dshmobile", DshMobile.Runtime.Guest.GuestAssetProvisioner.StartupFsCacheShimName)));
         Assert.True(Directory.Exists(isolated.CacheDir));
         Assert.Equal("user data", File.ReadAllText(sentinel));
     }
@@ -145,5 +146,73 @@ public sealed class StartupExperimentTests : IDisposable
         var badReps = await runner.RunAsync(StartupExperiments.SuiteE1E2, 0, _ => { }, CancellationToken.None);
         Assert.Equal(StartupExperimentRunner.UnknownSuite, unknown.Code);
         Assert.Equal("EXPERIMENT_BAD_REPS", badReps.Code);
+    }
+
+    [Fact]
+    public void E6Variants_BuildExpectedNodeFlags_WithoutTouchingLinkShim()
+    {
+        var layout = Layout();
+        Directory.CreateDirectory(layout.ShimDir);
+        File.WriteAllText(layout.ShimFile, "// link shim");
+        var runner = new StartupExperimentRunner(layout, _ => { }, () => false, _ => false);
+        using var isolated = IsolatedGuestLayout.Create(layout, Path.Combine(_root, "iso-e6"));
+
+        var e6 = StartupExperiments.For("E6");
+        Assert.Equal(["E6-0", "E6-1", "E6-2", "E6-3"], e6.Select(v => v.Id));
+
+        var baseArgv = runner.BuildWebArgv(e6[0], isolated, []);
+        var preserveArgv = runner.BuildWebArgv(e6[1], isolated, []);
+        var cacheArgv = runner.BuildWebArgv(e6[2], isolated, []);
+        var bothArgv = runner.BuildWebArgv(e6[3], isolated, []);
+
+        Assert.DoesNotContain("--preserve-symlinks", baseArgv);
+        Assert.DoesNotContain(DshMobile.Runtime.Guest.GuestAssetProvisioner.GuestStartupFsCacheShim, baseArgv);
+
+        Assert.Contains("--preserve-symlinks", preserveArgv);
+        Assert.DoesNotContain(DshMobile.Runtime.Guest.GuestAssetProvisioner.GuestStartupFsCacheShim, preserveArgv);
+
+        Assert.DoesNotContain("--preserve-symlinks", cacheArgv);
+        Assert.Contains(DshMobile.Runtime.Guest.GuestAssetProvisioner.GuestStartupFsCacheShim, cacheArgv);
+        Assert.Contains(RuntimeConstants.LinkShimGuestPath, cacheArgv);
+
+        Assert.Contains("--preserve-symlinks", bothArgv);
+        Assert.Contains(DshMobile.Runtime.Guest.GuestAssetProvisioner.GuestStartupFsCacheShim, bothArgv);
+        Assert.Contains(RuntimeConstants.LinkShimGuestPath, bothArgv);
+    }
+
+    [Fact]
+    public void E7Variants_BuildExpectedProotFastpathEnvAndArgv()
+    {
+        var layout = Layout();
+        Directory.CreateDirectory(layout.ShimDir);
+        File.WriteAllText(layout.ShimFile, "// link shim");
+        var runner = new StartupExperimentRunner(layout, _ => { }, () => false, _ => false);
+        using var isolated = IsolatedGuestLayout.Create(layout, Path.Combine(_root, "iso-e7"));
+
+        var e7 = StartupExperiments.For("E7");
+        Assert.Equal(["E7-0", "E7-1", "E7-2", "E7-3", "E7-4"], e7.Select(v => v.Id));
+
+        var env0 = runner.BuildWebEnv(e7[0], null);
+        var env1 = runner.BuildWebEnv(e7[1], null);
+        var env2 = runner.BuildWebEnv(e7[2], null);
+        var env3 = runner.BuildWebEnv(e7[3], null);
+        var env4 = runner.BuildWebEnv(e7[4], null);
+
+        Assert.False(env0.ContainsKey("PROOT_NO_CLOSE_INTERCEPT"));
+        Assert.False(env0.ContainsKey("PROOT_RO_CACHE_PREFIXES"));
+
+        Assert.Equal("1", env1["PROOT_NO_CLOSE_INTERCEPT"]);
+        Assert.False(env1.ContainsKey("PROOT_RO_CACHE_PREFIXES"));
+
+        Assert.False(env2.ContainsKey("PROOT_NO_CLOSE_INTERCEPT"));
+        Assert.Equal(StartupExperiments.ProotReadonlyCachePrefixes, env2["PROOT_RO_CACHE_PREFIXES"]);
+
+        Assert.Equal("1", env3["PROOT_NO_CLOSE_INTERCEPT"]);
+        Assert.Equal(StartupExperiments.ProotReadonlyCachePrefixes, env3["PROOT_RO_CACHE_PREFIXES"]);
+        Assert.DoesNotContain(DshMobile.Runtime.Guest.GuestAssetProvisioner.GuestStartupFsCacheShim, runner.BuildWebArgv(e7[3], isolated, []));
+
+        Assert.Equal("1", env4["PROOT_NO_CLOSE_INTERCEPT"]);
+        Assert.Equal(StartupExperiments.ProotReadonlyCachePrefixes, env4["PROOT_RO_CACHE_PREFIXES"]);
+        Assert.Contains(DshMobile.Runtime.Guest.GuestAssetProvisioner.GuestStartupFsCacheShim, runner.BuildWebArgv(e7[4], isolated, []));
     }
 }

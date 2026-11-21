@@ -1,0 +1,76 @@
+{
+  "schema": 1,
+  "generatedAt": "2026-11-21T00:53:18.090Z",
+  "device": "PTP-AN10",
+  "android": "17",
+  "apk": "3D00C4E14650",
+  "node": "26.13.1",
+  "dsh": "0.2.2-rc.4",
+  "variants": [
+    {
+      "experiment": "E7",
+      "variant": "E7-0",
+      "kind": "web",
+      "attempts": 10,
+      "successes": 10,
+      "p50Ms": 6460.1,
+      "p95Ms": 14630.2,
+      "minMs": 6156.1,
+      "maxMs": 14630.2,
+      "cacheEvaluable": false
+    },
+    {
+      "experiment": "E7",
+      "variant": "E7-1",
+      "kind": "web",
+      "attempts": 10,
+      "successes": 10,
+      "p50Ms": 6208.7,
+      "p95Ms": 15822.3,
+      "minMs": 5983.4,
+      "maxMs": 15822.3,
+      "cacheEvaluable": false
+    },
+    {
+      "experiment": "E7",
+      "variant": "E7-2",
+      "kind": "web",
+      "attempts": 10,
+      "successes": 10,
+      "p50Ms": 5580.4,
+      "p95Ms": 10223.3,
+      "minMs": 5261.5,
+      "maxMs": 10223.3,
+      "cacheEvaluable": false
+    },
+    {
+      "experiment": "E7",
+      "variant": "E7-3",
+      "kind": "web",
+      "attempts": 10,
+      "successes": 10,
+      "p50Ms": 5642,
+      "p95Ms": 7078.5,
+      "minMs": 5062.1,
+      "maxMs": 7078.5,
+      "cacheEvaluable": false
+    },
+    {
+      "experiment": "E7",
+      "variant": "E7-4",
+      "kind": "web",
+      "attempts": 10,
+      "successes": 10,
+      "p50Ms": 4835.7,
+      "p95Ms": 6599.7,
+      "minMs": 4735.4,
+      "maxMs": 6599.7,
+      "cacheEvaluable": false
+    }
+  ],
+  "notes": [
+    "P50/P95 are nearest-rank over result=ok rows with a non-null duration; screening only, not an SLA.",
+    "Different endpoints (exit vs web) and different experiments are never added or subtracted.",
+    "E4-C not present"
+  ]
+}

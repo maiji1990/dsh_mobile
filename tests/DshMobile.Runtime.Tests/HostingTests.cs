@@ -112,4 +112,41 @@ public sealed class HostingTests : IDisposable
         Assert.Equal(DshHostState.Stopped, host.State);
         Assert.False(host.OwnsProcesses);
     }
+
+    [Fact]
+    public void StartupProbeInterval_FastDuringInitialWindow_ThenFallsBackToOneSecond()
+    {
+        Assert.Equal(TimeSpan.FromMilliseconds(150), DshHost.StartupProbeInterval(0));
+        Assert.Equal(TimeSpan.FromMilliseconds(150), DshHost.StartupProbeInterval(19_999));
+        Assert.Equal(TimeSpan.FromSeconds(1), DshHost.StartupProbeInterval(20_000));
+        Assert.Equal(TimeSpan.FromSeconds(1), DshHost.StartupProbeInterval(60_000));
+    }
+
+    [Fact]
+    public async Task WaitSandboxReady_ReturnsImmediatelyWhenMarkerAlreadySeen()
+    {
+        var psi = OperatingSystem.IsWindows()
+            ? new System.Diagnostics.ProcessStartInfo("cmd.exe", "/d /c ping -n 10 127.0.0.1 >nul") { UseShellExecute = false }
+            : new System.Diagnostics.ProcessStartInfo("/bin/sh", "-c \"sleep 10\"") { UseShellExecute = false };
+        using var process = System.Diagnostics.Process.Start(psi)!;
+        try
+        {
+            var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+            await DshHost.WaitSandboxReadyAsync(process, Task.FromResult(true), TimeSpan.FromSeconds(5), CancellationToken.None);
+            Assert.True(stopwatch.Elapsed < TimeSpan.FromSeconds(1), $"expected early return, took {stopwatch.Elapsed}");
+        }
+        finally
+        {
+            try
+            {
+                if (!process.HasExited)
+                {
+                    process.Kill(entireProcessTree: true);
+                }
+            }
+            catch
+            {
+            }
+        }
+    }
 }

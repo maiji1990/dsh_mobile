@@ -9,6 +9,7 @@
 #   -Offline             never download; the archives must already be in the cache
 param([string]$SourceCache, [switch]$Offline)
 $ErrorActionPreference = 'Stop'
+$ProgressPreference = 'SilentlyContinue'
 $PSNativeCommandArgumentPassing = 'Standard'
 $here = Split-Path -Parent $MyInvocation.MyCommand.Path
 $repo = (Resolve-Path (Join-Path $here '..\..')).Path
@@ -85,6 +86,24 @@ foreach ($line in Get-Content (Join-Path $here 'sources.lock')) {
 }
 $tallocSrc = $src['talloc']; $shmemSrc = $src['libandroid-shmem']; $prootSrc = Join-Path $src['proot'] 'src'
 if (Test-Path (Join-Path $tallocSrc 'config.h')) { throw 'talloc tree unexpectedly has a config.h; compat/talloc/config.h would be shadowed' }
+
+# ADR-0030: 解包 PRoot 源码后按字典序应用本仓库可追溯补丁（使用 GIT_CEILING_DIRECTORIES 防止寻到外层仓库 .git）。
+$patchDir = Join-Path $here 'patches'
+if (Test-Path $patchDir) {
+    $patches = Get-ChildItem -Path $patchDir -Filter '*.patch' -File | Sort-Object Name
+    if ($patches.Count -gt 0) {
+        $prevCeiling = $env:GIT_CEILING_DIRECTORIES
+        try {
+            $env:GIT_CEILING_DIRECTORIES = Split-Path -Parent $src['proot']
+            foreach ($pf in $patches) {
+                Invoke-Tool 'git' @('-C', $src['proot'], 'apply', $pf.FullName) | Out-Null
+                Write-Host "proot patch applied: $($pf.Name)"
+            }
+        } finally {
+            $env:GIT_CEILING_DIRECTORIES = $prevCeiling
+        }
+    }
+}
 
 $ldShared = @('-s', '-Wl,--as-needed','-Wl,-z,max-page-size=16384', '-Wl,-z,common-page-size=16384', '-Wl,-z,relro', '-Wl,-z,now',
               '-Wl,-z,noexecstack', '-Wl,--build-id=sha1')

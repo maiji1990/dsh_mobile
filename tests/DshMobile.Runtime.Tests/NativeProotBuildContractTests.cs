@@ -65,6 +65,7 @@ public partial class NativeProotBuildContractTests
             "compat/talloc", "termux-parity.h", "--version-script=exports.txt", "-fvisibility=hidden",
             "max-page-size=16384", "--rosegment", "-ltalloc", "-landroid-shmem", "-Wl,-rpath,$ORIGIN",
             "process_vm", "seccomp_filter", "pokedata_workaround", "talloc_lib_init", "SHA256SUMS",
+            "GIT_CEILING_DIRECTORIES", "patches",
         ];
         foreach (var token in shared)
         {
@@ -88,5 +89,26 @@ public partial class NativeProotBuildContractTests
             Assert.Contains($@"$(DshProotDir){abi}\*.so", csproj, StringComparison.Ordinal);
         }
         Assert.DoesNotContain("jniLibs", csproj, StringComparison.Ordinal);
+    }
+
+    /// <summary>ADR-0030：PRoot 补丁按编号有序存放，带 GPL 与 ADR 说明，避免无追踪改写上游源码。</summary>
+    [Fact]
+    public void ProotPatches_AreOrderedAndDocumented()
+    {
+        var patchDir = Path.Combine(ProotDir, "patches");
+        var patches = Directory.GetFiles(patchDir, "*.patch").Select(Path.GetFileName).OrderBy(n => n, StringComparer.Ordinal).ToList();
+        Assert.Equal(
+        [
+            "01-statx-fast-exit.patch",
+            "02-seccomp-optional-skip-close.patch",
+            "03-canon-ro-prefix-cache.patch",
+        ], patches);
+        foreach (var name in patches)
+        {
+            var text = File.ReadAllText(Path.Combine(patchDir, name!));
+            Assert.Contains("ADR-0030", text, StringComparison.Ordinal);
+            Assert.Contains("GPL-2.0-or-later", text, StringComparison.Ordinal);
+            Assert.Contains("diff --git ", text, StringComparison.Ordinal);
+        }
     }
 }

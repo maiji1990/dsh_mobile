@@ -1,6 +1,6 @@
 # 启动性能观测（STARTUP_PERF）
 
-> 状态：解析工具、测试与本文档已落地；**2026-11-17 已在 PTP-AN10 / Android 17 上完成 A/B/C 各 10 次真机采集**，结果与 CSV 见[真机记录](../migration/parity/2026-11-17-PTP-AN10-A17-startup-perf.md)（B 场景 `bridge.complete` P50 16.6 s，其中 97.6% 是 DSH 初始化）。D–F 场景、可交互测点与跟踪开销仍**待真机验证**（[AGENTS.md](../AGENTS.md) 规则 9）。本工具只读取 logcat 文本，不参与启动流程，也不改变任何启动语义。
+> 状态：解析工具、测试与本文档已落地；**2026-11-17 已在 PTP-AN10 / Android 17 上完成 A/B/C 各 10 次真机采集**，结果与 CSV 见[真机记录](../migration/parity/2026-11-17-PTP-AN10-A17-startup-perf.md)（B 场景 `bridge.complete` P50 16.6 s，其中 97.6% 是 DSH 初始化）。D–F 场景、可交互测点与跟踪开销仍**待真机验证**（[AGENTS.md](../AGENTS.md) 规则 9）。2026-11-20 完成宿主侧 P0 改动的生产 A/B/A 配对（`bridge.complete` 均值 −836 ms，n=20 配对，p=0.041），见[真机记录](../migration/parity/2026-11-20-PTP-AN10-A17-T1-production-pairing.md)。本工具只读取 logcat 文本，不参与启动流程，也不改变任何启动语义。
 
 ## 目的与边界
 

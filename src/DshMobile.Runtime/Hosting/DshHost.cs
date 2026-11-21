@@ -74,6 +74,9 @@ public sealed class DshHost : IDshTokenSource, IDshHost
     public const string Orphans = "HOST_ORPHANS";
 
     private static readonly TimeSpan ProbeInterval = TimeSpan.FromSeconds(1);
+    private static readonly TimeSpan StartupFastProbeInterval = TimeSpan.FromMilliseconds(150);
+    private static readonly TimeSpan StartupFastProbeWindow = TimeSpan.FromSeconds(20);
+    private static readonly TimeSpan SandboxReadyMaxWait = TimeSpan.FromMilliseconds(300);
     private static readonly TimeSpan LoopInterval = TimeSpan.FromSeconds(2);
 
     private readonly RuntimeLayout _layout;
@@ -162,10 +165,21 @@ public sealed class DshHost : IDshTokenSource, IDshHost
             }
             SetState(DshHostState.Starting);
 
+            var sandboxReady = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
             var sandboxSpawn = trace?.Measure("sandbox.spawn");
             try
             {
-                _sandbox = Spawn(_builder.SandboxCommand(), _builder.Environment("sandbox"), "sandbox", null);
+                _sandbox = Spawn(
+                    _builder.SandboxCommand(),
+                    _builder.Environment("sandbox"),
+                    "sandbox",
+                    line =>
+                    {
+                        if (line.Contains(RuntimeConstants.SandboxKeepaliveMarker, StringComparison.Ordinal))
+                        {
+                            sandboxReady.TrySetResult(true);
+                        }
+                    });
             }
             catch
             {
@@ -173,7 +187,7 @@ public sealed class DshHost : IDshTokenSource, IDshHost
                 throw;
             }
             sandboxSpawn?.End(details: new Dictionary<string, object?> { ["pid"] = _sandbox.Id });
-            await trace.TraceAsync("sandbox.fixed_delay", () => Task.Delay(300, ct)).ConfigureAwait(false);
+            await trace.TraceAsync("sandbox.fixed_delay", () => WaitSandboxReadyAsync(_sandbox, sandboxReady.Task, SandboxReadyMaxWait, ct)).ConfigureAwait(false);
             if (_sandbox.HasExited)
             {
                 var code = _sandbox.ExitCode;
@@ -192,9 +206,10 @@ public sealed class DshHost : IDshTokenSource, IDshHost
             {
                 _log($"host: removed {sweep.Removed.Count}/{sweep.Scanned} stale DSH writer lock(s)");
             }
-            _dsh = SpawnDsh(trace);
+            using var startupWake = new SemaphoreSlim(0, 1);
+            _dsh = SpawnDsh(trace, () => SignalStartupWake(startupWake));
 
-            var ready = await WaitReadyAsync(ct, trace).ConfigureAwait(false);
+            var ready = await WaitReadyAsync(ct, trace, startupWake).ConfigureAwait(false);
             if (!ready.Ok)
             {
                 await KillEverythingAsync().ConfigureAwait(false);
@@ -270,7 +285,40 @@ public sealed class DshHost : IDshTokenSource, IDshHost
         return null;
     }
 
-    private Process SpawnDsh(StartupTrace? trace = null)
+    /// <summary>计算启动等待阶段的健康探针轮询间隔：前 20 秒内高频探测以缩短就绪感知延迟，之后回退到 1 秒。</summary>
+    internal static TimeSpan StartupProbeInterval(long elapsedMs) =>
+        elapsedMs < (long)StartupFastProbeWindow.TotalMilliseconds ? StartupFastProbeInterval : ProbeInterval;
+
+    /// <summary>等待沙箱保活进程输出就绪标记或提前退出，最长不超过 <paramref name="maxWait"/>。</summary>
+    internal static async Task WaitSandboxReadyAsync(Process sandbox, Task<bool> markerSeen, TimeSpan maxWait, CancellationToken ct)
+    {
+        if (sandbox.HasExited || markerSeen.IsCompleted)
+        {
+            return;
+        }
+        using var linked = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        var delayTask = Task.Delay(maxWait, linked.Token);
+        var exitTask = sandbox.WaitForExitAsync(linked.Token);
+        await Task.WhenAny(markerSeen, exitTask, delayTask).ConfigureAwait(false);
+        await linked.CancelAsync().ConfigureAwait(false);
+        ct.ThrowIfCancellationRequested();
+    }
+
+    private static void SignalStartupWake(SemaphoreSlim wake)
+    {
+        try
+        {
+            if (wake.CurrentCount == 0)
+            {
+                wake.Release();
+            }
+        }
+        catch (Exception e) when (e is SemaphoreFullException or ObjectDisposedException)
+        {
+        }
+    }
+
+    private Process SpawnDsh(StartupTrace? trace = null, Action? onHintReady = null)
     {
         _window = DshWindowState.Fresh(NowMs());
         // DSH reads its --patch layers once at start: this is what "loaded by DSH" means for the ui_* tools.
@@ -306,7 +354,9 @@ public sealed class DshHost : IDshTokenSource, IDshHost
                     _log("host: dsh web launch token refreshed");
                     TokenChanged?.Invoke(this, EventArgs.Empty);
                 }
-            });
+                // 解析到启动令牌时服务端通常已接近监听，立即唤醒健康探针避免白等轮询间隔。
+                onHintReady?.Invoke();
+            }, onHintReady);
         }
         catch
         {
@@ -317,7 +367,7 @@ public sealed class DshHost : IDshTokenSource, IDshHost
         return process;
     }
 
-    private async Task<DshHostResult> WaitReadyAsync(CancellationToken ct, StartupTrace? trace = null)
+    private async Task<DshHostResult> WaitReadyAsync(CancellationToken ct, StartupTrace? trace = null, SemaphoreSlim? startupWake = null)
     {
         long last = NowMs();
         var probes = 0;
@@ -360,7 +410,15 @@ public sealed class DshHost : IDshTokenSource, IDshHost
                     trace?.EmitSpan("host.ready", _dshSpawnMark, StartupTrace.Failed, new Dictionary<string, object?> { ["probes"] = probes, ["code"] = Exited });
                     return new DshHostResult(false, Exited, $"DSH exited during start (exit {_dsh?.ExitCode})");
             }
-            await Task.Delay(ProbeInterval, ct).ConfigureAwait(false);
+            var interval = StartupProbeInterval(now - _window.StartedAtMs);
+            if (startupWake is not null)
+            {
+                await startupWake.WaitAsync(interval, ct).ConfigureAwait(false);
+            }
+            else
+            {
+                await Task.Delay(interval, ct).ConfigureAwait(false);
+            }
         }
     }
 
@@ -498,7 +556,7 @@ public sealed class DshHost : IDshTokenSource, IDshHost
         }
     }
 
-    private Process Spawn(IReadOnlyList<string> argv, IReadOnlyDictionary<string, string> env, string tag, Action<string>? onRawLine)
+    private Process Spawn(IReadOnlyList<string> argv, IReadOnlyDictionary<string, string> env, string tag, Action<string>? onRawLine, Action? onFirstOutput = null)
     {
         var psi = new ProcessStartInfo(argv[0])
         {
@@ -517,21 +575,25 @@ public sealed class DshHost : IDshTokenSource, IDshHost
         }
         var p = Process.Start(psi) ?? throw new InvalidOperationException($"could not start {tag} PRoot");
         p.StandardInput.Close(); // non-interactive, like legacy
-        _ = PumpAsync(p.StandardOutput, tag, "stdout", onRawLine);
-        _ = PumpAsync(p.StandardError, tag, "stderr", onRawLine);
+        _ = PumpAsync(p.StandardOutput, tag, "stdout", onRawLine, onFirstOutput);
+        _ = PumpAsync(p.StandardError, tag, "stderr", onRawLine, onFirstOutput);
         _log($"host: started {tag} PRoot pid {p.Id}");
         return p;
     }
 
-    private async Task PumpAsync(StreamReader reader, string tag, string stream, Action<string>? onRawLine)
+    private async Task PumpAsync(StreamReader reader, string tag, string stream, Action<string>? onRawLine, Action? onFirstOutput = null)
     {
         try
         {
             while (await reader.ReadLineAsync().ConfigureAwait(false) is { } line)
             {
-                if (tag == "dsh" && _trace is { Enabled: true } t && Interlocked.Exchange(ref _dshFirstOutput, 1) == 0)
+                if (tag == "dsh" && Interlocked.Exchange(ref _dshFirstOutput, 1) == 0)
                 {
-                    t.EmitElapsed("dsh.first_output", t.Mark() - _dshSpawnMark, details: new Dictionary<string, object?> { ["stream"] = stream });
+                    if (_trace is { Enabled: true } t)
+                    {
+                        t.EmitElapsed("dsh.first_output", t.Mark() - _dshSpawnMark, details: new Dictionary<string, object?> { ["stream"] = stream });
+                    }
+                    onFirstOutput?.Invoke();
                 }
                 onRawLine?.Invoke(line);           // raw: token parsing only, never logged
                 _log($"proc-{tag}: {LogRedactor.Redact(line)}");

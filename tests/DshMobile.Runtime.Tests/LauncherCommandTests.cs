@@ -75,6 +75,31 @@ public sealed partial class LauncherCommandTests : IDisposable
     }
 
     [Fact]
+    public void DshCommand_WithStartupFsCacheShim_AddsSecondImportAfterLinkShim_AndSkipsOnInPlaceRestart()
+    {
+        var (layout, _, _) = DeviceLikeLayout();
+        var cacheShimHost = GuestAssetProvisioner.StartupFsCacheShimHostPath(layout);
+        Directory.CreateDirectory(Path.GetDirectoryName(cacheShimHost)!);
+        File.WriteAllText(cacheShimHost, "// fs cache shim");
+
+        var builder = new ProotCommandBuilder(layout);
+        var first = builder.DshCommand();
+        var linkImportIdx = first.ToList().IndexOf(RuntimeConstants.LinkShimGuestPath);
+        var cacheImportIdx = first.ToList().IndexOf(GuestAssetProvisioner.GuestStartupFsCacheShim);
+        var entryIdx = first.ToList().IndexOf(RuntimeConstants.GuestDshBin);
+
+        Assert.True(linkImportIdx > 0);
+        Assert.Equal(linkImportIdx + 2, cacheImportIdx);
+        Assert.Equal("--import", first[cacheImportIdx - 1]);
+        Assert.True(cacheImportIdx < entryIdx);
+
+        // inPlaceRestart 未挂载 guest-cache，必须同时省略该 --import 以免 Node 找不到模块。
+        var restart = builder.DshCommand(inPlaceRestart: true);
+        Assert.DoesNotContain(GuestAssetProvisioner.GuestStartupFsCacheShim, restart);
+        Assert.Contains(RuntimeConstants.LinkShimGuestPath, restart);
+    }
+
+    [Fact]
     public void DshCommand_PassesOnlyNonEmptyOverlays_InLegacyOrder()
     {
         var (layout, _, _) = DeviceLikeLayout();
