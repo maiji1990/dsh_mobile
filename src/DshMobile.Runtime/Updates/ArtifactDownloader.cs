@@ -98,6 +98,14 @@ public sealed class ArtifactDownloader : IDisposable
         }
     }
 
+    /// <summary>A per-attempt budget: the direct release host gets <paramref name="budget"/> before the API fallback.</summary>
+    private static async Task<HttpResponseMessage> SendWithBudgetAsync(HttpClient http, HttpRequestMessage request, CancellationToken ct, TimeSpan budget)
+    {
+        using var attempt = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        attempt.CancelAfter(budget);
+        return await http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, attempt.Token).ConfigureAwait(false);
+    }
+
     private async Task<DownloadResult> DownloadCoreAsync(VerifiedRelease release, ReleaseArtifact a, IProgress<DownloadProgress>? progress, CancellationToken ct)
     {
         if (_store.TryGetVerified(a, ct) is { } cached)
@@ -155,11 +163,27 @@ public sealed class ArtifactDownloader : IDisposable
             HttpResponseMessage response;
             try
             {
-                response = await _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
+                response = await SendWithBudgetAsync(_http, request, ct, GitHubAssetResolver.DirectAttemptTimeout).ConfigureAwait(false);
             }
-            catch (HttpRequestException e)
+            catch (Exception e) when (e is HttpRequestException || (e is OperationCanceledException && !ct.IsCancellationRequested))
             {
-                return DownloadResult.Fail(DownloadErrorCodes.HttpFailed, $"{a.Url.Host}: {e.Message}");
+                // ADR-0022 amendment: the canonical host may be unreachable while api.github.com answers. Only a fresh
+                // download falls back (a resume keeps its Range/validator against the original URL).
+                var viaApi = have == 0 ? await GitHubAssetResolver.ResolveAsync(_http, a.Url, ct).ConfigureAwait(false) : null;
+                if (viaApi is null)
+                {
+                    return DownloadResult.Fail(DownloadErrorCodes.HttpFailed, $"{a.Url.Host}: {e.Message}");
+                }
+                using var retry = new HttpRequestMessage(HttpMethod.Get, viaApi);
+                GitHubAssetResolver.UseAssetMediaType(retry);
+                try
+                {
+                    response = await _http.SendAsync(retry, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
+                }
+                catch (Exception e2) when (e2 is HttpRequestException || (e2 is OperationCanceledException && !ct.IsCancellationRequested))
+                {
+                    return DownloadResult.Fail(DownloadErrorCodes.HttpFailed, $"{a.Url.Host}: {e2.Message} (api.github.com fallback also failed)");
+                }
             }
             using (response)
             {
