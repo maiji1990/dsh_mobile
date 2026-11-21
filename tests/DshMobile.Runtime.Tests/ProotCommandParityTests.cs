@@ -81,6 +81,39 @@ public sealed partial class ProotCommandParityTests : IDisposable
     }
 
     [Fact]
+    public void DshEnvironment_EnablesReadonlyPrefixCache_OnlyForDsh()
+    {
+        var files = Path.Combine(_dir, "files-cache");
+        var native = Path.Combine(_dir, "native-cache");
+        Directory.CreateDirectory(native);
+        var current = Path.Combine(files, "runtime", "runtime-current");
+        Directory.CreateDirectory(current);
+        // Minimal profile: no layers, so only the role-specific keys under test can differ.
+        File.WriteAllText(Path.Combine(current, "runtime-profile.json"),
+            "{\"bundle\":{\"version\":\"0.1.0\",\"arch\":\"arm64\",\"compression\":\"zstd\"},\"layers\":[],\"assembly\":[]}");
+        var builder = new ProotCommandBuilder(new RuntimeLayout(files, null, native));
+
+        var dsh = builder.Environment("dsh");
+        Assert.Equal("/opt/dshapp/runtime:/usr/local", dsh["PROOT_RO_CACHE_PREFIXES"]);
+        Assert.Equal("0", dsh["PROOT_RO_CACHE_NONEXIST"]);
+        // Sessions, sandbox keepalive and terminal children keep the uncached path resolution.
+        Assert.DoesNotContain("PROOT_RO_CACHE_PREFIXES", builder.Environment("guest").Keys);
+        Assert.DoesNotContain("PROOT_RO_CACHE_NONEXIST", builder.Environment("guest").Keys);
+
+        // ADR-0030: the cached prefixes must be exactly the read-only layer binds, so a renamed layer cannot leave a
+        // prefix pointing at the workspace or the guest cache.
+        Directory.CreateDirectory(new RuntimeLayout(files, null, native).LayerDir("node"));
+        Directory.CreateDirectory(new RuntimeLayout(files, null, native).LayerDir("dsh"));
+        var argv = builder.GuestCommand("true");
+        foreach (var prefix in ProotCommandBuilder.ReadonlyPrefixCachePaths.Split(':'))
+        {
+            Assert.Contains(argv, a => a.StartsWith("--bind=", StringComparison.Ordinal) && a.EndsWith(":" + prefix, StringComparison.Ordinal));
+        }
+        Assert.DoesNotContain("/root/projects", ProotCommandBuilder.ReadonlyPrefixCachePaths, StringComparison.Ordinal);
+        Assert.DoesNotContain(RuntimeConstants.GuestCacheDir, ProotCommandBuilder.ReadonlyPrefixCachePaths, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void GuestCommand_SkipsMissingOptionalLayers_AndFallsBackForProot()
     {
         var layout = new RuntimeLayout(Path.Combine(_dir, "files"), null, Path.Combine(_dir, "nolibs"));

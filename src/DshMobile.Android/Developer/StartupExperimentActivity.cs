@@ -46,6 +46,7 @@ public sealed class StartupExperimentActivity : DshActivity
             GetString(Resource.String.dev_experiments_e5_sub), RunWebProfile);
         _rows.Add(webRow);
         Row(content, Resource.String.dev_experiments_e6, Resource.String.dev_experiments_e6_sub, [StartupExperiments.SuiteE6]);
+        Row(content, Resource.String.dev_experiments_e7, Resource.String.dev_experiments_e7_sub, [StartupExperiments.SuiteE7]);
         Row(content, Resource.String.dev_experiments_all, Resource.String.dev_experiments_all_sub,
             [StartupExperiments.SuiteE1E2, StartupExperiments.SuiteE3, StartupExperiments.SuiteE4]);
         Row(content, Resource.String.dev_experiments_cancel, Resource.String.dev_experiments_cancel_sub, []);

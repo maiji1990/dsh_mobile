@@ -109,6 +109,9 @@ public sealed class StartupExperimentRunner
                     case StartupExperiments.SuiteE6:
                         await RunE6Async(reps, root, Emit, ct).ConfigureAwait(false);
                         break;
+                    case StartupExperiments.SuiteE7:
+                        await RunE7Async(reps, root, Emit, ct).ConfigureAwait(false);
+                        break;
                     default:
                         return new ExperimentSuiteResult(false, UnknownSuite, "unknown suite: " + suite, 0, 0);
                 }
@@ -269,6 +272,24 @@ public sealed class StartupExperimentRunner
         }
     }
 
+    private async Task RunE7Async(int reps, string root, Action<ExperimentRecord> emit, CancellationToken ct)
+    {
+        var order = new[] { "E7-0", "E7-1", "E7-2", "E7-3", "E7-4" };
+        for (var i = 1; i <= reps; i++)
+        {
+            foreach (var id in order)
+            {
+                ct.ThrowIfCancellationRequested();
+                if (!StartupExperiments.TryGet(id, out var variant))
+                {
+                    continue;
+                }
+                using var isolated = IsolatedGuestLayout.Create(_layout, Path.Combine(root, $"iter-{i}-{variant.Id}"));
+                emit(await RunWebAsync(variant, i, isolated, [], cacheHost: null, cacheMode: "unknown", ct).ConfigureAwait(false));
+            }
+        }
+    }
+
     // ------------------------------------------------------------------ one process
 
     private async Task<ExperimentRecord> RunExitAsync(StartupExperimentVariant variant, int iteration, CancellationToken ct, string? cacheHost = null)
@@ -355,11 +376,7 @@ public sealed class StartupExperimentRunner
         var runId = StartupTrace.NewRunId();
         var startedAt = DateTimeOffset.UtcNow;
         var argv = BuildWebArgv(variant, isolated, overlays);
-        var env = new Dictionary<string, string>(_builder.Environment("dsh"), StringComparer.Ordinal);
-        if (cacheHost is not null)
-        {
-            env["NODE_COMPILE_CACHE"] = CompileCacheGuest;
-        }
+        var env = BuildWebEnv(variant, cacheHost);
         var psi = StartInfo(argv, env);
         Process process;
         var spawnClock = Stopwatch.GetTimestamp();
@@ -478,6 +495,33 @@ public sealed class StartupExperimentRunner
             argv.Add(patch);
         }
         return argv;
+    }
+
+    /// <summary>按固定实验变体构造 Web 诊断环境变量：显式控制 PRoot P1 opt-in 开关，避免与外部默认值混淆。</summary>
+    internal Dictionary<string, string> BuildWebEnv(StartupExperimentVariant variant, string? cacheHost)
+    {
+        var env = new Dictionary<string, string>(_builder.Environment("dsh"), StringComparer.Ordinal);
+        if (cacheHost is not null)
+        {
+            env["NODE_COMPILE_CACHE"] = CompileCacheGuest;
+        }
+        if (variant.ProotSkipCloseIntercept)
+        {
+            env["PROOT_NO_CLOSE_INTERCEPT"] = "1";
+        }
+        else
+        {
+            env.Remove("PROOT_NO_CLOSE_INTERCEPT");
+        }
+        if (variant.ProotReadonlyPrefixCache)
+        {
+            env["PROOT_RO_CACHE_PREFIXES"] = StartupExperiments.ProotReadonlyCachePrefixes;
+        }
+        else
+        {
+            env.Remove("PROOT_RO_CACHE_PREFIXES");
+        }
+        return env;
     }
 
     private static ProcessStartInfo StartInfo(IReadOnlyList<string> argv, IReadOnlyDictionary<string, string> env)

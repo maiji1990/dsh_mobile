@@ -16,6 +16,13 @@ public sealed class ProotCommandBuilder(RuntimeLayout layout)
 {
     public const string GuestBash = "/usr/bin/bash";
 
+    /// <summary>
+    /// ADR-0030: the guest paths PRoot may cache dentries for (<c>PROOT_RO_CACHE_PREFIXES</c>). Both are read-only
+    /// runtime layers bound from the installed bundle; the workspace, guest cache, npm cache, pilot and browser
+    /// binds stay uncached on purpose.
+    /// </summary>
+    public const string ReadonlyPrefixCachePaths = "/opt/dshapp/runtime:/usr/local";
+
     private string Current => layout.RuntimeCurrentDir;
 
     private string BaseRootfs => Path.Combine(Current, "base");
@@ -331,6 +338,11 @@ public sealed class ProotCommandBuilder(RuntimeLayout layout)
             env["PATH"] = string.Join(':', new[] { RuntimeConstants.LinkShimGuestDir, RuntimeConstants.AssetsGuestDir + "/bin" }
                 .Concat(ambient.Split(':')).Where(s => !string.IsNullOrWhiteSpace(s)).Distinct(StringComparer.Ordinal));
             env["SHELL"] = "/bin/bash";
+            // ADR-0030 P1: skip the repeated host lstat on the read-only runtime layers. Production never records
+            // ENOENT: /usr/local is still writable from the guest (npm -g, corepack), so a stale "does not exist"
+            // would turn a later create into a spurious failure. PROOT_RO_CACHE_NONEXIST=0 keeps only DIR/NONDIR.
+            env["PROOT_RO_CACHE_PREFIXES"] = ReadonlyPrefixCachePaths;
+            env["PROOT_RO_CACHE_NONEXIST"] = "0";
         }
         return env.ToDictionary();
     }

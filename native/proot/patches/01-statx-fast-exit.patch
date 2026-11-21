@@ -1,0 +1,76 @@
+# ADR-0030 (GPL-2.0-or-later): skip redundant statx syscall-exit interception and
+# duplicate path translation when the kernel supports native statx and neither
+# fake_id0 nor link2symlink is loaded.
+diff --git a/src/syscall/seccomp.c b/src/syscall/seccomp.c
+index 2f8930e..39bbc81 100644
+--- a/src/syscall/seccomp.c
++++ b/src/syscall/seccomp.c
+@@ -34,7 +34,11 @@
+ #include <sys/types.h>     /* size_t, */
+ #include <talloc.h>        /* talloc_*, */
+ #include <errno.h>         /* E*, */
++#include <fcntl.h>         /* AT_*, */
+ #include <string.h>        /* memcpy(3), */
++#include <sys/stat.h>      /* struct statx, */
++#include <sys/syscall.h>   /* __NR_statx, */
++#include <unistd.h>        /* syscall(2), */
+ #include <stddef.h>        /* offsetof(3), */
+ #include <stdint.h>        /* uint*_t, UINT*_MAX, */
+ #include <assert.h>        /* assert(3), */
+@@ -487,6 +491,17 @@ static int merge_filtered_sysnums(TALLOC_CTX *context, FilteredSysnum **sysnums,
+  * all of its future children.  This function returns -errno if an
+  * error occurred, otherwise 0.
+  */
++static bool kernel_supports_statx(void)
++{
++#if defined(__NR_statx)
++	struct statx stx;
++	long res = syscall(__NR_statx, AT_FDCWD, ".", AT_SYMLINK_NOFOLLOW, 0, &stx);
++	return res == 0 || errno != ENOSYS;
++#else
++	return false;
++#endif
++}
++
+ int enable_syscall_filtering(const Tracee *tracee)
+ {
+ 	FilteredSysnum *filtered_sysnums = NULL;
+@@ -515,6 +530,20 @@ int enable_syscall_filtering(const Tracee *tracee)
+ 		}
+ 	}
+ 
++	/* When the host kernel handles statx natively and no extension hooks
++	 * STATX_SYSCALL, syscall-exit interception is unnecessary overhead. */
++	if (get_extension((Tracee *) tracee, fake_id0_callback) == NULL
++	    && get_extension((Tracee *) tracee, link2symlink_callback) == NULL
++	    && kernel_supports_statx()) {
++		size_t idx;
++		for (idx = 0; filtered_sysnums[idx].value != PR_void; idx++) {
++			if (filtered_sysnums[idx].value == PR_statx) {
++				filtered_sysnums[idx].flags &= ~FILTER_SYSEXIT;
++				break;
++			}
++		}
++	}
++
+ 	status = set_seccomp_filters(filtered_sysnums);
+ 	if (status < 0)
+ 		return status;
+diff --git a/src/tracee/statx.c b/src/tracee/statx.c
+index ca972f8..9ad1725 100644
+--- a/src/tracee/statx.c
++++ b/src/tracee/statx.c
+@@ -5,6 +5,13 @@
+ #include "tracee/mem.h"
+ 
+ int handle_statx_syscall(Tracee *tracee, bool from_sigsys) {
++	if (!from_sigsys
++	    && (int) peek_reg(tracee, CURRENT, SYSARG_RESULT) != -ENOSYS
++	    && get_extension(tracee, fake_id0_callback) == NULL
++	    && get_extension(tracee, link2symlink_callback) == NULL) {
++		return 0;
++	}
++
+ 	RegVersion regVersion = from_sigsys ? CURRENT : ORIGINAL;
+ 	struct statx_syscall_state state = {};
+ 	char guest_path[PATH_MAX] = {};

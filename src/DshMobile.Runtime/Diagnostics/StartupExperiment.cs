@@ -28,13 +28,15 @@ public sealed record StartupExperimentVariant(
     int TimeoutSeconds = 60,
     string? Marker = null,
     bool PreserveSymlinks = false,
-    bool StartupFsCacheShim = false)
+    bool StartupFsCacheShim = false,
+    bool ProotSkipCloseIntercept = false,
+    bool ProotReadonlyPrefixCache = false)
 {
     public string Kind => Endpoint == ExperimentEndpoint.Exit ? ExperimentRecord.KindExit : ExperimentRecord.KindWeb;
 }
 
 /// <summary>
-/// The E1-E4 and E6 diagnostic catalogue. Ids are stable: the JSONL report and the docs key on them.
+/// The E1-E4, E6 and E7 diagnostic catalogue. Ids are stable: the JSONL report and the docs key on them.
 /// </summary>
 public static class StartupExperiments
 {
@@ -44,6 +46,10 @@ public static class StartupExperiments
     public const string SuiteE3 = "E3";
     public const string SuiteE4 = "E4";
     public const string SuiteE6 = "E6";
+    public const string SuiteE7 = "E7";
+
+    /// <summary>ADR-0030：供 PRoot 只读前缀 dentry 缓存使用的不可变只读层前缀列表。</summary>
+    public const string ProotReadonlyCachePrefixes = "/opt/dshapp/runtime:/usr/local";
 
     public const string Node = "/usr/local/bin/node";
     public const string True = "/bin/true";
@@ -76,6 +82,12 @@ public static class StartupExperiments
         new("E6-1", "E6", ExperimentEndpoint.Web, Node, [], IsolatedWorkspace: true, TimeoutSeconds: 120, PreserveSymlinks: true),
         new("E6-2", "E6", ExperimentEndpoint.Web, Node, [], IsolatedWorkspace: true, TimeoutSeconds: 120, StartupFsCacheShim: true),
         new("E6-3", "E6", ExperimentEndpoint.Web, Node, [], IsolatedWorkspace: true, TimeoutSeconds: 120, PreserveSymlinks: true, StartupFsCacheShim: true),
+        // E7：P1 PRoot 启动快路径配对对照（ADR-0030：新 PRoot 基线 / skip-close / ro-prefix-cache / P1 全开 / P1 + P0-2 垫片）。
+        new("E7-0", "E7", ExperimentEndpoint.Web, Node, [], IsolatedWorkspace: true, TimeoutSeconds: 120),
+        new("E7-1", "E7", ExperimentEndpoint.Web, Node, [], IsolatedWorkspace: true, TimeoutSeconds: 120, ProotSkipCloseIntercept: true),
+        new("E7-2", "E7", ExperimentEndpoint.Web, Node, [], IsolatedWorkspace: true, TimeoutSeconds: 120, ProotReadonlyPrefixCache: true),
+        new("E7-3", "E7", ExperimentEndpoint.Web, Node, [], IsolatedWorkspace: true, TimeoutSeconds: 120, ProotSkipCloseIntercept: true, ProotReadonlyPrefixCache: true),
+        new("E7-4", "E7", ExperimentEndpoint.Web, Node, [], IsolatedWorkspace: true, TimeoutSeconds: 120, StartupFsCacheShim: true, ProotSkipCloseIntercept: true, ProotReadonlyPrefixCache: true),
     ];
 
     public static bool TryGet(string id, out StartupExperimentVariant variant)

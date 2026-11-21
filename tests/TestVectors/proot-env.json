@@ -47,7 +47,9 @@
         "TEMP": "/tmp",
         "DSH_HOME": "/root/projects/.dsh",
         "PORT": "3080",
-        "SHELL": "/bin/bash"
+        "SHELL": "/bin/bash",
+        "PROOT_RO_CACHE_PREFIXES": "/opt/dshapp/runtime:/usr/local",
+        "PROOT_RO_CACHE_NONEXIST": "0"
       }
     },
     {

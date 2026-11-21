@@ -1,0 +1,40 @@
+# ADR-0030 (GPL-2.0-or-later): opt-in PROOT_NO_CLOSE_INTERCEPT=1 removes PR_close
+# from the seccomp trace list so ordinary file descriptor closes stay in the kernel.
+diff --git a/src/syscall/seccomp.c b/src/syscall/seccomp.c
+index 39bbc81..1d83f6e 100644
+--- a/src/syscall/seccomp.c
++++ b/src/syscall/seccomp.c
+@@ -35,7 +35,8 @@
+ #include <talloc.h>        /* talloc_*, */
+ #include <errno.h>         /* E*, */
+ #include <fcntl.h>         /* AT_*, */
+-#include <string.h>        /* memcpy(3), */
++#include <stdlib.h>        /* getenv(3), */
++#include <string.h>        /* memcpy(3), strcmp(3), */
+ #include <sys/stat.h>      /* struct statx, */
+ #include <sys/syscall.h>   /* __NR_statx, */
+ #include <unistd.h>        /* syscall(2), */
+@@ -544,6 +545,23 @@ int enable_syscall_filtering(const Tracee *tracee)
+ 		}
+ 	}
+ 
++	/* Opt-in fastpath for non-interactive runtimes (e.g. DSH Node): allow close(2)
++	 * directly in the kernel without a ptrace trap. */
++	{
++		const char *skip_close = getenv("PROOT_NO_CLOSE_INTERCEPT");
++		if (skip_close != NULL && strcmp(skip_close, "1") == 0) {
++			size_t src_i, dst_i;
++			for (src_i = 0, dst_i = 0; filtered_sysnums[src_i].value != PR_void; src_i++) {
++				if (filtered_sysnums[src_i].value == PR_close)
++					continue;
++				if (dst_i != src_i)
++					filtered_sysnums[dst_i] = filtered_sysnums[src_i];
++				dst_i++;
++			}
++			filtered_sysnums[dst_i].value = PR_void;
++		}
++	}
++
+ 	status = set_seccomp_filters(filtered_sysnums);
+ 	if (status < 0)
+ 		return status;

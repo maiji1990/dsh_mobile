@@ -179,4 +179,40 @@ public sealed class StartupExperimentTests : IDisposable
         Assert.Contains(DshMobile.Runtime.Guest.GuestAssetProvisioner.GuestStartupFsCacheShim, bothArgv);
         Assert.Contains(RuntimeConstants.LinkShimGuestPath, bothArgv);
     }
+
+    [Fact]
+    public void E7Variants_BuildExpectedProotFastpathEnvAndArgv()
+    {
+        var layout = Layout();
+        Directory.CreateDirectory(layout.ShimDir);
+        File.WriteAllText(layout.ShimFile, "// link shim");
+        var runner = new StartupExperimentRunner(layout, _ => { }, () => false, _ => false);
+        using var isolated = IsolatedGuestLayout.Create(layout, Path.Combine(_root, "iso-e7"));
+
+        var e7 = StartupExperiments.For("E7");
+        Assert.Equal(["E7-0", "E7-1", "E7-2", "E7-3", "E7-4"], e7.Select(v => v.Id));
+
+        var env0 = runner.BuildWebEnv(e7[0], null);
+        var env1 = runner.BuildWebEnv(e7[1], null);
+        var env2 = runner.BuildWebEnv(e7[2], null);
+        var env3 = runner.BuildWebEnv(e7[3], null);
+        var env4 = runner.BuildWebEnv(e7[4], null);
+
+        Assert.False(env0.ContainsKey("PROOT_NO_CLOSE_INTERCEPT"));
+        Assert.False(env0.ContainsKey("PROOT_RO_CACHE_PREFIXES"));
+
+        Assert.Equal("1", env1["PROOT_NO_CLOSE_INTERCEPT"]);
+        Assert.False(env1.ContainsKey("PROOT_RO_CACHE_PREFIXES"));
+
+        Assert.False(env2.ContainsKey("PROOT_NO_CLOSE_INTERCEPT"));
+        Assert.Equal(StartupExperiments.ProotReadonlyCachePrefixes, env2["PROOT_RO_CACHE_PREFIXES"]);
+
+        Assert.Equal("1", env3["PROOT_NO_CLOSE_INTERCEPT"]);
+        Assert.Equal(StartupExperiments.ProotReadonlyCachePrefixes, env3["PROOT_RO_CACHE_PREFIXES"]);
+        Assert.DoesNotContain(DshMobile.Runtime.Guest.GuestAssetProvisioner.GuestStartupFsCacheShim, runner.BuildWebArgv(e7[3], isolated, []));
+
+        Assert.Equal("1", env4["PROOT_NO_CLOSE_INTERCEPT"]);
+        Assert.Equal(StartupExperiments.ProotReadonlyCachePrefixes, env4["PROOT_RO_CACHE_PREFIXES"]);
+        Assert.Contains(DshMobile.Runtime.Guest.GuestAssetProvisioner.GuestStartupFsCacheShim, runner.BuildWebArgv(e7[4], isolated, []));
+    }
 }
