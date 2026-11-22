@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using System.Net.WebSockets;
 using System.Text;
 using System.Text.Json;
+using System.Threading.Channels;
 using DshMobile.Agent.Protocol;
 using DshMobile.Agent.Transport;
 using DshMobile.Core.Diagnostics;
@@ -293,13 +294,39 @@ public sealed class DshRemoteConnectionTests
         Assert.Equal([1, 2, 3, 4], blob.Attachments["bytes-0"].ToArray());
     }
 
+    private sealed class RecordingBackoffTimeProvider : TimeProvider
+    {
+        private readonly FakeTimeProvider _inner = new();
+        private readonly Channel<TimeSpan> _delays = Channel.CreateUnbounded<TimeSpan>();
+
+        public override DateTimeOffset GetUtcNow() => _inner.GetUtcNow();
+        public override long GetTimestamp() => _inner.GetTimestamp();
+        public override long TimestampFrequency => _inner.TimestampFrequency;
+        public override TimeZoneInfo LocalTimeZone => _inner.LocalTimeZone;
+
+        public override ITimer CreateTimer(TimerCallback callback, object? state, TimeSpan dueTime, TimeSpan period)
+        {
+            var timer = _inner.CreateTimer(callback, state, dueTime, period);
+            if (dueTime > TimeSpan.Zero && dueTime != Timeout.InfiniteTimeSpan)
+            {
+                _delays.Writer.TryWrite(dueTime);
+            }
+            return timer;
+        }
+
+        public ValueTask<TimeSpan> ReadNextDelayAsync(CancellationToken ct = default) =>
+            _delays.Reader.ReadAsync(ct);
+
+        public void Advance(TimeSpan delta) => _inner.Advance(delta);
+    }
+
     [Fact]
     public async Task Reconnect_UsesExponentialBackoffAndIncrementsGeneration()
     {
         await using var server = new FakeRemoteServer();
-        var fakeTime = new FakeTimeProvider();
+        var time = new RecordingBackoffTimeProvider();
         var wsAttempts = 0;
-        var firstClosed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var clientObservedGen1 = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
 
         server.OnHttpRequest = req =>
         {
@@ -321,9 +348,8 @@ public sealed class DshRemoteConnectionTests
                 var openRaw = await FakeRemoteServer.ReceiveTextAsync(ws, ct);
                 var streamId = ParseStreamId(openRaw!);
                 await FakeRemoteServer.SendTextAsync(ws, ReadyFrameJson(streamId, "c-1"), ct);
-                await Task.Delay(20, ct);
-                await ws.CloseAsync(WebSocketCloseStatus.InternalServerError, "drop", ct);
-                firstClosed.TrySetResult();
+                await clientObservedGen1.Task.WaitAsync(ct);
+                await ws.CloseOutputAsync(WebSocketCloseStatus.InternalServerError, "drop", ct);
                 return;
             }
             if (n is 2 or 3)
@@ -344,7 +370,7 @@ public sealed class DshRemoteConnectionTests
             BackoffMax = TimeSpan.FromSeconds(20),
             ReadyTimeout = TimeSpan.FromSeconds(5),
         };
-        await using var conn = new DshRemoteConnection(options, () => SecretToken, time: fakeTime);
+        await using var conn = new DshRemoteConnection(options, () => SecretToken, time: time);
         var genNextReady = new TaskCompletionSource<ConnectionGeneration>(TaskCreationOptions.RunContinuationsAsynchronously);
         conn.GenerationChanged += g =>
         {
@@ -356,25 +382,21 @@ public sealed class DshRemoteConnectionTests
 
         var gen1 = await conn.ConnectAsync(CancellationToken.None);
         Assert.Equal(1, gen1.GenerationId);
+        clientObservedGen1.TrySetResult();
 
-        await firstClosed.Task.WaitAsync(TimeSpan.FromSeconds(5));
-        SpinWait.SpinUntil(() => wsAttempts >= 2, TimeSpan.FromSeconds(5));
-        await Task.Delay(30);
+        // Attempt 2 runs immediately (attempt reset to 0 on ready) and fails -> registers BackoffBase (5s) timer.
+        var delay1 = await time.ReadNextDelayAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.Equal(TimeSpan.FromSeconds(5), delay1);
+        Assert.False(genNextReady.Task.IsCompleted);
+        time.Advance(delay1);
+
+        // Attempt 3 runs and fails -> registers exponential BackoffBase * 2 (10s) timer.
+        var delay2 = await time.ReadNextDelayAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.Equal(TimeSpan.FromSeconds(10), delay2);
+        time.Advance(TimeSpan.FromSeconds(5));
         Assert.False(genNextReady.Task.IsCompleted);
 
-        // Attempt 2 failed -> waits 5s (5 * 2^0) before Attempt 3
-        fakeTime.Advance(TimeSpan.FromSeconds(5));
-        SpinWait.SpinUntil(() => wsAttempts >= 3, TimeSpan.FromSeconds(5));
-        await Task.Delay(30);
-        Assert.False(genNextReady.Task.IsCompleted);
-
-        // Attempt 3 failed -> waits 10s (5 * 2^1) before Attempt 4
-        fakeTime.Advance(TimeSpan.FromSeconds(5));
-        await Task.Delay(30);
-        Assert.Equal(3, wsAttempts);
-        Assert.False(genNextReady.Task.IsCompleted);
-
-        fakeTime.Advance(TimeSpan.FromSeconds(5));
+        time.Advance(TimeSpan.FromSeconds(5));
         var genNext = await genNextReady.Task.WaitAsync(TimeSpan.FromSeconds(5));
         Assert.True(genNext.GenerationId > gen1.GenerationId);
         Assert.Equal(4, genNext.GenerationId);
