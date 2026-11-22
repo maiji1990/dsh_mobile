@@ -656,4 +656,76 @@ public sealed class DshRemoteConnectionTests
         await Assert.ThrowsAsync<RemoteDrainingException>(() => conn.CallAsync("session.list"));
         await Assert.ThrowsAsync<RemoteDrainingException>(() => conn.OpenStreamAsync("session.watch", null, _ => ValueTask.CompletedTask));
     }
+
+    [Fact]
+    public async Task CallAsync_AndOpenStreamAsync_WithoutPriorConnect_AutoStartLoopAndSucceed()
+    {
+        await using var server = new FakeRemoteServer();
+        server.OnHttpRequest = req =>
+        {
+            if (req.Path == "/connect")
+            {
+                return Task.FromResult(new FakeRemoteServer.HttpResponseData(
+                    302, "Found", [("Location", "/"), ("Set-Cookie", $"dsh-auth-{server.Port}=c-auto; HttpOnly")], []));
+            }
+            if (req.Path == "/api/echo")
+            {
+                var rpcId = ParseRpcId(req.Body);
+                return Task.FromResult(FakeRemoteServer.HttpResponseData.Json(200,
+                    ServerResponseJson(rpcId, """{"ok":true}""")));
+            }
+            return Task.FromResult(FakeRemoteServer.HttpResponseData.Json(404, "{}"));
+        };
+        server.OnWebSocketConnected = async (_, ws, ct) =>
+        {
+            var openRaw = await FakeRemoteServer.ReceiveTextAsync(ws, ct);
+            var streamId = ParseStreamId(openRaw!);
+            await FakeRemoteServer.SendTextAsync(ws, ReadyFrameJson(streamId, "client-auto"), ct);
+            while (ws.State == WebSocketState.Open && !ct.IsCancellationRequested)
+            {
+                var next = await FakeRemoteServer.ReceiveTextAsync(ws, ct);
+                if (next is null)
+                {
+                    break;
+                }
+                using var doc = JsonDocument.Parse(next);
+                if (doc.RootElement.GetProperty("type").GetString() == "open")
+                {
+                    var sid = doc.RootElement.GetProperty("streamId").GetString()!;
+                    await FakeRemoteServer.SendTextAsync(ws, "{\"type\":\"end\",\"streamId\":\"" + sid + "\"}", ct);
+                }
+            }
+        };
+
+        // CallAsync on a fresh DshRemoteConnection without calling ConnectAsync/Start first
+        await using (var conn1 = new DshRemoteConnection(FastOptions(server.BaseUri), () => SecretToken))
+        {
+            var rpc = await conn1.CallAsync("echo").WaitAsync(TimeSpan.FromSeconds(5));
+            Assert.True(rpc.Ok);
+        }
+
+        // OpenStreamAsync on a fresh DshRemoteConnection without calling ConnectAsync/Start first
+        await using (var conn2 = new DshRemoteConnection(FastOptions(server.BaseUri), () => SecretToken))
+        {
+            await using var stream = await conn2.OpenStreamAsync("watch", null, _ => ValueTask.CompletedTask)
+                .WaitAsync(TimeSpan.FromSeconds(5));
+            await stream.Completion.WaitAsync(TimeSpan.FromSeconds(5));
+        }
+    }
+
+    [Fact]
+    public async Task CallAsync_WhenHostNeverBecomesReady_TimesOutCleanlyWithoutHanging()
+    {
+        await using var server = new FakeRemoteServer();
+        server.OnHttpRequest = _ => Task.FromResult(FakeRemoteServer.HttpResponseData.Json(503, "{}"));
+
+        var options = new RemoteConnectionOptions(server.BaseUri)
+        {
+            BackoffBase = TimeSpan.FromMilliseconds(20),
+            BackoffMax = TimeSpan.FromMilliseconds(40),
+            UnaryTimeout = TimeSpan.FromMilliseconds(150),
+        };
+        await using var conn = new DshRemoteConnection(options, () => SecretToken);
+        await Assert.ThrowsAsync<TimeoutException>(() => conn.CallAsync("echo").WaitAsync(TimeSpan.FromSeconds(5)));
+    }
 }

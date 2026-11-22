@@ -158,8 +158,9 @@ public sealed class DshRemoteConnection : IAsyncDisposable
     {
         ArgumentException.ThrowIfNullOrEmpty(endpoint);
         ThrowIfDrainingOrDisposed();
+        StartLoopIfNeeded();
 
-        var gen = await WaitForActiveGenerationAsync(ct).ConfigureAwait(false);
+        var gen = await WaitForActiveGenerationAsync(ct, _options.UnaryTimeout).ConfigureAwait(false);
         try
         {
             return await SendUnaryOnceAsync(gen, endpoint, args, ct).ConfigureAwait(false);
@@ -168,7 +169,7 @@ public sealed class DshRemoteConnection : IAsyncDisposable
         {
             // 401 refresh: invalidate stale generation if it is still current, wait for the refreshed generation, retry once.
             InvalidateIfCurrent(gen);
-            var refreshed = await WaitForActiveGenerationAsync(ct).ConfigureAwait(false);
+            var refreshed = await WaitForActiveGenerationAsync(ct, _options.UnaryTimeout).ConfigureAwait(false);
             return await SendUnaryOnceAsync(refreshed, endpoint, args, ct).ConfigureAwait(false);
         }
     }
@@ -197,8 +198,9 @@ public sealed class DshRemoteConnection : IAsyncDisposable
         ArgumentException.ThrowIfNullOrEmpty(endpoint);
         ArgumentNullException.ThrowIfNull(onFrame);
         ThrowIfDrainingOrDisposed();
+        StartLoopIfNeeded();
 
-        var gen = await WaitForActiveGenerationAsync(ct).ConfigureAwait(false);
+        var gen = await WaitForActiveGenerationAsync(ct, _options.UnaryTimeout).ConfigureAwait(false);
         var streamId = $"s-{Interlocked.Increment(ref _nextStreamSeq)}";
         var handle = new MuxStreamHandle(this, gen, streamId, onFrame);
         if (!gen.TryAddStream(streamId, handle))
@@ -588,7 +590,7 @@ public sealed class DshRemoteConnection : IAsyncDisposable
         }
     }
 
-    private async Task<ActiveGeneration> WaitForActiveGenerationAsync(CancellationToken ct)
+    private async Task<ActiveGeneration> WaitForActiveGenerationAsync(CancellationToken ct, TimeSpan? timeout = null)
     {
         while (true)
         {
@@ -606,7 +608,22 @@ public sealed class DshRemoteConnection : IAsyncDisposable
                 }
                 readyTask = _readyTcs.Task;
             }
-            return await readyTask.WaitAsync(ct).ConfigureAwait(false);
+
+            if (timeout is not { } limit || limit <= TimeSpan.Zero || limit == Timeout.InfiniteTimeSpan)
+            {
+                return await readyTask.WaitAsync(ct).ConfigureAwait(false);
+            }
+
+            using var waitCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            waitCts.CancelAfter(limit);
+            try
+            {
+                return await readyTask.WaitAsync(waitCts.Token).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (!ct.IsCancellationRequested && waitCts.IsCancellationRequested)
+            {
+                throw new TimeoutException("Timed out waiting for an active remote connection generation.");
+            }
         }
     }
 
