@@ -30,10 +30,19 @@ public enum DshHostPhase
     DshStarting,
     DshFirstOutput,
     DshTokenAvailable,
+    ProtocolConnecting,
+    Initializing,
     Ready,
     Stopping,
     Failed,
 }
+
+/// <summary>
+/// Optional host launch and protocol-handshake configuration for Route B native transport (PR-01, ADR-0033).
+/// </summary>
+public sealed record DshHostOptions(
+    bool TrimmedWeb = false,
+    Func<IDshTokenSource, Action<DshHostPhase>, StartupTrace?, CancellationToken, Task<DshHostResult>>? ProtocolHandshakeAsync = null);
 
 /// <summary>Read-only view of the launch token for the C# WebView host. The token never leaves the process.</summary>
 public interface IDshTokenSource
@@ -102,6 +111,7 @@ public sealed class DshHost : IDshTokenSource, IDshHost
     private readonly ProotCommandBuilder _builder;
     private readonly IGuestTerminator _terminator;
     private readonly TimeSpan _gracefulStopTimeout;
+    private readonly DshHostOptions _options;
     private readonly Action<string> _log;
     private readonly TimeProvider _time;
     private readonly DshTokenRevisionTracker _tokens = new();
@@ -117,7 +127,7 @@ public sealed class DshHost : IDshTokenSource, IDshHost
     private int _dshFirstOutput;
 
     public DshHost(RuntimeLayout layout, Action<string> log, TimeProvider? time = null)
-        : this(layout, log, time, null, null)
+        : this(layout, log, time, null, null, null)
     {
     }
 
@@ -127,6 +137,12 @@ public sealed class DshHost : IDshTokenSource, IDshHost
     /// </param>
     /// <param name="gracefulStopTimeout">How long to wait for the SIGTERM to take effect before SIGKILL; default 1.8 s.</param>
     public DshHost(RuntimeLayout layout, Action<string> log, TimeProvider? time, IGuestTerminator? terminator, TimeSpan? gracefulStopTimeout)
+        : this(layout, log, time, terminator, gracefulStopTimeout, null)
+    {
+    }
+
+    /// <param name="options">Optional Route B trimmed-web / protocol-handshake configuration (PR-01, ADR-0033).</param>
+    public DshHost(RuntimeLayout layout, Action<string> log, TimeProvider? time, IGuestTerminator? terminator, TimeSpan? gracefulStopTimeout, DshHostOptions? options)
     {
         ArgumentNullException.ThrowIfNull(layout);
         _layout = layout;
@@ -135,6 +151,7 @@ public sealed class DshHost : IDshTokenSource, IDshHost
         _time = time ?? TimeProvider.System;
         _terminator = terminator ?? PosixGuestTerminator.Instance;
         _gracefulStopTimeout = gracefulStopTimeout ?? DefaultGracefulStopTimeout;
+        _options = options ?? new DshHostOptions();
         _window = DshWindowState.Fresh(0);
     }
 
@@ -260,6 +277,18 @@ public sealed class DshHost : IDshTokenSource, IDshHost
                 SetPhase(DshHostPhase.Failed);
                 return ready;
             }
+            if (_options.ProtocolHandshakeAsync is { } handshakeAsync)
+            {
+                SetPhase(DshHostPhase.ProtocolConnecting);
+                var handshake = await handshakeAsync(this, SetPhase, trace, ct).ConfigureAwait(false);
+                if (!handshake.Ok)
+                {
+                    await KillEverythingAsync().ConfigureAwait(false);
+                    SetState(DshHostState.Failed);
+                    SetPhase(DshHostPhase.Failed);
+                    return handshake;
+                }
+            }
             SetState(DshHostState.Ready);
             SetPhase(DshHostPhase.Ready);
             _loop = new CancellationTokenSource();
@@ -367,15 +396,29 @@ public sealed class DshHost : IDshTokenSource, IDshHost
         }
     }
 
+    private Process SpawnDshInPlaceRestart()
+    {
+        _window = DshWindowState.Fresh(NowMs());
+        UiToolsAtStart = DshMobile.Runtime.Automation.UiToolsRegistration.IsRegistered(_layout.UserDataDir);
+        var argv = _builder.DshCommand(inPlaceRestart: true, trimmedWeb: _options.TrimmedWeb);
+        var env = _builder.Environment("dsh");
+        return SpawnDshProcess(argv, env, trace: null, onHintReady: null);
+    }
+
     private Process SpawnDsh(StartupTrace? trace = null, Action? onHintReady = null)
     {
         _window = DshWindowState.Fresh(NowMs());
         // DSH reads its --patch layers once at start: this is what "loaded by DSH" means for the ui_* tools.
         UiToolsAtStart = DshMobile.Runtime.Automation.UiToolsRegistration.IsRegistered(_layout.UserDataDir);
         var commandEnv = trace?.Measure("dsh.command_env");
-        var argv = _builder.DshCommand();
+        var argv = _builder.DshCommand(inPlaceRestart: false, trimmedWeb: _options.TrimmedWeb);
         var env = _builder.Environment("dsh");
         commandEnv?.End();
+        return SpawnDshProcess(argv, env, trace, onHintReady);
+    }
+
+    private Process SpawnDshProcess(IReadOnlyList<string> argv, IReadOnlyDictionary<string, string> env, StartupTrace? trace, Action? onHintReady)
+    {
         var spawn = trace?.Measure("dsh.spawn");
         _trace = trace;
         _dshSpawnMark = trace?.Mark() ?? 0d;
@@ -493,7 +536,7 @@ public sealed class DshHost : IDshTokenSource, IDshHost
                     KillProcessTree(_dsh);
                     KillTreesByMarker(RuntimeConstants.DshStartScript);
                     var keep = _window;
-                    _dsh = SpawnDsh();
+                    _dsh = SpawnDshInPlaceRestart();
                     _window = keep; // the policy already re-armed the window for the new instance
                 }
                 else if (d.Action is DshHealthAction.Exhausted or DshHealthAction.InitialTimeout)

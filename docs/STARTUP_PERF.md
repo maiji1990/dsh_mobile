@@ -87,6 +87,8 @@ Android `logcat -v threadtime` 行通常形如（App 自己还会再加一个 `H
 | `dsh.token_available` | 从 DSH spawn 到 launch token 可解析 | 从 DSH spawn 起算 | DshHost.cs |
 | `http.first_port_open` | 从 DSH spawn 到本地端口可连接 | 从 DSH spawn 起算 | DshHost.cs |
 | `http.first_response` | 从 DSH spawn 到首个 HTTP 响应 | 从 DSH spawn 起算 | DshHost.cs |
+| `protocol.connected` | 原生传输通道建立（`/connect` + `/api/remote.mux` WebSocket） | 阶段自身 | DshRemoteConnection.cs |
+| `protocol.initialized` | 协议握手校验通过（`$events` `ready` baseline） | 阶段自身 | DshRemoteConnection.cs |
 | `host.ready` | 从 DSH spawn 到宿主判定 READY | 从 DSH spawn 起算 | DshHost.cs |
 | `bridge.complete` | 从点击到 start 操作结束（`host_total`）；busy / 异常也记一条 | 点击时刻 | BridgeHost.cs（`RunStartAsync` / `RunExclusive`） |
 | `web.activity_create` | WebView Activity 创建耗时 | 阶段自身 | DshWebActivity.cs |

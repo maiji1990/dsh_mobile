@@ -139,6 +139,8 @@ public sealed class HomeFragment : Fragment, ITabRoot
         DshMobile.Runtime.Hosting.DshHostPhase.DshStarting => GetString(Resource.String.home_detail_phase_dsh_spawned),
         DshMobile.Runtime.Hosting.DshHostPhase.DshFirstOutput => GetString(Resource.String.home_detail_phase_first_output),
         DshMobile.Runtime.Hosting.DshHostPhase.DshTokenAvailable => GetString(Resource.String.home_detail_phase_token),
+        DshMobile.Runtime.Hosting.DshHostPhase.ProtocolConnecting => GetString(Resource.String.home_detail_phase_protocol),
+        DshMobile.Runtime.Hosting.DshHostPhase.Initializing => GetString(Resource.String.home_detail_phase_initializing),
         _ => GetString(Resource.String.home_detail_starting),
     };
 

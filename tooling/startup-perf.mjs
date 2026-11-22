@@ -36,6 +36,8 @@ export const STAGES = [
   'dsh.token_available',
   'http.first_port_open',
   'http.first_response',
+  'protocol.connected',
+  'protocol.initialized',
   'host.ready',
   'bridge.complete',
   'web.activity_create',

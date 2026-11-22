@@ -42,6 +42,8 @@ public sealed class RuntimeCoordinator : IDisposable
     private readonly Func<RuntimeLayout, Action<string>, TimeProvider, IDshHost> _hostFactory;
     private readonly SemaphoreSlim _op = new(1, 1);
     private readonly Lock _migration = new();
+    private readonly Lock _hookLock = new();
+    private readonly List<Func<CancellationToken, Task>> _hostStoppingHooks = [];
     private bool _namesMigrated;
 
     /// <summary>The last <see cref="SyncAsync"/>'s settling of an interrupted body import; null when it did not run (host owns processes).</summary>
@@ -94,6 +96,42 @@ public sealed class RuntimeCoordinator : IDisposable
     /// </summary>
     public Func<CancellationToken, Task>? HostStopping { get; set; }
 
+    /// <summary>
+    /// Registers an additional asynchronous drain hook awaited alongside <see cref="HostStopping"/> before the host
+    /// stops (used by the native agent data plane to reject new calls, fail pending waits cleanly, and close its
+    /// transport without taking <see cref="_op"/>). Dispose the returned handle to unregister.
+    /// </summary>
+    public IDisposable AddHostStoppingHook(Func<CancellationToken, Task> hook)
+    {
+        ArgumentNullException.ThrowIfNull(hook);
+        lock (_hookLock)
+        {
+            _hostStoppingHooks.Add(hook);
+        }
+        return new HookRegistration(this, hook);
+    }
+
+    private void RemoveHostStoppingHook(Func<CancellationToken, Task> hook)
+    {
+        lock (_hookLock)
+        {
+            _hostStoppingHooks.Remove(hook);
+        }
+    }
+
+    private sealed class HookRegistration(RuntimeCoordinator owner, Func<CancellationToken, Task> hook) : IDisposable
+    {
+        private Func<CancellationToken, Task>? _hook = hook;
+
+        public void Dispose()
+        {
+            if (Interlocked.Exchange(ref _hook, null) is { } target)
+            {
+                owner.RemoveHostStoppingHook(target);
+            }
+        }
+    }
+
     /// <summary>The C# host (created on the first start); exposes the launch token to the C# WebView only.</summary>
     public DshHost? Host => _host as DshHost;
 
@@ -125,19 +163,43 @@ public sealed class RuntimeCoordinator : IDisposable
 
     private async Task NotifyHostStoppingAsync(CancellationToken ct)
     {
-        if (HostStopping is not { } hook)
+        if (HostStopping is { } hook)
         {
-            return;
-        }
-        try
-        {
-            await hook(ct).ConfigureAwait(false);
-        }
+            try
+            {
+                await hook(ct).ConfigureAwait(false);
+            }
 #pragma warning disable CA1031 // a failing companion cleanup must not keep the runtime running
-        catch (Exception ex)
+            catch (Exception ex)
 #pragma warning restore CA1031
+            {
+                _log.Note($"host stopping hook failed: {ex.GetType().Name}: {ex.Message}");
+            }
+        }
+
+        Func<CancellationToken, Task>[] registered;
+        lock (_hookLock)
         {
-            _log.Note($"host stopping hook failed: {ex.GetType().Name}: {ex.Message}");
+            if (_hostStoppingHooks.Count == 0)
+            {
+                return;
+            }
+            registered = [.. _hostStoppingHooks];
+        }
+
+        // Drain data-plane subscribers in reverse registration order before tearing down the sandbox/host processes.
+        for (var i = registered.Length - 1; i >= 0; i--)
+        {
+            try
+            {
+                await registered[i](ct).ConfigureAwait(false);
+            }
+#pragma warning disable CA1031 // a failing data-plane drain must not keep the runtime running
+            catch (Exception ex)
+#pragma warning restore CA1031
+            {
+                _log.Note($"host stopping hook failed: {ex.GetType().Name}: {ex.Message}");
+            }
         }
     }
 

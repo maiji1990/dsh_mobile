@@ -82,6 +82,11 @@ public sealed partial class GuestAssetProvisionerTests : IDisposable
             File.ReadAllBytes(Path.Combine(dshmobile, GuestAssetProvisioner.E2eName)));
         Assert.Equal(File.ReadAllBytes(Repo.PathOf("src", "DshMobile.Runtime", "Guest", "Assets", "startup-fs-cache-shim.mjs")),
             File.ReadAllBytes(Path.Combine(dshmobile, GuestAssetProvisioner.StartupFsCacheShimName)));
+        var trimPatchBytes = File.ReadAllBytes(Path.Combine(dshmobile, GuestAssetProvisioner.WebTrimPatchName));
+        Assert.Equal(File.ReadAllBytes(Repo.PathOf("src", "DshMobile.Runtime", "Guest", "Assets", "dsh-web-trim-patch.yml")),
+            trimPatchBytes);
+        Assert.Equal("ca9797888b7f6402a21a15dd9bd3308faeb936d50f171a31262d50824d605fd2",
+            Convert.ToHexStringLower(SHA256.HashData(trimPatchBytes)));
         Assert.True(UiFacadeAssets.Intact(layout.GuestCacheDir));
         var corepack = GuestToolchain.CorepackDir(layout);
         Assert.True(File.Exists(Path.Combine(corepack, GuestToolchain.ReadyMarker)));
