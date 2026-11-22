@@ -137,13 +137,14 @@ PR-00 (基线 + 路线A/B PoC + ADR-0033 + DshMobile.Agent骨架 + 门禁)
 - [x] **N-02-02｜小 Facet Gateway 接口与 `DshCapabilities`**
   - 在 [Gateways.cs](../../src/DshMobile.Agent/Domain/Gateways.cs) 拆分为 `ISessionGateway`、`IPromptGateway`、`IApprovalGateway`、`IQuestionGateway`、`IProviderGateway`、`ICredentialGateway`、`IPluginGateway`、`IEventGateway` 与组合接口 `IDshGateway`；
   - [DefaultDshGateway](../../src/DshMobile.Agent/Domain/Gateways.cs) 默认实现返回 `DshFailureCode.Unavailable`；[DshCapabilities.cs](../../src/DshMobile.Agent/Domain/DshCapabilities.cs) 由运行时握手 + 能力探测动态生成，禁止按硬编码版本号猜测。
-- [x] **N-02-03｜实现协议 Gateway 适配器（补齐全部真实特性）**
-  - 在 [RemoteDshGatewayClient.cs](../../src/DshMobile.Agent/Protocol/RemoteDshGatewayClient.cs) 与 [RemoteProtocolCodec.cs](../../src/DshMobile.Agent/Protocol/RemoteProtocolCodec.cs) 实现全套 Route B Facet 适配器（纯 `net11.0` + Fake Server 与桌面实节点已过；Android 17 arm64 真机无 UI 端到端 **待真机验证**）：
+- [ ] **N-02-03｜实现协议 Gateway 适配器（补齐全部真实特性）**（纯 `net11.0` 契约与桌面实节点已通过；Android 17 arm64 真机无 UI 端到端 **待真机验证**，按第 0.1 节暂不勾选）
+  - 在 [RemoteDshGatewayClient.cs](../../src/DshMobile.Agent/Protocol/RemoteDshGatewayClient.cs) 与 [RemoteProtocolCodec.cs](../../src/DshMobile.Agent/Protocol/RemoteProtocolCodec.cs) 已完成全套 Route B Facet 适配器（Fake Server 全量契约测试与 Linux x86_64 `@deepseek-ai/dsh@0.2.2-rc.5` 冒烟已过）：
   - 支持文本与图片附件（`PromptAttachmentImage` / `ImageAttachmentValidator` 校验 MIME 与大小上限）；
   - 每次 prompt 自动注入并规范化设备当前 **IANA `clientTimeZone`**（`IanaTimeZoneResolver`）；
   - 支持 Route B 原生斜杠命令 `commands/list` & `commands/execute`（`/compact`、`/permission`、`/plan`、`/goal`）；
   - `session/create`（含 `sessionId` 恢复）严格按 schema 发送（`WhenWritingNull`，绝不带未知字段）；
   - 正确解析 `turn/end` 的 `reason` 判定轮次失败，兼容 `session/wait` 返回 `{}` 空对象映射为 `AmbiguousEmptyResponse`。
+  - 真机无 UI 端到端测试（发送文本/图片、触发斜杠命令并完成审批不死锁）：**待真机验证**。
 - [x] **N-02-04｜脱敏 Golden Fixtures 与协议兼容矩阵文档**
   - 从真实 `@deepseek-ai/dsh@0.2.2-rc.5` 录制并脱敏 golden fixtures 存入 [route-b-golden-v0.2.2-rc.5.json](../../tests/DshMobile.Agent.Tests/Fixtures/route-b-golden-v0.2.2-rc.5.json)；
   - 覆盖未知事件/未知字段容错（降级为 `UnknownGatewayEvent` / `SessionFollowUnknownUpdate` / `TurnEndReasonKind.Unknown` / `IsKnownType=false` 不崩溃）、协议版本/格式不匹配返回 `ProtocolMismatch`。
@@ -368,6 +369,7 @@ PR-00 (基线 + 路线A/B PoC + ADR-0033 + DshMobile.Agent骨架 + 门禁)
 |---|---|---|---|---|---|
 | PR-00 基线与 PoC | 待真机验证 | — | — | 待测 | `docs/native/BASELINE.md` |
 | PR-01 持久传输握手 | 待真机验证 | — | — | 待测 | — |
+| PR-02 Gateway 契约 & 无 UI 端到端 | 待真机验证 | — | — | 待测 | — |
 | PR-04 原生聊天切片 | 待真机验证 | — | — | 待测 | `docs/native/ACCEPTANCE_PR04.md` |
 | PR-05 零凭据引导 & Cache-First | 待真机验证 | — | — | 待测 | — |
 | PR-08 治理/更新/远程/性能配对 | 待真机验证 | — | — | 待测 | `docs/native/PERFORMANCE_BASELINE.md` |
