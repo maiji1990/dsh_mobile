@@ -112,6 +112,8 @@
     <ProjectReference Include="..\DshMobile.Core\DshMobile.Core.csproj" />
     <!-- C#-first layers (ADR-0007). -->
     <ProjectReference Include="..\DshMobile.Application\DshMobile.Application.csproj" />
+    <!-- Pure managed native agent layer (ADR-0033). -->
+    <ProjectReference Include="..\DshMobile.Agent\DshMobile.Agent.csproj" />
   </ItemGroup>
 
   <ItemGroup>
