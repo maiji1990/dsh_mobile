@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    Pure managed native-agent domain, protocol, engines, and presentation layer (ADR-0033).
+    Zero Android/Java dependencies: unit-tested directly on net11.0 and trim/AOT-safe.
+  -->
+  <PropertyGroup>
+    <TargetFramework>net11.0</TargetFramework>
+    <IsTrimmable>true</IsTrimmable>
+    <IsAotCompatible>true</IsAotCompatible>
+    <RootNamespace>DshMobile.Agent</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Pure managed Markdown parser (GFM tables, fenced code blocks, headings, lists). Pinned exact version; docs/UPSTREAMS.md. -->
+    <PackageReference Include="Markdig" Version="1.6.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\DshMobile.Core\DshMobile.Core.csproj" />
+  </ItemGroup>
+</Project>

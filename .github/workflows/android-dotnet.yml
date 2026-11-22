@@ -58,6 +58,9 @@ jobs:
       - name: Application tests (coordinator)
         run: dotnet test tests/DshMobile.Application.Tests -c Release
 
+      - name: Agent tests (pure managed domain, engines, and quality ratchet gates)
+        run: dotnet test tests/DshMobile.Agent.Tests -c Release
+
       # Guest ui_* MCP facade (TASK-010): dependency-free. Explicit *.test.mjs list; fails on 0 files / 0 passing tests.
       - name: Guest facade tests
         run: node tooling/run-node-tests.mjs tests/guest

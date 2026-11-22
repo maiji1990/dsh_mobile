@@ -361,6 +361,11 @@ public sealed class BridgeHost : IDisposable, IDiagnosticsLog
         {
             Append(line);
         }
+        var md = DshMobile.Agent.Rendering.MarkdownParser.InspectSummary("# DSH\n\n| A | B |\n| - | - |\n| 1 | 2 |\n\n```sh\necho ok\n```");
+        var rpcJson = System.Text.Json.JsonSerializer.Serialize(
+            new DshMobile.Agent.Protocol.ProtocolHandshakeProbe("client-request", "diag", "session/list"),
+            DshMobile.Agent.Protocol.AgentProtocolJsonContext.Default.ProtocolHandshakeProbe);
+        Append($"agent smoke: md(h={md.Headings},code={md.CodeBlocks},tbl={md.Tables}) rpcBytes={rpcJson.Length}");
         // Each command in its own PRoot, independent of the host.
         foreach (var (key, r) in await Runtime.RunGuestDiagnosticsAsync(CancellationToken.None).ConfigureAwait(false))
         {

@@ -143,6 +143,7 @@
 | `SSH.NET` | 2026.0.0 | MIT | 远程主机的 C# SSH 客户端（ADR-0012）：Keystore 自定义 `HostAlgorithm` 签名、`HostKeyReceived` 指纹固定、exec 探测；纯托管、`IsTrimmable` / `IsAotCompatible` | PR-09 第二段 |
 | `BouncyCastle.Cryptography` | 2.7.0 | MIT | `SSH.NET` 的唯一额外运行时依赖（按 NuGet 最低适用版本解析，在 `DshMobile.Runtime.csproj` 显式固定）；ADR-0022 起也直接用于发布清单的 Ed25519 验签（`Ed25519Signer`，不新增依赖）；`Microsoft.Extensions.Logging.Abstractions` 由 .NET 11 共享框架提供，不随包分发 | PR-09 第二段 |
 | `Xamarin.Google.Android.Material` | 1.14.0.6 | MIT（绑定）/ Apache-2.0（Material Components） | 全部界面的 Material 3 主题与组件（AGENTS.md 规则 12；PR-06 第二段起用于终端，ADR-0021 起用于全部页面），含 `DynamicColors` | PR-06 第二段、ADR-0021 |
+| `Markdig` | 1.6.0 | BSD-2-Clause | 纯托管 Markdown 解析器（标题、段落、GFM 表格、围栏代码块、任务列表），用于 `DshMobile.Agent` 原生聊天 IR；已验证 `.NET 11 TrimMode=full` 零新增告警（ADR-0033） | PR-00（`N-00-05`） |
 | Material Icons（矢量图形，非包） | Material Symbols / Icons 基线（Filled） | Apache-2.0 | `src/DshMobile.Android/Resources/drawable/ic_*.xml` 的 32 个图标路径（原样使用 24dp 路径数据，着色改为主题属性）；无品牌资产 | ADR-0021 |
 
 ## 同步记录
