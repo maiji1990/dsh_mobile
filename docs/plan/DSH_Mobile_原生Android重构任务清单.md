@@ -160,31 +160,28 @@ PR-00 (基线 + 路线A/B PoC + ADR-0033 + DshMobile.Agent骨架 + 门禁)
 
 ### 任务项
 
-- [ ] **N-03-01｜`SessionKey` 作用域模型与不可变 `ChatSnapshot`**
-  - 定义 `SessionKey(RuntimeId, ProfileId, SessionId)`、`MessageKey`、`MessagePart`（含 `Unknown` 保留）、`ToolPhase`、`RunPhase`、`ChatRow`（稳定 `ItemId`）、`ChatSnapshot(Revision, ...)`。
-- [ ] **N-03-02｜`StreamingBlocks` 16 行硬切片增量切块器**
-  - 实现单遍按行顶级 Markdown 块切分：已闭合块（空行/标题/列表项/闭合围栏）永久不可变缓存；
-  - **强制超过 16 行的未闭合围栏或长段落按行切为 settled chunk + ≤16 行可变 tail 块**；保留嵌套列表深度 `depth` 与连续标记 `continued/continues`。
-- [ ] **N-03-03｜`TranscriptReducer` 与 Turn 级前缀复用**
-  - 每会话单线程串行 `Channel`；重复事件幂等；有界 `deferredParts`（超阈值触发历史校准）；
-  - Tool 状态机严格单向迁移（终态不被晚到事件覆盖）；按 `turn/end.reason` 落定轮次成败；
-  - 已稳定历史 Turn 缓存派生行，流式更新仅重算最后 Turn 尾部；子 Agent 事件仅通过已验证父子关联挂接。
-- [ ] **N-03-04｜50ms 前缘+后缘合并发布器与 `skippedWhileHidden`**
-  - 实现 `CoalescingPublisher`：静默 ≥50ms 后首条 delta 立即发布（前缘零延迟），50ms 窗口内变更合并为窗口末一次发布（后缘）；
-  - 观察者计数为 0 时继续 reduce 内存模型但跳过 `derive`（累计 `SkippedWhileHidden`），恢复订阅时触发一次全量派生。
-- [ ] **N-03-05｜Cache-First `detachedTranscript` 与 `KeptTranscript` 脱敏快照存储**
-  - 实现 `KeptTranscriptStore`（原子写、只保存最近 N 条脱敏展示消息与摘要，不存凭据/token）；
-  - 实现 `TranscriptEngine.CreateDetached(sessionId)` 用同一 reducer 离线渲染缓存，并实现 live 接管时的 `HistoryReconciler`（先订阅记水位 → 拉快照 → 版本合并 → 必要时二次校准）。
-- [ ] **N-03-06｜发送状态机与重复执行保护**
-  - 维护 `Draft -> Dispatching(ClientOpId) -> Enqueued(MessageId) -> Running -> Settled | UnknownOutcome`；
-  - 路线 B 启用官方 `requestId` 幂等重发；路线 A 遇 `UnknownOutcome` 禁止自动重发，先做历史核对并由用户知情确认。
-- [ ] **N-03-07｜`RequestsEngine`（参数回溯 + Hold-to-undo + 已结算账本）**
-  - 收到 `approval/request` 按 `callId` 回溯 `session.event` 中工具调用参数生成脱敏摘要（未找到则显式标记“参数未就绪”）；
-  - 实现 `Waiting -> Held(可撤销窗) -> Sending(原子单次认领) -> Settled(已结算账本)`；离开页面或关闭时立即 `FlushHeldAsync()`；
-  - 完整实现 `user-question/ask` 与 `user-question.cancelled` 立即撤卡及迟到答复丢弃。
-- [ ] **N-03-08｜`TranscriptPerfGateTests`（`Stream6000`）与故障回归单测**
-  - 编写 6,000 词 + 400 行未闭合代码块 + 100 轮历史压测，断言 `Publishes`、`TailChars`、`RowWrites`、`HistoryVisits`、`SkippedWhileHidden` 严格达标；
-  - 编写审批防并发双发、断线重拉不诈尸、乱序 `deferredParts` 溢出触发校准单测。
+- [x] **N-03-01｜`SessionKey` 作用域模型与不可变 `ChatSnapshot`**
+  - 在 [TranscriptModels.cs](../../src/DshMobile.Agent/Engines/TranscriptModels.cs) 定义 `SessionKey(RuntimeId, ProfileId, SessionId)`、`MessageKey`、`MessagePart`（含 `UnknownMessagePart` 保留）、`ToolPhase`、`RunPhase`、`ChatRow`（稳定 `ItemId`）、`ChatSnapshot(Revision, ...)` 与 `TranscriptCounters`。
+- [x] **N-03-02｜`StreamingBlocks` 16 行硬切片增量切块器**
+  - 在 [StreamingBlocks.cs](../../src/DshMobile.Agent/Engines/StreamingBlocks.cs) 实现单遍按行顶级 Markdown 块切分：已闭合块（空行/标题/列表项/闭合围栏）永久不可变缓存；
+  - 强制超过 16 行的未闭合围栏或长段落按行切为 settled chunk + ≤16 行可变 tail 块；保留嵌套列表深度 `ListDepth` 与连续标记 `ContinuedFromPrevious/ContinuesToNext`。
+- [x] **N-03-03｜`TranscriptReducer` 与 Turn 级前缀复用**
+  - 在 [TranscriptReducer.cs](../../src/DshMobile.Agent/Engines/TranscriptReducer.cs) 与 [TranscriptEngine.cs](../../src/DshMobile.Agent/Engines/TranscriptEngine.cs) 实现每会话单线程串行 `Channel`、重复事件幂等、有界 `deferredParts`（超阈值置位 `NeedsCalibration` 并触发历史校准）；
+  - `ToolPhaseTransitions` 严格单向迁移；按 `turn/end.reason` 落定轮次成败；已稳定历史 Turn 缓存派生行，流式更新仅重算最后 Turn 尾部；子 Agent 事件通过父子验证挂接。
+- [x] **N-03-04｜50ms 前缘+后缘合并发布器与 `skippedWhileHidden`**
+  - 在 [CoalescingPublisher.cs](../../src/DshMobile.Agent/Engines/CoalescingPublisher.cs) 实现：静默 ≥50ms 后首条 delta 立即发布（前缘零延迟），50ms 窗口内变更合并为窗口末一次发布（后缘）；
+  - 观察者计数为 0 时继续 reduce 内存模型但跳过派生发布并累计 `SkippedWhileHidden`，恢复订阅（`0 -> 1`）触发补发同步。
+- [x] **N-03-05｜Cache-First `detachedTranscript` 与 `KeptTranscript` 脱敏快照存储**
+  - 在 [SecretRedactor.cs](../../src/DshMobile.Agent/Engines/SecretRedactor.cs) 与 [KeptTranscriptStore.cs](../../src/DshMobile.Agent/Engines/KeptTranscriptStore.cs) 实现全字段凭据脱敏、原子写、STJ SourceGen 序列化、`NotFound/Loaded/Corrupt` 分态读取与最近 N 条脱敏展示消息保留；
+  - `TranscriptEngine.CreateDetached` 复用同一 reducer 离线渲染缓存，并由 [HistoryReconciler.cs](../../src/DshMobile.Agent/Engines/HistoryReconciler.cs) 完成“先订阅记水位 → 拉快照 → 水位合并”无缝交接（失败保留部分历史标志不伪造完整历史）。
+- [x] **N-03-06｜发送状态机与重复执行保护**
+  - 在 [SendStateMachine.cs](../../src/DshMobile.Agent/Engines/SendStateMachine.cs) 维护 `Draft -> Dispatching(ClientOpId) -> Enqueued(RequestId) -> Running -> SettledSuccess/SettledFailure | UnknownOutcome | RequiresUserConfirmation`；
+  - 路线 B 启用 `requestId` 幂等重试；非幂等通道遇 `UnknownOutcome` 先查历史核对并需用户确认后方可重发。
+- [x] **N-03-07｜`RequestsEngine`（参数回溯 + Hold-to-undo + 已结算账本）**
+  - 在 [RequestsEngine.cs](../../src/DshMobile.Agent/Engines/RequestsEngine.cs) 实现 `approval/request` 按 `callId` 回溯 `TranscriptEngine` 脱敏参数摘要（缺失则显式 `ArgumentsReady = false`）；
+  - 实现 `Waiting -> Held(Hold-to-undo) -> Sending(原子单次认领) -> Settled` 与 `FlushHeldAsync()`、代次已结算账本防诈尸，以及 `user-questions` 与 `CancelRequest` 迟到答复拒绝。
+- [x] **N-03-08｜`TranscriptPerfGateTests`（`Stream6000`）与故障回归单测**
+  - 在 [TranscriptPerfGateTests.cs](../../tests/DshMobile.Agent.Tests/Engines/TranscriptPerfGateTests.cs)、[StreamingBlocksTests.cs](../../tests/DshMobile.Agent.Tests/Engines/StreamingBlocksTests.cs)、[TranscriptFaultAndReconcileTests.cs](../../tests/DshMobile.Agent.Tests/Engines/TranscriptFaultAndReconcileTests.cs) 与 [RequestsEngineTests.cs](../../tests/DshMobile.Agent.Tests/Engines/RequestsEngineTests.cs) 全部锁定并全绿。
 
 ---
 
@@ -358,7 +355,7 @@ PR-00 (基线 + 路线A/B PoC + ADR-0033 + DshMobile.Agent骨架 + 门禁)
 | `CancellationAndFailureGateTests` | PR-00（`N-00-07`） | PR-00 起零容忍 | `[x]` |
 | `SavedStateSecurityTests` | PR-00（`N-00-07`） | PR-00 起零容忍 | `[x]` |
 | `LoggingPrivacyTests` | PR-00（`N-00-07`） | PR-00 起零容忍 | `[x]` |
-| `TranscriptPerfGateTests`（`Stream6000`） | PR-03（`N-03-08`） | PR-03 起锁定上限 | `[ ]` |
+| `TranscriptPerfGateTests`（`Stream6000`） | PR-03（`N-03-08`） | PR-03 起锁定上限 | `[x]` |
 | `NoBusinessWebViewGateTests` | PR-09（`N-09-03`） | PR-09 起永久生效 | `[ ]` |
 
 ---

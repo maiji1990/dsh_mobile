@@ -1,0 +1,256 @@
+using System.Text.Json;
+using System.Text.Json.Serialization;
+
+namespace DshMobile.Agent.Engines;
+
+public enum KeptRowKind
+{
+    User,
+    Markdown,
+    Reasoning,
+    ToolCall,
+    Command,
+    Notice,
+}
+
+public enum KeptTranscriptLoadStatus
+{
+    NotFound,
+    Loaded,
+    Corrupt,
+}
+
+public sealed record KeptTranscriptLoadResult(
+    KeptTranscriptLoadStatus Status,
+    KeptTranscriptRecord? Record = null);
+
+/// <summary>Sanitized cache row stored on disk with secrets &amp; approval tokens stripped (N-03-05).</summary>
+public sealed record KeptChatRow(
+    KeptRowKind Kind,
+    string ItemId,
+    long TurnSeq,
+    string PrimaryText,
+    string? SecondaryText = null,
+    string? CodeOrToolName = null,
+    bool IsError = false);
+
+public sealed record KeptTranscriptRecord(
+    int SchemaVersion,
+    SessionKey Scope,
+    long CursorSeq,
+    RunPhase Phase,
+    long SavedAtUnixMs,
+    IReadOnlyList<KeptChatRow> Rows);
+
+[JsonSourceGenerationOptions(
+    PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
+    DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull)]
+[JsonSerializable(typeof(KeptTranscriptRecord))]
+[JsonSerializable(typeof(KeptChatRow))]
+internal sealed partial class KeptTranscriptJsonContext : JsonSerializerContext;
+
+/// <summary>
+/// Atomic private-file snapshot store for `KeptTranscript` / `detachedTranscript` Cache-First boot (N-03-05).
+/// Passes every persisted string field through <see cref="SecretRedactor"/> before writing to disk.
+/// </summary>
+public sealed class KeptTranscriptStore
+{
+    public const int CurrentSchemaVersion = 1;
+    public const int DefaultMaxRetainedRows = 50;
+
+    private readonly string _directory;
+    private readonly int _maxRetainedRows;
+    private readonly TimeProvider _time;
+
+    public KeptTranscriptStore(
+        string directory,
+        int maxRetainedRows = DefaultMaxRetainedRows,
+        TimeProvider? time = null)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(directory);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(maxRetainedRows);
+        _directory = directory;
+        _maxRetainedRows = maxRetainedRows;
+        _time = time ?? TimeProvider.System;
+    }
+
+    public async Task SaveAsync(ChatSnapshot snapshot, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(snapshot);
+        Directory.CreateDirectory(_directory);
+
+        var startIdx = Math.Max(0, snapshot.Rows.Count - _maxRetainedRows);
+        var keptRows = new List<KeptChatRow>(snapshot.Rows.Count - startIdx);
+        for (var i = startIdx; i < snapshot.Rows.Count; i++)
+        {
+            if (TrySanitizeRow(snapshot.Rows[i]) is { } row)
+            {
+                keptRows.Add(row);
+            }
+        }
+
+        var record = new KeptTranscriptRecord(
+            CurrentSchemaVersion,
+            snapshot.Session,
+            snapshot.CursorSeq,
+            snapshot.Phase,
+            _time.GetUtcNow().ToUnixTimeMilliseconds(),
+            keptRows);
+
+        var json = JsonSerializer.Serialize(record, KeptTranscriptJsonContext.Default.KeptTranscriptRecord);
+        var finalPath = FilePathFor(snapshot.Session);
+        var tmpPath = $"{finalPath}.{Guid.NewGuid():N}.tmp";
+
+        try
+        {
+            await using (var fs = new FileStream(tmpPath, FileMode.CreateNew, FileAccess.Write, FileShare.None, 4096, useAsync: true))
+            await using (var writer = new StreamWriter(fs))
+            {
+                await writer.WriteAsync(json.AsMemory(), ct).ConfigureAwait(false);
+                await writer.FlushAsync(ct).ConfigureAwait(false);
+                fs.Flush(flushToDisk: true);
+            }
+            File.Move(tmpPath, finalPath, overwrite: true);
+        }
+        finally
+        {
+            if (File.Exists(tmpPath))
+            {
+                try
+                {
+                    File.Delete(tmpPath);
+                }
+#pragma warning disable CA1031 // Best-effort temp file cleanup
+                catch (Exception ex) when (ex is not OperationCanceledException)
+#pragma warning restore CA1031
+                {
+                    _ = ex;
+                }
+            }
+        }
+    }
+
+    public async Task<KeptTranscriptLoadResult> LoadDetailedAsync(SessionKey scope, CancellationToken ct = default)
+    {
+        var path = FilePathFor(scope);
+        if (!File.Exists(path))
+        {
+            return new KeptTranscriptLoadResult(KeptTranscriptLoadStatus.NotFound);
+        }
+        try
+        {
+            var json = await File.ReadAllTextAsync(path, ct).ConfigureAwait(false);
+            var parsed = JsonSerializer.Deserialize(json, KeptTranscriptJsonContext.Default.KeptTranscriptRecord);
+            if (parsed is null || parsed.SchemaVersion != CurrentSchemaVersion || parsed.Scope != scope)
+            {
+                return new KeptTranscriptLoadResult(KeptTranscriptLoadStatus.Corrupt);
+            }
+            return new KeptTranscriptLoadResult(KeptTranscriptLoadStatus.Loaded, parsed);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _ = ex;
+            return new KeptTranscriptLoadResult(KeptTranscriptLoadStatus.Corrupt);
+        }
+    }
+
+    public async Task<KeptTranscriptRecord?> TryLoadAsync(SessionKey scope, CancellationToken ct = default)
+    {
+        var res = await LoadDetailedAsync(scope, ct).ConfigureAwait(false);
+        return res.Status == KeptTranscriptLoadStatus.Loaded ? res.Record : null;
+    }
+
+    public static IReadOnlyList<ChatRow> ToDetachedChatRows(KeptTranscriptRecord record)
+    {
+        ArgumentNullException.ThrowIfNull(record);
+        var rows = new List<ChatRow>(record.Rows.Count);
+        foreach (var r in record.Rows)
+        {
+            switch (r.Kind)
+            {
+                case KeptRowKind.User:
+                    rows.Add(new UserMessageRow(r.ItemId, r.TurnSeq, r.ItemId, r.PrimaryText, 0, IsPending: false));
+                    break;
+                case KeptRowKind.Markdown:
+                    rows.Add(new MarkdownBlockRow(r.ItemId, r.TurnSeq, r.ItemId, 0, 0, r.PrimaryText, true, 0, false, false));
+                    break;
+                case KeptRowKind.Reasoning:
+                    rows.Add(new ReasoningBlockRow(r.ItemId, r.TurnSeq, r.ItemId, 0, r.PrimaryText, true));
+                    break;
+                case KeptRowKind.ToolCall:
+                    rows.Add(new ToolCallRow(
+                        r.ItemId,
+                        r.TurnSeq,
+                        r.ItemId,
+                        r.CodeOrToolName ?? "tool",
+                        r.SecondaryText ?? string.Empty,
+                        r.IsError ? ToolPhase.Error : ToolPhase.Completed,
+                        null,
+                        r.IsError));
+                    break;
+                case KeptRowKind.Command:
+                    rows.Add(new CommandRow(r.ItemId, r.TurnSeq, r.ItemId, r.CodeOrToolName ?? "command", r.SecondaryText, !r.IsError, r.PrimaryText));
+                    break;
+                case KeptRowKind.Notice:
+                    rows.Add(new NoticeRow(r.ItemId, r.TurnSeq, r.CodeOrToolName ?? "notice", r.PrimaryText, r.IsError));
+                    break;
+            }
+        }
+        return rows;
+    }
+
+    private string FilePathFor(SessionKey scope)
+    {
+        var raw = $"{scope.RuntimeId}__{scope.ProfileId}__{scope.SessionId}";
+        var safe = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(raw)));
+        return Path.Combine(_directory, $"{safe[..24].ToLowerInvariant()}.kept.json");
+    }
+
+    private static KeptChatRow? TrySanitizeRow(ChatRow row) =>
+        row switch
+        {
+            UserMessageRow u => new KeptChatRow(
+                KeptRowKind.User,
+                u.ItemId,
+                u.TurnSeq,
+                SecretRedactor.RedactAndTruncate(u.Text, 4000)),
+            MarkdownBlockRow md => new KeptChatRow(
+                KeptRowKind.Markdown,
+                md.ItemId,
+                md.TurnSeq,
+                SecretRedactor.RedactAndTruncate(md.Markdown, 8000)),
+            ReasoningBlockRow rs => new KeptChatRow(
+                KeptRowKind.Reasoning,
+                rs.ItemId,
+                rs.TurnSeq,
+                SecretRedactor.RedactAndTruncate(rs.Text, 4000)),
+            ToolCallRow tc => new KeptChatRow(
+                KeptRowKind.ToolCall,
+                tc.ItemId,
+                tc.TurnSeq,
+                SecretRedactor.RedactAndTruncate(tc.OutputSummary ?? string.Empty, 400),
+                SecretRedactor.RedactAndTruncate(tc.ArgumentsJson, 200),
+                SecretRedactor.RedactAndTruncate(tc.ToolName, 120),
+                tc.IsError),
+            CommandRow cmd => new KeptChatRow(
+                KeptRowKind.Command,
+                cmd.ItemId,
+                cmd.TurnSeq,
+                SecretRedactor.RedactAndTruncate(cmd.ResultText ?? string.Empty, 400),
+                cmd.Args is null ? null : SecretRedactor.RedactAndTruncate(cmd.Args, 400),
+                SecretRedactor.RedactAndTruncate(cmd.Name, 120),
+                cmd.Succeeded == false),
+            NoticeRow n => new KeptChatRow(
+                KeptRowKind.Notice,
+                n.ItemId,
+                n.TurnSeq,
+                SecretRedactor.RedactAndTruncate(n.DiagnosticKey, 200),
+                CodeOrToolName: SecretRedactor.RedactAndTruncate(n.Code, 120),
+                IsError: n.IsError),
+            _ => null,
+        };
+}

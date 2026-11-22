@@ -18,4 +18,8 @@
   <ItemGroup>
     <ProjectReference Include="..\DshMobile.Core\DshMobile.Core.csproj" />
   </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="DshMobile.Agent.Tests" />
+  </ItemGroup>
 </Project>
