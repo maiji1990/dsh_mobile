@@ -71,8 +71,26 @@ public static class GuestAssetProvisioner
 
     private const string StartupFsCacheShimResource = "DshMobile.Guest.startup-fs-cache-shim.mjs";
 
+    /// <summary>路线 B 原生端使用的受控裁剪 --patch 资产文件名（禁用纯浏览器 UI 行，保留控制器与 ui_*）。</summary>
+    public const string WebTrimPatchName = "dsh-web-trim-patch.yml";
+
+    /// <summary>裁剪 --patch 在 guest 内的路径。</summary>
+    public const string GuestWebTrimPatch = RuntimeConstants.GuestCacheDir + "/" + UiFacadeAssets.HostSubDir + "/" + WebTrimPatchName;
+
+    private const string WebTrimPatchResource = "DshMobile.Guest.dsh-web-trim-patch.yml";
+
+    /// <summary>裁剪 --patch 在宿主机上的落盘路径。</summary>
+    public static string WebTrimPatchHostPath(RuntimeLayout layout)
+    {
+        ArgumentNullException.ThrowIfNull(layout);
+        return Path.Combine(UiFacadeAssets.HostDir(layout.GuestCacheDir), WebTrimPatchName);
+    }
+
     /// <summary>读取内嵌的 <c>Guest/Assets/startup-fs-cache-shim.mjs</c> 字节内容。</summary>
     public static byte[] ReadStartupFsCacheShimScript() => ReadResource(StartupFsCacheShimResource);
+
+    /// <summary>读取内嵌的 <c>Guest/Assets/dsh-web-trim-patch.yml</c> 字节内容。</summary>
+    public static byte[] ReadWebTrimPatch() => ReadResource(WebTrimPatchResource);
 
     /// <summary>The embedded bytes of this repo's <c>Guest/Assets/dsh-e2e.mjs</c>.</summary>
     public static byte[] ReadE2eScript() => ReadResource(E2eResource);
@@ -137,6 +155,10 @@ public static class GuestAssetProvisioner
             if (WriteIfDifferent(Path.Combine(dir, StartupFsCacheShimName), ReadStartupFsCacheShimScript()))
             {
                 written.Add(StartupFsCacheShimName);
+            }
+            if (WriteIfDifferent(Path.Combine(dir, WebTrimPatchName), ReadWebTrimPatch()))
+            {
+                written.Add(WebTrimPatchName);
             }
         });
         Step(failures, "ui facade", () =>

@@ -114,16 +114,19 @@ public sealed class ProotCommandBuilder(RuntimeLayout layout)
     }
 
     /// <summary>
-    /// <c>buildProotDshCommand</c> as <c>startDsh()</c> (first start) or the health loop's in-place restart calls it.
-    /// The two legacy call sites differ: the restart omits the guest-cache bind (and extra binds), so a DSH that was
-    /// restarted automatically runs without <c>/opt/dshmobile-cache</c> (recorded in docs/MIGRATION.md section 7).
+    /// Builds the PRoot DSH command line, always preserving <c>guest-cache</c> and <c>startup-fs-cache-shim.mjs</c>
+    /// (including on in-place restarts, fixing the legacy omission recorded in docs/MIGRATION.md section 7).
+    /// When <paramref name="trimmedWeb"/> is true and the staged Route B trim patch exists, passes it via <c>--patch</c>
+    /// before user/plugin overlays and appends <c>--no-open</c> after <c>--patch</c> flags.
     /// </summary>
-    public IReadOnlyList<string> DshCommand(bool inPlaceRestart = false)
+    public IReadOnlyList<string> DshCommand(bool inPlaceRestart = false, bool trimmedWeb = false)
     {
         var shim = File.Exists(layout.ShimFile) ? layout.ShimDir : null;
-        var guestCache = inPlaceRestart ? null : layout.GuestCacheDir;
+        var guestCache = layout.GuestCacheDir;
+        Directory.CreateDirectory(guestCache);
         // 仅在 guest-cache 已挂载且只读运行层 FS 缓存垫片已落盘时预加载（P0-2，不修改上游 link-shim.mjs）。
-        var useStartupFsCacheShim = guestCache is not null && File.Exists(GuestAssetProvisioner.StartupFsCacheShimHostPath(layout));
+        var useStartupFsCacheShim = File.Exists(GuestAssetProvisioner.StartupFsCacheShimHostPath(layout));
+        var useWebTrimPatch = trimmedWeb && File.Exists(GuestAssetProvisioner.WebTrimPatchHostPath(layout));
         Directory.CreateDirectory(layout.PilotEntryDir); // pilotHostDir(): mkdirs, as legacy
         var argv = LayeredPrefix(
             shim,
@@ -147,10 +150,19 @@ public sealed class ProotCommandBuilder(RuntimeLayout layout)
         argv.Add(RuntimeConstants.GuestDshBin);
         argv.Add("--profile");
         argv.Add(RuntimeConstants.DshWebProfile);
+        if (useWebTrimPatch)
+        {
+            argv.Add("--patch");
+            argv.Add(GuestAssetProvisioner.GuestWebTrimPatch);
+        }
         foreach (var patch in DshOverlayGuestPaths())
         {
             argv.Add("--patch");
             argv.Add(patch);
+        }
+        if (trimmedWeb)
+        {
+            argv.Add("--no-open");
         }
         return argv;
     }

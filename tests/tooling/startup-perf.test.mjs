@@ -361,3 +361,17 @@ test('CLI --help prints usage to stdout and exits 0', () => {
   assert.match(result.stdout, /usage:/);
   assert.equal(result.stderr, '');
 });
+
+test('parseLog accepts protocol.connected and protocol.initialized while stripping secret details', () => {
+  const log = [
+    threadtimeLine(record('protocol.connected', 14.2, { details: { token: 'secret-launch-token', cookie: 'v2.abc', attempt: 1 } })),
+    threadtimeLine(record('protocol.initialized', 19.8, { details: { cacheHit: false, token: 'do-not-leak' } })),
+  ].join('\n');
+  const parsed = parseLog(log);
+  assert.equal(parsed.skipped, 0);
+  assert.deepEqual(parsed.records.map((r) => r.stage), ['protocol.connected', 'protocol.initialized']);
+  const csv = toCsv(parsed.records);
+  assert.doesNotMatch(csv, /secret-launch-token|v2\.abc|do-not-leak/);
+  assert.match(csv, /protocol\.connected/);
+  assert.match(csv, /protocol\.initialized/);
+});

@@ -54,14 +54,14 @@ public sealed partial class LauncherCommandTests : IDisposable
     }
 
     [Fact]
-    public void DshCommand_InPlaceRestart_DropsOnlyTheGuestCacheBind()
+    public void DshCommand_InPlaceRestart_PreservesGuestCacheBind()
     {
         var (layout, _, _) = DeviceLikeLayout();
         var b = new ProotCommandBuilder(layout);
         var first = b.DshCommand();
         var restart = b.DshCommand(inPlaceRestart: true);
-        Assert.Equal(first.Where(a => !a.EndsWith(":/opt/dshmobile-cache", StringComparison.Ordinal)), restart);
-        Assert.Equal(first.Count - 1, restart.Count);
+        Assert.Equal(first, restart);
+        Assert.Contains(restart, a => a.EndsWith(":/opt/dshmobile-cache", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -75,7 +75,7 @@ public sealed partial class LauncherCommandTests : IDisposable
     }
 
     [Fact]
-    public void DshCommand_WithStartupFsCacheShim_AddsSecondImportAfterLinkShim_AndSkipsOnInPlaceRestart()
+    public void DshCommand_WithStartupFsCacheShim_AddsSecondImportAfterLinkShim_AndKeepsOnInPlaceRestart()
     {
         var (layout, _, _) = DeviceLikeLayout();
         var cacheShimHost = GuestAssetProvisioner.StartupFsCacheShimHostPath(layout);
@@ -93,10 +93,30 @@ public sealed partial class LauncherCommandTests : IDisposable
         Assert.Equal("--import", first[cacheImportIdx - 1]);
         Assert.True(cacheImportIdx < entryIdx);
 
-        // inPlaceRestart 未挂载 guest-cache，必须同时省略该 --import 以免 Node 找不到模块。
+        // PR-01 (N-01-01): inPlaceRestart preserves guest-cache and startup-fs-cache-shim.mjs.
         var restart = builder.DshCommand(inPlaceRestart: true);
-        Assert.DoesNotContain(GuestAssetProvisioner.GuestStartupFsCacheShim, restart);
+        Assert.Contains(GuestAssetProvisioner.GuestStartupFsCacheShim, restart);
         Assert.Contains(RuntimeConstants.LinkShimGuestPath, restart);
+    }
+
+    [Fact]
+    public void DshCommand_TrimmedWeb_PassesTrimPatchBeforeOverlays_AndNoOpenAtEnd()
+    {
+        var (layout, _, _) = DeviceLikeLayout();
+        var trimHost = GuestAssetProvisioner.WebTrimPatchHostPath(layout);
+        Directory.CreateDirectory(Path.GetDirectoryName(trimHost)!);
+        File.WriteAllText(trimHost, "- id: modules\n  disabled: true\n");
+
+        var uiOverlay = Path.Combine(layout.UserDataDir, ".dsh/dshmobile/dsh-official-plugin/dsh-official-plugin-overlay.yml");
+        Directory.CreateDirectory(Path.GetDirectoryName(uiOverlay)!);
+        File.WriteAllText(uiOverlay, "- insert: []\n");
+
+        var argv = new ProotCommandBuilder(layout).DshCommand(trimmedWeb: true).ToList();
+        var patches = argv.Select((a, i) => (a, i)).Where(t => t.a == "--patch").Select(t => argv[t.i + 1]).ToList();
+        Assert.Equal(
+            [GuestAssetProvisioner.GuestWebTrimPatch, "/root/projects/.dsh/dshmobile/dsh-official-plugin/dsh-official-plugin-overlay.yml"],
+            patches);
+        Assert.Equal("--no-open", argv[^1]);
     }
 
     [Fact]

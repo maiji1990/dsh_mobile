@@ -156,3 +156,13 @@ corepack 缓存，见 `src/DshMobile.Android/Assets/README.md`）。Shizuku 客�
 ## 2026-11-16：版本升级与发行自动化（本 PR 待验收）
 
 Runtime、DSH、Assets 三条独立上游跟踪流程已在 PR 中实现（详见 `docs/RELEASE_AUTOMATION.md`）。Node/DSH 不再以浮动 latest 进入发布构建，升级自动产生精确锁定 PR；主分支合并后由原 ARM64 双重构建和安装/冒烟验收门禁决定能否发布不可变 GitHub Release。APK 构建前从本仓库已发布的 Release 下载/校验 DSH 与 android-side。**该 PR 尚未验证新的 Node 26 / DSH 新版真机兼容，Stable 签名公钥/私钥仍由负责人配置与验收；不能宣称已完成 OTA**。
+
+## 2026-11-22：原生 Android 重构 PR-00 & PR-01（路线 B 持久传输层与宿主适配，并行不改默认 WebUI）
+
+- **PR-00（ADR-0033，已提交 `#72`）**：完成路线 A/B PoC 实测与选型裁决（[ADR-0033](ADR/0033-native-agent-client.md) 选定路线 B：`web` + 受控 `--patch` + `/api` + `/api/remote.mux`）、Markdig 1.6.0 引入与 `DshMobile.Agent` / CI 安全架构棘轮门禁（5 组 `Quality` 测试）。
+- **PR-01（本分支 `feat/native-pr01-remote-transport`，保留 `DshWebActivity` 不变）**：
+  - `N-01-01` / `N-01B-01`：修复 `ProotCommandBuilder.DshCommand(inPlaceRestart: true)` 遗漏 `guestCache` 挂载的历史差异，新增受控裁剪配置 `dsh-web-trim-patch.yml`（SHA-256 `ca9797888b7f6402a21a15dd9bd3308faeb936d50f171a31262d50824d605fd2`，禁用浏览器 UI / `modules` / telemetry，保留 `connection` / `session-controller` / `settings-controller` / `plugin-inventory` / `ui_*`）。
+  - `N-01-02`：扩展 `DshHostPhase`（`ProtocolConnecting` / `Initializing`）、`DshHostOptions`（`TrimmedWeb`、`ProtocolHandshakeAsync`）与 `StartupTrace` / `tooling/startup-perf.mjs` 的 `protocol.connected` / `protocol.initialized` 阶段。
+  - `N-01-03`：在 `RuntimeCoordinator` 新增多订阅异步排空钩子 `AddHostStoppingHook` 并以单测锁定控制面 `_op` 锁与数据面并发隔离。
+  - `N-01-04` / `N-01B-02` / `N-01B-03`：完成全量 STJ SourceGen 上下文（`AgentProtocolJsonContext`、`RpcId`、`RemoteWireCodec` 含 `multipart/form-data` 解析）与纯托管 loopback `DshRemoteConnection`（`/connect`、`/api/*` 401 自动刷新重试、`/api/remote.mux` `$events ready` 栅栏、指数退避重连、单写者流控、大消息限额与 `BeginDrainAsync`）；已通过 Fake HTTP/WS 契约测试及 Linux x86_64 真实 `@deepseek-ai/dsh@0.2.2-rc.5` 冒烟，**无 Android 17 arm64 真机证据（待真机验证）**。
+

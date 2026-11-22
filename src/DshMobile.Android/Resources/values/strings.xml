@@ -156,6 +156,8 @@
     <string name="home_detail_phase_dsh_spawned">DSH 进程已启动，等待首行输出…</string>
     <string name="home_detail_phase_first_output">DSH 已开始输出，等待启动令牌与本地端口…</string>
     <string name="home_detail_phase_token">已取得启动令牌，正在等待 Web 服务就绪…</string>
+    <string name="home_detail_phase_protocol">正在建立本地协议通道（/api/remote.mux）…</string>
+    <string name="home_detail_phase_initializing">正在完成协议握手校验…</string>
     <string name="home_detail_waiting">DSH 进程已启动，正在等待它的网页界面响应。</string>
     <string name="home_detail_ready">DSH %1$s · 只在本机访问；在后台运行时通知栏常驻</string>
     <string name="home_detail_stopping">正在结束 DSH 与 Linux 沙箱。</string>

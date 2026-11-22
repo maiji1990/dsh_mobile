@@ -88,16 +88,16 @@ PR-00 (基线 + 路线A/B PoC + ADR-0033 + DshMobile.Agent骨架 + 门禁)
 
 ### 公共任务（路线 A / B 均需完成）
 
-- [ ] **N-01-01｜复用 P0–P2 优化并修复 `ProotCommandBuilder` 遗留**
+- [x] **N-01-01｜复用 P0–P2 优化并修复 `ProotCommandBuilder` 遗留**
   - 确保新原生宿主完整复用 [ProotCommandBuilder.cs](../../src/DshMobile.Runtime/Guest/ProotCommandBuilder.cs) 的 `link-shim.mjs`、`startup-fs-cache-shim.mjs`、`PROOT_RO_CACHE_PREFIXES`、`PROOT_RO_CACHE_NONEXIST=0` 及 `--patch`（含 `ui_*`）；
   - 修复 `inPlaceRestart` 遗漏 `guestCache` 挂载的历史差异，并补齐向量/单测。
-- [ ] **N-01-02｜扩展 `DshHostPhase` 与 `StartupTrace` 新阶段**
+- [x] **N-01-02｜扩展 `DshHostPhase` 与 `StartupTrace` 新阶段**
   - 在 [DshHost.cs](../../src/DshMobile.Runtime/Hosting/DshHost.cs) / `IDshHost` 扩展阶段里程碑（`ProtocolConnecting` / `Initializing`），保持 `Ready` 仅在握手成功后置位；
   - 在 `StartupTrace` 与 `tooling/startup-perf.mjs`（schema v1 兼容）新增 `protocol.connected` / `protocol.initialized` 测点，并同步隐私回归测试。
-- [ ] **N-01-03｜控制面锁与数据面并发隔离设计**
-  - 在 [RuntimeCoordinator.cs](../../src/DshMobile.Application/Runtime/RuntimeCoordinator.cs) 确认数据面通道不持有 `_op` 锁；为 `HostStopping` 增加数据面排空钩子（拒绝新请求 → 清理挂起等待 → 关闭连接）。
-- [ ] **N-01-04｜全量 STJ Source Generation 协议编解码上下文**
-  - 在 `DshMobile.Agent/Protocol/` 建立 `[JsonSerializable]` 源生成上下文，严格校验零反射、支持字符串与数字 `RpcId`、错误对象 `code/message/data`。
+- [x] **N-01-03｜控制面锁与数据面并发隔离设计**
+  - 在 [RuntimeCoordinator.cs](../../src/DshMobile.Application/Runtime/RuntimeCoordinator.cs) 确认数据面通道不持有 `_op` 锁；为 `HostStopping` 增加数据面排空钩子（`AddHostStoppingHook` 多订阅排空：拒绝新请求 → 清理挂起等待 → 关闭连接）。
+- [x] **N-01-04｜全量 STJ Source Generation 协议编解码上下文**
+  - 在 `DshMobile.Agent/Protocol/` 建立 `[JsonSerializable]` 源生成上下文（[AgentProtocolJsonContext.cs](../../src/DshMobile.Agent/Protocol/AgentProtocolJsonContext.cs)），严格校验零反射、支持字符串与数字 `RpcId`（[RpcId.cs](../../src/DshMobile.Agent/Protocol/RpcId.cs)）、错误对象 `code/message/details/data`。
 
 ### 分支 A 任务（仅当 ADR-0033 选择路线 A 时执行）
 
@@ -113,14 +113,14 @@ PR-00 (基线 + 路线A/B PoC + ADR-0033 + DshMobile.Agent骨架 + 门禁)
 
 ### 分支 B 任务（仅当 ADR-0033 选择路线 B 时执行）
 
-- [ ] **N-01B-01｜裁剪型 `web`/Remote `--patch` 资产与主机启动**
-  - 生成固定受控 `--patch`（禁用 `frontend-static` 与浏览器 UI 名录，保留 `connection` / `session-controller` / `settings-controller` / `plugin-inventory` / `ui_*`），并钉住 SHA-256 哈希。
-- [ ] **N-01B-02｜原生 C# `DshRemoteConnection`（HTTP + `/api/remote.mux` WebSocket）**
-  - 仅允许 `127.0.0.1`、禁用代理与自动重定向；实现内存 launch token → 签名 Cookie 交换（token 绝不落日志）；
-  - 实现 `/api` 一元 RPC（含 multipart 附件协议按需支持）与 `/api/remote.mux` `$events` 逻辑流，严格等待 `{ type: 'ready' }` 首帧后才发布 connection generation；实现指数退避重连与取消清理。
-- [ ] **N-01B-03｜路线 B 契约测试与真机连接验收**
-  - Fake HTTP/WS Server 测试覆盖：401 刷新、首帧非 `ready` 拒绝、断线重连 generation 递增、取消旧 source 不覆盖新 generation、大消息限额。
-  - 真机验证裁剪配置启动、握手、收发与优雅停机，并记录与原 `web` 的启动耗时对照。
+- [x] **N-01B-01｜裁剪型 `web`/Remote `--patch` 资产与主机启动**
+  - 生成固定受控 `--patch`（[dsh-web-trim-patch.yml](../../src/DshMobile.Runtime/Guest/Assets/dsh-web-trim-patch.yml)，禁用 `frontend-static` / `modules` 与浏览器 `ui-*` 插件行，保留 `connection` / `session-controller` / `settings-controller` / `plugin-inventory` / `ui_*`），并钉住 SHA-256（`ca9797888b7f6402a21a15dd9bd3308faeb936d50f171a31262d50824d605fd2`）。
+- [x] **N-01B-02｜原生 C# `DshRemoteConnection`（HTTP + `/api/remote.mux` WebSocket）**
+  - 仅允许 `127.0.0.1`/loopback、禁用代理与自动重定向；实现内存 launch token → 签名 Cookie 交换（token 绝不落日志）；
+  - 实现 `/api` 一元 RPC（含 `multipart/form-data` 附件解析）与 `/api/remote.mux` `$events` 逻辑流，严格等待 `{ type: 'ready' }` 首帧后才发布 connection generation；实现指数退避重连与有序排空（`BeginDrainAsync`）。
+- [x] **N-01B-03｜路线 B 契约测试与真机连接验收**（桌面与 Fake Server 已绿；Android 17 arm64 真机 **待真机验证**）
+  - Fake HTTP/WS Server 测试（[DshRemoteConnectionTests.cs](../../tests/DshMobile.Agent.Tests/Transport/DshRemoteConnectionTests.cs)）覆盖：401 刷新、首帧非 `ready` 拒绝、断线重连（含指数退避与 generation 递增）、取消旧 source 不覆盖新 generation、大消息限额、多路复用流与 `$events/result`、有序排空；已在 Linux x86_64 对接真实 `@deepseek-ai/dsh@0.2.2-rc.5`（含 `dsh-web-trim-patch.yml`）验证 `/connect` + `$events ready` + `/api/settings/describe` & `credentials/describe` 往返；
+  - 真机验证裁剪配置启动、握手、收发与优雅停机，并记录与原 `web` 的启动耗时对照（**待真机验证**）。
 
 ---
 
