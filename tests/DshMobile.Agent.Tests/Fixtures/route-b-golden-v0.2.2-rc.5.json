@@ -1,0 +1,288 @@
+{
+  "eventsReady": {
+    "type": "item",
+    "streamId": "ev-1",
+    "value": {
+      "type": "ready",
+      "clientId": "00000000-0000-4000-8000-000000000001",
+      "host": {
+        "home": "/home/sanitized"
+      }
+    }
+  },
+  "sessionCreate": {
+    "type": "server-response",
+    "rpcId": "g-1",
+    "result": {
+      "ok": true,
+      "value": {
+        "sessionId": "session-00000000-0000-4000-8000-000000000010",
+        "agentPreset": "standard"
+      }
+    }
+  },
+  "sessionList": {
+    "type": "server-response",
+    "rpcId": "g-2",
+    "result": {
+      "ok": true,
+      "value": {
+        "items": [
+          {
+            "sessionId": "session-00000000-0000-4000-8000-000000000010",
+            "updatedAt": 1795345120714,
+            "agentAvailable": true,
+            "formatStatus": "current",
+            "running": false,
+            "blank": true,
+            "cwd": "/tmp/sanitized/proj",
+            "projections": {
+              "kind": "sequenced",
+              "asOfSeq": 2,
+              "values": {
+                "title": null,
+                "agentPreset": "standard"
+              }
+            }
+          }
+        ]
+      }
+    }
+  },
+  "sessionState": {
+    "type": "server-response",
+    "rpcId": "g-3",
+    "result": {
+      "ok": true,
+      "value": {
+        "cursor": 2,
+        "active": true,
+        "running": false,
+        "queue": [],
+        "pendingInput": []
+      }
+    }
+  },
+  "commandsList": {
+    "type": "server-response",
+    "rpcId": "g-4",
+    "result": {
+      "ok": true,
+      "value": [
+        {
+          "definitionId": "@deepseek-ai/dsh-command-compact",
+          "name": "compact",
+          "description": "Compact older conversation history"
+        },
+        {
+          "definitionId": "@deepseek-ai/dsh-command-goal",
+          "name": "goal",
+          "description": "Set or view the goal for a long-running task",
+          "input": {
+            "hint": "[<objective>|clear|edit <objective>|pause|resume]",
+            "attachments": true
+          }
+        },
+        {
+          "definitionId": "@deepseek-ai/dsh-permission-presets",
+          "name": "permission",
+          "description": "Switch the permission preset (sandbox mode + approval policy)",
+          "input": {
+            "hint": "<preset>"
+          }
+        },
+        {
+          "definitionId": "@deepseek-ai/dsh-plan-mode",
+          "name": "plan",
+          "description": "Enter or leave plan mode",
+          "input": {
+            "hint": "[off|message]",
+            "attachments": true
+          }
+        }
+      ]
+    }
+  },
+  "commandExecute": {
+    "type": "server-response",
+    "rpcId": "g-5",
+    "result": {
+      "ok": true,
+      "value": {
+        "commandId": "cmd-00000001-1",
+        "result": {
+          "kind": "success",
+          "text": "No compactable history yet."
+        }
+      }
+    }
+  },
+  "sessionEvents": {
+    "type": "server-response",
+    "rpcId": "g-6",
+    "result": {
+      "ok": true,
+      "value": {
+        "cursor": 4,
+        "records": [
+          {
+            "type": "event",
+            "event": {
+              "type": "permission/preset",
+              "seq": 0,
+              "time": 1795345120747,
+              "data": { "preset": "workspace-write" }
+            }
+          },
+          {
+            "type": "event",
+            "event": {
+              "type": "sandbox/mode",
+              "seq": 1,
+              "time": 1795345120752,
+              "data": { "mode": "workspace-write" }
+            }
+          },
+          {
+            "type": "event",
+            "event": {
+              "type": "approval/policy",
+              "seq": 2,
+              "time": 1795345120753,
+              "data": { "policy": "ask" }
+            }
+          },
+          {
+            "type": "event",
+            "event": {
+              "type": "command/run",
+              "seq": 3,
+              "time": 1795345120842,
+              "data": {
+                "commandId": "cmd-00000001-1",
+                "name": "compact",
+                "args": "",
+                "source": { "kind": "user" }
+              }
+            }
+          },
+          {
+            "type": "event",
+            "event": {
+              "type": "command/done",
+              "seq": 4,
+              "time": 1795345120848,
+              "data": {
+                "commandId": "cmd-00000001-1",
+                "kind": "success",
+                "text": "No compactable history yet."
+              }
+            }
+          }
+        ],
+        "hasMore": false
+      }
+    }
+  },
+  "credentialsDescribe": {
+    "type": "server-response",
+    "rpcId": "g-8",
+    "result": {
+      "ok": true,
+      "value": {
+        "deepseek_api_key": {
+          "configured": false,
+          "writable": true
+        }
+      }
+    }
+  },
+  "pluginInventory": {
+    "type": "server-response",
+    "rpcId": "g-9",
+    "result": {
+      "ok": true,
+      "value": {
+        "managementAvailable": false,
+        "entries": [
+          {
+            "entryId": "include",
+            "moduleName": "cordis:include",
+            "enabled": true,
+            "fiberPhase": "active"
+          },
+          {
+            "entryId": "localized-entry",
+            "moduleName": "@deepseek-ai/dsh-demo",
+            "meta": {
+              "description": {
+                "en": "Demo plugin",
+                "zh": "示例插件"
+              }
+            },
+            "enabled": true,
+            "fiberPhase": "active"
+          }
+        ]
+      }
+    }
+  },
+  "followSnapshot": {
+    "type": "item",
+    "streamId": "fl-1",
+    "value": {
+      "type": "snapshot",
+      "header": {
+        "version": 4,
+        "id": "session-00000000-0000-4000-8000-000000000010",
+        "createdAt": 1795345120714,
+        "cwd": "/tmp/sanitized/proj",
+        "isSeeded": false,
+        "agentPreset": "standard",
+        "extraFutureField": { "ignoredGracefully": true }
+      },
+      "cursor": 4,
+      "records": [
+        {
+          "type": "event",
+          "event": {
+            "type": "turn/end",
+            "seq": 5,
+            "time": 1795345120900,
+            "data": {
+              "turn": 1,
+              "reason": {
+                "kind": "error",
+                "error": { "code": "PROVIDER_UNAVAILABLE", "message": "upstream timed out" }
+              }
+            }
+          }
+        },
+        {
+          "type": "event",
+          "event": {
+            "type": "future/telemetry-marker",
+            "seq": 6,
+            "time": 1795345120950,
+            "ignorable": true,
+            "data": { "foo": "bar" }
+          }
+        }
+      ],
+      "hasMore": false
+    }
+  },
+  "forwardedUnknown": {
+    "type": "emit",
+    "event": "future/unknown-event",
+    "args": [{ "unexpected": 123 }]
+  },
+  "turnEndVariants": [
+    { "turn": 1, "reason": { "kind": "completed" } },
+    { "turn": 2, "reason": { "kind": "aborted", "reason": { "kind": "user" } } },
+    { "turn": 3, "reason": { "kind": "error", "error": { "code": "E_RATE_LIMIT", "message": "rate limited" } } },
+    { "turn": 4, "reason": { "kind": "max-tokens" } },
+    { "turn": 5, "reason": { "kind": "interrupted" } },
+    { "turn": 6, "reason": { "kind": "future-reason-v99" } }
+  ]
+}

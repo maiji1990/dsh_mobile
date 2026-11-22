@@ -165,4 +165,7 @@ Runtime、DSH、Assets 三条独立上游跟踪流程已在 PR 中实现（详�
   - `N-01-02`：扩展 `DshHostPhase`（`ProtocolConnecting` / `Initializing`）、`DshHostOptions`（`TrimmedWeb`、`ProtocolHandshakeAsync`）与 `StartupTrace` / `tooling/startup-perf.mjs` 的 `protocol.connected` / `protocol.initialized` 阶段。
   - `N-01-03`：在 `RuntimeCoordinator` 新增多订阅异步排空钩子 `AddHostStoppingHook` 并以单测锁定控制面 `_op` 锁与数据面并发隔离。
   - `N-01-04` / `N-01B-02` / `N-01B-03`：完成全量 STJ SourceGen 上下文（`AgentProtocolJsonContext`、`RpcId`、`RemoteWireCodec` 含 `multipart/form-data` 解析）与纯托管 loopback `DshRemoteConnection`（`/connect`、`/api/*` 401 自动刷新重试、`/api/remote.mux` `$events ready` 栅栏、指数退避重连、单写者流控、大消息限额与 `BeginDrainAsync`）；已通过 Fake HTTP/WS 契约测试及 Linux x86_64 真实 `@deepseek-ai/dsh@0.2.2-rc.5` 冒烟，**无 Android 17 arm64 真机证据（待真机验证）**。
+- **PR-02（本分支 `feat/native-pr02-gateway-facets`）**：
+  - `N-02-01` / `N-02-02`：在 `DshMobile.Agent/Domain/` 实现 `DshFailureCode`、`DshFailure`、`Outcome<T>`、`DshFailureMapper`、`DshCapabilities` 及 8 个小 Facet 接口 + `IDshGateway` + `DefaultDshGateway`（惰性 `Unavailable`）。
+  - `N-02-03` / `N-02-04`：完成 `RemoteDshGatewayClient`、`RemoteProtocolCodec`、`RouteBWireDtos`（全量注册 STJ SourceGen），覆盖图片 MIME/上限校验、IANA `clientTimeZone` 规范注入、`commands/list` & `commands/execute`、严格 schema 请求、`turn/end.reason` 与 `session/wait {}` 防坑、未知事件/字段降级与 `ProtocolMismatch` 拒绝；归档脱敏 Golden Fixture（`tests/DshMobile.Agent.Tests/Fixtures/route-b-golden-v0.2.2-rc.5.json`）与 [PROTOCOL_COMPATIBILITY.md](native/PROTOCOL_COMPATIBILITY.md)；**无 Android 17 arm64 真机证据（待真机验证）**。
 
