@@ -3,6 +3,7 @@ using Android.Views;
 using DshMobile.App.Automation;
 using DshMobile.App.Credentials;
 using DshMobile.App.Developer;
+using DshMobile.App.Plugins;
 using DshMobile.App.Remote;
 using DshMobile.App.RuntimeUi;
 using DshMobile.App.Ui;
@@ -44,6 +45,7 @@ public sealed class MoreFragment : Fragment, ITabRoot
         _content.RemoveAllViews();
         Rows.Header(_content, GetString(Resource.String.more_section_features));
         Rows.Add(_content, Resource.Drawable.ic_key, GetString(Resource.String.more_credentials), GetString(Resource.String.more_credentials_sub), () => Open(typeof(CredentialsActivity)), chevron: true);
+        Rows.Add(_content, Resource.Drawable.ic_extension, GetString(Resource.String.more_plugins), GetString(Resource.String.more_plugins_sub), () => Open(typeof(PluginsActivity)), chevron: true);
         Rows.Add(_content, Resource.Drawable.ic_phone, GetString(Resource.String.more_automation), GetString(Resource.String.more_automation_sub), () => Open(typeof(AutomationActivity)), chevron: true);
         Rows.Add(_content, Resource.Drawable.ic_cloud, GetString(Resource.String.more_remote), GetString(Resource.String.more_remote_sub), () => Open(typeof(RemoteActivity)), chevron: true);
 

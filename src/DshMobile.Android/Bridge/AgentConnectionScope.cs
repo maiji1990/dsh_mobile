@@ -30,7 +30,11 @@ public sealed class AgentConnectionScope : IDisposable
     private IDshTokenSource? _activeTokenSource;
     private int _disposed;
 
-    public AgentConnectionScope(RuntimeCoordinator runtime, RuntimeLayout layout, Action<string> log)
+    public AgentConnectionScope(
+        RuntimeCoordinator runtime,
+        RuntimeLayout layout,
+        Action<string> log,
+        Func<CancellationToken, Task<RuntimeStartResult>>? restartHostAsync = null)
     {
         ArgumentNullException.ThrowIfNull(runtime);
         ArgumentNullException.ThrowIfNull(layout);
@@ -52,6 +56,11 @@ public sealed class AgentConnectionScope : IDisposable
         Chat = new ChatViewModel(_gateway, _transcripts, _requests, _sends, _reconciler, _keptStore);
         Credentials = new CredentialsViewModel(_gateway, Path.Combine(layout.HostStateDir, "custom-credential-refs.txt"));
         Sessions = new SessionsViewModel(_gateway, _requests);
+        var pluginOps = new RuntimePluginOperations(
+            runtime,
+            restartHostAsync ?? (ct => runtime.RestartWebHostAsync(ct)));
+        var pluginService = new PluginInventoryService(_gateway, pluginOps);
+        Plugins = new PluginsViewModel(_gateway, pluginService);
 
         Chat.StateChanged += OnChatStateChanged;
         _connection.GenerationChanged += OnGenerationChanged;
@@ -63,6 +72,8 @@ public sealed class AgentConnectionScope : IDisposable
     public CredentialsViewModel Credentials { get; }
 
     public SessionsViewModel Sessions { get; }
+
+    public PluginsViewModel Plugins { get; }
 
     /// <summary>只读盘点升级前留存的 <c>user-data/.dsh</c> 会话与凭据存在态（绝不读取密钥或改动原目录，N-05-05）。</summary>
     public WebProfileInventoryReport InspectWebProfileReadOnly()
@@ -100,6 +111,7 @@ public sealed class AgentConnectionScope : IDisposable
         {
             await _connection.ConnectAsync(handshakeCts.Token).ConfigureAwait(false);
             setPhase(DshHostPhase.Initializing);
+            Plugins.NotifyHostStarted();
             return new DshHostResult(true, RuntimeErrorCodes.Ok, null);
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
@@ -140,6 +152,7 @@ public sealed class AgentConnectionScope : IDisposable
             return;
         }
         Sessions.NotifyHostStopping();
+        Plugins.NotifyHostStopping();
         await Chat.NotifyHostStoppingAsync(ct).ConfigureAwait(false);
         await _connection.BeginDrainAsync(ct).ConfigureAwait(false);
         Volatile.Write(ref _activeTokenSource, null);
@@ -159,6 +172,7 @@ public sealed class AgentConnectionScope : IDisposable
 
     private async Task DisposeResourcesAsync()
     {
+        await Plugins.DisposeAsync().ConfigureAwait(false);
         await Sessions.DisposeAsync().ConfigureAwait(false);
         await Credentials.DisposeAsync().ConfigureAwait(false);
         await Chat.DisposeAsync().ConfigureAwait(false);
