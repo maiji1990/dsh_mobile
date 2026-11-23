@@ -7,6 +7,14 @@
         android:title="@string/chat_menu_refresh"
         app:showAsAction="ifRoom" />
     <item
+        android:id="@+id/chat_menu_switch_model"
+        android:title="@string/chat_menu_switch_model"
+        app:showAsAction="never" />
+    <item
+        android:id="@+id/chat_menu_credentials"
+        android:title="@string/more_credentials"
+        app:showAsAction="never" />
+    <item
         android:id="@+id/chat_menu_new_session"
         android:title="@string/chat_menu_new_session"
         app:showAsAction="never" />

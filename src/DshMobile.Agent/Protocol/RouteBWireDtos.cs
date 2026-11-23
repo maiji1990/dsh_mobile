@@ -9,6 +9,13 @@ public sealed record WireSessionListRequest(
 public sealed record WireSessionListArgs(
     [property: JsonPropertyName("_request")] WireSessionListRequest Request);
 
+public sealed record WireSessionProjectionValues(
+    [property: JsonPropertyName("title")] string? Title = null,
+    [property: JsonPropertyName("agentPreset")] string? AgentPreset = null);
+
+public sealed record WireSessionProjections(
+    [property: JsonPropertyName("values")] WireSessionProjectionValues? Values = null);
+
 public sealed record WireSessionSummary(
     [property: JsonPropertyName("agentAvailable")] bool AgentAvailable,
     [property: JsonPropertyName("formatStatus")] string? FormatStatus,
@@ -18,7 +25,8 @@ public sealed record WireSessionSummary(
     [property: JsonPropertyName("blank")] bool Blank,
     [property: JsonPropertyName("parentSessionId")] string? ParentSessionId = null,
     [property: JsonPropertyName("origin")] string? Origin = null,
-    [property: JsonPropertyName("cwd")] string? Cwd = null);
+    [property: JsonPropertyName("cwd")] string? Cwd = null,
+    [property: JsonPropertyName("projections")] WireSessionProjections? Projections = null);
 
 public sealed record WireSessionListValue(
     [property: JsonPropertyName("items")] IReadOnlyList<WireSessionSummary> Items);

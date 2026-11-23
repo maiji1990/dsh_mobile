@@ -10,11 +10,13 @@ using DshMobile.Agent.Engines;
 using DshMobile.Agent.Presentation;
 using DshMobile.Agent.Rendering;
 using DshMobile.App.Bridge;
+using DshMobile.App.Credentials;
 using DshMobile.App.Ui;
 using DshMobile.Runtime.Hosting;
 using Google.Android.Material.AppBar;
 using Google.Android.Material.Button;
 using Google.Android.Material.Chip;
+using Google.Android.Material.Dialog;
 using Google.Android.Material.FloatingActionButton;
 using Google.Android.Material.ProgressIndicator;
 using Google.Android.Material.Snackbar;
@@ -53,6 +55,7 @@ public sealed class ChatFragment : Fragment
     private View _unknownBanner = null!;
     private MaterialButton _unknownCheckBtn = null!;
     private MaterialButton _unknownResendBtn = null!;
+    private MaterialButton _loadOlderBtn = null!;
     private RecyclerView _list = null!;
     private View _empty = null!;
     private FloatingActionButton _scrollToBottom = null!;
@@ -69,6 +72,10 @@ public sealed class ChatFragment : Fragment
     private bool _followBottom = true;
     private bool _slashExpanded;
     private bool _connectInitiated;
+    private bool _cacheLoadInitiated;
+    private bool _onboardingPrompted;
+    private bool _openedCredentials;
+    private string? _requestedSessionId;
     private int _renderPosted;
     private PromptSendRequest? _lastSubmittedRequest;
     private IReadOnlyList<SlashCommandDescriptorView> _renderedSlash = [];
@@ -78,6 +85,7 @@ public sealed class ChatFragment : Fragment
         var view = inflater.Inflate(Resource.Layout.fragment_chat, container, false)!;
         _bridge = DshMobileApplication.Current.Bridge;
         _vm = _bridge.Agent.Chat;
+        _requestedSessionId = Arguments?.GetString(ChatActivity.ExtraSessionId);
 
         _toolbar = view.FindViewById<MaterialToolbar>(Resource.Id.chat_toolbar)!;
         _toolbar.NavigationClick += (_, _) => Activity?.Finish();
@@ -87,7 +95,7 @@ public sealed class ChatFragment : Fragment
         _headerDivider = view.FindViewById(Resource.Id.chat_header_divider)!;
         _sessionTitle = view.FindViewById<TextView>(Resource.Id.chat_session_title)!;
         _sessionSubtitle = view.FindViewById<TextView>(Resource.Id.chat_session_subtitle)!;
-        _sessionHeader.Click += (_, _) => _ = EnsureConnectedAsync();
+        _sessionHeader.Click += (_, _) => OnSessionHeaderClicked();
 
         _statusBanner = view.FindViewById(Resource.Id.chat_status_banner)!;
         _statusProgress = view.FindViewById<LinearProgressIndicator>(Resource.Id.chat_status_progress)!;
@@ -100,6 +108,9 @@ public sealed class ChatFragment : Fragment
         _unknownResendBtn = view.FindViewById<MaterialButton>(Resource.Id.chat_unknown_resend_btn)!;
         _unknownCheckBtn.Click += (_, _) => _ = RecoverLastSendAsync(userConfirmedResend: false);
         _unknownResendBtn.Click += (_, _) => _ = RecoverLastSendAsync(userConfirmedResend: true);
+
+        _loadOlderBtn = view.FindViewById<MaterialButton>(Resource.Id.chat_load_older_btn)!;
+        _loadOlderBtn.Click += (_, _) => _ = LoadOlderHistoryAsync();
 
         _list = view.FindViewById<RecyclerView>(Resource.Id.chat_list)!;
         _layoutManager = new LinearLayoutManager(RequireContext()) { StackFromEnd = false };
@@ -173,15 +184,32 @@ public sealed class ChatFragment : Fragment
     public override void OnStart()
     {
         base.OnStart();
+        if (_openedCredentials)
+        {
+            _openedCredentials = false;
+            _onboardingPrompted = false;
+            _ = _vm.RefreshCredentialReadinessAsync();
+        }
         _vm.StateChanged += OnVmStateChanged;
         _bridge.Changed += OnBridgeChanged;
         _vm.SetUiVisible(true);
         RenderState(_vm.State);
 
-        if (!_connectInitiated || (!_vm.State.IsConnected && !_vm.State.IsReconciling && _bridge.Runtime.Host?.State == DshHostState.Ready))
+        var sessionMismatch = !string.IsNullOrWhiteSpace(_requestedSessionId) &&
+            !string.Equals(_vm.State.ActiveSession.SessionId, _requestedSessionId, StringComparison.Ordinal);
+        var shouldLoadCache = !_cacheLoadInitiated;
+        var shouldConnect = !_connectInitiated || sessionMismatch || (!_vm.State.IsConnected && !_vm.State.IsReconciling && _bridge.Runtime.Host?.State == DshHostState.Ready);
+        if (shouldLoadCache)
+        {
+            _cacheLoadInitiated = true;
+        }
+        if (shouldConnect)
         {
             _connectInitiated = true;
-            _ = EnsureConnectedAsync();
+        }
+        if (shouldLoadCache || shouldConnect)
+        {
+            _ = StartupAttachSequenceAsync(shouldLoadCache, shouldConnect);
         }
     }
 
@@ -273,6 +301,17 @@ public sealed class ChatFragment : Fragment
         RenderStatusBanner(ctx, s);
         RenderUnknownSendBanner(s);
 
+        var canLoadOlder = s.IsConnected && s.Capabilities.HistoryReplay && s.Transcript.IsPartialHistory && s.Transcript.EarliestSeq is > 0;
+        _loadOlderBtn.Visibility = canLoadOlder ? ViewStates.Visible : ViewStates.Gone;
+        _loadOlderBtn.Enabled = !s.IsLoadingOlderHistory;
+        _loadOlderBtn.SetText(s.IsLoadingOlderHistory ? Resource.String.chat_loading_older : Resource.String.chat_load_older);
+
+        if (s.IsConnected && s.NeedsCredentialOnboarding && s.Capabilities.ManageCredentials && !_onboardingPrompted)
+        {
+            _onboardingPrompted = true;
+            ShowCredentialOnboardingDialog();
+        }
+
         var items = new List<ChatTimelineItem>(s.Transcript.Rows.Count + s.PendingRequests.Count);
         foreach (var row in s.Transcript.Rows)
         {
@@ -353,6 +392,13 @@ public sealed class ChatFragment : Fragment
 
         if (s.Transcript.IsPartialHistory || s.FailureCode is not null)
         {
+            if (IsCredentialFailure(s.FailureCode))
+            {
+                _statusText.SetText(Resource.String.credentials_onboarding_title);
+                _statusAction.Visibility = ViewStates.Visible;
+                _statusAction.SetText(Resource.String.credentials_onboarding_action);
+                return;
+            }
             _statusText.Text = s.IsConnected
                 ? Rows.Fmt(ctx, Resource.String.chat_status_partial_history, s.FailureCode ?? s.Transcript.FailureCode ?? "PARTIAL")
                 : Rows.Fmt(ctx, Resource.String.chat_status_disconnected, s.FailureCode ?? "DISCONNECTED");
@@ -464,8 +510,17 @@ public sealed class ChatFragment : Fragment
         {
             _ = _vm.RefreshHistoryAsync();
         }
+        else if (itemId == Resource.Id.chat_menu_switch_model)
+        {
+            OpenModelPicker();
+        }
+        else if (itemId == Resource.Id.chat_menu_credentials)
+        {
+            OpenCredentialsScreen();
+        }
         else if (itemId == Resource.Id.chat_menu_new_session)
         {
+            _requestedSessionId = null;
             _ = _vm.SwitchOrCreateSessionAsync(sessionId: null);
         }
         else if (itemId == Resource.Id.chat_menu_cancel)
@@ -474,8 +529,23 @@ public sealed class ChatFragment : Fragment
         }
     }
 
+    private void OnSessionHeaderClicked()
+    {
+        if (_vm.State.IsConnected && _vm.State.Capabilities.SwitchModelInSession)
+        {
+            OpenModelPicker();
+            return;
+        }
+        _ = EnsureConnectedAsync();
+    }
+
     private void OnStatusActionClicked()
     {
+        if (IsCredentialFailure(_vm.State.FailureCode))
+        {
+            OpenCredentialsScreen();
+            return;
+        }
         if (_bridge.Runtime.Host?.State != DshHostState.Ready)
         {
             _ = _bridge.RunStartAsync();
@@ -486,13 +556,51 @@ public sealed class ChatFragment : Fragment
         }
     }
 
+    private async Task StartupAttachSequenceAsync(bool loadCache, bool connect)
+    {
+        if (loadCache)
+        {
+            await LoadCacheFirstAsync().ConfigureAwait(false);
+        }
+        if (connect)
+        {
+            await EnsureConnectedAsync().ConfigureAwait(false);
+        }
+    }
+
+    private async Task LoadCacheFirstAsync()
+    {
+        try
+        {
+            var hasRows = false;
+            if (!string.IsNullOrWhiteSpace(_requestedSessionId))
+            {
+                await _vm.LoadCachedSessionAsync(_requestedSessionId).ConfigureAwait(false);
+                hasRows = _vm.State.Transcript.Rows.Count > 0;
+            }
+            else
+            {
+                hasRows = await _vm.LoadMostRecentCachedSessionAsync().ConfigureAwait(false);
+            }
+
+            if (hasRows)
+            {
+                Activity?.RunOnUiThread(() => (Activity as ChatActivity)?.MarkCacheFirstRendered());
+            }
+        }
+        catch (OperationCanceledException)
+        {
+        }
+    }
+
     private async Task EnsureConnectedAsync()
     {
         try
         {
             if (_bridge.Runtime.Host?.State == DshHostState.Ready)
             {
-                await _vm.ConnectAndAttachAsync().ConfigureAwait(false);
+                await _vm.ConnectAndAttachAsync(_requestedSessionId).ConfigureAwait(false);
+                _requestedSessionId = null;
             }
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
@@ -500,6 +608,89 @@ public sealed class ChatFragment : Fragment
             Log.Warn(BridgeHost.LogTag, "chat connect failed: " + ex.GetType().Name);
         }
     }
+
+    private async Task LoadOlderHistoryAsync()
+    {
+        _followBottom = false;
+        try
+        {
+            await _vm.LoadOlderHistoryAsync().ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+        }
+    }
+
+    private void OpenModelPicker()
+    {
+        var state = _vm.State;
+        if (!state.IsConnected || !state.Capabilities.SwitchModelInSession)
+        {
+            if (View is { } root)
+            {
+                Snackbar.Make(root, Resource.String.chat_model_switch_unsupported, Snackbar.LengthShort).Show();
+            }
+            return;
+        }
+
+        _ = RefreshAndShowModelPickerAsync();
+    }
+
+    private async Task RefreshAndShowModelPickerAsync()
+    {
+        if (_vm.State.ModelGroups is null or { Count: 0 })
+        {
+            await _vm.RefreshModelCatalogAsync().ConfigureAwait(false);
+        }
+        Activity?.RunOnUiThread(() =>
+        {
+            if (View is null || !IsAdded)
+            {
+                return;
+            }
+            ModelPickerDialog.Show(
+                RequireContext(),
+                _vm.State.ModelGroups,
+                _vm.State.CurrentModel,
+                spec => _ = SelectModelAndNotifyAsync(spec),
+                OpenCredentialsScreen);
+        });
+    }
+
+    private async Task SelectModelAndNotifyAsync(ModelSelectionSpec spec)
+    {
+        await _vm.SelectModelAsync(spec).ConfigureAwait(false);
+        Activity?.RunOnUiThread(() =>
+        {
+            if (View is { } root && _vm.State.ModelLabel is { } label && _vm.State.FailureCode is null)
+            {
+                Snackbar.Make(root, Rows.Fmt(RequireContext(), Resource.String.chat_model_switched, label), Snackbar.LengthShort).Show();
+            }
+        });
+    }
+
+    private void ShowCredentialOnboardingDialog()
+    {
+        var ctx = RequireContext();
+        var content = LayoutInflater.From(ctx)!.Inflate(Resource.Layout.dialog_credential_onboarding, null)!;
+        var dialog = new MaterialAlertDialogBuilder(ctx)
+            .SetTitle(Resource.String.credentials_onboarding_title)!
+            .SetView(content)!
+            .SetNegativeButton(Resource.String.credentials_onboarding_later, (_, _) => _vm.DismissCredentialOnboarding())!
+            .SetPositiveButton(Resource.String.credentials_onboarding_action, (_, _) => OpenCredentialsScreen())!
+            .Create()!;
+        dialog.CancelEvent += (_, _) => _vm.DismissCredentialOnboarding();
+        dialog.Show();
+    }
+
+    private void OpenCredentialsScreen()
+    {
+        _openedCredentials = true;
+        StartActivity(new Intent(RequireContext(), typeof(CredentialsActivity)));
+    }
+
+    private static bool IsCredentialFailure(string? code) =>
+        code is "CredentialsMissing" or "session_error.credentials_missing" or "session/provider-credentials-unavailable";
 
     private async Task SendOrCancelAsync()
     {

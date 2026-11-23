@@ -97,6 +97,19 @@ public static class UiPrefs
         editor.Apply();
     }
 
+    private const string WebInventoryDismissedKey = "web_profile_inventory_dismissed";
+
+    /// <summary>PR-05 N-05-05: 仅记录用户是否已关闭只读升级迁移横幅（布尔偏好，不含任何路径或凭据内容）。</summary>
+    public static bool WebInventoryDismissed(Context context) =>
+        context.GetSharedPreferences(File, FileCreationMode.Private)!.GetBoolean(WebInventoryDismissedKey, false);
+
+    public static void SetWebInventoryDismissed(Context context, bool dismissed)
+    {
+        var editor = context.GetSharedPreferences(File, FileCreationMode.Private)!.Edit()!;
+        editor.PutBoolean(WebInventoryDismissedKey, dismissed);
+        editor.Apply();
+    }
+
     /// <summary>ADR-0031 电源约束：低电量（≤15% 且未充电）或省电模式下不预热，把决定交给用户。</summary>
     public static (bool LowBattery, bool PowerSave) WarmupPower(Context context)
     {

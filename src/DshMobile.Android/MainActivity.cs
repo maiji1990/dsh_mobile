@@ -4,6 +4,7 @@ using AndroidX.Activity;
 using AndroidX.AppCompat.App;
 using AndroidX.Core.View;
 using AndroidX.Fragment.App;
+using DshMobile.App.Chats;
 using DshMobile.App.Files;
 using DshMobile.App.Home;
 using DshMobile.App.LocalNetwork;
@@ -33,6 +34,7 @@ public sealed class MainActivity : AppCompatActivity
     private static readonly (int Id, string Tag)[] Tabs =
     [
         (Resource.Id.nav_home, "home"),
+        (Resource.Id.nav_chats, "chats"),
         (Resource.Id.nav_files, "files"),
         (Resource.Id.nav_more, "more"),
     ];
@@ -213,6 +215,7 @@ public sealed class MainActivity : AppCompatActivity
 
     private static AndroidX.Fragment.App.Fragment Create(int id) => id switch
     {
+        _ when id == Resource.Id.nav_chats => new ChatsFragment(),
         _ when id == Resource.Id.nav_files => new FilesFragment(),
         _ when id == Resource.Id.nav_more => new MoreFragment(),
         _ => new HomeFragment(),

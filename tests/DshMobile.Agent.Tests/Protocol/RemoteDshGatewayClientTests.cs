@@ -107,6 +107,7 @@ public sealed class RemoteDshGatewayClientTests
         string? capturedCreateJson = null;
         string? capturedCmdJson = null;
         string? capturedEventResultJson = null;
+        string? capturedSettingsJson = null;
 
         server.OnHttpRequest = req =>
         {
@@ -131,6 +132,12 @@ public sealed class RemoteDshGatewayClientTests
             {
                 return Task.FromResult(FakeRemoteServer.HttpResponseData.Json(200,
                     WrapServerResponse(rpcId, fx.GetProperty("credentialsDescribe").GetProperty("result"))));
+            }
+            if (req.Path == "/api/settings/describe")
+            {
+                capturedSettingsJson = Encoding.UTF8.GetString(req.Body);
+                return Task.FromResult(FakeRemoteServer.HttpResponseData.Json(200,
+                    WrapOk(rpcId, """{"writable":true,"namespaces":[{"ns":"models","value":{"providers":{"custom":{"apiKeyEnv":"CUSTOM_ENV_KEY"}}}}]}""")));
             }
             if (req.Path == "/api/pluginInventory/list")
             {
@@ -296,6 +303,14 @@ public sealed class RemoteDshGatewayClientTests
         var followedSnap = await followTcs.Task.WaitAsync(TimeSpan.FromSeconds(5));
         Assert.Equal(2, followedSnap.Events.Count);
         await followOutcome.Value!.DisposeAsync();
+
+        // 8. `settings/describe` sends empty `{}` args and extracts `DEEPSEEK_API_KEY` + custom `apiKeyEnv` (F15)
+        var discoveredRefs = await gw.DiscoverCredentialRefsAsync();
+        Assert.True(discoveredRefs.IsOk);
+        Assert.Contains("DEEPSEEK_API_KEY", discoveredRefs.Value!);
+        Assert.Contains("CUSTOM_ENV_KEY", discoveredRefs.Value!);
+        using var settingsDoc = JsonDocument.Parse(capturedSettingsJson!);
+        Assert.Empty(settingsDoc.RootElement.GetProperty("payload").GetProperty("args").EnumerateObject());
     }
 
     [Fact]

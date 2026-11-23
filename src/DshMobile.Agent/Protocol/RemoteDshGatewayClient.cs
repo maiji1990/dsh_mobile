@@ -128,7 +128,9 @@ public sealed class RemoteDshGatewayClient : DefaultDshGateway, IDisposable
             s.ParentSessionId,
             s.Origin,
             s.Cwd,
-            s.FormatStatus)).ToArray();
+            s.FormatStatus,
+            s.Projections?.Values?.Title,
+            s.Projections?.Values?.AgentPreset)).ToArray();
 
         return Outcome<IReadOnlyList<SessionSummaryView>>.Ok(mapped);
     }
@@ -554,13 +556,129 @@ public sealed class RemoteDshGatewayClient : DefaultDshGateway, IDisposable
             dto.Selected.ReasoningEffort));
     }
 
+    private const int MaxDescribeRefs = 64;
+
+    // 对齐 `@deepseek-ai/dsh-credentials` 与各 Provider 插件规范的大写 POSIX 凭据引用名（F15）。
+    private static readonly string[] BuiltinCredentialRefs =
+    [
+        "DEEPSEEK_API_KEY",
+        "OPENAI_API_KEY",
+        "ANTHROPIC_API_KEY",
+        "GEMINI_API_KEY",
+        "OPENROUTER_API_KEY",
+    ];
+
+    public static bool IsValidCredentialRef(string? candidate)
+    {
+        if (string.IsNullOrEmpty(candidate))
+        {
+            return false;
+        }
+        var first = candidate[0];
+        if (!((first >= 'A' && first <= 'Z') || (first >= 'a' && first <= 'z') || first == '_'))
+        {
+            return false;
+        }
+        for (var i = 1; i < candidate.Length; i++)
+        {
+            var c = candidate[i];
+            if (!((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '_'))
+            {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    public override async Task<Outcome<IReadOnlyList<string>>> DiscoverCredentialRefsAsync(CancellationToken ct = default)
+    {
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        var ordered = new List<string>();
+        foreach (var builtin in BuiltinCredentialRefs)
+        {
+            if (seen.Add(builtin))
+            {
+                ordered.Add(builtin);
+            }
+        }
+
+        // `settings/describe` 在 0.2.2-rc.5 中不接受任何请求参数（传 `{}`），否则会被 Typert 拒绝（F15）。
+        var rpc = await CallRawAsync("settings/describe", RemoteWireCodec.EmptyArgs, ct).ConfigureAwait(false);
+        if (rpc.IsOk)
+        {
+            CollectCredentialRefsFromElement(rpc.Value, ordered, seen);
+        }
+
+        return Outcome<IReadOnlyList<string>>.Ok(ordered);
+    }
+
+    private static void CollectCredentialRefsFromElement(JsonElement el, List<string> target, HashSet<string> seen)
+    {
+        if (target.Count >= MaxDescribeRefs)
+        {
+            return;
+        }
+        switch (el.ValueKind)
+        {
+            case JsonValueKind.Object:
+                foreach (var prop in el.EnumerateObject())
+                {
+                    if (target.Count >= MaxDescribeRefs)
+                    {
+                        break;
+                    }
+                    if (IsCredentialRefPropertyName(prop.Name) &&
+                        prop.Value.ValueKind == JsonValueKind.String &&
+                        prop.Value.GetString() is { Length: > 0 } refName &&
+                        IsValidCredentialRef(refName) &&
+                        seen.Add(refName))
+                    {
+                        target.Add(refName);
+                    }
+                    else
+                    {
+                        CollectCredentialRefsFromElement(prop.Value, target, seen);
+                    }
+                }
+                break;
+            case JsonValueKind.Array:
+                foreach (var item in el.EnumerateArray())
+                {
+                    if (target.Count >= MaxDescribeRefs)
+                    {
+                        break;
+                    }
+                    CollectCredentialRefsFromElement(item, target, seen);
+                }
+                break;
+        }
+    }
+
+    private static bool IsCredentialRefPropertyName(string name) =>
+        name.Equals("apiKeyEnv", StringComparison.OrdinalIgnoreCase) ||
+        name.Equals("credentialRef", StringComparison.OrdinalIgnoreCase) ||
+        name.Equals("accountRef", StringComparison.OrdinalIgnoreCase) ||
+        name.EndsWith("ApiKeyEnv", StringComparison.OrdinalIgnoreCase) ||
+        name.EndsWith("CredentialRef", StringComparison.OrdinalIgnoreCase);
+
     public override async Task<Outcome<IReadOnlyDictionary<string, CredentialStatusView>>> DescribeCredentialsAsync(
         IReadOnlyList<string> refs,
         CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(refs);
+        var sanitizedRefs = refs
+            .Where(IsValidCredentialRef)
+            .Distinct(StringComparer.Ordinal)
+            .Take(MaxDescribeRefs)
+            .ToArray();
+        if (sanitizedRefs.Length == 0)
+        {
+            return Outcome<IReadOnlyDictionary<string, CredentialStatusView>>.Ok(
+                new Dictionary<string, CredentialStatusView>(StringComparer.Ordinal));
+        }
+
         var args = JsonSerializer.SerializeToElement(
-            new WireCredentialsDescribeArgs(refs),
+            new WireCredentialsDescribeArgs(sanitizedRefs),
             AgentProtocolJsonContext.Default.WireCredentialsDescribeArgs);
 
         var rpc = await CallRawAsync("credentials/describe", args, ct).ConfigureAwait(false);

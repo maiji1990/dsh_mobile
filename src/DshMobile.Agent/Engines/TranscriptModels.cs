@@ -154,4 +154,5 @@ public sealed record ChatSnapshot(
     string? FailureCode,
     IReadOnlyList<ChatRow> Rows,
     TranscriptCounters Counters,
-    string? SessionTitle = null);
+    string? SessionTitle = null,
+    long? EarliestSeq = null);

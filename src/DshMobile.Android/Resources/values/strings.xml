@@ -482,4 +482,67 @@
     <string name="chat_external_link_open">打开</string>
     <string name="chat_image_rejected">图片校验未通过（%1$s）</string>
     <string name="chat_error_banner">操作受限（%1$s）</string>
+
+    <!-- PR-05: Native Onboarding / Credentials / Models / Sessions / Web Inventory. -->
+    <string name="nav_chats">对话</string>
+    <string name="more_credentials">模型与凭据配置</string>
+    <string name="more_credentials_sub">配置 DeepSeek 及兼容 Provider API Key（不回显明文）</string>
+    <string name="home_shortcut_credentials_sub">原生 API Key 配置与就绪检查</string>
+    <string name="credentials_title">Provider 与凭据</string>
+    <string name="credentials_intro">API Key 通过 DSH 官方凭据通道写入私有凭据存储，界面仅显示已配置状态与脱敏掩码，绝不回显明文或落日志。</string>
+    <string name="credentials_host_required">需先启动 DSH 后才能查询和写入凭据。</string>
+    <string name="credentials_add_custom">新增自定义引用</string>
+    <string name="credentials_configured">已配置</string>
+    <string name="credentials_not_configured">未配置</string>
+    <string name="credentials_readonly">只读来源</string>
+    <string name="credentials_source_fmt">来源：%1$s</string>
+    <string name="credentials_action_set">设置 / 更新</string>
+    <string name="credentials_action_clear">清除</string>
+    <string name="credentials_dialog_ref_hint">凭据引用名（例如 DEEPSEEK_API_KEY）</string>
+    <string name="credentials_invalid_ref">引用名需符合环境变量格式（字母或下划线开头，仅含字母/数字/下划线）</string>
+    <string name="credentials_dialog_secret_hint">输入 API Key（不会回显保存）</string>
+    <string name="credentials_dialog_save">保存凭据</string>
+    <string name="credentials_dialog_clear_title">清除该凭据？</string>
+    <string name="credentials_dialog_clear_msg">清除后相关 Provider 模型将无法继续发起请求，可随时重新录入。</string>
+    <string name="credentials_status_saved">凭据已安全写入 DSH</string>
+    <string name="credentials_status_cleared">已清除凭据</string>
+    <string name="credentials_onboarding_title">尚未检测到可用的 API Key</string>
+    <string name="credentials_onboarding_body">在发起原生对话前，请至少配置一项 Provider 凭据（如 DeepSeek API Key）。整个流程无需打开 Web 界面。</string>
+    <string name="credentials_onboarding_action">立即配置</string>
+    <string name="credentials_onboarding_later">稍后</string>
+
+    <string name="chat_menu_switch_model">切换模型</string>
+    <string name="chat_model_picker_title">选择模型与推理档位</string>
+    <string name="chat_model_picker_empty">当前暂无可用模型，请先检查 Provider 凭据或网络连接。</string>
+    <string name="chat_model_picker_open_creds">去配置凭据</string>
+    <string name="chat_model_switched">已切换模型：%1$s</string>
+    <string name="chat_model_switch_unsupported">当前 DSH 不支持运行中切换模型（Unsupported）</string>
+    <string name="chat_load_older">加载更早历史消息</string>
+    <string name="chat_loading_older">正在加载更早历史…</string>
+
+    <string name="chats_title">原生会话</string>
+    <string name="chats_search_hint">搜索会话标题、ID 或工作区…</string>
+    <string name="chats_new_desc">新建会话</string>
+    <string name="chats_host_stopped">DSH 尚未启动，请先在首页启动后再拉取或新建实时会话。</string>
+    <string name="chats_empty">暂无会话，点击右下角 + 开启新对话。</string>
+    <string name="chats_badge_running">运行中</string>
+    <string name="chats_badge_pending">待确认 %1$d</string>
+    <string name="chats_badge_subagent">子会话</string>
+    <string name="chats_badge_active">当前</string>
+    <string name="chats_action_open">打开</string>
+    <string name="chats_action_rename">重命名</string>
+    <string name="chats_action_fork">Fork 分支</string>
+    <string name="chats_action_cancel">停止轮次</string>
+    <string name="chats_rename_title">重命名会话</string>
+    <string name="chats_rename_hint">输入新的会话标题</string>
+    <string name="chats_rename_save">保存</string>
+    <string name="chats_cancel_unsupported">当前 DSH 不支持取消该会话（Unsupported）</string>
+
+    <string name="web_inv_title">检测到历史 Web 数据目录（只读）</string>
+    <string name="web_inv_summary">已原样保留 user-data/.dsh（未修改或删除）：可恢复会话 %1$d 个，需迁移/暂不支持直开 %2$d 个。</string>
+    <string name="web_inv_summary_creds">已原样保留 user-data/.dsh 与凭据文件：可恢复会话 %1$d 个，需迁移/暂不支持直开 %2$d 个。</string>
+    <string name="web_inv_details">查看详情</string>
+    <string name="web_inv_dismiss">知道了</string>
+    <string name="web_inv_dialog_title">旧 Web Profile 只读盘点</string>
+    <string name="web_inv_dialog_intro">本检查仅读取目录列表以确认迁移兼容性，绝不读取凭据明文，也不改名或删除原有数据。</string>
 </resources>

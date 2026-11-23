@@ -40,7 +40,13 @@ public sealed record KeptTranscriptRecord(
     long CursorSeq,
     RunPhase Phase,
     long SavedAtUnixMs,
-    IReadOnlyList<KeptChatRow> Rows);
+    IReadOnlyList<KeptChatRow> Rows,
+    string? SessionTitle = null);
+
+public sealed record LoadedRecentSession(
+    SessionKey Scope,
+    string? SessionTitle,
+    KeptTranscriptRecord Record);
 
 [JsonSourceGenerationOptions(
     PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
@@ -89,24 +95,70 @@ public sealed class KeptTranscriptStore
             }
         }
 
+        var nowUnixMs = _time.GetUtcNow().ToUnixTimeMilliseconds();
+        var sanitizedTitle = string.IsNullOrWhiteSpace(snapshot.SessionTitle)
+            ? null
+            : SecretRedactor.RedactAndTruncate(snapshot.SessionTitle, 120);
         var record = new KeptTranscriptRecord(
             CurrentSchemaVersion,
             snapshot.Session,
             snapshot.CursorSeq,
             snapshot.Phase,
-            _time.GetUtcNow().ToUnixTimeMilliseconds(),
-            keptRows);
+            nowUnixMs,
+            keptRows,
+            sanitizedTitle);
 
         var json = JsonSerializer.Serialize(record, KeptTranscriptJsonContext.Default.KeptTranscriptRecord);
-        var finalPath = FilePathFor(snapshot.Session);
-        var tmpPath = $"{finalPath}.{Guid.NewGuid():N}.tmp";
+        await WriteFileAtomicallyAsync(FilePathFor(snapshot.Session), json, ct).ConfigureAwait(false);
+    }
 
+    /// <summary>冷启 0.2s 从已有 <c>*.kept.json</c> 快照恢复最近一次会话（N-05-04），损坏或不存在时安静返回 null。</summary>
+    public async Task<LoadedRecentSession?> TryLoadMostRecentAsync(CancellationToken ct = default)
+    {
+        if (!Directory.Exists(_directory))
+        {
+            return null;
+        }
+        LoadedRecentSession? newest = null;
+        long newestSavedAt = long.MinValue;
+        foreach (var path in Directory.EnumerateFiles(_directory, "*.kept.json"))
+        {
+            ct.ThrowIfCancellationRequested();
+            try
+            {
+                var json = await File.ReadAllTextAsync(path, ct).ConfigureAwait(false);
+                var parsed = JsonSerializer.Deserialize(json, KeptTranscriptJsonContext.Default.KeptTranscriptRecord);
+                if (parsed is null || parsed.SchemaVersion != CurrentSchemaVersion || string.IsNullOrWhiteSpace(parsed.Scope.SessionId))
+                {
+                    continue;
+                }
+                if (newest is null || parsed.SavedAtUnixMs > newestSavedAt)
+                {
+                    newestSavedAt = parsed.SavedAtUnixMs;
+                    newest = new LoadedRecentSession(parsed.Scope, parsed.SessionTitle, parsed);
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                _ = ex;
+            }
+        }
+        return newest;
+    }
+
+    private static async Task WriteFileAtomicallyAsync(string finalPath, string content, CancellationToken ct)
+    {
+        var tmpPath = $"{finalPath}.{Guid.NewGuid():N}.tmp";
         try
         {
             await using (var fs = new FileStream(tmpPath, FileMode.CreateNew, FileAccess.Write, FileShare.None, 4096, useAsync: true))
             await using (var writer = new StreamWriter(fs))
             {
-                await writer.WriteAsync(json.AsMemory(), ct).ConfigureAwait(false);
+                await writer.WriteAsync(content.AsMemory(), ct).ConfigureAwait(false);
                 await writer.FlushAsync(ct).ConfigureAwait(false);
                 fs.Flush(flushToDisk: true);
             }

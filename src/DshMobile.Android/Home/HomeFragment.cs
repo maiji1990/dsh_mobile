@@ -4,6 +4,7 @@ using Android.Views;
 using DshMobile.App.Automation;
 using DshMobile.App.Bridge;
 using DshMobile.App.Chat;
+using DshMobile.App.Credentials;
 using DshMobile.App.LocalNetwork;
 using DshMobile.App.Remote;
 using DshMobile.App.RuntimeUi;
@@ -86,8 +87,9 @@ public sealed class HomeFragment : Fragment, ITabRoot
 
         var grid = view.FindViewById<GridLayout>(Resource.Id.shortcuts)!;
         _automationSubtitle = Shortcut(grid, Resource.Drawable.ic_phone, Resource.String.more_automation, Resource.String.home_shortcut_automation_sub, typeof(AutomationActivity));
+        Shortcut(grid, Resource.Drawable.ic_key, Resource.String.more_credentials, Resource.String.home_shortcut_credentials_sub, typeof(CredentialsActivity));
         Shortcut(grid, Resource.Drawable.ic_cloud, Resource.String.more_remote, Resource.String.home_shortcut_remote_sub, typeof(RemoteActivity));
-        Shortcut(grid, Resource.Drawable.ic_storage, Resource.String.more_runtime, Resource.String.home_shortcut_runtime_sub, typeof(RuntimeActivity), columnSpan: 2);
+        Shortcut(grid, Resource.Drawable.ic_storage, Resource.String.more_runtime, Resource.String.home_shortcut_runtime_sub, typeof(RuntimeActivity));
         return view;
     }
 

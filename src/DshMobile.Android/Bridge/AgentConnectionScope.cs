@@ -6,6 +6,7 @@ using DshMobile.Application.Runtime;
 using DshMobile.Core.Diagnostics;
 using DshMobile.Runtime;
 using DshMobile.Runtime.Hosting;
+using DshMobile.Runtime.Migration;
 
 namespace DshMobile.App.Bridge;
 
@@ -23,6 +24,7 @@ public sealed class AgentConnectionScope : IDisposable
     private readonly SendStateMachine _sends;
     private readonly HistoryReconciler _reconciler;
     private readonly KeptTranscriptStore _keptStore;
+    private readonly RuntimeLayout _layout;
     private readonly Action<string> _log;
     private readonly IDisposable _stoppingHook;
     private IDshTokenSource? _activeTokenSource;
@@ -33,6 +35,7 @@ public sealed class AgentConnectionScope : IDisposable
         ArgumentNullException.ThrowIfNull(runtime);
         ArgumentNullException.ThrowIfNull(layout);
         ArgumentNullException.ThrowIfNull(log);
+        _layout = layout;
         _log = log;
 
         var connOptions = new RemoteConnectionOptions(new Uri(RuntimeConstants.DshBaseUrl));
@@ -47,12 +50,28 @@ public sealed class AgentConnectionScope : IDisposable
         _reconciler = new HistoryReconciler(_gateway, _gateway);
         _keptStore = new KeptTranscriptStore(Path.Combine(layout.HostStateDir, "agent-cache"));
         Chat = new ChatViewModel(_gateway, _transcripts, _requests, _sends, _reconciler, _keptStore);
+        Credentials = new CredentialsViewModel(_gateway, Path.Combine(layout.HostStateDir, "custom-credential-refs.txt"));
+        Sessions = new SessionsViewModel(_gateway, _requests);
 
+        Chat.StateChanged += OnChatStateChanged;
         _connection.GenerationChanged += OnGenerationChanged;
         _stoppingHook = runtime.AddHostStoppingHook(NotifyHostStoppingAsync);
     }
 
     public ChatViewModel Chat { get; }
+
+    public CredentialsViewModel Credentials { get; }
+
+    public SessionsViewModel Sessions { get; }
+
+    /// <summary>只读盘点升级前留存的 <c>user-data/.dsh</c> 会话与凭据存在态（绝不读取密钥或改动原目录，N-05-05）。</summary>
+    public WebProfileInventoryReport InspectWebProfileReadOnly()
+    {
+        var remoteIds = Sessions.State.Sessions
+            .Select(s => s.SessionId)
+            .ToHashSet(StringComparer.Ordinal);
+        return WebProfileInventory.InspectReadOnly(_layout.UserDataDir, remoteIds);
+    }
 
     /// <summary>
     /// 在 <see cref="DshHost.StartAsync"/> 就绪后执行 Route B 协议握手，挂载 <see cref="StartupTrace"/>
@@ -98,6 +117,14 @@ public sealed class AgentConnectionScope : IDisposable
         }
     }
 
+    private void OnChatStateChanged(ChatUiState state)
+    {
+        if (state.ActiveSession.SessionId is { } sid and not "pending")
+        {
+            Sessions.SetActiveSessionId(sid);
+        }
+    }
+
     private void OnGenerationChanged(ConnectionGeneration? generation)
     {
         if (generation is not null)
@@ -112,6 +139,7 @@ public sealed class AgentConnectionScope : IDisposable
         {
             return;
         }
+        Sessions.NotifyHostStopping();
         await Chat.NotifyHostStoppingAsync(ct).ConfigureAwait(false);
         await _connection.BeginDrainAsync(ct).ConfigureAwait(false);
         Volatile.Write(ref _activeTokenSource, null);
@@ -123,6 +151,7 @@ public sealed class AgentConnectionScope : IDisposable
         {
             return;
         }
+        Chat.StateChanged -= OnChatStateChanged;
         _connection.GenerationChanged -= OnGenerationChanged;
         _stoppingHook.Dispose();
         _ = DisposeResourcesAsync();
@@ -130,6 +159,8 @@ public sealed class AgentConnectionScope : IDisposable
 
     private async Task DisposeResourcesAsync()
     {
+        await Sessions.DisposeAsync().ConfigureAwait(false);
+        await Credentials.DisposeAsync().ConfigureAwait(false);
         await Chat.DisposeAsync().ConfigureAwait(false);
         await _requests.DisposeAsync().ConfigureAwait(false);
         await _transcripts.DisposeAsync().ConfigureAwait(false);
