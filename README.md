@@ -1,5 +1,7 @@
 # DSH Mobile
 
+<img src="docs/brand/dsh-mobile-logo.png" width="160" align="right" alt="DSH Mobile">
+
 在 Android 手机上本地运行 [DeepSeek Harness（DSH）](https://www.npmjs.com/package/@deepseek-ai/dsh) 的客户端，用 **.NET 11 for Android（C#）** 编写。
 DSH 原样运行在 App 私有目录里的 Debian 沙箱（PRoot）中。App 负责安装与启停运行环境、承载官方网页界面，并提供文件、手机操控与远程主机等能力。
 

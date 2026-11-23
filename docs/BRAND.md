@@ -18,6 +18,7 @@
 | [dsh-mobile-art-1024.png](brand/dsh-mobile-art-1024.png) | 1024×1024 PNG，方形，圆形徽章满幅 | **母版**，所有图标由它生成 |
 | [dsh-mobile-logo.png](brand/dsh-mobile-logo.png) | 1024×1024 PNG，`#D8E8F7` 底，徽章 88% | README / 文档 |
 | [dsh-mobile-icon-512.png](brand/dsh-mobile-icon-512.png) | 512×512 PNG，不透明、不加圆角 | 应用商店列表图标 |
+| [preview-masks.png](brand/preview-masks.png) | 860×440 PNG | 圆形/方圆遮罩在 192 / 144 / 96 / 48 px 下的效果（脚本生成，用于评审与回归对照） |
 | `mipmap-{m,h,xh,xxh,xxxh}dpi/appicon_foreground.png` | 108 / 162 / 216 / 324 / 432 px，透明底 | 自适应图标前景层 |
 | `mipmap-*/appicon_background.png` | 同上尺寸，纯色 `#D8E8F7` | 自适应图标背景层 |
 | `mipmap-*/appicon.png` | 48 / 72 / 96 / 144 / 192 px，圆角 18%、四角透明 | API 26 以前的启动器 |
@@ -43,7 +44,7 @@
 python tooling/brand/build-icons.py
 ```
 
-脚本读取 `docs/brand/dsh-mobile-art-1024.png`（圆心 `(511.5, 511.5)`、半径 `504`）：自适应图标按 `72/108`，旧启动器与文档/商店图按 `88%`，一次生成全部密度与 `docs/brand/` 图。
+脚本读取 `docs/brand/dsh-mobile-art-1024.png`（圆心 `(511.5, 511.5)`、半径 `504`）：自适应图标按 `72/108`，旧启动器与文档/商店图按 `88%`，一次生成全部密度、`docs/brand/` 图与遮罩预览 `preview-masks.png`。
 
 ## 5. 若要用图像模型重出一版（可选）
 
