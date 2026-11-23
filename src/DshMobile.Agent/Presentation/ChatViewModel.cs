@@ -871,9 +871,24 @@ public sealed class ChatViewModel : IChatActions, IAsyncDisposable
         var clientId = Volatile.Read(ref _clientId);
         switch (evt)
         {
-            case ApprovalGatewayEvent or UserQuestionGatewayEvent:
-                _requests.IngestForwardedEvent(active, clientId, evt);
+            case ApprovalGatewayEvent ap:
+            {
+                var sid = string.IsNullOrWhiteSpace(ap.Request.AgentId) ? active.SessionId : ap.Request.AgentId;
+                var scope = string.Equals(sid, active.SessionId, StringComparison.Ordinal)
+                    ? active
+                    : new SessionKey(active.RuntimeId, active.ProfileId, sid);
+                _requests.IngestForwardedEvent(scope, clientId, evt);
                 break;
+            }
+            case UserQuestionGatewayEvent uq:
+            {
+                var sid = string.IsNullOrWhiteSpace(uq.Request.AgentId) ? active.SessionId : uq.Request.AgentId;
+                var scope = string.Equals(sid, active.SessionId, StringComparison.Ordinal)
+                    ? active
+                    : new SessionKey(active.RuntimeId, active.ProfileId, sid);
+                _requests.IngestForwardedEvent(scope, clientId, evt);
+                break;
+            }
             case ForwardedEventCancelledGatewayEvent cancelled:
                 _requests.CancelRequest(cancelled.EventId);
                 break;
