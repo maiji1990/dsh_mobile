@@ -6,8 +6,9 @@ Outputs: src/DshMobile.Android/Resources/mipmap-*/appicon*.png and docs/brand/*.
 
 Geometry of the master, in its own 1024 px canvas:
   disc centre (511.5, 511.5), disc radius 504  (the circular badge touches the canvas edge)
-The launcher composition places that disc at 86/108 of the adaptive-icon canvas (Android's 108 dp layer,
-72 dp visible circle), so the rim lettering survives every OEM mask with a small margin.
+The launcher composition places that disc at 72/108 of the adaptive-icon canvas (Android only shows the
+central 72 dp of the 108 dp layer), so the rim lettering sits exactly on the visible edge and no OEM mask
+can clip it. Legacy, docs and store images use 0.88 because nothing masks them.
 
 Usage:  python tooling/brand/build-icons.py [--master docs/brand/dsh-mobile-art-1024.png]
 """
@@ -73,6 +74,39 @@ def padded(source: Image.Image, size: int) -> Image.Image:
     return canvas.convert("RGB")
 
 
+def _visible(source: Image.Image) -> Image.Image:
+    """The 108 dp layer cropped to what a launcher actually shows (central 72 dp)."""
+    layer = Image.alpha_composite(background(432), foreground(source, 432))
+    s = round(432 * 72 / 108)
+    off = (432 - s) // 2
+    return layer.crop((off, off, off + s, off + s))
+
+
+def preview(source: Image.Image, path: Path) -> None:
+    """Mask preview sheet: circle / rounded-square masks at 192, 144, 96 and 48 px on light and dark plates."""
+    from PIL import Image as _Image
+
+    vis = _visible(source)
+    sizes = (192, 144, 96, 48)
+    cell = 210
+    sheet = _Image.new("RGB", (len(sizes) * cell + 20, 2 * cell + 20), (245, 246, 249))
+    for row, plate in enumerate(((242, 244, 248), (22, 24, 28))):
+        band = _Image.new("RGB", (len(sizes) * cell + 20, cell), plate)
+        for col, size in enumerate(sizes):
+            mask = _Image.new("L", (vis.width, vis.height), 0)
+            draw = ImageDraw.Draw(mask)
+            if col % 2 == 0:
+                draw.ellipse((1, 1, vis.width - 2, vis.height - 2), fill=255)
+            else:
+                draw.rounded_rectangle((1, 1, vis.width - 2, vis.height - 2), radius=round(vis.width * 0.34), fill=255)
+            icon = vis.copy()
+            icon.putalpha(mask)
+            icon = icon.resize((size, size), Image.LANCZOS)
+            band.paste(icon, (10 + col * cell + (cell - size) // 2, (cell - size) // 2), icon)
+        sheet.paste(band, (0, 10 + row * cell))
+    sheet.save(path, optimize=True)
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--master", default=str(DOCS / "dsh-mobile-art-1024.png"))
@@ -89,6 +123,7 @@ def main() -> None:
     DOCS.mkdir(parents=True, exist_ok=True)
     padded(source, 1024).save(DOCS / "dsh-mobile-logo.png", optimize=True)
     padded(source, 512).save(DOCS / "dsh-mobile-icon-512.png", optimize=True)
+    preview(source, DOCS / "preview-masks.png")
 
 
 if __name__ == "__main__":
