@@ -67,6 +67,50 @@ public sealed class RequestsEngine : IAsyncDisposable
         _transcripts = transcripts ?? throw new ArgumentNullException(nameof(transcripts));
         _time = time ?? TimeProvider.System;
         _holdWindow = holdWindow ?? DefaultHoldWindow;
+        _transcripts.ToolInvocationRecorded += OnToolInvocationRecorded;
+    }
+
+    private void OnToolInvocationRecorded(SessionKey scope, ToolInvocationSummary summary)
+    {
+        PendingInteractionCard[]? nextSnapshot = null;
+        lock (_gate)
+        {
+            if (Volatile.Read(ref _disposed) != 0 || _active.Count == 0)
+            {
+                return;
+            }
+            var changed = false;
+            foreach (var entry in _active.Values)
+            {
+                if (entry.Kind != PendingRequestKind.Approval ||
+                    entry.Scope != scope ||
+                    !string.Equals(entry.CallId, summary.CallId, StringComparison.Ordinal))
+                {
+                    continue;
+                }
+                if (!entry.ArgumentsReady ||
+                    !string.Equals(entry.SanitizedArgumentsSummary, summary.SanitizedArguments, StringComparison.Ordinal) ||
+                    entry.ToolName is null or "unknown")
+                {
+                    if (entry.ToolName is null or "unknown")
+                    {
+                        entry.ToolName = summary.ToolName;
+                    }
+                    entry.ArgumentsReady = true;
+                    entry.SanitizedArgumentsSummary = summary.SanitizedArguments;
+                    entry.DiagnosticKey = null;
+                    changed = true;
+                }
+            }
+            if (changed)
+            {
+                nextSnapshot = SnapshotLocked();
+            }
+        }
+        if (nextSnapshot is not null)
+        {
+            RequestsChanged?.Invoke(nextSnapshot);
+        }
     }
 
     public event Action<IReadOnlyList<PendingInteractionCard>>? RequestsChanged;
@@ -578,6 +622,7 @@ public sealed class RequestsEngine : IAsyncDisposable
         {
             return;
         }
+        _transcripts.ToolInvocationRecorded -= OnToolInvocationRecorded;
         await FlushHeldAsync(CancellationToken.None).ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
         Task[] remaining;
         lock (_gate)
@@ -614,10 +659,10 @@ public sealed class RequestsEngine : IAsyncDisposable
         public SessionKey Scope { get; } = scope;
         public PendingRequestKind Kind { get; } = kind;
         public string? CallId { get; } = callId;
-        public string? ToolName { get; } = toolName;
-        public bool ArgumentsReady { get; } = argumentsReady;
-        public string? SanitizedArgumentsSummary { get; } = sanitizedArgumentsSummary;
-        public string? DiagnosticKey { get; } = diagnosticKey;
+        public string? ToolName { get; set; } = toolName;
+        public bool ArgumentsReady { get; set; } = argumentsReady;
+        public string? SanitizedArgumentsSummary { get; set; } = sanitizedArgumentsSummary;
+        public string? DiagnosticKey { get; set; } = diagnosticKey;
         public IReadOnlyList<UserQuestionItemView>? Questions { get; } = questions;
         public PendingRequestState State { get; set; } = PendingRequestState.Waiting;
         public long HoldGeneration { get; set; }

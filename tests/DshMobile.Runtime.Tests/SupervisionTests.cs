@@ -105,14 +105,136 @@ public sealed class SupervisionTests : IDisposable
     }
 
     [Fact]
-    public void Stat_ParsingMatchesLegacyFirstParenRule()
+    public void Stat_ParsingUsesLastParenRule_HandlesParensInComm()
     {
-        // comm "a) b" contains ") ": legacy splits after the FIRST occurrence and reads "b" as state, "S" as ppid -> skipped.
-        Proc(10, 1, "a) b", "x");
+        // N-08-01: comm containing ") " or ")" must still parse state, ppid, and startTicks using LastIndexOf(')').
+        ProcWithMeta(10, 1, "a) b (worker)", 'S', 98765, uid: 10123, tracerPid: 0, argv: ["x"]);
         Proc(11, 1, "fine", "y");
         var t = ProcessTable.Read(_dir)!;
-        Assert.False(t.ParentOf.ContainsKey(10));
+        Assert.Equal(1, t.ParentOf[10]);
         Assert.Equal(1, t.ParentOf[11]);
+        var d = t.GetDetails(10)!;
+        Assert.Equal('S', d.State);
+        Assert.Equal(98765, d.StartTicks);
+        Assert.Equal(10123, d.Uid);
+        Assert.Equal(0, d.TracerPid);
+    }
+
+    private void ProcWithMeta(
+        int pid,
+        int ppid,
+        string comm,
+        char state,
+        long startTicks,
+        int? uid,
+        int? tracerPid,
+        params string[] argv)
+    {
+        var d = Path.Combine(_dir, pid.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        Directory.CreateDirectory(d);
+        // /proc/<pid>/stat: fields 1..2 are "pid (comm)", followed by 19 fields before field 22 (startTicks = index 19 after ')').
+        var padding = string.Join(' ', Enumerable.Repeat("0", 17));
+        File.WriteAllText(Path.Combine(d, "stat"), $"{pid} ({comm}) {state} {ppid} {padding} {startTicks} 0 0");
+        if (uid is not null || tracerPid is not null)
+        {
+            var sb = new StringBuilder();
+            sb.AppendLine($"Name:\t{comm}");
+            if (tracerPid is not null)
+            {
+                sb.AppendLine($"TracerPid:\t{tracerPid.Value}");
+            }
+            if (uid is not null)
+            {
+                sb.AppendLine($"Uid:\t{uid.Value}\t{uid.Value}\t{uid.Value}\t{uid.Value}");
+            }
+            File.WriteAllText(Path.Combine(d, "status"), sb.ToString());
+        }
+        File.WriteAllText(Path.Combine(d, "cmdline"), string.Join('\0', argv) + "\0");
+    }
+
+    [Fact]
+    public void NativeOrphanReaper_FindsAndKillsOnlyConservativeIntersection()
+    {
+        const int appUid = 10234;
+        const int appPid = 100;
+        const int liveSandbox = 200;
+        var exeTargets = new Dictionary<int, string?>
+        {
+            [100] = "/system/bin/app_process64",
+            [200] = "/data/app/lib/arm64/libproot.so",
+            [201] = "/data/app/lib/arm64/libproot-loader.so",      // alive under sandbox tree -> keep
+            [500] = "/data/app/lib/arm64/libproot-loader.so",      // orphan match -> kill
+            [501] = "/data/app/lib/arm64/libproot-loader32.so (deleted)", // deleted loader orphan -> kill
+            [502] = "/data/app/lib/arm64/libproot-loader.so",      // wrong UID -> keep
+            [503] = "/data/app/lib/arm64/libproot-loader.so",      // ppid != 1 -> keep
+            [504] = "/data/app/lib/arm64/libproot-loader.so",      // traced (TracerPid=999) -> keep
+            [505] = "/data/app/lib/arm64/libproot-loader.so",      // zombie ('Z') -> keep
+            [506] = "/usr/bin/node",                               // non-loader exe -> keep
+            [507] = null,                                          // unreadable exe -> skip
+            [508] = "/data/app/lib/arm64/libproot-loader.so",      // missing status (uid/tracer) -> skip
+        };
+
+        ProcWithMeta(1, 0, "init", 'S', 1, uid: 0, tracerPid: 0, "/init");
+        ProcWithMeta(appPid, 1, "dshmobile", 'S', 1000, uid: appUid, tracerPid: 0, "org.example.dshmobile");
+        ProcWithMeta(liveSandbox, appPid, "libproot.so", 'S', 2000, uid: appUid, tracerPid: 0, "libproot.so");
+        ProcWithMeta(201, liveSandbox, "loader", 'S', 2001, uid: appUid, tracerPid: 0, "libproot-loader.so");
+        ProcWithMeta(500, 1, "libproot-loader", 'S', 3000, uid: appUid, tracerPid: 0, "libproot-loader.so");
+        ProcWithMeta(501, 1, "loader32", 'R', 3001, uid: appUid, tracerPid: 0, "libproot-loader32.so");
+        ProcWithMeta(502, 1, "other-uid", 'S', 3002, uid: 10999, tracerPid: 0, "libproot-loader.so");
+        ProcWithMeta(503, 999, "adopted", 'S', 3003, uid: appUid, tracerPid: 0, "libproot-loader.so");
+        ProcWithMeta(504, 1, "traced", 't', 3004, uid: appUid, tracerPid: 999, "libproot-loader.so");
+        ProcWithMeta(505, 1, "zombie", 'Z', 3005, uid: appUid, tracerPid: 0, "libproot-loader.so");
+        ProcWithMeta(506, 1, "node", 'S', 3006, uid: appUid, tracerPid: 0, "node");
+        ProcWithMeta(507, 1, "noexe", 'S', 3007, uid: appUid, tracerPid: 0, "unknown");
+        ProcWithMeta(508, 1, "nostatus", 'S', 3008, uid: null, tracerPid: null, "libproot-loader.so");
+
+        var killed = new List<int>();
+        var report = NativeOrphanReaper.Reap(
+            _dir,
+            appPid: appPid,
+            liveRootPids: [liveSandbox],
+            killPid: pid => { killed.Add(pid); return true; },
+            readExeTarget: pid => exeTargets.GetValueOrDefault(pid));
+
+        Assert.Equal(2, report.CandidatesFound);
+        Assert.Equal([500, 501], report.KilledPids);
+        Assert.Empty(report.SkippedPids);
+        Assert.Equal([500, 501], killed);
+    }
+
+    [Fact]
+    public void NativeOrphanReaper_SkipsCandidate_WhenStartTicksChangedBeforeKill()
+    {
+        const int appUid = 10234;
+        const int appPid = 100;
+        ProcWithMeta(appPid, 1, "dshmobile", 'S', 1000, uid: appUid, tracerPid: 0, "org.example.dshmobile");
+        ProcWithMeta(600, 1, "loader", 'S', 4444, uid: appUid, tracerPid: 0, "libproot-loader.so");
+
+        var table = ProcessTable.Read(_dir, pid => pid == 600 ? "/data/lib/libproot-loader.so" : null)!;
+        var found = NativeOrphanReaper.FindOrphans(table, appUid, appPid, []);
+        Assert.Single(found);
+
+        // Simulate PID reuse right before kill by overwriting stat with a new startTicks.
+        var statPath = Path.Combine(_dir, "600", "stat");
+        var padding = string.Join(' ', Enumerable.Repeat("0", 17));
+        File.WriteAllText(statPath, $"600 (newproc) S 1 {padding} 9999 0 0");
+
+        var killed = new List<int>();
+        // Directly re-verify: if startTicks changed between FindOrphans and live check, TryReadLiveStat catches it.
+        Assert.True(table.TryReadLiveStat(600, out _, out _, out var liveTicks));
+        Assert.NotEqual(found[0].StartTicks, liveTicks);
+        Assert.Empty(killed);
+    }
+
+    [Fact]
+    public void NativeOrphanReaper_FailsClosed_WhenSelfUidUnknown()
+    {
+        ProcWithMeta(100, 1, "dshmobile", 'S', 1000, uid: null, tracerPid: null, "org.example.dshmobile");
+        ProcWithMeta(500, 1, "loader", 'S', 3000, uid: 0, tracerPid: 0, "libproot-loader.so");
+        var killed = new List<int>();
+        var report = NativeOrphanReaper.Reap(_dir, appPid: 100, killPid: pid => { killed.Add(pid); return true; }, readExeTarget: _ => "/libproot-loader.so");
+        Assert.Equal(0, report.CandidatesFound);
+        Assert.Empty(killed);
     }
 
     // ---------------------------------------------------------------- HTTP probe (local listeners)

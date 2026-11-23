@@ -89,13 +89,14 @@ public sealed record RemoteEventsReadyPayload(
     [property: JsonPropertyName("clientId")] string? ClientId = null,
     [property: JsonPropertyName("host")] RemoteHostInfo? Host = null);
 
-/// <summary>Forwarded `$events` item (`emit` or `waterfall`) emitted after `ready`.</summary>
+/// <summary>Forwarded `$events` item (`emit` / `waterfall` / `cancel`) emitted after `ready`.</summary>
 public sealed record RemoteForwardedEventPayload(
     [property: JsonPropertyName("type")] string Type,
     [property: JsonPropertyName("event")] string? Event = null,
     [property: JsonPropertyName("args")] JsonElement? Args = null,
     [property: JsonPropertyName("eventId")] string? EventId = null,
-    [property: JsonPropertyName("agentId")] string? AgentId = null);
+    [property: JsonPropertyName("agentId")] string? AgentId = null,
+    [property: JsonPropertyName("request")] JsonElement? Request = null);
 
 /// <summary>Rejection payload returned via `$events/result` for a forwarded waterfall request.</summary>
 public sealed record RemoteEventRejection(

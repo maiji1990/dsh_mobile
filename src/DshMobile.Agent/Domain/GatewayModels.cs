@@ -243,6 +243,8 @@ public sealed record ApprovalGatewayEvent(ApprovalRequestView Request) : Forward
 
 public sealed record UserQuestionGatewayEvent(UserQuestionRequestView Request) : ForwardedGatewayEvent;
 
+public sealed record ForwardedEventCancelledGatewayEvent(string EventId) : ForwardedGatewayEvent;
+
 public sealed record SessionStatusGatewayEvent(string SessionId, bool Running) : ForwardedGatewayEvent;
 
 public sealed record SessionActivityGatewayEvent(string SessionId, long UpdatedAtUnixMs) : ForwardedGatewayEvent;

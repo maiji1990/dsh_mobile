@@ -1,0 +1,656 @@
+using Android.Content;
+using Android.Content.Res;
+using Android.Views;
+using Android.Views.InputMethods;
+using Android.Widget;
+using AndroidX.Core.View;
+using AndroidX.RecyclerView.Widget;
+using DshMobile.Agent.Domain;
+using DshMobile.Agent.Engines;
+using DshMobile.Agent.Presentation;
+using DshMobile.Agent.Rendering;
+using DshMobile.App.Bridge;
+using DshMobile.App.Ui;
+using DshMobile.Runtime.Hosting;
+using Google.Android.Material.AppBar;
+using Google.Android.Material.Button;
+using Google.Android.Material.Chip;
+using Google.Android.Material.FloatingActionButton;
+using Google.Android.Material.ProgressIndicator;
+using Google.Android.Material.Snackbar;
+using Fragment = AndroidX.Fragment.App.Fragment;
+using Log = Android.Util.Log;
+
+namespace DshMobile.App.Chat;
+
+/// <summary>
+/// 纯原生 Material 3 聊天页（N-04-03 / N-04-04）：全部视图由 XML 布局加载，
+/// 通过 <see cref="ChatViewModel"/> 驻留应用级 ConnectionScope，免疫旋转与深色切换。
+/// </summary>
+public sealed class ChatFragment : Fragment
+{
+    private const int RequestImagePick = 81;
+    private const string DraftInputKey = "chat.composer.draft";
+    private const string SlashExpandedKey = "chat.slash.expanded";
+
+    private BridgeHost _bridge = null!;
+    private ChatViewModel _vm = null!;
+    private ChatTimelineAdapter _adapter = null!;
+    private LinearLayoutManager _layoutManager = null!;
+    private readonly MarkdownRenderCache _mdCache = new();
+    private readonly List<PromptAttachmentImage> _attachments = [];
+
+    private MaterialToolbar _toolbar = null!;
+    private View _sessionHeader = null!;
+    private View _headerDivider = null!;
+    private TextView _sessionTitle = null!;
+    private TextView _sessionSubtitle = null!;
+    private View _composerActions = null!;
+    private View _statusBanner = null!;
+    private LinearProgressIndicator _statusProgress = null!;
+    private TextView _statusText = null!;
+    private MaterialButton _statusAction = null!;
+    private View _unknownBanner = null!;
+    private MaterialButton _unknownCheckBtn = null!;
+    private MaterialButton _unknownResendBtn = null!;
+    private RecyclerView _list = null!;
+    private View _empty = null!;
+    private FloatingActionButton _scrollToBottom = null!;
+    private View _slashBar = null!;
+    private ChipGroup _slashChips = null!;
+    private View _attachmentsBar = null!;
+    private LinearLayout _attachmentsList = null!;
+    private EditText _input = null!;
+    private MaterialButton _addBtn = null!;
+    private MaterialButton _sendBtn = null!;
+    private MaterialButton _attachImageBtn = null!;
+    private MaterialButton _slashToggleBtn = null!;
+
+    private bool _followBottom = true;
+    private bool _slashExpanded;
+    private bool _connectInitiated;
+    private int _renderPosted;
+    private PromptSendRequest? _lastSubmittedRequest;
+    private IReadOnlyList<SlashCommandDescriptorView> _renderedSlash = [];
+
+    public override View OnCreateView(LayoutInflater inflater, ViewGroup? container, Bundle? savedInstanceState)
+    {
+        var view = inflater.Inflate(Resource.Layout.fragment_chat, container, false)!;
+        _bridge = DshMobileApplication.Current.Bridge;
+        _vm = _bridge.Agent.Chat;
+
+        _toolbar = view.FindViewById<MaterialToolbar>(Resource.Id.chat_toolbar)!;
+        _toolbar.NavigationClick += (_, _) => Activity?.Finish();
+        _toolbar.MenuItemClick += (_, e) => OnMenuClicked(e.Item?.ItemId ?? 0);
+
+        _sessionHeader = view.FindViewById(Resource.Id.chat_session_header)!;
+        _headerDivider = view.FindViewById(Resource.Id.chat_header_divider)!;
+        _sessionTitle = view.FindViewById<TextView>(Resource.Id.chat_session_title)!;
+        _sessionSubtitle = view.FindViewById<TextView>(Resource.Id.chat_session_subtitle)!;
+        _sessionHeader.Click += (_, _) => _ = EnsureConnectedAsync();
+
+        _statusBanner = view.FindViewById(Resource.Id.chat_status_banner)!;
+        _statusProgress = view.FindViewById<LinearProgressIndicator>(Resource.Id.chat_status_progress)!;
+        _statusText = view.FindViewById<TextView>(Resource.Id.chat_status_text)!;
+        _statusAction = view.FindViewById<MaterialButton>(Resource.Id.chat_status_action)!;
+        _statusAction.Click += (_, _) => OnStatusActionClicked();
+
+        _unknownBanner = view.FindViewById(Resource.Id.chat_unknown_send_banner)!;
+        _unknownCheckBtn = view.FindViewById<MaterialButton>(Resource.Id.chat_unknown_check_btn)!;
+        _unknownResendBtn = view.FindViewById<MaterialButton>(Resource.Id.chat_unknown_resend_btn)!;
+        _unknownCheckBtn.Click += (_, _) => _ = RecoverLastSendAsync(userConfirmedResend: false);
+        _unknownResendBtn.Click += (_, _) => _ = RecoverLastSendAsync(userConfirmedResend: true);
+
+        _list = view.FindViewById<RecyclerView>(Resource.Id.chat_list)!;
+        _layoutManager = new LinearLayoutManager(RequireContext()) { StackFromEnd = false };
+        _list.SetLayoutManager(_layoutManager);
+        _list.SetItemAnimator(null);
+        _adapter = new ChatTimelineAdapter(
+            _mdCache,
+            action => Activity?.RunOnUiThread(action),
+            (eventId, decision) => _ = _vm.AnswerApprovalAsync(eventId, decision),
+            eventId => _ = _vm.UndoApprovalAsync(eventId),
+            (eventId, batch) => _ = _vm.AnswerQuestionAsync(eventId, batch),
+            eventId => _ = _vm.CancelQuestionAsync(eventId));
+        _list.SetAdapter(_adapter);
+        _list.AddOnScrollListener(new ChatScrollListener(this));
+
+        _empty = view.FindViewById(Resource.Id.chat_empty)!;
+        _empty.FindViewById<ImageView>(Resource.Id.empty_icon)!.SetImageResource(Resource.Drawable.ic_chat);
+        _empty.FindViewById<TextView>(Resource.Id.empty_text)!.SetText(Resource.String.chat_empty_subtitle);
+
+        _scrollToBottom = view.FindViewById<FloatingActionButton>(Resource.Id.chat_scroll_to_bottom)!;
+        _scrollToBottom.Click += (_, _) => ScrollToBottomAndFollow();
+
+        _slashBar = view.FindViewById(Resource.Id.chat_slash_bar)!;
+        _slashChips = view.FindViewById<ChipGroup>(Resource.Id.chat_slash_chips)!;
+        _attachmentsBar = view.FindViewById(Resource.Id.chat_attachments_bar)!;
+        _attachmentsList = view.FindViewById<LinearLayout>(Resource.Id.chat_attachments_list)!;
+
+        _input = view.FindViewById<EditText>(Resource.Id.chat_input)!;
+        _composerActions = view.FindViewById(Resource.Id.chat_composer_actions)!;
+        if (savedInstanceState?.GetString(DraftInputKey) is { } restoredDraft)
+        {
+            _input.Text = restoredDraft;
+        }
+        _slashExpanded = savedInstanceState?.GetBoolean(SlashExpandedKey, false) ?? false;
+        _input.EditorAction += (_, e) =>
+        {
+            if (e.ActionId == ImeAction.Send)
+            {
+                e.Handled = true;
+                _ = SendOrCancelAsync();
+            }
+        };
+
+        _addBtn = view.FindViewById<MaterialButton>(Resource.Id.chat_add_btn)!;
+        _sendBtn = view.FindViewById<MaterialButton>(Resource.Id.chat_send_btn)!;
+        _attachImageBtn = view.FindViewById<MaterialButton>(Resource.Id.chat_attach_image_btn)!;
+        _slashToggleBtn = view.FindViewById<MaterialButton>(Resource.Id.chat_slash_toggle_btn)!;
+
+        _addBtn.Click += (_, _) => ToggleSlashBar();
+        _slashToggleBtn.Click += (_, _) => ToggleSlashBar();
+        _attachImageBtn.Click += (_, _) => OpenImagePicker();
+        _sendBtn.Click += (_, _) => _ = SendOrCancelAsync();
+
+        // 横屏弹起软键盘时收起非核心辅助条，避免挤压消息列表高度（F6）。
+        ViewCompat.SetOnApplyWindowInsetsListener(view, new Edges.Listener((_, insets) =>
+        {
+            var isLandscape = Resources?.Configuration?.Orientation == global::Android.Content.Res.Orientation.Landscape;
+            var imeVisible = insets.IsVisible(WindowInsetsCompat.Type.Ime());
+            var compact = isLandscape && imeVisible;
+            var visibility = compact ? ViewStates.Gone : ViewStates.Visible;
+            _sessionHeader.Visibility = visibility;
+            _headerDivider.Visibility = visibility;
+            _composerActions.Visibility = visibility;
+            return insets;
+        }));
+
+        RenderAttachments();
+        return view;
+    }
+
+    public override void OnStart()
+    {
+        base.OnStart();
+        _vm.StateChanged += OnVmStateChanged;
+        _bridge.Changed += OnBridgeChanged;
+        _vm.SetUiVisible(true);
+        RenderState(_vm.State);
+
+        if (!_connectInitiated || (!_vm.State.IsConnected && !_vm.State.IsReconciling && _bridge.Runtime.Host?.State == DshHostState.Ready))
+        {
+            _connectInitiated = true;
+            _ = EnsureConnectedAsync();
+        }
+    }
+
+    public override void OnStop()
+    {
+        _vm.SetUiVisible(false);
+        _vm.StateChanged -= OnVmStateChanged;
+        _bridge.Changed -= OnBridgeChanged;
+        _ = _vm.FlushPendingHoldsAsync();
+        base.OnStop();
+    }
+
+    public override void OnSaveInstanceState(Bundle outState)
+    {
+        base.OnSaveInstanceState(outState);
+        if (_input is not null && !string.IsNullOrEmpty(_input.Text))
+        {
+            outState.PutString(DraftInputKey, _input.Text);
+        }
+        outState.PutBoolean(SlashExpandedKey, _slashExpanded);
+    }
+
+    [Obsolete("Uses Fragment activity result for image picker parity")]
+    public override void OnActivityResult(int requestCode, int resultCode, Intent? data)
+    {
+#pragma warning disable CS0618
+        base.OnActivityResult(requestCode, resultCode, data);
+#pragma warning restore CS0618
+        if (requestCode != RequestImagePick || resultCode != (int)Android.App.Result.Ok || data is null)
+        {
+            return;
+        }
+        var uris = new List<global::Android.Net.Uri>();
+        if (data.ClipData is { ItemCount: > 0 } clip)
+        {
+            for (var i = 0; i < clip.ItemCount; i++)
+            {
+                if (clip.GetItemAt(i)?.Uri is { } u)
+                {
+                    uris.Add(u);
+                }
+            }
+        }
+        else if (data.Data is { } single)
+        {
+            uris.Add(single);
+        }
+        if (uris.Count > 0)
+        {
+            _ = LoadPickedImagesAsync(uris);
+        }
+    }
+
+    private void OnVmStateChanged(ChatUiState state) => ScheduleRender();
+    private void OnBridgeChanged(object? sender, EventArgs e)
+    {
+        if (_bridge.Runtime.Host?.State == DshHostState.Ready && !_vm.State.IsConnected && !_vm.State.IsReconciling)
+        {
+            _ = EnsureConnectedAsync();
+        }
+        ScheduleRender();
+    }
+
+    private void ScheduleRender()
+    {
+        if (Interlocked.Exchange(ref _renderPosted, 1) == 0)
+        {
+            Activity?.RunOnUiThread(() =>
+            {
+                Volatile.Write(ref _renderPosted, 0);
+                if (View is not null)
+                {
+                    RenderState(_vm.State);
+                }
+            });
+        }
+    }
+
+    private void RenderState(ChatUiState s)
+    {
+        var ctx = RequireContext();
+        _sessionTitle.Text = string.IsNullOrWhiteSpace(s.SessionTitle)
+            ? GetString(Resource.String.chat_session_default_title)
+            : s.SessionTitle;
+        _sessionSubtitle.Text = string.IsNullOrWhiteSpace(s.ModelLabel)
+            ? GetString(Resource.String.chat_session_subtitle_default)
+            : $"{s.ModelLabel} · {GetString(Resource.String.chat_session_subtitle_default)}";
+
+        RenderStatusBanner(ctx, s);
+        RenderUnknownSendBanner(s);
+
+        var items = new List<ChatTimelineItem>(s.Transcript.Rows.Count + s.PendingRequests.Count);
+        foreach (var row in s.Transcript.Rows)
+        {
+            items.Add(new ChatRowTimelineItem(row, s.Transcript.Revision));
+        }
+        foreach (var req in s.PendingRequests)
+        {
+            items.Add(new PendingRequestTimelineItem(req));
+        }
+
+        _adapter.Submit(items);
+        _empty.Visibility = items.Count == 0 ? ViewStates.Visible : ViewStates.Gone;
+        if (_followBottom && items.Count > 0)
+        {
+            _list.ScrollToPosition(items.Count - 1);
+            _scrollToBottom.Visibility = ViewStates.Gone;
+        }
+
+        var isRunningTurn = s.Transcript.Phase is RunPhase.Starting or RunPhase.Streaming;
+        if (isRunningTurn && s.Capabilities.CancelSession)
+        {
+            _sendBtn.SetIconResource(Resource.Drawable.ic_stop);
+            _sendBtn.ContentDescription = GetString(Resource.String.chat_stop_desc);
+            _sendBtn.Enabled = true;
+        }
+        else
+        {
+            _sendBtn.SetIconResource(Resource.Drawable.ic_arrow_upward);
+            _sendBtn.ContentDescription = GetString(Resource.String.chat_send_desc);
+            _sendBtn.Enabled = s.CanSend;
+        }
+
+        _attachImageBtn.Visibility = s.Capabilities.PromptImages ? ViewStates.Visible : ViewStates.Gone;
+        _slashToggleBtn.Visibility = s.Capabilities.SlashCommands ? ViewStates.Visible : ViewStates.Gone;
+        _addBtn.Enabled = s.Capabilities.SlashCommands || s.Capabilities.PromptImages;
+        RenderSlashBar(s);
+    }
+
+    private void RenderStatusBanner(Context ctx, ChatUiState s)
+    {
+        var hostPhase = _bridge.HostPhase;
+        var hostReady = _bridge.Runtime.Host?.State == DshHostState.Ready;
+        if (s.IsConnected && !s.IsReconciling && !s.Transcript.IsDetachedCache && !s.Transcript.IsPartialHistory && s.FailureCode is null)
+        {
+            _statusBanner.Visibility = ViewStates.Gone;
+            return;
+        }
+
+        _statusBanner.Visibility = ViewStates.Visible;
+        _statusProgress.Visibility = s.IsReconciling || (hostPhase is not null and not DshHostPhase.Idle and not DshHostPhase.Ready and not DshHostPhase.Failed)
+            ? ViewStates.Visible
+            : ViewStates.Gone;
+
+        if (!hostReady && !s.IsConnected)
+        {
+            _statusText.Text = hostPhase switch
+            {
+                DshHostPhase.SandboxStarting => GetString(Resource.String.home_detail_phase_sandbox),
+                DshHostPhase.DshStarting => GetString(Resource.String.home_detail_phase_dsh_spawned),
+                DshHostPhase.DshTokenAvailable => GetString(Resource.String.home_detail_phase_token),
+                DshHostPhase.ProtocolConnecting => GetString(Resource.String.home_detail_phase_protocol),
+                DshHostPhase.Initializing => GetString(Resource.String.home_detail_phase_initializing),
+                _ => s.Transcript.IsDetachedCache
+                    ? GetString(Resource.String.chat_status_cache_only)
+                    : Rows.Fmt(ctx, Resource.String.chat_status_disconnected, s.FailureCode ?? "STOPPED"),
+            };
+            _statusAction.Visibility = _bridge.IsBusy ? ViewStates.Gone : ViewStates.Visible;
+            _statusAction.SetText(Resource.String.chat_status_start_dsh);
+            return;
+        }
+
+        if (s.IsReconciling)
+        {
+            _statusText.SetText(Resource.String.chat_status_reconciling);
+            _statusAction.Visibility = ViewStates.Gone;
+            return;
+        }
+
+        if (s.Transcript.IsPartialHistory || s.FailureCode is not null)
+        {
+            _statusText.Text = s.IsConnected
+                ? Rows.Fmt(ctx, Resource.String.chat_status_partial_history, s.FailureCode ?? s.Transcript.FailureCode ?? "PARTIAL")
+                : Rows.Fmt(ctx, Resource.String.chat_status_disconnected, s.FailureCode ?? "DISCONNECTED");
+            _statusAction.Visibility = ViewStates.Visible;
+            _statusAction.SetText(Resource.String.chat_status_retry_connect);
+            return;
+        }
+
+        _statusBanner.Visibility = ViewStates.Gone;
+    }
+
+    private void RenderUnknownSendBanner(ChatUiState s)
+    {
+        if (s.LastSend is { Phase: OutboundSendPhase.UnknownOutcome or OutboundSendPhase.RequiresUserConfirmation } last)
+        {
+            _unknownBanner.Visibility = ViewStates.Visible;
+            _unknownResendBtn.Visibility = last.Phase == OutboundSendPhase.RequiresUserConfirmation
+                ? ViewStates.Visible
+                : ViewStates.Gone;
+        }
+        else
+        {
+            _unknownBanner.Visibility = ViewStates.Gone;
+        }
+    }
+
+    private void RenderSlashBar(ChatUiState s)
+    {
+        if (!s.Capabilities.SlashCommands || !_slashExpanded || s.SlashCommands.Count == 0)
+        {
+            _slashBar.Visibility = ViewStates.Gone;
+            return;
+        }
+        _slashBar.Visibility = ViewStates.Visible;
+        if (ReferenceEquals(_renderedSlash, s.SlashCommands))
+        {
+            return;
+        }
+        _renderedSlash = s.SlashCommands;
+        _slashChips.RemoveAllViews();
+        var inflater = LayoutInflater.From(RequireContext())!;
+        foreach (var cmd in s.SlashCommands)
+        {
+            var chip = (Chip)inflater.Inflate(Resource.Layout.item_chat_slash_chip, _slashChips, false)!;
+            chip.Text = EnsureLeadingSlash(cmd.Name);
+            chip.Click += (_, _) => OnSlashChipClicked(cmd);
+            _slashChips.AddView(chip);
+        }
+    }
+
+    private void RenderAttachments()
+    {
+        if (_attachments.Count == 0)
+        {
+            _attachmentsBar.Visibility = ViewStates.Gone;
+            return;
+        }
+        _attachmentsBar.Visibility = ViewStates.Visible;
+        _attachmentsList.RemoveAllViews();
+        var inflater = LayoutInflater.From(RequireContext())!;
+        for (var i = 0; i < _attachments.Count; i++)
+        {
+            var index = i;
+            var img = _attachments[i];
+            var chip = (Chip)inflater.Inflate(Resource.Layout.item_chat_attachment, _attachmentsList, false)!;
+            chip.Text = string.IsNullOrWhiteSpace(img.Name) ? $"image-{index + 1}" : img.Name;
+            chip.SetOnCloseIconClickListener(new ActionClickListener(() =>
+            {
+                if (index < _attachments.Count)
+                {
+                    _attachments.RemoveAt(index);
+                    RenderAttachments();
+                }
+            }));
+            _attachmentsList.AddView(chip);
+        }
+    }
+
+    private void ToggleSlashBar()
+    {
+        _slashExpanded = !_slashExpanded;
+        RenderSlashBar(_vm.State);
+    }
+
+    private void OnSlashChipClicked(SlashCommandDescriptorView cmd)
+    {
+        var commandName = EnsureLeadingSlash(cmd.Name);
+        if (string.IsNullOrWhiteSpace(cmd.InputHint))
+        {
+            _ = _vm.RunSlashCommandAsync(commandName);
+            _slashExpanded = false;
+            RenderSlashBar(_vm.State);
+            return;
+        }
+        _input.Text = $"{commandName} ";
+        _input.SetSelection(_input.Text?.Length ?? 0);
+        _input.RequestFocus();
+    }
+
+    private static string EnsureLeadingSlash(string name)
+    {
+        var trimmed = name.Trim();
+        return trimmed.StartsWith('/') ? trimmed : "/" + trimmed;
+    }
+
+    private void OnMenuClicked(int itemId)
+    {
+        if (itemId == Resource.Id.chat_menu_refresh)
+        {
+            _ = _vm.RefreshHistoryAsync();
+        }
+        else if (itemId == Resource.Id.chat_menu_new_session)
+        {
+            _ = _vm.SwitchOrCreateSessionAsync(sessionId: null);
+        }
+        else if (itemId == Resource.Id.chat_menu_cancel)
+        {
+            _ = _vm.CancelSessionAsync();
+        }
+    }
+
+    private void OnStatusActionClicked()
+    {
+        if (_bridge.Runtime.Host?.State != DshHostState.Ready)
+        {
+            _ = _bridge.RunStartAsync();
+        }
+        else
+        {
+            _ = EnsureConnectedAsync();
+        }
+    }
+
+    private async Task EnsureConnectedAsync()
+    {
+        try
+        {
+            if (_bridge.Runtime.Host?.State == DshHostState.Ready)
+            {
+                await _vm.ConnectAndAttachAsync().ConfigureAwait(false);
+            }
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            Log.Warn(BridgeHost.LogTag, "chat connect failed: " + ex.GetType().Name);
+        }
+    }
+
+    private async Task SendOrCancelAsync()
+    {
+        var state = _vm.State;
+        if (state.Transcript.Phase is RunPhase.Starting or RunPhase.Streaming && state.Capabilities.CancelSession)
+        {
+            await _vm.CancelSessionAsync().ConfigureAwait(false);
+            return;
+        }
+
+        var text = _input.Text?.Trim() ?? string.Empty;
+        if (text.Length == 0 && _attachments.Count == 0)
+        {
+            return;
+        }
+
+        if (text.StartsWith('/') && _attachments.Count == 0 && state.Capabilities.SlashCommands)
+        {
+            _input.Text = string.Empty;
+            _followBottom = true;
+            await _vm.RunSlashCommandAsync(text).ConfigureAwait(false);
+            return;
+        }
+
+        var images = _attachments.ToArray();
+        _lastSubmittedRequest = new PromptSendRequest(
+            RequestId: string.Empty,
+            SessionId: state.ActiveSession.SessionId,
+            Text: text,
+            Images: images.Length > 0 ? images : null);
+
+        _input.Text = string.Empty;
+        _attachments.Clear();
+        RenderAttachments();
+        _followBottom = true;
+
+        await _vm.SendWithImagesAsync(text, images).ConfigureAwait(false);
+    }
+
+    private async Task RecoverLastSendAsync(bool userConfirmedResend)
+    {
+        if (_vm.State.LastSend is not { } last || _lastSubmittedRequest is null)
+        {
+            return;
+        }
+        await _vm.RetryOrConfirmSendAsync(last.ClientOpId, _lastSubmittedRequest, userConfirmedResend).ConfigureAwait(false);
+    }
+
+    private void OpenImagePicker()
+    {
+        var intent = new Intent(Intent.ActionOpenDocument);
+        intent.AddCategory(Intent.CategoryOpenable);
+        intent.SetType("image/*");
+        intent.PutExtra(Intent.ExtraAllowMultiple, true);
+#pragma warning disable CS0618
+        StartActivityForResult(intent, RequestImagePick);
+#pragma warning restore CS0618
+    }
+
+    private async Task LoadPickedImagesAsync(IReadOnlyList<global::Android.Net.Uri> uris)
+    {
+        var ctx = Context;
+        if (ctx is null)
+        {
+            return;
+        }
+        var resolver = ctx.ContentResolver!;
+        var limits = ImageUploadLimitsSpec.Default;
+        var added = new List<PromptAttachmentImage>();
+
+        await Task.Run(() =>
+        {
+            foreach (var uri in uris)
+            {
+                if (_attachments.Count + added.Count >= limits.MaxImagesPerMessage)
+                {
+                    break;
+                }
+                var mime = resolver.GetType(uri) ?? "image/png";
+                if (!limits.AllowedMediaTypes.Contains(mime))
+                {
+                    continue;
+                }
+                using var stream = resolver.OpenInputStream(uri);
+                if (stream is null)
+                {
+                    continue;
+                }
+                using var ms = new MemoryStream();
+                stream.CopyTo(ms);
+                if (ms.Length == 0 || ms.Length > limits.MaxImageBytes)
+                {
+                    continue;
+                }
+                var b64 = Convert.ToBase64String(ms.GetBuffer(), 0, (int)ms.Length);
+                added.Add(new PromptAttachmentImage(mime, b64, $"img-{_attachments.Count + added.Count + 1}"));
+            }
+        }).ConfigureAwait(false);
+
+        Activity?.RunOnUiThread(() =>
+        {
+            if (View is null)
+            {
+                return;
+            }
+            if (added.Count == 0)
+            {
+                Snackbar.Make(View, Rows.Fmt(ctx, Resource.String.chat_image_rejected, "FORMAT_OR_SIZE"), Snackbar.LengthShort).Show();
+                return;
+            }
+            var candidate = _attachments.Concat(added).ToArray();
+            if (ImageAttachmentValidator.Validate(candidate, limits) is { } err)
+            {
+                Snackbar.Make(View, Rows.Fmt(ctx, Resource.String.chat_image_rejected, err.Code.ToString()), Snackbar.LengthShort).Show();
+                return;
+            }
+            _attachments.AddRange(added);
+            RenderAttachments();
+        });
+    }
+
+    private void ScrollToBottomAndFollow()
+    {
+        _followBottom = true;
+        _scrollToBottom.Visibility = ViewStates.Gone;
+        if (_adapter.ItemCount > 0)
+        {
+            _list.SmoothScrollToPosition(_adapter.ItemCount - 1);
+        }
+    }
+
+    private sealed class ChatScrollListener(ChatFragment owner) : RecyclerView.OnScrollListener
+    {
+        public override void OnScrollStateChanged(RecyclerView recyclerView, int newState)
+        {
+            base.OnScrollStateChanged(recyclerView, newState);
+            if (!recyclerView.CanScrollVertically(1))
+            {
+                owner._followBottom = true;
+                owner._scrollToBottom.Visibility = ViewStates.Gone;
+            }
+            else if (newState == RecyclerView.ScrollStateDragging)
+            {
+                owner._followBottom = false;
+                owner._scrollToBottom.Visibility = ViewStates.Visible;
+            }
+        }
+    }
+
+    private sealed class ActionClickListener(Action onClick) : Java.Lang.Object, View.IOnClickListener
+    {
+        public void OnClick(View? v) => onClick();
+    }
+}

@@ -25,6 +25,8 @@ public sealed class TranscriptEngine : IAsyncDisposable
         _coalesceWindow = coalesceWindow ?? CoalescingPublisher.DefaultWindow;
     }
 
+    public event Action<SessionKey, ToolInvocationSummary>? ToolInvocationRecorded;
+
     public TranscriptHandle GetOrCreateSession(SessionKey scope, int maxDeferredParts = TranscriptReducer.DefaultMaxDeferredParts)
     {
         ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
@@ -32,7 +34,7 @@ public sealed class TranscriptEngine : IAsyncDisposable
         var handle = _handles.GetOrAdd(scope, k =>
         {
             created = true;
-            return new TranscriptHandle(k, _time, _coalesceWindow, maxDeferredParts);
+            return new TranscriptHandle(k, _time, _coalesceWindow, maxDeferredParts, summary => ToolInvocationRecorded?.Invoke(k, summary));
         });
         if (created)
         {
@@ -117,10 +119,11 @@ public sealed class TranscriptHandle : IAsyncDisposable
         SessionKey scope,
         TimeProvider time,
         TimeSpan coalesceWindow,
-        int maxDeferredParts)
+        int maxDeferredParts,
+        Action<ToolInvocationSummary>? onToolInvocation = null)
     {
         Scope = scope;
-        _reducer = new TranscriptReducer(scope, maxDeferredParts);
+        _reducer = new TranscriptReducer(scope, maxDeferredParts, onToolInvocation);
         _currentSnapshot = new ChatSnapshot(
             Revision: 0,
             Session: scope,

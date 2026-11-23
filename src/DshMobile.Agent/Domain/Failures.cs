@@ -167,4 +167,40 @@ public static class DshFailureMapper
             _ => new DshFailure(DshFailureCode.Unavailable, $"transport.{ex.GetType().Name}", Retryable: true),
         };
     }
+
+    /// <summary>将网关推送的会话错误事件安全分类为领域错误码，避免直接透传原始异常字符串（F3 / N-02-01）。</summary>
+    public static DshFailure FromSessionError(SessionErrorGatewayEvent sessionEvent)
+    {
+        ArgumentNullException.ThrowIfNull(sessionEvent);
+        var raw = sessionEvent.Message ?? string.Empty;
+        if (raw.Contains("CREDENTIAL", StringComparison.OrdinalIgnoreCase) ||
+            raw.Contains("API_KEY", StringComparison.OrdinalIgnoreCase) ||
+            raw.Contains("provider-credentials", StringComparison.OrdinalIgnoreCase))
+        {
+            return new DshFailure(DshFailureCode.CredentialsMissing, "session_error.credentials_missing", Retryable: false);
+        }
+        if (raw.Contains("UNAUTHORIZED", StringComparison.OrdinalIgnoreCase) ||
+            raw.Contains("401", StringComparison.Ordinal))
+        {
+            return new DshFailure(DshFailureCode.Unauthorized, "session_error.unauthorized", Retryable: true);
+        }
+        if (raw.Contains("TRANSPORT", StringComparison.OrdinalIgnoreCase) ||
+            raw.Contains("ECONNREFUSED", StringComparison.OrdinalIgnoreCase) ||
+            raw.Contains("NETWORK", StringComparison.OrdinalIgnoreCase) ||
+            raw.Contains("SOCKET", StringComparison.OrdinalIgnoreCase))
+        {
+            return new DshFailure(DshFailureCode.TransportLost, "session_error.transport", Retryable: true);
+        }
+        if (raw.Contains("TIMEOUT", StringComparison.OrdinalIgnoreCase) ||
+            raw.Contains("TIMED OUT", StringComparison.OrdinalIgnoreCase))
+        {
+            return new DshFailure(DshFailureCode.Timeout, "session_error.timeout", Retryable: true);
+        }
+        if (raw.Contains("BUSY", StringComparison.OrdinalIgnoreCase) ||
+            raw.Contains("WRITER", StringComparison.OrdinalIgnoreCase))
+        {
+            return new DshFailure(DshFailureCode.SessionBusy, "session_error.busy", Retryable: true);
+        }
+        return new DshFailure(DshFailureCode.Unavailable, "session_error.unknown", Retryable: true);
+    }
 }

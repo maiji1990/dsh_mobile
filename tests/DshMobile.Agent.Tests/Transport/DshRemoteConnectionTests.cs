@@ -728,4 +728,60 @@ public sealed class DshRemoteConnectionTests
         await using var conn = new DshRemoteConnection(options, () => SecretToken);
         await Assert.ThrowsAsync<TimeoutException>(() => conn.CallAsync("echo").WaitAsync(TimeSpan.FromSeconds(5)));
     }
+
+    [Fact]
+    public async Task PrepareForHostStart_AfterBeginDrain_AllowsReconnectAndEmitsTraceSpans()
+    {
+        await using var server = new FakeRemoteServer();
+        server.OnHttpRequest = req =>
+        {
+            if (req.Path == "/connect")
+            {
+                return Task.FromResult(new FakeRemoteServer.HttpResponseData(
+                    302, "Found", [("Location", "/"), ("Set-Cookie", $"dsh-auth-{server.Port}=c-restart; HttpOnly")], []));
+            }
+            if (req.Path == "/api/echo")
+            {
+                var rpcId = ParseRpcId(req.Body);
+                return Task.FromResult(FakeRemoteServer.HttpResponseData.Json(200,
+                    ServerResponseJson(rpcId, """{"restarted":true}""")));
+            }
+            return Task.FromResult(FakeRemoteServer.HttpResponseData.Json(404, "{}"));
+        };
+        var clientSeq = 0;
+        server.OnWebSocketConnected = async (_, ws, ct) =>
+        {
+            var openRaw = await FakeRemoteServer.ReceiveTextAsync(ws, ct);
+            var streamId = ParseStreamId(openRaw!);
+            var seq = Interlocked.Increment(ref clientSeq);
+            await FakeRemoteServer.SendTextAsync(ws, ReadyFrameJson(streamId, $"client-r-{seq}"), ct);
+            await FakeRemoteServer.ReceiveTextAsync(ws, ct);
+        };
+
+        var traceLines = new List<string>();
+        var trace = DshMobile.Core.Diagnostics.StartupTrace.Start(line => traceLines.Add(line));
+        await using var conn = new DshRemoteConnection(FastOptions(server.BaseUri), () => SecretToken, trace: trace);
+
+        var gen1 = await conn.ConnectAsync(CancellationToken.None);
+        Assert.Equal("client-r-1", gen1.ClientId);
+        Assert.Contains(traceLines, l => l.Contains("protocol.connected", StringComparison.Ordinal));
+        Assert.Contains(traceLines, l => l.Contains("protocol.initialized", StringComparison.Ordinal));
+
+        // 模拟宿主停机排空（F14）
+        await conn.BeginDrainAsync(CancellationToken.None);
+        Assert.Equal(RemoteConnectionState.Draining, conn.State);
+
+        // 模拟宿主重启周期重新激活连接（F4 / F14）
+        var trace2Lines = new List<string>();
+        var trace2 = DshMobile.Core.Diagnostics.StartupTrace.Start(line => trace2Lines.Add(line));
+        conn.PrepareForHostStart(trace2);
+        var gen2 = await conn.ConnectAsync(CancellationToken.None);
+        Assert.Equal("client-r-2", gen2.ClientId);
+        Assert.Contains(trace2Lines, l => l.Contains("protocol.connected", StringComparison.Ordinal));
+        Assert.Contains(trace2Lines, l => l.Contains("protocol.initialized", StringComparison.Ordinal));
+
+        var rpc = await conn.CallAsync("echo");
+        Assert.True(rpc.Ok);
+        Assert.True(rpc.Value!.Value.GetProperty("restarted").GetBoolean());
+    }
 }

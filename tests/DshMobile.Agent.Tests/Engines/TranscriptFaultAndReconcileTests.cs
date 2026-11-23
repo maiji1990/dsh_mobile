@@ -508,6 +508,55 @@ public sealed class TranscriptFaultAndReconcileTests : IDisposable
         Assert.True(trackFollow.Disposed);
     }
 
+    [Fact]
+    public void TranscriptReducer_FiltersInternalAndSyntheticMessages_AndAppliesSessionTitle()
+    {
+        var scope = new SessionKey("rt-1", "web", "s-filter");
+        var reducer = new TranscriptReducer(scope);
+
+        // 1. 合成 user/message（source.kind != "user" 或纯 <system-reminder>）不应进入聊天气泡（F12）
+        Assert.True(reducer.ApplyWireEvent(scope, new SessionWireEventView(
+            "turn/start", 1, 100, JsonElement.Parse("""{"turn":1}"""))));
+        Assert.True(reducer.ApplyWireEvent(scope, new SessionWireEventView(
+            "user/message",
+            2,
+            101,
+            JsonElement.Parse("""{"id":"syn-1","source":{"kind":"skill-catalog"},"content":[{"type":"text","text":"<system-reminder>internal</system-reminder>"}]}"""))));
+        Assert.True(reducer.ApplyWireEvent(scope, new SessionWireEventView(
+            "user/message",
+            3,
+            102,
+            JsonElement.Parse("""{"id":"real-1","source":{"kind":"user"},"content":[{"type":"text","text":"真实提问"}]}"""))));
+
+        // 2. 运行时内部事件不应产生 UnknownEventRow 或 NoticeRow 刷屏（F5 / F11）
+        foreach (var (evType, idx) in new[]
+        {
+            ("agent/inbox/spliced", 4L),
+            ("session/end-seed", 5L),
+            ("session-log-deepseek/delivery-accepted", 6L),
+            ("deliverables/presented", 7L),
+            ("workspace/changes", 8L),
+            ("job/registered", 9L),
+            ("job/settled", 10L),
+            ("request/context", 11L),
+            ("llm/retry", 12L),
+        })
+        {
+            Assert.True(reducer.ApplyWireEvent(scope, new SessionWireEventView(evType, idx, 102 + idx, JsonElement.Parse("{}"))));
+        }
+
+        // 3. session/title 同步更新快照标题（F13）
+        Assert.True(reducer.ApplyWireEvent(scope, new SessionWireEventView(
+            "session/title", 13, 120, JsonElement.Parse("""{"title":"排查启动链路"}"""))));
+
+        var snap = reducer.DeriveSnapshot(0, 0, 0);
+        Assert.Equal("排查启动链路", snap.SessionTitle);
+        var userMsg = Assert.Single(snap.Rows.OfType<UserMessageRow>());
+        Assert.Equal("真实提问", userMsg.Text);
+        Assert.Empty(snap.Rows.OfType<UnknownEventRow>());
+        Assert.Empty(snap.Rows.OfType<NoticeRow>());
+    }
+
     private sealed class TrackableDisposable : IAsyncDisposable
     {
         public bool Disposed { get; private set; }

@@ -1,3 +1,5 @@
+using DshMobile.Runtime.Hosting;
+
 namespace DshMobile.Application;
 
 /// <summary>The Android foreground service that keeps PRoot children alive (implemented by DshMobile.Android).</summary>
@@ -22,4 +24,7 @@ public sealed class RuntimeOptions
 {
     /// <summary>Host-path probe for the extractor; null = the real filesystem (the right choice on a device).</summary>
     public Func<string, bool>? HostPathExists { get; set; }
+
+    /// <summary>可选的 C# 宿主启动配置（如协议握手与性能跟踪挂载）。</summary>
+    public DshHostOptions? HostOptions { get; set; }
 }

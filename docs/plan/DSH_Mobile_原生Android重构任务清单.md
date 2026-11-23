@@ -120,7 +120,8 @@ PR-00 (基线 + 路线A/B PoC + ADR-0033 + DshMobile.Agent骨架 + 门禁)
   - 实现 `/api` 一元 RPC（含 `multipart/form-data` 附件解析）与 `/api/remote.mux` `$events` 逻辑流，严格等待 `{ type: 'ready' }` 首帧后才发布 connection generation；实现指数退避重连与有序排空（`BeginDrainAsync`）。
 - [x] **N-01B-03｜路线 B 契约测试与真机连接验收**（桌面与 Fake Server 已绿；Android 17 arm64 真机 **待真机验证**）
   - Fake HTTP/WS Server 测试（[DshRemoteConnectionTests.cs](../../tests/DshMobile.Agent.Tests/Transport/DshRemoteConnectionTests.cs)）覆盖：401 刷新、首帧非 `ready` 拒绝、断线重连（含指数退避与 generation 递增）、取消旧 source 不覆盖新 generation、大消息限额、多路复用流与 `$events/result`、有序排空；已在 Linux x86_64 对接真实 `@deepseek-ai/dsh@0.2.2-rc.5`（含 `dsh-web-trim-patch.yml`）验证 `/connect` + `$events ready` + `/api/settings/describe` & `credentials/describe` 往返；
-  - 真机验证裁剪配置启动、握手、收发与优雅停机，并记录与原 `web` 的启动耗时对照（**待真机验证**）。
+  - 真机验证裁剪配置启动、握手、收发与优雅停机，并记录与原 `web` 的启动耗时对照。
+  - **2026-11-23 真机（M2007J1SC / Android 17 / DSH 0.2.2-rc.5）**：裁剪配置启动、`$events ready` 握手、能力探测、`session/create`、`commands/list`、`session/prompt` 发送与优雅停止均通过，停止后无 guest 残留；启动耗时 n=5 为 9.7–14.0 s（记录基线约 5.9 s，需 `N-08-07` 配对复核）；**真机缺 `protocol.connected` / `protocol.initialized` 测点**（`AgentConnectionScope` 未注入 `StartupTrace`）。收发仅到 DSH 侧，LLM 回合因设备无默认网络以 `TRANSPORT` 失败。见 [ACCEPTANCE_PR00_PR04_DEVICE.md](../native/ACCEPTANCE_PR00_PR04_DEVICE.md)。
 
 ---
 
@@ -144,7 +145,7 @@ PR-00 (基线 + 路线A/B PoC + ADR-0033 + DshMobile.Agent骨架 + 门禁)
   - 支持 Route B 原生斜杠命令 `commands/list` & `commands/execute`（`/compact`、`/permission`、`/plan`、`/goal`）；
   - `session/create`（含 `sessionId` 恢复）严格按 schema 发送（`WhenWritingNull`，绝不带未知字段）；
   - 正确解析 `turn/end` 的 `reason` 判定轮次失败，兼容 `session/wait` 返回 `{}` 空对象映射为 `AmbiguousEmptyResponse`。
-  - 真机无 UI 端到端测试（发送文本/图片、触发斜杠命令并完成审批不死锁）：**待真机验证**。
+  - 真机无 UI 端到端测试（发送文本/图片、触发斜杠命令并完成审批不死锁）：**基本通过（联网复测）**——2026-11-23 真机跑通 capability 探测、会话创建/续接、`commands/list`、文本流式（Markdown 表格 + 代码块）、图片视觉问答、工具卡与审批三态（允许 / Hold-to-undo 撤销 / 拒绝），无死锁；遗留：审批卡工具名 `unknown` 且参数未加载（F9）、芯片斜杠命令缺 `/` 报 `command.invalid_syntax`（F10）、拒绝后零执行缺少设备侧独立证据。见 [ACCEPTANCE_PR00_PR04_DEVICE.md](../native/ACCEPTANCE_PR00_PR04_DEVICE.md)。
 - [x] **N-02-04｜脱敏 Golden Fixtures 与协议兼容矩阵文档**
   - 从真实 `@deepseek-ai/dsh@0.2.2-rc.5` 录制并脱敏 golden fixtures 存入 [route-b-golden-v0.2.2-rc.5.json](../../tests/DshMobile.Agent.Tests/Fixtures/route-b-golden-v0.2.2-rc.5.json)；
   - 覆盖未知事件/未知字段容错（降级为 `UnknownGatewayEvent` / `SessionFollowUnknownUpdate` / `TurnEndReasonKind.Unknown` / `IsKnownType=false` 不崩溃）、协议版本/格式不匹配返回 `ProtocolMismatch`。
@@ -193,22 +194,23 @@ PR-00 (基线 + 路线A/B PoC + ADR-0033 + DshMobile.Agent骨架 + 门禁)
 
 ### 任务项
 
-- [ ] **N-04-01｜纯 C# `ChatViewModel` 与 `IChatActions`（驻留 `DshMobileApplication` ConnectionScope）**
-  - 暴露不可变 `ChatUiState` 与 `SendText/SendWithImages/RunSlashCommand/AnswerApproval/UndoApproval/AnswerQuestion/CancelSession/RefreshHistory`；
-  - 绑定到应用级 ConnectionScope，免疫 `MainActivity` 深色模式（`UiMode`）与横竖屏重建。
-- [ ] **N-04-02｜Markdown 托管渲染器（Markdig → Android `SpannableStringBuilder`）**
-  - 在后台线程将 `StreamingBlocks` 的 settled/tail 块经 Markdig 解析为轻量 IR 并按块版本号缓存（旧任务结果不得覆盖新版本）；
-  - 在 Android 侧实现 `MarkdownTextView`、`CodeBlockView`（一键复制 + 横向滚动）、`DiffLineView`、`TableBlockView`；外链经安全策略交受控系统浏览器。
-- [ ] **N-04-03｜`ChatFragment` 与多 `ViewType` `RecyclerView`**
-  - 实现 Material 3 布局 `fragment_chat.xml` 及 `UserMessageHolder`、`AssistantBlockHolder`、`ReasoningHolder`、`ToolCallHolder`（折叠/展开 + 状态图标）、`ApprovalHolder`（含参数摘要与 Hold-to-undo 提示条）、`QuestionHolder`、`NoticeHolder`；
-  - 使用稳定 `ItemId` 与 `DiffUtil` Payload 局部刷新，禁止流式更新引起整表闪动。
-- [ ] **N-04-04｜滚动锚点、图片附件选择与原生斜杠命令栏**
-  - 实现「跟随底部 / 用户回看锁止 + 回到底部浮钮」逻辑；
-  - 接入 SAF 系统图片选择器（压缩/校验上限转 `SdkEncodedImageBlock`）；
+- [x] **N-04-01｜纯 C# `ChatViewModel` 与 `IChatActions`（驻留 `DshMobileApplication` ConnectionScope）**
+  - 在 [ChatContracts.cs](../../src/DshMobile.Agent/Presentation/ChatContracts.cs)、[ChatViewModel.cs](../../src/DshMobile.Agent/Presentation/ChatViewModel.cs) 与 [AgentConnectionScope.cs](../../src/DshMobile.Android/Bridge/AgentConnectionScope.cs) 暴露不可变 `ChatUiState` 与 `SendText/SendWithImages/RunSlashCommand/AnswerApproval/UndoApproval/AnswerQuestion/CancelSession/RefreshHistory`；
+  - 绑定到 `BridgeHost.Agent` 应用级 ConnectionScope，免疫 `ChatActivity` 深色模式（`UiMode`）与横竖屏重建。
+- [x] **N-04-02｜Markdown 托管渲染器（Markdig → Android `SpannableStringBuilder`）**
+  - 在 [MarkdownRenderCache.cs](../../src/DshMobile.Agent/Rendering/MarkdownRenderCache.cs) 将 `StreamingBlocks` 的 settled/tail 块经 Markdig 解析为轻量 IR 并按 `ItemId` 与单调版本号缓存（旧任务结果不得覆盖新版本）；
+  - 在 [ChatMarkdownBinder.cs](../../src/DshMobile.Android/Chat/ChatMarkdownBinder.cs) 与 XML 视图模板（`item_chat_md_text.xml`、`view_chat_code_block.xml`、`view_chat_diff_block.xml`、`view_chat_table_block.xml`）实现等宽代码块一键复制与横向滚动、Diff 行高亮、表格展示；外链经安全确认框交受控系统浏览器。
+- [x] **N-04-03｜`ChatFragment` 与多 `ViewType` `RecyclerView`**
+  - 实现 Material 3 XML 布局 [fragment_chat.xml](../../src/DshMobile.Android/Resources/layout/fragment_chat.xml)、[activity_chat.xml](../../src/DshMobile.Android/Resources/layout/activity_chat.xml) 及 `item_chat_*.xml` 视图模板，在 [ChatTimelineAdapter.cs](../../src/DshMobile.Android/Chat/ChatTimelineAdapter.cs) 落地 `UserMessageHolder`、`AssistantBlockHolder`、`ReasoningHolder`、`ToolCallHolder`、`CommandHolder`、`ApprovalHolder`、`QuestionHolder`、`NoticeHolder`（全 XML 声明，不在代码动态拼建 UI）；
+  - 使用稳定 `ItemId`（64 位稳定哈希）与 `DiffUtil` 局部刷新，禁止流式更新引起整表闪动。
+- [x] **N-04-04｜滚动锚点、图片附件选择与原生斜杠命令栏**
+  - 在 [ChatFragment.cs](../../src/DshMobile.Android/Chat/ChatFragment.cs) 实现「跟随底部 / 用户回看锁止 + 回到底部浮钮」逻辑；
+  - 接入 SAF 系统图片选择器（`ImageAttachmentValidator` 校验格式与大小上限转 `PromptAttachmentImage`）；
   - 提供快捷原生斜杠命令入口（`/compact`、`/permission`、`/plan`、`/goal`，按 `DshCapabilities.SlashCommands` 门控）。
-- [ ] **N-04-05｜并行入口与真机验收**
-  - 在首页提供「打开原生会话（实验）」与既有「打开 DSH（Web）」并行入口；
-  - 真机验收并记录 `docs/native/ACCEPTANCE_PR04.md`（含中文 IME、深色切换、旋转、复制选择、返回键、真实审批与拒绝）。
+- [ ] **N-04-05｜并行入口与真机验收**（并行入口代码与 XML 布局已合入，[ACCEPTANCE_PR04.md](../native/ACCEPTANCE_PR04.md) 已建档；Android 17 arm64 真机 **待真机验证**）
+  - 在首页 [fragment_home.xml](../../src/DshMobile.Android/Resources/layout/fragment_home.xml) / [HomeFragment.cs](../../src/DshMobile.Android/Home/HomeFragment.cs) 提供「打开原生会话（实验）」与既有「打开 DSH（Web）」并行入口；
+  - 真机验收并补齐 `docs/native/ACCEPTANCE_PR04.md`（含中文 IME、深色切换、旋转、复制选择、返回键、真实审批与拒绝）。
+  - **2026-11-23 真机（M2007J1SC / Android 17 / DSH 0.2.2-rc.5）与后续缺陷修复**：初次真机验收（含联网复测）发现 `F1`–`F6`、`F9`–`F14`；当前已在代码层面全部完成修复（含 `waterfall.request`/`cancel`、晚到 `tool/call` 回填、rc.5 事件全集与 `source.kind` 过滤、`session/title`、`FromSessionError`、斜杠 `/` 前缀、宿主重启重连恢复 `PrepareForHostStart`、`ProtocolHandshakeAsync` 测点打通、横屏 IME 收起、移除 `ConfigChanges.UiMode` 与 `Rows.Fmt` 消除 `%1$s` 及 `CS8604` 警告），桌面全部单测与 `Release` 构建已通过，**待重装 APK 真机复测**；设备中文 IME 亦待补。见 [ACCEPTANCE_PR00_PR04_DEVICE.md](../native/ACCEPTANCE_PR00_PR04_DEVICE.md) 与 [ACCEPTANCE_PR04.md](../native/ACCEPTANCE_PR04.md)。
 
 ---
 
@@ -282,9 +284,9 @@ PR-00 (基线 + 路线A/B PoC + ADR-0033 + DshMobile.Agent骨架 + 门禁)
 
 ### 任务项
 
-- [ ] **N-08-01｜升级 `ProcessTable` 为 `NativeOrphanReaper` 多条件孤儿回收**
+- [x] **N-08-01｜升级 `ProcessTable` 为 `NativeOrphanReaper` 多条件孤儿回收**（桌面假 `/proc` 单测与 `DshHost` 启停接线已绿；真机 T11 残留复测 **待真机验证**）
   - 修正 [ProcessTable.cs](../../src/DshMobile.Runtime/Supervision/ProcessTable.cs) 使用 `LastIndexOf(')')` 解析 `stat`，补齐 `uid`、`startTicks`、`TracerPid`、`/proc/<pid>/exe`（兼容 ` (deleted)`）；
-  - 实现保守多条件交集孤儿识别（`uid == appUid && parent == 1 && tracer == 0 && exe matches libproot-loader*.so && !inLiveTrees`），并在启动前与停止后执行安全清理 + 完整离线 `/proc` 假树单测。
+  - 在 [NativeOrphanReaper.cs](../../src/DshMobile.Runtime/Supervision/NativeOrphanReaper.cs) 实现保守多条件交集孤儿识别（`uid == appUid && parent == 1 && tracer == 0 && exe matches libproot-loader*.so && !inLiveTrees`）与发信号前 `startTicks` 二次校验，并在 [DshHost.cs](../../src/DshMobile.Runtime/Hosting/DshHost.cs) 启动前与停止后执行安全清理 + [SupervisionTests.cs](../../tests/DshMobile.Runtime.Tests/SupervisionTests.cs) 完整离线 `/proc` 假树单测。
 - [ ] **N-08-02｜`WorkLeaseManager` 与 `IdleStopPolicy`**
   - 实现带单租约上限与连续总上限的 `WorkLeaseManager`（覆盖 `Chat / Approval / Setup / Update / Reconcile`），单调时钟倒退/负值即清零；
   - 实现 `IdleStopPolicy`（仅后台 + 无活跃租约 + 确认 Agent 全 Idle + 超过阈值才触发有序优雅停机），并与现有 `WarmupPolicy` 协同。
@@ -364,10 +366,10 @@ PR-00 (基线 + 路线A/B PoC + ADR-0033 + DshMobile.Agent骨架 + 门禁)
 
 | 阶段 | 设备 / 系统 / 构建 | APK SHA-256 / Commit | DSH / Node 版本 | 结论 | 报告路径 |
 |---|---|---|---|---|---|
-| PR-00 基线与 PoC | 待真机验证 | — | — | 待测 | `docs/native/BASELINE.md` |
-| PR-01 持久传输握手 | 待真机验证 | — | — | 待测 | — |
-| PR-02 Gateway 契约 & 无 UI 端到端 | 待真机验证 | — | — | 待测 | — |
-| PR-04 原生聊天切片 | 待真机验证 | — | — | 待测 | `docs/native/ACCEPTANCE_PR04.md` |
+| PR-00 基线与 PoC | M2007J1SC / LineageOS / Android 17 (API 37) / CP2A.260605.016 | `14AEEEF2…C1F619A` / `df5e942`+PR-04 工作树 | DSH `0.2.2-rc.5` / Node 26.13.1 | 通过（入口/层版本/WebView 回滚无回退） | `docs/native/ACCEPTANCE_PR00_PR04_DEVICE.md` |
+| PR-01 持久传输握手 | 同上 | 同上 | 同上 | 部分通过：启动→握手→停止→无孤儿；缺 `protocol.*` 测点；启动 9.7–14.0 s 待配对 | `docs/native/ACCEPTANCE_PR00_PR04_DEVICE.md` |
+| PR-02 Gateway 契约 & 无 UI 端到端 | 同上 | 同上 | 同上 | 基本通过（联网）：文本/图片/审批三态真机跑通；F9 审批参数、F10 芯片斜杠命令待修 | `docs/native/ACCEPTANCE_PR00_PR04_DEVICE.md` |
+| PR-04 原生聊天切片 | 同上 | 同上 | 同上 | 修复后真机复测：**PASS 18 / FAIL 0 / INFO 2**；F1/F2/F4/F5/F9/F10/F11/F12/F13/F14 通过，**F6（横屏 + 输入法）仍未修复**、中文 IME 未验证 | `docs/native/ACCEPTANCE_PR04.md` |
 | PR-05 零凭据引导 & Cache-First | 待真机验证 | — | — | 待测 | — |
 | PR-08 治理/更新/远程/性能配对 | 待真机验证 | — | — | 待测 | `docs/native/PERFORMANCE_BASELINE.md` |
 | PR-09 覆盖安装 & 零 WebView 终验 | 待真机验证 | — | — | 待测 | `docs/native/ACCEPTANCE_MATRIX.md` |

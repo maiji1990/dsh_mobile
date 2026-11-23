@@ -41,10 +41,21 @@
 
 ## 3. 已知事件与未知事件 / `turn/end.reason` 退化矩阵
 
-- **已知 `SessionWireEvent.Type`**：`turn/start`、`turn/end`、`step/start`、`step/end`、`user/message`、`developer/message`、`system/message`、`assistant/message`、`assistant/attempt`、`tool/call`、`tool/result`、`request/header`、`approval/policy`、`approval/asked`、`approval/decided`、`permission/preset`、`sandbox/mode`、`command/run`、`command/done`。
+- **已知 `SessionWireEvent.Type`**：已对齐 `0.2.2-rc.5` `KNOWN_SESSION_EVENT_TYPES`（63 种会话事件，含 `turn/start`、`turn/end`、`user/message`、`assistant/*`、`tool/*`、`command/*`、`session/title`、`agent/inbox/spliced`、`session/end-seed`、`session-log-deepseek/delivery-accepted`、`deliverables/presented`、`workspace/changes`、`job/*`、`request/context`、`llm/retry*`、`compaction/*`、`hook/*`、`subagent/*`、`team/*` 等）；其中 `user/message` 仅当 `source.kind == "user"`（兼容无 `source` 的旧夹具并排除 `<system-reminder>`）渲染为聊天气泡，`session/title` 更新会话标题，其余运行时内部状态事件在时间线静默吸收，不再产生 `UnknownEventRow`/`NoticeRow` 刷屏。
+- **`$events` `waterfall` / `cancel` / `emit`**：网关转发 `approval/request` 与 `user-questions/request`（`type: "waterfall"`）将请求体放在 `request` 字段（而非 `emit` 使用的 `args`），解码器按 `payload.Request ?? payload.Args` 读取并在 `type: "cancel"` 时移除对应待审批/问答卡片；若 `tool/call` 晚于 `approval/request` 到达，`RequestsEngine` 通过 `TranscriptEngine.ToolInvocationRecorded` 回调自动回填 `ToolName` 与脱敏参数。
 - **未知 `SessionWireEvent.Type`**：映射为 `SessionWireEventView(IsKnownType: false)`，原样保留 `Seq`、`TimeUnixMs`、`Data` 供后续 PR-03 `Unknown` 降级处理。
 - **`turn/end.reason.kind` 映射**：
   - `completed` / `max-tokens` / `forked`：`IsFailure = false`
   - `error` / `aborted` / `blocked` / `interrupted`：`IsFailure = true`（附 `ErrorCode`/`ErrorMessage`）
   - 其余未识别枚举：`TurnEndReasonKind.Unknown`（不抛异常、保留 `RawKind`）。
 - **协议代次/格式不匹配**：若握手 `$events` 首帧非 `ready` 或核心 RPC 结构缺失关键必填字段，返回 `DshFailureCode.ProtocolMismatch` / `CorruptHistory`（`session/migration-required`），拒绝静默伪造成功。
+
+---
+
+## 4. 真机环境验证（2026-11-23，M2007J1SC / Android 17）
+
+- **必须使用 `0.2.2-rc.5` 层**：设备上原装的 `0.2.2-rc.3` 层会出现未登记事件与消息段；升级到 `0.2.2-rc.5` 后 `turn/end.reason` 能给出 `TRANSPORT` / `MISSING_CREDENTIAL` 等真实原因。针对初次真机验收暴露的 `F3`、`F5`/`F11`、`F9`、`F12`、`F13` 等 `0.2.2-rc.5` 兼容缺陷，客户端已补齐上述事件表、`waterfall.request`/`cancel`、`source.kind`、`session/title` 与 `DshFailureMapper.FromSessionError`，并通过桌面单测；**2026-11-23 真机复测**：事件卡片、系统提示气泡、审批工具名/参数、会话标题均已按预期工作（`F5`/`F11`/`F12`/`F13`/`F9` 关闭），`F3` 尚未取得端到端样本。
+- **凭据 refs 必须完整**：设备 `.dsh/.credentials.yaml` 若只有 record 而缺 `refs`，DSH 报 `MISSING_CREDENTIAL`；客户端已通过 `DshFailureMapper.FromSessionError` 映射为 `session_error.credentials_missing`（单测覆盖；真机未复现该错误，尚无端到端样本）。
+- **设备无默认网络**时，`session/prompt` 仍能正常入队（`turn/start`→`request/header`→`assistant/attempt`），失败由 `llm/retry` 退避重试后以 `turn/end.reason=error(TRANSPORT)` 结束——这是当前可用的"发送链路"真机证据。
+
+详见 [ACCEPTANCE_PR00_PR04_DEVICE.md](ACCEPTANCE_PR00_PR04_DEVICE.md)。

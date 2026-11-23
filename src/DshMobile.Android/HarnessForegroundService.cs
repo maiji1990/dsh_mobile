@@ -33,7 +33,7 @@ public sealed class HarnessForegroundService : Service
         var notification = new Notification.Builder(this, ChannelId)
             .SetContentTitle(GetString(Resource.String.app_name))
             .SetContentText(GetString(Resource.String.fgs_text))
-            .SetSmallIcon(Resource.Mipmap.appicon)
+            .SetSmallIcon(Resource.Drawable.ic_notification)
             .SetContentIntent(open)
             .SetOngoing(true)
             .Build();

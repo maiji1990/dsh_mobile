@@ -22,7 +22,7 @@ public sealed class DshRemoteConnection : IAsyncDisposable
     private readonly RemoteConnectionOptions _options;
     private readonly Func<string?> _tokenProvider;
     private readonly TimeProvider _time;
-    private readonly StartupTrace? _trace;
+    private StartupTrace? _trace;
     private readonly Action<string> _log;
     private readonly SocketsHttpHandler _httpHandler;
     private readonly HttpClient _http;
@@ -119,6 +119,36 @@ public sealed class DshRemoteConnection : IAsyncDisposable
 
     /// <summary>Starts the background connection/reconnect loop without blocking on readiness.</summary>
     public void Start() => StartLoopIfNeeded();
+
+    /// <summary>更新本次启动周期的性能跟踪器；传 null 可在启动握手完成后解绑。</summary>
+    public void SetTrace(StartupTrace? trace) => Volatile.Write(ref _trace, trace);
+
+    /// <summary>在宿主新周期启动前清除已排空（Draining）状态并挂载跟踪器，支持停机后无损重启重连（F4 / F14）。</summary>
+    public void PrepareForHostStart(StartupTrace? trace = null)
+    {
+        CancellationTokenSource? oldLifetime = null;
+        var canDisposeOld = false;
+        lock (_stateLock)
+        {
+            ObjectDisposedException.ThrowIf(_state == RemoteConnectionState.Disposed, this);
+            Volatile.Write(ref _trace, trace);
+            if (_state == RemoteConnectionState.Draining || Volatile.Read(ref _drainRequested) != 0)
+            {
+                Volatile.Write(ref _drainRequested, 0);
+                Interlocked.Exchange(ref _reconnectRequested, 0);
+                canDisposeOld = _loopTask is null || _loopTask.IsCompleted;
+                oldLifetime = _lifetimeCts;
+                _lifetimeCts = new CancellationTokenSource();
+                _loopTask = null;
+                _readyTcs = NewPendingReadyTcs();
+                SetStateLocked(RemoteConnectionState.Disconnected);
+            }
+        }
+        if (canDisposeOld)
+        {
+            oldLifetime?.Dispose();
+        }
+    }
 
     /// <summary>
     /// Cancels the current generation immediately and starts a fresh connection attempt without waiting for backoff.
@@ -314,12 +344,13 @@ public sealed class DshRemoteConnection : IAsyncDisposable
             {
                 throw new RemoteDrainingException();
             }
-            if (_loopTask is not null)
+            if (_loopTask is { IsCompleted: false })
             {
                 return;
             }
             SetStateLocked(RemoteConnectionState.Connecting);
-            _loopTask = Task.Run(() => ConnectionLoopAsync(_lifetimeCts.Token));
+            var lifetimeCt = _lifetimeCts.Token;
+            _loopTask = Task.Run(() => ConnectionLoopAsync(lifetimeCt));
         }
     }
 
@@ -444,7 +475,8 @@ public sealed class DshRemoteConnection : IAsyncDisposable
         ws.Options.SetRequestHeader("Cookie", cookie);
         var wsUri = BuildMuxWebSocketUri(_options.BaseUri);
 
-        var connectSpan = _trace?.Measure("protocol.connected");
+        var trace = Volatile.Read(ref _trace);
+        var connectSpan = trace?.Measure("protocol.connected");
         try
         {
             await ws.ConnectAsync(wsUri, genCts.Token).ConfigureAwait(false);
@@ -473,7 +505,7 @@ public sealed class DshRemoteConnection : IAsyncDisposable
             OnForwardedEventAsync,
             _log);
 
-        var initSpan = _trace?.Measure("protocol.initialized");
+        var initSpan = trace?.Measure("protocol.initialized");
         try
         {
             gen.StartSendPump(genCts.Token);

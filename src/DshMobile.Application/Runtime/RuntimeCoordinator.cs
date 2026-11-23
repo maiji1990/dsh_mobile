@@ -77,7 +77,7 @@ public sealed class RuntimeCoordinator : IDisposable
         _options = options ?? new RuntimeOptions();
         _time = time ?? TimeProvider.System;
         _assets = bundledAssets;
-        _hostFactory = hostFactory ?? ((l, note, t) => new DshHost(l, note, t));
+        _hostFactory = hostFactory ?? ((l, note, t) => new DshHost(l, note, t, terminator: null, gracefulStopTimeout: null, options: _options.HostOptions));
     }
 
     public RuntimeLayout Layout => _layout;
