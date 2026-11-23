@@ -3,6 +3,7 @@ using Android.Content.Res;
 using Android.Views;
 using DshMobile.App.Automation;
 using DshMobile.App.Bridge;
+using DshMobile.App.Chat;
 using DshMobile.App.LocalNetwork;
 using DshMobile.App.Remote;
 using DshMobile.App.RuntimeUi;
@@ -54,6 +55,8 @@ public sealed class HomeFragment : Fragment, ITabRoot
         _progress = view.FindViewById<LinearProgressIndicator>(Resource.Id.status_progress)!;
         _primary = view.FindViewById<MaterialButton>(Resource.Id.status_primary)!;
         _secondary = view.FindViewById<MaterialButton>(Resource.Id.status_secondary)!;
+        view.FindViewById<MaterialButton>(Resource.Id.home_open_native_chat)!.Click += (_, _) =>
+            StartActivity(new Intent(RequireContext(), typeof(ChatActivity)));
         _failure = view.FindViewById(Resource.Id.failure_card)!;
         _failureTitle = view.FindViewById<TextView>(Resource.Id.failure_title)!;
         _failureDetail = view.FindViewById<TextView>(Resource.Id.failure_detail)!;

@@ -36,5 +36,12 @@
   <color name="dshm_surface_container_high">#292A2D</color>
   <color name="dshm_surface_container_highest">#333538</color>
   <color name="dshm_running">#6DD58C</color>
+  <!-- Diff viewer colours (N-04-02), dark scheme. -->
+  <color name="dshm_diff_add_bg">#1E3524</color>
+  <color name="dshm_diff_add_fg">#81C995</color>
+  <color name="dshm_diff_del_bg">#3C1F1E</color>
+  <color name="dshm_diff_del_fg">#F28B82</color>
+  <color name="dshm_diff_hunk_bg">#1D2C44</color>
+  <color name="dshm_diff_hunk_fg">#8AB4F8</color>
   <bool name="dshm_light_bars">false</bool>
 </resources>

@@ -219,6 +219,9 @@ public sealed class DshHost : IDshTokenSource, IDshHost
             {
                 return new DshHostResult(false, Conflict, $"a legacy-started PRoot tree is running (sandbox {running.SandboxRootPid?.ToString() ?? "-"}, dsh {running.DshRootPid?.ToString() ?? "-"}); stop it first");
             }
+            var reapSpan = trace?.Measure("host.orphan_reap");
+            ReapOrphanProotLoaders();
+            reapSpan?.End();
             SetState(DshHostState.Starting);
             SetPhase(DshHostPhase.SandboxStarting);
 
@@ -321,6 +324,7 @@ public sealed class DshHost : IDshTokenSource, IDshHost
             SetPhase(DshHostPhase.Stopping);
             await StopDshGracefullyAsync().ConfigureAwait(false);
             var left = await KillEverythingAsync().ConfigureAwait(false);
+            ReapOrphanProotLoaders();
             UiToolsAtStart = null;
             SetState(DshHostState.Stopped);
             SetPhase(DshHostPhase.Idle);
@@ -619,6 +623,19 @@ public sealed class DshHost : IDshTokenSource, IDshHost
         var remaining = RemainingMarkerProcesses();
         Volatile.Write(ref _leftAfterKill, remaining);
         return remaining;
+    }
+
+    private void ReapOrphanProotLoaders()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+        var report = NativeOrphanReaper.Reap("/proc", Environment.ProcessId);
+        if (report.KilledPids.Count > 0 || report.SkippedPids.Count > 0)
+        {
+            _log($"host: orphan reaper killed {report.KilledPids.Count} skipped {report.SkippedPids.Count}");
+        }
     }
 
     private static int RemainingMarkerProcesses()

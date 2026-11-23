@@ -117,7 +117,7 @@ public sealed class RelayCsChannelService : Service
     public override StartCommandResult OnStartCommand(Intent? intent, StartCommandFlags flags, int startId)
     {
         var notification = new Notification.Builder(this, ChannelId)
-            .SetSmallIcon(Resource.Mipmap.appicon)
+            .SetSmallIcon(Resource.Drawable.ic_notification)
             .SetContentTitle(GetString(Resource.String.app_name))
             .SetContentText(GetString(Resource.String.relay_cs_channel_text))
             .SetOngoing(true)

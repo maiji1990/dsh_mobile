@@ -12,25 +12,69 @@ public static class RemoteProtocolCodec
 {
     private static readonly FrozenSet<string> KnownSessionEventTypes = FrozenSet.ToFrozenSet(
         [
-            "turn/start",
-            "turn/end",
-            "step/start",
-            "step/end",
-            "user/message",
-            "developer/message",
-            "system/message",
-            "assistant/message",
-            "assistant/attempt",
-            "tool/call",
-            "tool/result",
-            "request/header",
-            "approval/policy",
+            "agent-preset/selected",
+            "agent/inbox/spliced",
             "approval/asked",
             "approval/decided",
-            "permission/preset",
-            "sandbox/mode",
-            "command/run",
+            "approval/policy",
+            "assistant/attempt",
+            "assistant/message",
             "command/done",
+            "command/run",
+            "compaction/end",
+            "compaction/prune",
+            "compaction/start",
+            "compaction/summary",
+            "deliverables/presented",
+            "developer/message",
+            "feedback/message-delete",
+            "feedback/message-put",
+            "feedback/record",
+            "goal/change",
+            "hook/invoked",
+            "hook/result",
+            "image/offload",
+            "job/registered",
+            "job/settled",
+            "llm/retry",
+            "llm/retry-started",
+            "model/selection",
+            "permission/preset",
+            "plan/mode",
+            "request/context",
+            "request/header",
+            "sandbox/mode",
+            "schedule/change",
+            "session-log-deepseek/delivery-accepted",
+            "session/end-seed",
+            "session/title",
+            "session/title-llm-request",
+            "step/end",
+            "step/start",
+            "subagent/catalog",
+            "subagent/descriptor",
+            "subagent/model-selection-policy",
+            "system/message",
+            "team/member",
+            "team/message/delivered",
+            "team/message/queued",
+            "team/mode",
+            "team/task",
+            "todo/write",
+            "tool-workflow/agent-end",
+            "tool-workflow/agent-start",
+            "tool-workflow/run-end",
+            "tool-workflow/run-start",
+            "tool/call",
+            "tool/ptc-dispatch",
+            "tool/ptc-dispatch-start",
+            "tool/result",
+            "turn/end",
+            "turn/start",
+            "user/message",
+            "web/deepseek-search-llm-request",
+            "working-directory/change",
+            "workspace/changes",
         ],
         StringComparer.Ordinal);
 
@@ -183,10 +227,16 @@ public static class RemoteProtocolCodec
 
     public static ForwardedGatewayEvent DecodeForwardedEvent(RemoteForwardedEventPayload payload)
     {
+        if (payload.Type == "cancel" && !string.IsNullOrEmpty(payload.EventId))
+        {
+            return new ForwardedEventCancelledGatewayEvent(payload.EventId);
+        }
+
         var evtName = payload.Event ?? string.Empty;
         if (evtName == "approval/request" && !string.IsNullOrEmpty(payload.EventId))
         {
-            var reqEl = ExtractFirstObject(payload.Args);
+            // 网关 `waterfall` 帧载体位于 `request` 字段，兼容测试/旧包装中的 `args` 字段。
+            var reqEl = ExtractFirstObject(payload.Request ?? payload.Args);
             var req = reqEl?.Deserialize(AgentProtocolJsonContext.Default.WireApprovalRequestPayload);
             return new ApprovalGatewayEvent(new ApprovalRequestView(
                 payload.EventId,
@@ -198,7 +248,7 @@ public static class RemoteProtocolCodec
 
         if (evtName == "user-questions/request" && !string.IsNullOrEmpty(payload.EventId))
         {
-            var reqEl = ExtractFirstObject(payload.Args);
+            var reqEl = ExtractFirstObject(payload.Request ?? payload.Args);
             var req = reqEl?.Deserialize(AgentProtocolJsonContext.Default.WireUserQuestionRequestPayload);
             var items = (req?.Questions ?? [])
                 .Select(q => new UserQuestionItemView(

@@ -37,17 +37,21 @@ public sealed class BridgeHost : IDisposable, IDiagnosticsLog
     {
         _context = context.ApplicationContext ?? context;
         Layout = new RuntimeLayout(_context.FilesDir!.AbsolutePath, _context.CacheDir?.AbsolutePath, _context.ApplicationInfo!.NativeLibraryDir!);
+        var runtimeOptions = new RuntimeOptions();
         _services = new ServiceCollection()
             .AddSingleton<IForegroundServiceController>(new AndroidForegroundService(_context))
             .AddSingleton<DshMobile.Runtime.Layers.IBundledAssets>(new AndroidBundledAssets(_context.Assets!))
             .AddSingleton<IDiagnosticsLog>(this)
-            .AddDshMobileApplication(Layout)
+            .AddDshMobileApplication(Layout, runtimeOptions)
             .AddDshMobileUpdateCheck(new DshMobile.Application.Updates.UpdateCheckOptions(AppVersion(_context), DeviceAbi()), _http)
             .AddDshMobileUpdateInstall(_downloadHttp)
             .BuildServiceProvider();
         Runtime = _services.GetRequiredService<RuntimeCoordinator>();
         Updates = _services.GetRequiredService<DshMobile.Application.Updates.UpdateChecker>();
         UpdateInstaller = _services.GetRequiredService<DshMobile.Application.Updates.UpdateCoordinator>();
+        Agent = new AgentConnectionScope(Runtime, Layout, Append);
+        runtimeOptions.HostOptions = new DshMobile.Runtime.Hosting.DshHostOptions(
+            ProtocolHandshakeAsync: Agent.PerformStartupHandshakeAsync);
         // An update the previous process did not finish is reported once (its layer was already restored by recovery).
         if (UpdateInstaller.SettleInterrupted() is { } interrupted)
         {
@@ -88,6 +92,9 @@ public sealed class BridgeHost : IDisposable, IDiagnosticsLog
 
     /// <summary>Online DSH layer update (vNext PR-05 / PR-06).</summary>
     public DshMobile.Application.Updates.UpdateCoordinator UpdateInstaller { get; }
+
+    /// <summary>Application-scoped native agent connection &amp; ChatViewModel (PR-04, ADR-0033).</summary>
+    public AgentConnectionScope Agent { get; }
 
     /// <summary>本进程最近一次更新检查的结果与通道，原子读写以避免跨线程撕裂。</summary>
     private sealed record CheckSnapshot(string Channel, DshMobile.Runtime.Updates.ReleaseDiscoveryResult Result);
@@ -652,6 +659,7 @@ public sealed class BridgeHost : IDisposable, IDiagnosticsLog
 
     public void Dispose()
     {
+        Agent.Dispose();
         _services.Dispose();
         _http.Dispose();
         _downloadHttp.Dispose();

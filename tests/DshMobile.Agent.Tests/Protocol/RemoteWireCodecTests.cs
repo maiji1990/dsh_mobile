@@ -1,6 +1,7 @@
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
+using DshMobile.Agent.Domain;
 using DshMobile.Agent.Protocol;
 
 namespace DshMobile.Agent.Tests.Protocol;
@@ -92,5 +93,45 @@ public sealed class RemoteWireCodecTests
         Assert.Single(envelope.Attachments!);
         Assert.True(parts.TryGetValue("bytes-0", out var decodedBytes));
         Assert.Equal(binary, decodedBytes.ToArray());
+    }
+
+    [Fact]
+    public void DecodeForwardedEvent_HandlesWaterfallRequestAndCancelFrames()
+    {
+        // F9: 真实网关 waterfall 帧使用 `request` 字段承载 toolName/callId/reason
+        var waterfallJson = JsonElement.Parse("""
+            {
+              "type": "waterfall",
+              "event": "approval/request",
+              "eventId": "wf-ev-1",
+              "agentId": "sess-9",
+              "request": {
+                "toolName": "bash",
+                "callId": "call-wf-9",
+                "reason": "needs shell"
+              }
+            }
+            """);
+        var waterfallPayload = RemoteWireCodec.TryDecodeForwardedEvent(waterfallJson);
+        Assert.NotNull(waterfallPayload);
+        var mapped = RemoteProtocolCodec.DecodeForwardedEvent(waterfallPayload!);
+        var ap = Assert.IsType<ApprovalGatewayEvent>(mapped);
+        Assert.Equal("wf-ev-1", ap.Request.EventId);
+        Assert.Equal("sess-9", ap.Request.AgentId);
+        Assert.Equal("bash", ap.Request.ToolName);
+        Assert.Equal("call-wf-9", ap.Request.CallId);
+        Assert.Equal("needs shell", ap.Request.Reason);
+
+        var cancelJson = JsonElement.Parse("""
+            {"type":"cancel","eventId":"wf-ev-1"}
+            """);
+        var cancelPayload = RemoteWireCodec.TryDecodeForwardedEvent(cancelJson);
+        Assert.NotNull(cancelPayload);
+        var cancelled = Assert.IsType<ForwardedEventCancelledGatewayEvent>(RemoteProtocolCodec.DecodeForwardedEvent(cancelPayload!));
+        Assert.Equal("wf-ev-1", cancelled.EventId);
+
+        Assert.True(RemoteProtocolCodec.IsKnownSessionEventType("agent/inbox/spliced"));
+        Assert.True(RemoteProtocolCodec.IsKnownSessionEventType("session/title"));
+        Assert.True(RemoteProtocolCodec.IsKnownSessionEventType("workspace/changes"));
     }
 }

@@ -179,4 +179,34 @@ public sealed class RequestsEngineTests
         Assert.Equal(0, gw.ApprovalReplyCount);
         Assert.Equal(PendingRequestState.Waiting, Assert.Single(engine.Snapshot()).State);
     }
+
+    [Fact]
+    public async Task Approval_LateToolCall_BackfillsArgumentsReadyAndToolName()
+    {
+        var scope = new SessionKey("rt-1", "web", "s-backfill");
+        var gw = new FakeInteractionGateway();
+        await using var transcripts = new TranscriptEngine(coalesceWindow: TimeSpan.FromMilliseconds(5));
+        await using var engine = new RequestsEngine(gw, gw, transcripts);
+
+        // 先到 approval/request，此时 transcript 尚无 tool/call 记录
+        engine.IngestApprovalRequest(scope, "client-1", new ApprovalRequestView("ev-bf", "s-backfill", "unknown", "call-bf-1"));
+        var initial = Assert.Single(engine.Snapshot());
+        Assert.False(initial.ArgumentsReady);
+        Assert.Equal("unknown", initial.ToolName);
+
+        // 随后到达 tool/call 事件应触发回调并回填审批卡片（F9）
+        var handle = transcripts.GetOrCreateSession(scope);
+        handle.PostFollowUpdate(scope, new SessionFollowEventUpdate(new SessionWireEventView(
+            "tool/call",
+            10,
+            1000,
+            JsonElement.Parse("""{"callId":"call-bf-1","name":"bash","arguments":"{\"command\":\"pwd\"}"}"""))));
+        await handle.WaitForIdleDrainAsync();
+
+        var updated = Assert.Single(engine.Snapshot());
+        Assert.True(updated.ArgumentsReady);
+        Assert.Equal("bash", updated.ToolName);
+        Assert.Contains("pwd", updated.SanitizedArgumentsSummary, StringComparison.Ordinal);
+        Assert.Null(updated.DiagnosticKey);
+    }
 }

@@ -40,5 +40,12 @@
   <color name="dshm_surface_container_highest">#E2E2E6</color>
   <!-- Status dot / icon for "running". Not a theme role: green reads as "up" in both schemes. -->
   <color name="dshm_running">#1E8E3E</color>
+  <!-- Diff viewer colours (N-04-02), light scheme. -->
+  <color name="dshm_diff_add_bg">#E6F4EA</color>
+  <color name="dshm_diff_add_fg">#137333</color>
+  <color name="dshm_diff_del_bg">#FCE8E6</color>
+  <color name="dshm_diff_del_fg">#C5221F</color>
+  <color name="dshm_diff_hunk_bg">#E8F0FE</color>
+  <color name="dshm_diff_hunk_fg">#1967D2</color>
   <bool name="dshm_light_bars">true</bool>
 </resources>

@@ -153,4 +153,5 @@ public sealed record ChatSnapshot(
     bool IsPartialHistory,
     string? FailureCode,
     IReadOnlyList<ChatRow> Rows,
-    TranscriptCounters Counters);
+    TranscriptCounters Counters,
+    string? SessionTitle = null);

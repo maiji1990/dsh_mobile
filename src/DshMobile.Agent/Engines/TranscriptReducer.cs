@@ -24,6 +24,7 @@ public sealed class TranscriptReducer
 
     private readonly SessionKey _scope;
     private readonly int _maxDeferredParts;
+    private readonly Action<ToolInvocationSummary>? _onToolInvocation;
     private readonly List<IReadOnlyList<ChatRow>> _settledTurnRows = [];
     private readonly Dictionary<long, int> _settledTurnIndexBySeq = [];
     private readonly Dictionary<long, TurnAccumulator> _settledTurnsBySeq = [];
@@ -46,6 +47,7 @@ public sealed class TranscriptReducer
     private long _subagentNoticeSeq;
     private RunPhase _phase = RunPhase.Idle;
     private string? _failureCode;
+    private string? _sessionTitle;
     private bool _isDetachedCache;
     private bool _isPartialHistory;
     private bool _needsCalibration;
@@ -60,7 +62,10 @@ public sealed class TranscriptReducer
     private long _completedTurnTailReparses;
     private IReadOnlyList<ChatRow> _lastDerivedRows = [];
 
-    public TranscriptReducer(SessionKey scope, int maxDeferredParts = DefaultMaxDeferredParts)
+    public TranscriptReducer(
+        SessionKey scope,
+        int maxDeferredParts = DefaultMaxDeferredParts,
+        Action<ToolInvocationSummary>? onToolInvocation = null)
     {
         if (string.IsNullOrWhiteSpace(scope.SessionId))
         {
@@ -69,6 +74,7 @@ public sealed class TranscriptReducer
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(maxDeferredParts);
         _scope = scope;
         _maxDeferredParts = maxDeferredParts;
+        _onToolInvocation = onToolInvocation;
     }
 
     public SessionKey Scope => _scope;
@@ -211,10 +217,20 @@ public sealed class TranscriptReducer
                 break;
 
             case "user/message":
-                var userTurn = EnsureActiveTurn(wireEvent.Seq);
+                // 仅将真实用户输入渲染为右侧气泡；技能/记忆/审批注入的合成上下文消息跳过渲染（F12）。
+                var uSourceKind = ExtractUserMessageSourceKind(wireEvent.Data);
+                if (uSourceKind is not null && !string.Equals(uSourceKind, "user", StringComparison.Ordinal))
+                {
+                    break;
+                }
                 var uMsgId = ExtractMessageId(wireEvent.Data) ?? $"user:{wireEvent.Seq}";
                 var uText = ExtractTextFromMessageData(wireEvent.Data);
                 var imgCount = CountImagesInMessageData(wireEvent.Data);
+                if (uSourceKind is null && imgCount == 0 && IsInjectedReminderText(uText))
+                {
+                    break;
+                }
+                var userTurn = EnsureActiveTurn(wireEvent.Seq);
                 userTurn.UserMessages.RemoveAll(u => u.MessageId == uMsgId);
                 userTurn.UserMessages.Add(new UserMessageRow(
                     $"msg:{uMsgId}",
@@ -320,17 +336,68 @@ public sealed class TranscriptReducer
                 cdTurn.CompleteCommand(doneId, succeeded, text is null ? null : SecretRedactor.RedactAndTruncate(text, 400));
                 break;
 
-            case "permission/preset":
-            case "sandbox/mode":
+            case "session/title":
+                var nextTitle = TryGetString(wireEvent.Data, "title")?.Trim();
+                if (!string.IsNullOrEmpty(nextTitle))
+                {
+                    _sessionTitle = nextTitle;
+                }
+                break;
+
+            case "agent-preset/selected":
+            case "agent/inbox/spliced":
             case "approval/policy":
             case "approval/asked":
             case "approval/decided":
+            case "assistant/attempt":
+            case "compaction/end":
+            case "compaction/prune":
+            case "compaction/start":
+            case "compaction/summary":
+            case "deliverables/presented":
+            case "developer/message":
+            case "feedback/message-delete":
+            case "feedback/message-put":
+            case "feedback/record":
+            case "goal/change":
+            case "hook/invoked":
+            case "hook/result":
+            case "image/offload":
+            case "job/registered":
+            case "job/settled":
+            case "llm/retry":
+            case "llm/retry-started":
+            case "model/selection":
+            case "permission/preset":
+            case "plan/mode":
+            case "request/context":
+            case "request/header":
+            case "sandbox/mode":
+            case "schedule/change":
+            case "session-log-deepseek/delivery-accepted":
+            case "session/end-seed":
+            case "session/title-llm-request":
             case "step/start":
             case "step/end":
-            case "request/header":
-            case "developer/message":
+            case "subagent/catalog":
+            case "subagent/descriptor":
+            case "subagent/model-selection-policy":
             case "system/message":
-            case "assistant/attempt":
+            case "team/member":
+            case "team/message/delivered":
+            case "team/message/queued":
+            case "team/mode":
+            case "team/task":
+            case "todo/write":
+            case "tool-workflow/agent-end":
+            case "tool-workflow/agent-start":
+            case "tool-workflow/run-end":
+            case "tool-workflow/run-start":
+            case "tool/ptc-dispatch":
+            case "tool/ptc-dispatch-start":
+            case "web/deepseek-search-llm-request":
+            case "working-directory/change":
+            case "workspace/changes":
                 break;
 
             default:
@@ -507,7 +574,8 @@ public sealed class TranscriptReducer
                 _isPartialHistory,
                 _failureCode,
                 _lastDerivedRows,
-                SnapshotCounters(publishes, skippedWhileHidden, historyVisits));
+                SnapshotCounters(publishes, skippedWhileHidden, historyVisits),
+                _sessionTitle);
         }
 
         _derives++;
@@ -546,7 +614,8 @@ public sealed class TranscriptReducer
             _isPartialHistory,
             _failureCode,
             _lastDerivedRows,
-            SnapshotCounters(publishes, skippedWhileHidden, historyVisits));
+            SnapshotCounters(publishes, skippedWhileHidden, historyVisits),
+            _sessionTitle);
     }
 
     private void SealActiveTurnIfPresent(bool markCompleted)
@@ -656,6 +725,7 @@ public sealed class TranscriptReducer
         _completedTurnTailReparses = 0;
         _phase = RunPhase.Idle;
         _failureCode = null;
+        _sessionTitle = null;
         _isDetachedCache = false;
         _isPartialHistory = false;
         _needsCalibration = false;
@@ -679,6 +749,7 @@ public sealed class TranscriptReducer
             snapshot = snapshot.Remove(oldest);
         }
         Volatile.Write(ref _toolCallsSnapshot, snapshot);
+        _onToolInvocation?.Invoke(summary);
     }
 
     private void AppendSessionNotice(NoticeRow notice)
@@ -890,6 +961,30 @@ public sealed class TranscriptReducer
             }
         }
     }
+
+    private static string? ExtractUserMessageSourceKind(JsonElement data)
+    {
+        if (data.ValueKind != JsonValueKind.Object)
+        {
+            return null;
+        }
+        if (data.TryGetProperty("source", out var directSrc) && directSrc.ValueKind == JsonValueKind.Object)
+        {
+            return TryGetString(directSrc, "kind");
+        }
+        if (data.TryGetProperty("message", out var nestedMsg) &&
+            nestedMsg.ValueKind == JsonValueKind.Object &&
+            nestedMsg.TryGetProperty("source", out var nestedSrc) &&
+            nestedSrc.ValueKind == JsonValueKind.Object)
+        {
+            return TryGetString(nestedSrc, "kind");
+        }
+        return null;
+    }
+
+    private static bool IsInjectedReminderText(string text) =>
+        !string.IsNullOrEmpty(text) &&
+        text.TrimStart().StartsWith("<system-reminder>", StringComparison.OrdinalIgnoreCase);
 
     private static string? ExtractMessageId(JsonElement data)
     {

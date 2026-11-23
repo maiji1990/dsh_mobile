@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Monochrome layer for Android 13+ themed icons (mipmap-anydpi-v33/appicon.xml). The system re-colours the alpha,
+  so only the silhouette matters: a terminal window with the ">_" prompt of the guest shell that the app hosts.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+  <!-- window outline -->
+  <path
+      android:pathData="M32,34 h44 a9,9 0 0 1 9,9 v22 a9,9 0 0 1 -9,9 h-44 a9,9 0 0 1 -9,-9 v-22 a9,9 0 0 1 9,-9 z"
+      android:strokeColor="#FF000000"
+      android:strokeWidth="4.5" />
+  <!-- title bar divider -->
+  <path
+      android:pathData="M23,45 h62"
+      android:strokeColor="#FF000000"
+      android:strokeWidth="3.5" />
+  <!-- ">" prompt -->
+  <path
+      android:pathData="M42,54 L48,60 L42,66"
+      android:strokeColor="#FF000000"
+      android:strokeWidth="4"
+      android:strokeLineCap="round"
+      android:strokeLineJoin="round" />
+  <!-- "_" caret -->
+  <path
+      android:pathData="M54,66 h12"
+      android:strokeColor="#FF000000"
+      android:strokeWidth="4"
+      android:strokeLineCap="round" />
+</vector>
