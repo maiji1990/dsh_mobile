@@ -1,3 +1,4 @@
+using DshMobile.Runtime;
 using DshMobile.Runtime.Hosting;
 
 namespace DshMobile.Application;
@@ -27,4 +28,7 @@ public sealed class RuntimeOptions
 
     /// <summary>可选的 C# 宿主启动配置（如协议握手与性能跟踪挂载）。</summary>
     public DshHostOptions? HostOptions { get; set; }
+
+    /// <summary>可选的 guest shell 执行注入点（仅供测试替换 PRoot 进程调用；生产为 null）。</summary>
+    public Func<string, GuestExecutionOptions, CancellationToken, Task<GuestProcessResult>>? GuestShellRunner { get; set; }
 }

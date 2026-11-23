@@ -9,6 +9,7 @@ using DshMobile.Runtime.Guest;
 using DshMobile.Runtime.Hosting;
 using DshMobile.Runtime.Layers;
 using DshMobile.Runtime.Migration;
+using DshMobile.Runtime.Plugins;
 
 namespace DshMobile.Application.Runtime;
 
@@ -960,6 +961,138 @@ public sealed class RuntimeCoordinator : IDisposable
             _op.Release();
         }
     }
+
+    /// <summary>
+    /// PR-07（N-07-01）：在单一操作锁内优雅重启 <c>web</c> 宿主，使插件安装/卸载/启停变更生效。
+    /// </summary>
+    public async Task<RuntimeStartResult> RestartWebHostAsync(CancellationToken ct, StartupTrace? trace = null)
+    {
+        await _op.WaitAsync(ct).ConfigureAwait(false);
+        try
+        {
+            if (_host is { OwnsProcesses: true } running)
+            {
+                _log.Note("restart: stopping running DSH host");
+                var stopped = await StopHostAsync(running, ct).ConfigureAwait(false);
+                if (!stopped.Ok)
+                {
+                    return stopped;
+                }
+            }
+            await SyncAsync(ct).ConfigureAwait(false);
+            return await StartHostAsync(DshProfile.Web, ct, trace).ConfigureAwait(false);
+        }
+        finally
+        {
+            _op.Release();
+        }
+    }
+
+    /// <summary>
+    /// PR-07（N-07-01）：受控读取 <c>web</c> profile 已装插件包列表（<c>dsh plugin --profile web list --json --depth 0</c>）。
+    /// </summary>
+    public async Task<GuestPluginListResult> ListProfilePluginsAsync(CancellationToken ct)
+    {
+        await _op.WaitAsync(ct).ConfigureAwait(false);
+        try
+        {
+            await EnsureGuestAssetsAsync(ct).ConfigureAwait(false);
+            var svc = CreateGuestPluginService();
+            var result = await svc.ListInstalledAsync(ct).ConfigureAwait(false);
+            _log.Note(result.Ok
+                ? $"plugins list: {result.Packages.Count} packages"
+                : $"plugins list FAILED {result.Code}");
+            return result;
+        }
+        finally
+        {
+            _op.Release();
+        }
+    }
+
+    /// <summary>
+    /// PR-07（N-07-01）：受控安装插件包（白名单前置校验，非法参数零进程启动）。
+    /// </summary>
+    public async Task<GuestPluginChangeResult> InstallProfilePluginAsync(string packageSpec, CancellationToken ct)
+    {
+        var trimmed = packageSpec?.Trim(' ');
+        if (!PluginCommandRules.IsValidInstallSpec(trimmed))
+        {
+            return new GuestPluginChangeResult(false, RuntimeErrorCodes.BadRequest, "package spec must be a valid npm package name with optional exact version");
+        }
+
+        await _op.WaitAsync(ct).ConfigureAwait(false);
+        try
+        {
+            await EnsureGuestAssetsAsync(ct).ConfigureAwait(false);
+            var svc = CreateGuestPluginService();
+            var result = await svc.InstallAsync(trimmed!, ct).ConfigureAwait(false);
+            _log.Note(result.Ok
+                ? $"plugins add {trimmed}: ok (restart required)"
+                : $"plugins add {trimmed} FAILED {result.Code}");
+            return result;
+        }
+        finally
+        {
+            _op.Release();
+        }
+    }
+
+    /// <summary>
+    /// PR-07（N-07-01）：受控卸载插件包（白名单与核心包保护前置校验，非法参数零进程启动）。
+    /// </summary>
+    public async Task<GuestPluginChangeResult> UninstallProfilePluginAsync(string packageName, CancellationToken ct)
+    {
+        var trimmed = packageName?.Trim(' ');
+        if (!PluginCommandRules.IsValidPackageName(trimmed) || PluginCommandRules.IsProtectedPackage(trimmed!))
+        {
+            return new GuestPluginChangeResult(false, RuntimeErrorCodes.BadRequest, "package name is invalid or protected");
+        }
+
+        await _op.WaitAsync(ct).ConfigureAwait(false);
+        try
+        {
+            await EnsureGuestAssetsAsync(ct).ConfigureAwait(false);
+            var svc = CreateGuestPluginService();
+            var result = await svc.RemoveAsync(trimmed!, ct).ConfigureAwait(false);
+            _log.Note(result.Ok
+                ? $"plugins remove {trimmed}: ok (restart required)"
+                : $"plugins remove {trimmed} FAILED {result.Code}");
+            return result;
+        }
+        finally
+        {
+            _op.Release();
+        }
+    }
+
+    /// <summary>
+    /// PR-07（N-07-01）：受控启停插件入口（原子写入 <c>profiles/web/cordis.patch.yml</c>）。
+    /// </summary>
+    public async Task<GuestPluginChangeResult> SetProfilePluginEnabledAsync(string entryId, string moduleName, bool enabled, CancellationToken ct)
+    {
+        if (!PluginCommandRules.IsValidEntryId(entryId) || PluginCommandRules.IsProtectedEntry(entryId, moduleName))
+        {
+            return new GuestPluginChangeResult(false, RuntimeErrorCodes.BadRequest, "plugin entry is invalid or protected");
+        }
+
+        await _op.WaitAsync(ct).ConfigureAwait(false);
+        try
+        {
+            var svc = CreateGuestPluginService();
+            var result = await svc.SetEnabledAsync(entryId, moduleName, enabled, ct).ConfigureAwait(false);
+            _log.Note(result.Ok
+                ? $"plugins toggle {entryId} -> {enabled}: ok (restart required)"
+                : $"plugins toggle {entryId} FAILED {result.Code}");
+            return result;
+        }
+        finally
+        {
+            _op.Release();
+        }
+    }
+
+    private GuestPluginService CreateGuestPluginService() => new(_layout, _options.GuestShellRunner);
 
     private RuntimeStartResult Refused(string message)
     {

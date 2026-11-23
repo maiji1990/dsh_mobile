@@ -272,12 +272,12 @@ PR-00 (基线 + 路线A/B PoC + ADR-0033 + DshMobile.Agent骨架 + 门禁)
 
 - [ ] **N-07-01｜`PluginInventoryService` 与受控变更服务（L0 / L1）**
   - 仅经官方 `dsh-host-plugin-inventory` / `plugin_manager` 或受控 argv CLI（沿用 `GuestCommandLine` 逐 token 单引号转义）读取插件名称、版本、启用态、错误摘要及技能目录；
-  - 安装/卸载/开关操作严格白名单校验 + 用户显式确认，不在 Android 侧重写 npm 安装逻辑。
+  - 安装/卸载/开关操作严格白名单校验 + 用户显式确认，不在 Android 侧重写 npm 安装逻辑。（**桌面实现与单测已完成；待真机验证**，见 `docs/native/ACCEPTANCE_PR07.md`）
 - [ ] **N-07-02｜`PluginsFragment`（Material 3）**
   - 展示已装插件清单、状态标签、报错摘要、启停/装卸入口，以及明确的「需要重启 DSH 生效」横幅；
-  - 对携带自定义 WebUI 的第三方插件如实显示“此插件后端正常运行，但暂无原生管理界面”，不伪装兼容、不内嵌 WebView。
-- [ ] **N-07-03｜回归测试与边界核对**
-  - 单测覆盖：非法包名拒绝、安装失败状态恢复、重启提示触发、错误日志脱敏（不含插件配置密钥）。
+  - 对携带自定义 WebUI 的第三方插件如实显示“此插件后端正常运行，但暂无原生管理界面”，不伪装兼容、不内嵌 WebView。（**全 XML 布局、`PluginsActivity`/`PluginsFragment`/`PluginsAdapter` 与 `MoreFragment` 入口已完成并通过 `Release` 构建；待真机验证**，见 `docs/native/ACCEPTANCE_PR07.md`）
+- [x] **N-07-03｜回归测试与边界核对**
+  - 单测覆盖：非法包名拒绝（零进程启动）、安装/卸载失败后状态恢复、重启提示触发与宿主重启清除、错误日志经 `SecretRedactor` 脱敏（不含插件配置密钥），以及零 L2 动态表单 / 零 WebView 边界校验（`Runtime`/`Application`/`Agent` 单测及 5 组 `Quality` 门禁已通过；真机交互待测）。
 
 ---
 
@@ -376,5 +376,6 @@ PR-00 (基线 + 路线A/B PoC + ADR-0033 + DshMobile.Agent骨架 + 门禁)
 | PR-02 Gateway 契约 & 无 UI 端到端 | 同上 | 同上 | 同上 | 基本通过（联网）：文本/图片/审批三态真机跑通；F9 审批参数、F10 芯片斜杠命令待修 | `docs/native/ACCEPTANCE_PR00_PR04_DEVICE.md` |
 | PR-04 原生聊天切片 | 同上 | 同上 | 同上 | 修复后真机复测：**PASS 18 / FAIL 0 / INFO 2**；F1/F2/F4/F5/F9/F10/F11/F12/F13/F14 通过，**F6（横屏 + 输入法）仍未修复**、中文 IME 未验证 | `docs/native/ACCEPTANCE_PR04.md` |
 | PR-05 零凭据引导 & Cache-First | M2007J1SC / LineageOS / Android 17 (API 37) / CP2A.260605.016 | `CC7FD87E…3340EBF2` / PR-05 工作树 | DSH `0.2.2-rc.5` / Node 26.13.1 | 修复后复测通过：F15–F19 关闭；`native.cache_first_rendered`=96.2 ms；仅「全新零凭据安装」未重装验证 | `docs/native/ACCEPTANCE_PR05.md` |
+| PR-07 插件目录 L0 / 受控 L1 | 待真机验证 | — | — | 桌面全套单测与 Release 裁剪构建已通过；真机待测 | `docs/native/ACCEPTANCE_PR07.md` |
 | PR-08 治理/更新/远程/性能配对 | 待真机验证 | — | — | 待测 | `docs/native/PERFORMANCE_BASELINE.md` |
 | PR-09 覆盖安装 & 零 WebView 终验 | 待真机验证 | — | — | 待测 | `docs/native/ACCEPTANCE_MATRIX.md` |

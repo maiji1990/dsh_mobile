@@ -49,7 +49,7 @@ public sealed class BridgeHost : IDisposable, IDiagnosticsLog
         Runtime = _services.GetRequiredService<RuntimeCoordinator>();
         Updates = _services.GetRequiredService<DshMobile.Application.Updates.UpdateChecker>();
         UpdateInstaller = _services.GetRequiredService<DshMobile.Application.Updates.UpdateCoordinator>();
-        Agent = new AgentConnectionScope(_context, Runtime, Layout, Append);
+        Agent = new AgentConnectionScope(_context, Runtime, Layout, Append, RunRestartForPluginsAsync);
         runtimeOptions.HostOptions = new DshMobile.Runtime.Hosting.DshHostOptions(
             ProtocolHandshakeAsync: Agent.PerformStartupHandshakeAsync);
         // An update the previous process did not finish is reported once (its layer was already restored by recovery).
@@ -370,6 +370,29 @@ public sealed class BridgeHost : IDisposable, IDiagnosticsLog
         }
         Append(r.Ok ? $"stop: ok ({r.Snapshot.State})" : $"stop FAILED {r.Code}: {r.Message} (state={r.Snapshot.State})");
     });
+
+    /// <summary>PR-07（N-07-02）：在操作互斥锁内重启 DSH 宿主，使已保存的插件安装/卸载/启停变更生效。</summary>
+    public async Task<RuntimeStartResult> RunRestartForPluginsAsync(CancellationToken ct)
+    {
+        Volatile.Write(ref _userStopped, 0);
+        RuntimeStartResult? result = null;
+        await RunExclusive("restart", async () =>
+        {
+            var r = await Runtime.RestartWebHostAsync(ct).ConfigureAwait(false);
+            result = r;
+            Report(r.Ok, r.Code, r.Message);
+            var s = r.Snapshot;
+            Append(r.Ok
+                ? $"restart: ok sandbox={s.State} dsh={s.Harness} version={s.DshVersion ?? "-"} gen={s.Generation}"
+                : $"restart FAILED {r.Code}: {r.Message}");
+        }, reportBusy: true).ConfigureAwait(false);
+
+        return result ?? new RuntimeStartResult(
+            false,
+            RuntimeErrorCodes.InvalidTransition,
+            "another operation is running",
+            Runtime.State.Current);
+    }
 
     /// <summary>Runtime state, health, the host's own view, then the fixed guest diagnostics (uname/debian/node/dsh --version).</summary>
     public Task RunDiagnosticsAsync() => RunExclusive("diagnostics", async () =>
