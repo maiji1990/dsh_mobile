@@ -88,6 +88,36 @@
                 android:padding="8dp"
                 android:textColor="?attr/colorOnSurface"
                 android:visibility="gone" />
+
+            <!-- N-06-02: 工作区文件直达入口（仅安全路径可见） -->
+            <LinearLayout
+                android:id="@+id/chat_tool_workspace_bar"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
+                android:gravity="center_vertical"
+                android:orientation="horizontal"
+                android:visibility="gone">
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/chat_tool_open_file_btn"
+                    style="@style/Widget.Material3.Button.TextButton"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:ellipsize="middle"
+                    android:gravity="start|center_vertical"
+                    android:maxLines="1"
+                    app:icon="@drawable/ic_folder" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/chat_tool_open_diff_btn"
+                    style="@style/Widget.Material3.Button.TextButton"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/chat_tool_view_diff"
+                    app:icon="@drawable/ic_code" />
+            </LinearLayout>
         </LinearLayout>
     </com.google.android.material.card.MaterialCardView>
 </LinearLayout>

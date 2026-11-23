@@ -1,3 +1,4 @@
+using Android.Content;
 using Android.Content.PM;
 using Android.Views;
 using AndroidX.AppCompat.App;
@@ -10,20 +11,22 @@ using Log = Android.Util.Log;
 namespace DshMobile.App.Chat;
 
 /// <summary>
-/// PR-04 / PR-05 纯原生聊天并行入口 Activity（N-04-03 / N-04-05 / N-05-04）：
+/// PR-04 / PR-05 / PR-06 纯原生聊天并行入口 Activity（N-04-03 / N-04-05 / N-05-04 / N-06-03）：
 /// 承载 <see cref="ChatFragment"/>，配置变更（横竖屏/键盘）不销毁会话状态，深色模式（<c>UiMode</c>）交由系统重建以完整刷新 Material 3 主题（F2）；
-/// 在 <see cref="StartupTrace"/> 上记录 <c>native.activity_visible</c> 与 <c>native.cache_first_rendered</c>。
+/// 支持从跨会话收件箱或后台系统通知跳转并定位到指定交互卡片（<see cref="ExtraFocusEventId"/>）。
 /// 原 <see cref="DshWebActivity"/> 完整保留作为回滚路径。
 /// </summary>
 [Activity(
     Label = "@string/chat_title",
     Exported = false,
+    LaunchMode = LaunchMode.SingleTop,
     ConfigurationChanges = ConfigChanges.Orientation | ConfigChanges.ScreenSize | ConfigChanges.ScreenLayout
         | ConfigChanges.SmallestScreenSize | ConfigChanges.Keyboard | ConfigChanges.KeyboardHidden,
     WindowSoftInputMode = SoftInput.AdjustResize)]
 public sealed class ChatActivity : AppCompatActivity
 {
     public const string ExtraSessionId = "chat.extra.session_id";
+    public const string ExtraFocusEventId = "chat.extra.focus_event_id";
     private const string ChatFragmentTag = "native.chat.fragment";
 
     private StartupTrace? _launchTrace;
@@ -71,16 +74,39 @@ public sealed class ChatActivity : AppCompatActivity
         if (SupportFragmentManager.FindFragmentByTag(ChatFragmentTag) is null)
         {
             var fragment = new ChatFragment();
+            var args = new Bundle();
             if (Intent?.GetStringExtra(ExtraSessionId) is { Length: > 0 } requestedSessionId)
             {
-                var args = new Bundle();
                 args.PutString(ExtraSessionId, requestedSessionId);
+            }
+            if (Intent?.GetStringExtra(ExtraFocusEventId) is { Length: > 0 } focusEventId)
+            {
+                args.PutString(ExtraFocusEventId, focusEventId);
+            }
+            if (!args.IsEmpty)
+            {
                 fragment.Arguments = args;
             }
             SupportFragmentManager
                 .BeginTransaction()
                 .Replace(Resource.Id.chat_fragment_container, fragment, ChatFragmentTag)
                 .Commit();
+        }
+    }
+
+    protected override void OnNewIntent(Intent? intent)
+    {
+        base.OnNewIntent(intent);
+        if (intent is null)
+        {
+            return;
+        }
+        Intent = intent;
+        if (SupportFragmentManager.FindFragmentByTag(ChatFragmentTag) is ChatFragment fragment)
+        {
+            fragment.NavigateToSession(
+                intent.GetStringExtra(ExtraSessionId),
+                intent.GetStringExtra(ExtraFocusEventId));
         }
     }
 }

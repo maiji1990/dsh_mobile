@@ -587,4 +587,47 @@
     <string name="plugins_status_disabled_toast">已设置为禁用，重启 DSH 后生效</string>
     <string name="plugins_status_restarted">DSH 已重启，插件变更已生效</string>
     <string name="plugins_op_restart">重启 DSH</string>
+
+    <!-- PR-06: Workspace Git/Diff, Cross-Session Inbox, Background Request Notifications. -->
+    <string name="files_tab_files">文件</string>
+    <string name="files_tab_git">Git</string>
+    <string name="git_branch_fmt">分支：%1$s</string>
+    <string name="git_branch_detached">游离 HEAD：%1$s</string>
+    <string name="git_repo_root_fmt">仓库根：%1$s</string>
+    <string name="git_refresh">刷新</string>
+    <string name="git_not_repo">当前目录不是 Git 仓库（或工作区未初始化）</string>
+    <string name="git_unavailable">沙箱内未检测到 git 命令或运行环境未就绪</string>
+    <string name="git_clean">工作区干净，暂无未提交变更</string>
+    <string name="git_changes_truncated">变更条目超过上限，仅展示前 %1$d / %2$d 项</string>
+    <string name="git_diff_back">返回变更列表</string>
+    <string name="git_diff_open_file">预览文件</string>
+    <string name="git_diff_binary">二进制文件，暂不支持文本 Diff 展示</string>
+    <string name="git_diff_empty">该文件当前无差异内容</string>
+    <string name="git_diff_truncated_fmt">Diff 已截断：%1$s</string>
+    <string name="git_change_staged">已暂存</string>
+    <string name="git_change_unstaged">未暂存</string>
+    <string name="git_change_untracked">未跟踪</string>
+    <string name="git_change_renamed_from">原路径：%1$s</string>
+    <string name="chat_tool_view_diff">Diff</string>
+    <string name="git_jump_no_diff_fallback">该文件暂无 Git 变更，已定位到工作区文件</string>
+
+    <string name="inbox_title">跨会话待办收件箱</string>
+    <string name="inbox_banner_fmt">共有 %1$d 项待处理（审批 %2$d · 问答 %3$d）</string>
+    <string name="inbox_banner_action">查看待办</string>
+    <string name="inbox_sheet_subtitle_fmt">来自全部会话的 %1$d 项待确认请求</string>
+    <string name="inbox_empty">当前没有待审批或待回答请求</string>
+    <string name="inbox_kind_approval">审批</string>
+    <string name="inbox_kind_question">问答</string>
+    <string name="inbox_state_waiting">待处理</string>
+    <string name="inbox_state_held">撤销窗口中</string>
+    <string name="inbox_state_sending">提交中</string>
+    <string name="inbox_state_lost">待重连恢复</string>
+    <string name="inbox_item_goto_chat">跳转会话</string>
+
+    <string name="agent_request_channel">Agent 审批与问答</string>
+    <string name="agent_notify_approval_title">Agent 请求授权 · %1$s</string>
+    <string name="agent_notify_question_title">Agent 等待回答 · %1$s</string>
+    <string name="agent_notify_session_prefix">会话：%1$s</string>
+    <string name="agent_notify_allow_once">允许一次</string>
+    <string name="agent_notify_reject">拒绝</string>
 </resources>

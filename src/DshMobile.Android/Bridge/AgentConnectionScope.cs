@@ -1,7 +1,9 @@
+using Android.Content;
 using DshMobile.Agent.Engines;
 using DshMobile.Agent.Presentation;
 using DshMobile.Agent.Protocol;
 using DshMobile.Agent.Transport;
+using DshMobile.App.Notifications;
 using DshMobile.Application.Runtime;
 using DshMobile.Core.Diagnostics;
 using DshMobile.Runtime;
@@ -11,7 +13,7 @@ using DshMobile.Runtime.Migration;
 namespace DshMobile.App.Bridge;
 
 /// <summary>
-/// 应用级原生 Agent 连接与引擎作用域（N-04-01）：
+/// 应用级原生 Agent 连接与引擎作用域（N-04-01 / N-06-03 / N-06-04）：
 /// 驻留 <see cref="DshMobileApplication"/> 生命周期，免疫 Activity/Fragment 重建；
 /// 通过 <see cref="RuntimeCoordinator.AddHostStoppingHook"/> 在宿主停机前排空数据面并落盘脱敏缓存，绝不占用 <c>_op</c> 锁。
 /// </summary>
@@ -31,11 +33,13 @@ public sealed class AgentConnectionScope : IDisposable
     private int _disposed;
 
     public AgentConnectionScope(
+        Context context,
         RuntimeCoordinator runtime,
         RuntimeLayout layout,
         Action<string> log,
         Func<CancellationToken, Task<RuntimeStartResult>>? restartHostAsync = null)
     {
+        ArgumentNullException.ThrowIfNull(context);
         ArgumentNullException.ThrowIfNull(runtime);
         ArgumentNullException.ThrowIfNull(layout);
         ArgumentNullException.ThrowIfNull(log);
@@ -61,8 +65,14 @@ public sealed class AgentConnectionScope : IDisposable
             restartHostAsync ?? (ct => runtime.RestartWebHostAsync(ct)));
         var pluginService = new PluginInventoryService(_gateway, pluginOps);
         Plugins = new PluginsViewModel(_gateway, pluginService);
+        Inbox = new InboxViewModel(_requests, ResolveSessionTitle);
+        RequestNotifications = new BackgroundRequestNotificationCoordinator(
+            _requests,
+            new AgentRequestNotificationSurface(context),
+            ResolveSessionTitle);
 
         Chat.StateChanged += OnChatStateChanged;
+        Sessions.StateChanged += OnSessionsStateChanged;
         _connection.GenerationChanged += OnGenerationChanged;
         _stoppingHook = runtime.AddHostStoppingHook(NotifyHostStoppingAsync);
     }
@@ -74,6 +84,10 @@ public sealed class AgentConnectionScope : IDisposable
     public SessionsViewModel Sessions { get; }
 
     public PluginsViewModel Plugins { get; }
+
+    public InboxViewModel Inbox { get; }
+
+    public BackgroundRequestNotificationCoordinator RequestNotifications { get; }
 
     /// <summary>只读盘点升级前留存的 <c>user-data/.dsh</c> 会话与凭据存在态（绝不读取密钥或改动原目录，N-05-05）。</summary>
     public WebProfileInventoryReport InspectWebProfileReadOnly()
@@ -129,13 +143,39 @@ public sealed class AgentConnectionScope : IDisposable
         }
     }
 
+    private string? ResolveSessionTitle(string sessionId)
+    {
+        if (string.IsNullOrWhiteSpace(sessionId))
+        {
+            return null;
+        }
+        var chatState = Chat.State;
+        if (string.Equals(chatState.ActiveSession.SessionId, sessionId, StringComparison.Ordinal) &&
+            !string.IsNullOrWhiteSpace(chatState.SessionTitle))
+        {
+            return chatState.SessionTitle;
+        }
+        foreach (var item in Sessions.State.Sessions)
+        {
+            if (string.Equals(item.SessionId, sessionId, StringComparison.Ordinal) &&
+                !string.IsNullOrWhiteSpace(item.DisplayTitle))
+            {
+                return item.DisplayTitle;
+            }
+        }
+        return null;
+    }
+
     private void OnChatStateChanged(ChatUiState state)
     {
         if (state.ActiveSession.SessionId is { } sid and not "pending")
         {
             Sessions.SetActiveSessionId(sid);
         }
+        Inbox.RefreshTitles();
     }
+
+    private void OnSessionsStateChanged(SessionsUiState _) => Inbox.RefreshTitles();
 
     private void OnGenerationChanged(ConnectionGeneration? generation)
     {
@@ -165,6 +205,7 @@ public sealed class AgentConnectionScope : IDisposable
             return;
         }
         Chat.StateChanged -= OnChatStateChanged;
+        Sessions.StateChanged -= OnSessionsStateChanged;
         _connection.GenerationChanged -= OnGenerationChanged;
         _stoppingHook.Dispose();
         _ = DisposeResourcesAsync();
@@ -173,6 +214,8 @@ public sealed class AgentConnectionScope : IDisposable
     private async Task DisposeResourcesAsync()
     {
         await Plugins.DisposeAsync().ConfigureAwait(false);
+        await RequestNotifications.DisposeAsync().ConfigureAwait(false);
+        await Inbox.DisposeAsync().ConfigureAwait(false);
         await Sessions.DisposeAsync().ConfigureAwait(false);
         await Credentials.DisposeAsync().ConfigureAwait(false);
         await Chat.DisposeAsync().ConfigureAwait(false);

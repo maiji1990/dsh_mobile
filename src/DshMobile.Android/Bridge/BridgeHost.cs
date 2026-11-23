@@ -49,7 +49,7 @@ public sealed class BridgeHost : IDisposable, IDiagnosticsLog
         Runtime = _services.GetRequiredService<RuntimeCoordinator>();
         Updates = _services.GetRequiredService<DshMobile.Application.Updates.UpdateChecker>();
         UpdateInstaller = _services.GetRequiredService<DshMobile.Application.Updates.UpdateCoordinator>();
-        Agent = new AgentConnectionScope(Runtime, Layout, Append, RunRestartForPluginsAsync);
+        Agent = new AgentConnectionScope(_context, Runtime, Layout, Append, RunRestartForPluginsAsync);
         runtimeOptions.HostOptions = new DshMobile.Runtime.Hosting.DshHostOptions(
             ProtocolHandshakeAsync: Agent.PerformStartupHandshakeAsync);
         // An update the previous process did not finish is reported once (its layer was already restored by recovery).
@@ -95,6 +95,19 @@ public sealed class BridgeHost : IDisposable, IDiagnosticsLog
 
     /// <summary>Application-scoped native agent connection &amp; ChatViewModel (PR-04, ADR-0033).</summary>
     public AgentConnectionScope Agent { get; }
+
+    /// <summary>创建只读工作区 Git 与 Diff 服务（N-06-01），复用工作区安全路径校验并通过 PRoot guest 运行 git。</summary>
+    public WorkspaceGitService? CreateWorkspaceGitService()
+    {
+        if (!Directory.Exists(Layout.UserDataDir))
+        {
+            return null;
+        }
+        var fs = new WorkspaceFileSystem(Layout.UserDataDir);
+        var executor = new DshMobile.Runtime.Guest.ProotGitCommandExecutor(
+            new DshMobile.Runtime.Guest.ProotGuestProcess(Layout));
+        return new WorkspaceGitService(fs, executor, RuntimeConstants.SandboxWorkspace);
+    }
 
     /// <summary>本进程最近一次更新检查的结果与通道，原子读写以避免跨线程撕裂。</summary>
     private sealed record CheckSnapshot(string Channel, DshMobile.Runtime.Updates.ReleaseDiscoveryResult Result);
