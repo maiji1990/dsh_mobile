@@ -76,6 +76,7 @@ public sealed class ChatFragment : Fragment
     private bool _onboardingPrompted;
     private bool _openedCredentials;
     private string? _requestedSessionId;
+    private string? _pendingFocusEventId;
     private int _renderPosted;
     private PromptSendRequest? _lastSubmittedRequest;
     private IReadOnlyList<SlashCommandDescriptorView> _renderedSlash = [];
@@ -86,6 +87,7 @@ public sealed class ChatFragment : Fragment
         _bridge = DshMobileApplication.Current.Bridge;
         _vm = _bridge.Agent.Chat;
         _requestedSessionId = Arguments?.GetString(ChatActivity.ExtraSessionId);
+        _pendingFocusEventId = Arguments?.GetString(ChatActivity.ExtraFocusEventId);
 
         _toolbar = view.FindViewById<MaterialToolbar>(Resource.Id.chat_toolbar)!;
         _toolbar.NavigationClick += (_, _) => Activity?.Finish();
@@ -122,7 +124,8 @@ public sealed class ChatFragment : Fragment
             (eventId, decision) => _ = _vm.AnswerApprovalAsync(eventId, decision),
             eventId => _ = _vm.UndoApprovalAsync(eventId),
             (eventId, batch) => _ = _vm.AnswerQuestionAsync(eventId, batch),
-            eventId => _ = _vm.CancelQuestionAsync(eventId));
+            eventId => _ = _vm.CancelQuestionAsync(eventId),
+            OpenWorkspaceFile);
         _list.SetAdapter(_adapter);
         _list.AddOnScrollListener(new ChatScrollListener(this));
 
@@ -263,6 +266,29 @@ public sealed class ChatFragment : Fragment
         }
     }
 
+    /// <summary>从跨会话收件箱或系统通知切入指定会话并定位交互卡片（N-06-03 / N-06-04）。</summary>
+    public void NavigateToSession(string? sessionId, string? focusEventId)
+    {
+        _pendingFocusEventId = string.IsNullOrWhiteSpace(focusEventId) ? null : focusEventId;
+        if (!string.IsNullOrWhiteSpace(sessionId) &&
+            !string.Equals(sessionId, _vm.State.ActiveSession.SessionId, StringComparison.Ordinal))
+        {
+            _requestedSessionId = sessionId;
+            _connectInitiated = true;
+            _ = StartupAttachSequenceAsync(loadCache: true, connect: _bridge.Runtime.Host?.State == DshHostState.Ready);
+            return;
+        }
+        if (View is not null)
+        {
+            RenderState(_vm.State);
+        }
+    }
+
+    private void OpenWorkspaceFile(string relativePath, bool openGitDiff)
+    {
+        StartActivity(MainActivity.CreateWorkspaceIntent(RequireContext(), relativePath, openGitDiff));
+    }
+
     private void OnVmStateChanged(ChatUiState state) => ScheduleRender();
     private void OnBridgeChanged(object? sender, EventArgs e)
     {
@@ -324,6 +350,17 @@ public sealed class ChatFragment : Fragment
 
         _adapter.Submit(items);
         _empty.Visibility = items.Count == 0 ? ViewStates.Visible : ViewStates.Gone;
+        if (_pendingFocusEventId is { } focusId)
+        {
+            var focusIndex = _adapter.FindPendingRequestPosition(focusId);
+            if (focusIndex >= 0)
+            {
+                _pendingFocusEventId = null;
+                _followBottom = false;
+                _list.ScrollToPosition(focusIndex);
+                _scrollToBottom.Visibility = focusIndex < items.Count - 1 ? ViewStates.Visible : ViewStates.Gone;
+            }
+        }
         if (_followBottom && items.Count > 0)
         {
             _list.ScrollToPosition(items.Count - 1);

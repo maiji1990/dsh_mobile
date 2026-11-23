@@ -250,15 +250,15 @@ PR-00 (基线 + 路线A/B PoC + ADR-0033 + DshMobile.Agent骨架 + 门禁)
 
 ### 任务项
 
-- [ ] **N-06-01｜工作区 Git 状态与 Diff 服务**
-  - 复用现有 [WorkspaceProvider.cs](../../src/DshMobile.Core/Files/WorkspaceProvider.cs)（保持 `.dsh/` 双向不可触与 symlink 拒绝策略），新增只读 `WorkspaceGitService`（分支、变更文件列表、单文件 Unified Diff，严格校验仓库根边界与输出大小上限）。
-- [ ] **N-06-02｜`FilesFragment` 增量接入 Git 页签与原生 Diff 查看器**
-  - 在工作区页增加 Git 状态视图与 `DiffLineView`（行号、增删高亮、超长 Diff 分段/截断提示，主线程零解析），支持从聊天工具卡点击文件路径直达工作区预览/Diff。
-- [ ] **N-06-03｜跨会话待办收件箱（`InboxSheet/Fragment`）与导航角标**
-  - 聚合 `RequestsEngine` 全局待审批与待问答请求，在 `MainActivity` 顶部横幅与导航角标实时提示；点击条目直达对应会话并定位卡片。
-- [ ] **N-06-04｜后台审批 / 问答系统通知通道**
-  - App 处于后台收到 `approval/request` 或 `user-question/ask` 时发出高优先级通知（仅含脱敏工具名与安全摘要，不含敏感参数全文）；
-  - 通知快捷操作使用不导出 Receiver + 不可变 `PendingIntent` + 经 `RequestsEngine` 原子认领（与页内卡片防双发）；明确与 Relay `ui_*` 审批通知通道隔离，绝不跨域放行。
+- [ ] **N-06-01｜工作区 Git 状态与 Diff 服务**（桌面单测与构建已通过，**待真机验证**）
+  - 复用现有 [WorkspaceProvider.cs](../../src/DshMobile.Core/Files/WorkspaceProvider.cs) 与 [WorkspaceFileSystem.cs](../../src/DshMobile.Core/Files/WorkspaceFileSystem.cs)（保持 `.dsh/` 双向不可触与 symlink 拒绝策略），新增只读 [WorkspaceGitService.cs](../../src/DshMobile.Core/Files/WorkspaceGitService.cs) 与 [ProotGitCommandExecutor.cs](../../src/DshMobile.Runtime/Guest/ProotGitCommandExecutor.cs)（分支、变更文件列表、单文件 Unified Diff，严格校验仓库根/相对路径越界并强制输出大小与行数上限标注截断）。
+- [ ] **N-06-02｜`FilesFragment` 增量接入 Git 页签与原生 Diff 查看器**（桌面单测与构建已通过，**待真机验证**）
+  - 在 [fragment_files.xml](../../src/DshMobile.Android/Resources/layout/fragment_files.xml)、[item_git_change.xml](../../src/DshMobile.Android/Resources/layout/item_git_change.xml)、[item_git_diff_line.xml](../../src/DshMobile.Android/Resources/layout/item_git_diff_line.xml) 与 [DiffLineView.cs](../../src/DshMobile.Android/Files/DiffLineView.cs) 增加 Git 状态视图与原生 Diff 查看器（行号、增删高亮、超长截断提示、主线程零解析），并通过 [WorkspacePathExtractor.cs](../../src/DshMobile.Agent/Presentation/WorkspacePathExtractor.cs) 支持从聊天工具卡点击安全工作区路径直达预览/Diff。
+- [ ] **N-06-03｜跨会话待办收件箱（`InboxSheet/Fragment`）与导航角标**（桌面单测与构建已通过，**待真机验证**）
+  - 新增纯托管 [InboxViewModel.cs](../../src/DshMobile.Agent/Presentation/InboxViewModel.cs) 聚合 `RequestsEngine` 全局待审批与待问答请求，落地 XML 布局 [sheet_inbox.xml](../../src/DshMobile.Android/Resources/layout/sheet_inbox.xml) 与 [InboxBottomSheet.cs](../../src/DshMobile.Android/Inbox/InboxBottomSheet.cs)，在 [MainActivity.cs](../../src/DshMobile.Android/MainActivity.cs) 顶部横幅与 `nav_chats` 角标实时提示；点击条目直达 `ChatActivity` 对应会话并定位卡片。
+- [ ] **N-06-04｜后台审批 / 问答系统通知通道**（桌面单测与构建已通过，**待真机验证**）
+  - 新增 [BackgroundRequestNotificationCoordinator.cs](../../src/DshMobile.Agent/Presentation/BackgroundRequestNotificationCoordinator.cs) 与 [AgentRequestNotifications.cs](../../src/DshMobile.Android/Notifications/AgentRequestNotifications.cs)：App 处于后台收到 `approval/request` 或 `user-questions/request` 时向独立通道 `dshmobile_agent_requests` 发高优先级脱敏通知（绝不含敏感参数全文与密钥）；
+  - 快捷操作使用 `Exported = false` 的 `AgentRequestNotificationReceiver` + `PendingIntentFlags.Immutable` + 一次性随机数并经 `RequestsEngine` 原子认领（与页内卡片防双发，拒绝后零工具执行）；与 Relay `ui_*` 审批通知通道隔离，绝不跨域放行。见 [ACCEPTANCE_PR06.md](../native/ACCEPTANCE_PR06.md)。
 
 ---
 

@@ -1,35 +1,45 @@
+using Android.Content;
 using Android.Content.PM;
 using Android.Views;
 using AndroidX.Activity;
 using AndroidX.AppCompat.App;
 using AndroidX.Core.View;
 using AndroidX.Fragment.App;
+using DshMobile.Agent.Presentation;
 using DshMobile.App.Chats;
 using DshMobile.App.Files;
 using DshMobile.App.Home;
+using DshMobile.App.Inbox;
 using DshMobile.App.LocalNetwork;
 using DshMobile.App.More;
 using DshMobile.App.Ui;
 using Google.Android.Material.BottomNavigation;
+using Google.Android.Material.Button;
 using Google.Android.Material.Navigation;
 using Google.Android.Material.NavigationRail;
 
 namespace DshMobile.App;
 
 /// <summary>
-/// App shell (ADR-0021): Home, Files, and More use a Material 3 bottom bar or a navigation rail at 600dp.
-/// Tab fragments remain attached to preserve their state across navigation and window size changes.
+/// App shell (ADR-0021 + N-06-02 / N-06-03):
+/// Home, Chats, Files, and More use a Material 3 bottom bar or a navigation rail at 600dp;
+/// 顶部展示跨会话待办收件箱横幅并在 <c>nav_chats</c> 实时显示待办角标，支持从聊天工具卡直达工作区预览/Diff。
 /// </summary>
 [Activity(
     Label = "@string/app_name",
     MainLauncher = true,
     Exported = true,
+    LaunchMode = LaunchMode.SingleTop,
     // Width changes update the navigation layout without recreating the current tab.
     ConfigurationChanges = ConfigChanges.Orientation | ConfigChanges.ScreenSize | ConfigChanges.ScreenLayout
         | ConfigChanges.SmallestScreenSize | ConfigChanges.Keyboard | ConfigChanges.KeyboardHidden,
     WindowSoftInputMode = SoftInput.AdjustResize)]
 public sealed class MainActivity : AppCompatActivity
 {
+    public const string ExtraNavTab = "main.extra.nav_tab";
+    public const string ExtraWorkspacePath = "main.extra.workspace_path";
+    public const string ExtraOpenGitDiff = "main.extra.open_git_diff";
+
     private const string TabKey = "navigation.tab.tag";
     private static readonly (int Id, string Tag)[] Tabs =
     [
@@ -45,8 +55,19 @@ public sealed class MainActivity : AppCompatActivity
     private BottomNavigationView _bar = null!;
     private NavigationRailView _rail = null!;
     private View _root = null!;
+    private View _inboxBanner = null!;
+    private TextView _inboxBannerText = null!;
     private bool _wide;
     private int _tab = Resource.Id.nav_home;
+    private int _inboxRenderPosted;
+
+    /// <summary>构造从原生聊天等页面直达工作区文件预览或 Git Diff 的 Intent（N-06-02）。</summary>
+    public static Intent CreateWorkspaceIntent(Context context, string relativePath, bool openGitDiff) =>
+        new Intent(context, typeof(MainActivity))
+            .AddFlags(global::Android.Content.ActivityFlags.ClearTop | global::Android.Content.ActivityFlags.SingleTop)
+            .PutExtra(ExtraNavTab, Resource.Id.nav_files)
+            .PutExtra(ExtraWorkspacePath, relativePath)
+            .PutExtra(ExtraOpenGitDiff, openGitDiff);
 
     /// <summary>The navigation that is shown now.</summary>
     private NavigationBarView Nav => _wide ? _rail : _bar;
@@ -60,6 +81,11 @@ public sealed class MainActivity : AppCompatActivity
         SetContentView(Resource.Layout.activity_main);
         _bar = FindViewById<BottomNavigationView>(Resource.Id.bottom_nav)!;
         _rail = FindViewById<NavigationRailView>(Resource.Id.nav_rail)!;
+        _inboxBanner = FindViewById(Resource.Id.main_inbox_banner)!;
+        _inboxBannerText = FindViewById<TextView>(Resource.Id.main_inbox_banner_text)!;
+        var inboxBtn = FindViewById<MaterialButton>(Resource.Id.main_inbox_banner_btn)!;
+        _inboxBanner.Click += (_, _) => OpenInboxSheet();
+        inboxBtn.Click += (_, _) => OpenInboxSheet();
         var content = FindViewById(Resource.Id.tab_content)!;
         _root = FindViewById(Resource.Id.screen_root)!;
         ViewCompat.SetOnApplyWindowInsetsListener(_root, new Edges.Listener((v, insets) =>
@@ -87,6 +113,10 @@ public sealed class MainActivity : AppCompatActivity
         }
         ApplyWidth(Resources!.Configuration!);
         Show(_tab);
+        if (savedInstanceState is null)
+        {
+            ApplyNavigationIntent(Intent);
+        }
 
         OnBackPressedDispatcher.AddCallback(this, new BackCallback(this));
 
@@ -99,9 +129,22 @@ public sealed class MainActivity : AppCompatActivity
         }
     }
 
+    protected override void OnNewIntent(Intent? intent)
+    {
+        base.OnNewIntent(intent);
+        if (intent is not null)
+        {
+            Intent = intent;
+            ApplyNavigationIntent(intent);
+        }
+    }
+
     protected override void OnStart()
     {
         base.OnStart();
+        var inbox = DshMobileApplication.Current.Bridge.Agent.Inbox;
+        inbox.StateChanged += OnInboxStateChanged;
+        RenderInbox(inbox.State);
         // ADR-0029: 回到前台时按节流间隔静默检查签名通道清单（仅只读拉取清单，不下载不安装）。
         if (UiPrefs.ShouldAutoCheckUpdates(this, DateTimeOffset.UtcNow))
         {
@@ -111,6 +154,86 @@ public sealed class MainActivity : AppCompatActivity
         }
         // ADR-0031: 到前台时按用户开关与电源约束静默预热 DSH，让点击「启动 DSH」落在已就绪或接近就绪的宿主上。
         _ = TryEagerWarmupAsync();
+    }
+
+    protected override void OnStop()
+    {
+        DshMobileApplication.Current.Bridge.Agent.Inbox.StateChanged -= OnInboxStateChanged;
+        base.OnStop();
+    }
+
+    private void OnInboxStateChanged(InboxUiState state)
+    {
+        if (Interlocked.Exchange(ref _inboxRenderPosted, 1) == 0)
+        {
+            RunOnUiThread(() =>
+            {
+                Volatile.Write(ref _inboxRenderPosted, 0);
+                RenderInbox(DshMobileApplication.Current.Bridge.Agent.Inbox.State);
+            });
+        }
+    }
+
+    private void RenderInbox(InboxUiState state)
+    {
+        if (state.TotalCount > 0)
+        {
+            _inboxBanner.Visibility = ViewStates.Visible;
+            _inboxBannerText.Text = Rows.Fmt(this, Resource.String.inbox_banner_fmt, state.TotalCount, state.ApprovalCount, state.QuestionCount);
+        }
+        else
+        {
+            _inboxBanner.Visibility = ViewStates.Gone;
+        }
+
+        foreach (NavigationBarView nav in new NavigationBarView[] { _bar, _rail })
+        {
+            if (state.TotalCount > 0)
+            {
+                var badge = nav.GetOrCreateBadge(Resource.Id.nav_chats);
+                badge.SetVisible(true);
+                badge.Number = state.TotalCount;
+            }
+            else
+            {
+                nav.RemoveBadge(Resource.Id.nav_chats);
+            }
+        }
+    }
+
+    private void OpenInboxSheet()
+    {
+        if (SupportFragmentManager.FindFragmentByTag(InboxBottomSheet.SheetTag) is null)
+        {
+            new InboxBottomSheet().Show(SupportFragmentManager, InboxBottomSheet.SheetTag);
+        }
+    }
+
+    private void ApplyNavigationIntent(Intent? intent)
+    {
+        if (intent is null)
+        {
+            return;
+        }
+        var targetTab = intent.GetIntExtra(ExtraNavTab, 0);
+        if (Tabs.Any(t => t.Id == targetTab))
+        {
+            if (Nav.SelectedItemId != targetTab)
+            {
+                Nav.SelectedItemId = targetTab;
+            }
+            else
+            {
+                Show(targetTab);
+            }
+        }
+        var workspacePath = intent.GetStringExtra(ExtraWorkspacePath);
+        if (!string.IsNullOrWhiteSpace(workspacePath) &&
+            SupportFragmentManager.FindFragmentByTag("files") is FilesFragment files)
+        {
+            var openDiff = intent.GetBooleanExtra(ExtraOpenGitDiff, false);
+            files.OpenWorkspaceTarget(workspacePath, openDiff);
+        }
     }
 
     /// <summary>ADR-0031：预热只做一次决策（开关 / 用户已停止 / 忙 / 运行层未就绪 / 低电量 / 省电），失败只写操作日志。</summary>

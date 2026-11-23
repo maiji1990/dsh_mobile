@@ -6,6 +6,7 @@ using Android.Widget;
 using AndroidX.RecyclerView.Widget;
 using DshMobile.Agent.Domain;
 using DshMobile.Agent.Engines;
+using DshMobile.Agent.Presentation;
 using DshMobile.Agent.Rendering;
 using DshMobile.App.Ui;
 using Google.Android.Material.Button;
@@ -44,6 +45,7 @@ internal sealed class ChatTimelineAdapter : RecyclerView.Adapter
     private readonly Action<string> _onUndoApproval;
     private readonly Action<string, UserQuestionAnswerBatch> _onAnswerQuestion;
     private readonly Action<string> _onCancelQuestion;
+    private readonly Action<string, bool>? _onOpenWorkspaceFile;
     private readonly HashSet<string> _expandedItems = new(StringComparer.Ordinal);
     private List<ChatTimelineItem> _items = [];
 
@@ -53,7 +55,8 @@ internal sealed class ChatTimelineAdapter : RecyclerView.Adapter
         Action<string, ApprovalDecision> onApproval,
         Action<string> onUndoApproval,
         Action<string, UserQuestionAnswerBatch> onAnswerQuestion,
-        Action<string> onCancelQuestion)
+        Action<string> onCancelQuestion,
+        Action<string, bool>? onOpenWorkspaceFile = null)
     {
         _mdCache = mdCache;
         _postToUi = postToUi;
@@ -61,8 +64,12 @@ internal sealed class ChatTimelineAdapter : RecyclerView.Adapter
         _onUndoApproval = onUndoApproval;
         _onAnswerQuestion = onAnswerQuestion;
         _onCancelQuestion = onCancelQuestion;
+        _onOpenWorkspaceFile = onOpenWorkspaceFile;
         HasStableIds = true;
     }
+
+    public int FindPendingRequestPosition(string eventId) =>
+        _items.FindIndex(i => i is PendingRequestTimelineItem p && string.Equals(p.Card.EventId, eventId, StringComparison.Ordinal));
 
     public override int ItemCount => _items.Count;
 
@@ -98,7 +105,7 @@ internal sealed class ChatTimelineAdapter : RecyclerView.Adapter
             TypeUser => new UserMessageHolder(inflater.Inflate(Resource.Layout.item_chat_user, parent, false)!),
             TypeAssistantMarkdown => new AssistantBlockHolder(inflater.Inflate(Resource.Layout.item_chat_assistant_markdown, parent, false)!, _mdCache, _postToUi),
             TypeReasoning => new ReasoningHolder(inflater.Inflate(Resource.Layout.item_chat_reasoning, parent, false)!, _expandedItems),
-            TypeToolCall => new ToolCallHolder(inflater.Inflate(Resource.Layout.item_chat_tool_call, parent, false)!, _expandedItems),
+            TypeToolCall => new ToolCallHolder(inflater.Inflate(Resource.Layout.item_chat_tool_call, parent, false)!, _expandedItems, _onOpenWorkspaceFile),
             TypeCommand => new CommandHolder(inflater.Inflate(Resource.Layout.item_chat_command, parent, false)!),
             TypeApproval => new ApprovalHolder(inflater.Inflate(Resource.Layout.item_chat_approval, parent, false)!, _onApproval, _onUndoApproval),
             TypeQuestion => new QuestionHolder(inflater.Inflate(Resource.Layout.item_chat_question, parent, false)!, _onAnswerQuestion, _onCancelQuestion),
@@ -317,11 +324,18 @@ internal sealed class ChatTimelineAdapter : RecyclerView.Adapter
         private readonly ImageView _statusIcon;
         private readonly TextView _args;
         private readonly TextView _output;
+        private readonly View _workspaceBar;
+        private readonly MaterialButton _openFileBtn;
+        private readonly MaterialButton _openDiffBtn;
         private readonly HashSet<string> _expanded;
         private string? _itemId;
+        private string? _workspacePath;
         private bool _hasOutput;
 
-        public ToolCallHolder(View itemView, HashSet<string> expanded) : base(itemView)
+        public ToolCallHolder(
+            View itemView,
+            HashSet<string> expanded,
+            Action<string, bool>? onOpenWorkspaceFile) : base(itemView)
         {
             _expanded = expanded;
             _title = itemView.FindViewById<TextView>(Resource.Id.chat_tool_title)!;
@@ -329,6 +343,9 @@ internal sealed class ChatTimelineAdapter : RecyclerView.Adapter
             _statusIcon = itemView.FindViewById<ImageView>(Resource.Id.chat_tool_status_icon)!;
             _args = itemView.FindViewById<TextView>(Resource.Id.chat_tool_args)!;
             _output = itemView.FindViewById<TextView>(Resource.Id.chat_tool_output)!;
+            _workspaceBar = itemView.FindViewById(Resource.Id.chat_tool_workspace_bar)!;
+            _openFileBtn = itemView.FindViewById<MaterialButton>(Resource.Id.chat_tool_open_file_btn)!;
+            _openDiffBtn = itemView.FindViewById<MaterialButton>(Resource.Id.chat_tool_open_diff_btn)!;
 
             itemView.FindViewById(Resource.Id.chat_tool_header)!.Click += (_, _) =>
             {
@@ -342,6 +359,21 @@ internal sealed class ChatTimelineAdapter : RecyclerView.Adapter
                 }
                 ApplyExpanded(_expanded.Contains(_itemId));
             };
+
+            _openFileBtn.Click += (_, _) =>
+            {
+                if (_workspacePath is { } path)
+                {
+                    onOpenWorkspaceFile?.Invoke(path, false);
+                }
+            };
+            _openDiffBtn.Click += (_, _) =>
+            {
+                if (_workspacePath is { } path)
+                {
+                    onOpenWorkspaceFile?.Invoke(path, true);
+                }
+            };
         }
 
         public void Bind(ToolCallRow row)
@@ -353,6 +385,18 @@ internal sealed class ChatTimelineAdapter : RecyclerView.Adapter
             _args.Visibility = string.IsNullOrWhiteSpace(row.ArgumentsJson) ? ViewStates.Gone : ViewStates.Visible;
             _hasOutput = !string.IsNullOrWhiteSpace(row.OutputSummary);
             _output.Text = row.OutputSummary ?? string.Empty;
+
+            _workspacePath = WorkspacePathExtractor.TryExtractWorkspaceFilePath(row.ArgumentsJson);
+            if (_workspacePath is { } safePath)
+            {
+                _workspaceBar.Visibility = ViewStates.Visible;
+                _openFileBtn.Text = safePath;
+                _openDiffBtn.Visibility = ViewStates.Visible;
+            }
+            else
+            {
+                _workspaceBar.Visibility = ViewStates.Gone;
+            }
 
             var (phaseRes, iconRes, tintColor) = row.Phase switch
             {
