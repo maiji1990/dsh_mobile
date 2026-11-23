@@ -180,6 +180,15 @@
         </LinearLayout>
     </com.google.android.material.card.MaterialCardView>
 
+    <!-- 冷读分页触发按钮（有更早历史且宿主支持分页时显示，N-05-03） -->
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/chat_load_older_btn"
+        style="@style/Widget.Material3.Button.TextButton"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="@string/chat_load_older"
+        android:visibility="gone" />
+
     <!-- 消息列表区 + 空状态 + 回到底部悬浮按钮 -->
     <FrameLayout
         android:layout_width="match_parent"

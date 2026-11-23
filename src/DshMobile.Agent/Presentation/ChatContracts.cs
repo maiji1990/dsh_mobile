@@ -17,15 +17,20 @@ public sealed record ChatUiState(
     IReadOnlyList<SlashCommandDescriptorView> SlashCommands,
     ChatSnapshot Transcript,
     IReadOnlyList<PendingInteractionCard> PendingRequests,
-    OutboundSendEntry? LastSend)
+    OutboundSendEntry? LastSend,
+    ModelSelectionSpec? CurrentModel = null,
+    IReadOnlyList<ModelProviderGroupView>? ModelGroups = null,
+    bool NeedsCredentialOnboarding = false,
+    bool IsLoadingOlderHistory = false)
 {
     public bool CanSend => IsConnected && Capabilities.Prompt && !IsSending;
 }
 
-/// <summary>聊天界面向业务层派发的强类型动作契约（N-04-01）。</summary>
+/// <summary>聊天界面向业务层派发的强类型动作契约（N-04-01 / PR-05）。</summary>
 public interface IChatActions
 {
     Task LoadCachedSessionAsync(string sessionId, CancellationToken ct = default);
+    Task<bool> LoadMostRecentCachedSessionAsync(CancellationToken ct = default);
     Task ConnectAndAttachAsync(string? preferredSessionId = null, CancellationToken ct = default);
     Task SendTextAsync(string text, CancellationToken ct = default);
     Task SendWithImagesAsync(string text, IReadOnlyList<PromptAttachmentImage> images, CancellationToken ct = default);
@@ -37,6 +42,10 @@ public interface IChatActions
     Task CancelQuestionAsync(string eventId, CancellationToken ct = default);
     Task CancelSessionAsync(CancellationToken ct = default);
     Task RefreshHistoryAsync(CancellationToken ct = default);
+    Task LoadOlderHistoryAsync(CancellationToken ct = default);
     Task SwitchOrCreateSessionAsync(string? sessionId = null, CancellationToken ct = default);
+    Task RefreshModelCatalogAsync(CancellationToken ct = default);
+    Task SelectModelAsync(ModelSelectionSpec selection, CancellationToken ct = default);
+    Task RefreshCredentialReadinessAsync(CancellationToken ct = default);
     Task FlushPendingHoldsAsync(CancellationToken ct = default);
 }

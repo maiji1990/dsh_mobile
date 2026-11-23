@@ -45,6 +45,7 @@ public interface IProviderGateway
 /// <summary>Credential status & secret injection facet (never exposes secret values back).</summary>
 public interface ICredentialGateway
 {
+    Task<Outcome<IReadOnlyList<string>>> DiscoverCredentialRefsAsync(CancellationToken ct = default);
     Task<Outcome<IReadOnlyDictionary<string, CredentialStatusView>>> DescribeCredentialsAsync(IReadOnlyList<string> refs, CancellationToken ct = default);
     Task<Outcome<Unit>> SetCredentialAsync(string credentialRef, string value, CancellationToken ct = default);
     Task<Outcome<Unit>> UnsetCredentialAsync(string credentialRef, CancellationToken ct = default);
@@ -113,6 +114,7 @@ public abstract class DefaultDshGateway : IDshGateway
     public virtual Task<Outcome<bool>> ReplyContinuedQuestionAsync(string sessionId, string callId, UserQuestionAnswerBatch answer, CancellationToken ct = default) => Unavailable<bool>();
     public virtual Task<Outcome<ModelCatalogView>> GetModelCatalogAsync(CancellationToken ct = default) => Unavailable<ModelCatalogView>();
     public virtual Task<Outcome<ModelSelectionSpec>> SelectSessionModelAsync(string sessionId, ModelSelectionSpec selection, CancellationToken ct = default) => Unavailable<ModelSelectionSpec>();
+    public virtual Task<Outcome<IReadOnlyList<string>>> DiscoverCredentialRefsAsync(CancellationToken ct = default) => Unavailable<IReadOnlyList<string>>();
     public virtual Task<Outcome<IReadOnlyDictionary<string, CredentialStatusView>>> DescribeCredentialsAsync(IReadOnlyList<string> refs, CancellationToken ct = default) => Unavailable<IReadOnlyDictionary<string, CredentialStatusView>>();
     public virtual Task<Outcome<Unit>> SetCredentialAsync(string credentialRef, string value, CancellationToken ct = default) => Unavailable<Unit>();
     public virtual Task<Outcome<Unit>> UnsetCredentialAsync(string credentialRef, CancellationToken ct = default) => Unavailable<Unit>();

@@ -196,6 +196,21 @@ public sealed class TranscriptHandle : IAsyncDisposable
         return await tcs.Task.WaitAsync(ct).ConfigureAwait(false);
     }
 
+    /// <summary>将冷读分页拉取的更早历史事件前置注入当前会话，并触发快照发布（N-05-03）。</summary>
+    public void PostPrependedPage(SessionKey eventScope, IReadOnlyList<SessionWireEventView> olderEvents, bool stillHasMore)
+    {
+        ArgumentNullException.ThrowIfNull(olderEvents);
+        if (eventScope != Scope)
+        {
+            return;
+        }
+        Enqueue(r =>
+        {
+            r.PrependOlderEvents(olderEvents, stillHasMore);
+            _publisher.NotifyDirty();
+        }, notifyPublisher: false);
+    }
+
     public void PostFollowUpdate(SessionKey eventScope, SessionFollowUpdate update)
     {
         ArgumentNullException.ThrowIfNull(update);

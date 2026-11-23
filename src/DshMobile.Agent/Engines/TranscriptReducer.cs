@@ -43,6 +43,7 @@ public sealed class TranscriptReducer
     private TurnAccumulator? _activeTurn;
     private long _revision;
     private long _cursorSeq = -1;
+    private long? _earliestSeq;
     private long _nextSyntheticTurnSeq = 1;
     private long _subagentNoticeSeq;
     private RunPhase _phase = RunPhase.Idle;
@@ -163,6 +164,10 @@ public sealed class TranscriptReducer
         }
 
         _cursorSeq = wireEvent.Seq;
+        if (_earliestSeq is null || wireEvent.Seq < _earliestSeq.Value)
+        {
+            _earliestSeq = wireEvent.Seq;
+        }
         _dirty = true;
 
         switch (wireEvent.Type)
@@ -525,6 +530,7 @@ public sealed class TranscriptReducer
         ResetInternal();
         _isPartialHistory = isPartialHistory;
         _failureCode = failureCode;
+        _earliestSeq = null;
         foreach (var ev in events.OrderBy(e => e.Seq))
         {
             ApplyWireEvent(_scope, ev);
@@ -535,6 +541,83 @@ public sealed class TranscriptReducer
         }
         _needsCalibration = false;
         _dirty = true;
+    }
+
+    /// <summary>将冷读分页加载的更早历史事件无重影前置到已结算轮次前缀中，保持活跃流与增量游标不变（N-05-03）。</summary>
+    public bool PrependOlderEvents(IReadOnlyList<SessionWireEventView> olderEvents, bool stillHasMore)
+    {
+        ArgumentNullException.ThrowIfNull(olderEvents);
+        var upperBound = _earliestSeq;
+        var candidates = olderEvents
+            .Where(e => e.Seq >= 0 && (upperBound is null || e.Seq < upperBound.Value))
+            .GroupBy(e => e.Seq)
+            .Select(g => g.First())
+            .OrderBy(e => e.Seq)
+            .ToList();
+
+        _isPartialHistory = stillHasMore;
+        _dirty = true;
+
+        if (candidates.Count == 0)
+        {
+            return false;
+        }
+
+        var prefix = new TranscriptReducer(_scope, _maxDeferredParts, _onToolInvocation);
+        foreach (var ev in candidates)
+        {
+            prefix.ApplyWireEvent(_scope, ev);
+        }
+        prefix.SealActiveTurnIfPresent(markCompleted: true);
+
+        if (_sessionTitle is null && prefix._sessionTitle is not null)
+        {
+            _sessionTitle = prefix._sessionTitle;
+        }
+
+        if (prefix._settledTurnRows.Count > 0)
+        {
+            var insertCount = prefix._settledTurnRows.Count;
+            foreach (var key in _settledTurnIndexBySeq.Keys.ToArray())
+            {
+                _settledTurnIndexBySeq[key] += insertCount;
+            }
+            _settledTurnRows.InsertRange(0, prefix._settledTurnRows);
+
+            var nextNegativeSeq = -1L;
+            for (var i = 0; i < insertCount; i++)
+            {
+                var turn = prefix._settledTurnsBySeq.Values.ElementAtOrDefault(i);
+                var originalSeq = prefix._settledTurnIndexBySeq.FirstOrDefault(kv => kv.Value == i).Key;
+                var targetSeq = !_settledTurnsBySeq.ContainsKey(originalSeq) && _activeTurn?.TurnSeq != originalSeq
+                    ? originalSeq
+                    : nextNegativeSeq--;
+                _settledTurnIndexBySeq[targetSeq] = i;
+                if (turn is not null)
+                {
+                    _settledTurnsBySeq[targetSeq] = turn;
+                }
+            }
+        }
+
+        foreach (var (callId, turnSeq) in prefix._callIdToTurnSeq)
+        {
+            _callIdToTurnSeq.TryAdd(callId, turnSeq);
+        }
+        foreach (var (callId, summary) in prefix._toolCallsById)
+        {
+            if (!_toolCallsById.ContainsKey(callId))
+            {
+                RecordToolInvocation(callId, summary.ToolName, summary.SanitizedArguments);
+            }
+        }
+        if (prefix._sessionNotices.Count > 0)
+        {
+            _sessionNotices.InsertRange(0, prefix._sessionNotices);
+        }
+
+        _earliestSeq = candidates[0].Seq;
+        return true;
     }
 
     public void MarkPartialHistory(string failureCode)
@@ -575,7 +658,8 @@ public sealed class TranscriptReducer
                 _failureCode,
                 _lastDerivedRows,
                 SnapshotCounters(publishes, skippedWhileHidden, historyVisits),
-                _sessionTitle);
+                _sessionTitle,
+                _earliestSeq);
         }
 
         _derives++;
@@ -615,7 +699,8 @@ public sealed class TranscriptReducer
             _failureCode,
             _lastDerivedRows,
             SnapshotCounters(publishes, skippedWhileHidden, historyVisits),
-            _sessionTitle);
+            _sessionTitle,
+            _earliestSeq);
     }
 
     private void SealActiveTurnIfPresent(bool markCompleted)
@@ -698,6 +783,7 @@ public sealed class TranscriptReducer
         Volatile.Write(ref _toolCallsSnapshot, ImmutableDictionary<string, ToolInvocationSummary>.Empty.WithComparers(StringComparer.Ordinal));
         _lastDerivedRows = [];
         _cursorSeq = -1;
+        _earliestSeq = null;
         _nextSyntheticTurnSeq = 1;
         _isDetachedCache = false;
         _dirty = true;
@@ -721,6 +807,7 @@ public sealed class TranscriptReducer
         _activeTurn = null;
         _nextSyntheticTurnSeq = 1;
         _cursorSeq = -1;
+        _earliestSeq = null;
         _completedTurnTailChars = 0;
         _completedTurnTailReparses = 0;
         _phase = RunPhase.Idle;

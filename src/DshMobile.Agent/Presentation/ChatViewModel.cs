@@ -28,6 +28,7 @@ public sealed class ChatViewModel : IChatActions, IAsyncDisposable
     private readonly string _profileId;
     private readonly Lock _stateLock = new();
     private readonly SemaphoreSlim _connectGate = new(1, 1);
+    private readonly HashSet<string> _dismissedOnboardingSessions = new(StringComparer.Ordinal);
 
     private string _clientId = "local-client";
     private TranscriptHandle? _activeHandle;
@@ -145,6 +146,12 @@ public sealed class ChatViewModel : IChatActions, IAsyncDisposable
         {
             return;
         }
+        var current = State;
+        if (current.IsConnected && string.Equals(current.ActiveSession.SessionId, sessionId, StringComparison.Ordinal))
+        {
+            return;
+        }
+
         var scope = new SessionKey(_runtimeId, _profileId, sessionId);
         var loaded = await _keptStore.LoadDetailedAsync(scope, ct).ConfigureAwait(false);
         if (loaded.Status != KeptTranscriptLoadStatus.Loaded || loaded.Record is null)
@@ -153,17 +160,66 @@ public sealed class ChatViewModel : IChatActions, IAsyncDisposable
         }
 
         var handle = _transcripts.CreateDetached(scope, loaded.Record);
-        AttachHandle(handle, sessionTitle: sessionId);
-        PublishState(s => s with
-        {
-            ActiveSession = scope,
-            StatusKey = "chat.status.cache_only",
-            FailureCode = null,
-            Transcript = handle.CurrentSnapshot,
-        });
+        var snap = await handle.WaitForIdleDrainAsync(ct).ConfigureAwait(false);
+        var title = !string.IsNullOrWhiteSpace(loaded.Record.SessionTitle)
+            ? loaded.Record.SessionTitle!
+            : sessionId;
+        AttachHandle(handle, sessionTitle: title);
+        PublishState(s => s.IsConnected && string.Equals(s.ActiveSession.SessionId, sessionId, StringComparison.Ordinal)
+            ? s
+            : s with
+            {
+                ActiveSession = scope,
+                SessionTitle = title,
+                StatusKey = "chat.status.cache_only",
+                FailureCode = null,
+                Transcript = snap,
+            });
     }
 
-    public async Task ConnectAndAttachAsync(string? preferredSessionId = null, CancellationToken ct = default)
+    /// <summary>冷启 0.2s Cache-First 路径：从本地索引恢复最近会话快照，无缓存时安静返回 false（N-05-04）。</summary>
+    public async Task<bool> LoadMostRecentCachedSessionAsync(CancellationToken ct = default)
+    {
+        ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
+        if (_keptStore is null)
+        {
+            return false;
+        }
+        var current = State;
+        if (current.IsConnected || current.Transcript.Rows.Count > 0)
+        {
+            return current.Transcript.Rows.Count > 0;
+        }
+
+        var loaded = await _keptStore.TryLoadMostRecentAsync(ct).ConfigureAwait(false);
+        if (loaded is null)
+        {
+            return false;
+        }
+
+        var handle = _transcripts.CreateDetached(loaded.Scope, loaded.Record);
+        var snap = await handle.WaitForIdleDrainAsync(ct).ConfigureAwait(false);
+        var title = !string.IsNullOrWhiteSpace(loaded.SessionTitle)
+            ? loaded.SessionTitle!
+            : loaded.Scope.SessionId;
+        AttachHandle(handle, sessionTitle: title);
+        PublishState(s => s.IsConnected
+            ? s
+            : s with
+            {
+                ActiveSession = loaded.Scope,
+                SessionTitle = title,
+                StatusKey = "chat.status.cache_only",
+                FailureCode = null,
+                Transcript = snap,
+            });
+        return snap.Rows.Count > 0;
+    }
+
+    public Task ConnectAndAttachAsync(string? preferredSessionId = null, CancellationToken ct = default) =>
+        ConnectAndAttachCoreAsync(preferredSessionId, forceCreateNew: false, ct);
+
+    private async Task ConnectAndAttachCoreAsync(string? preferredSessionId, bool forceCreateNew, CancellationToken ct)
     {
         ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
         await _connectGate.WaitAsync(ct).ConfigureAwait(false);
@@ -186,49 +242,85 @@ public sealed class ChatViewModel : IChatActions, IAsyncDisposable
 
             var caps = capsOutcome.Value!;
             var sessionId = preferredSessionId;
-            if (string.IsNullOrWhiteSpace(sessionId) && caps.ListSessions)
+            string? listedTitle = null;
+            IReadOnlyList<SessionSummaryView>? listedSessions = null;
+            if (!forceCreateNew && caps.ListSessions)
             {
                 var listOutcome = await _gateway.ListSessionsAsync(ct).ConfigureAwait(false);
                 if (listOutcome.IsOk && listOutcome.Value!.Count > 0)
                 {
-                    sessionId = listOutcome.Value
-                        .OrderByDescending(x => x.UpdatedAtUnixMs)
-                        .Select(x => x.SessionId)
-                        .FirstOrDefault();
+                    listedSessions = listOutcome.Value;
+                    if (string.IsNullOrWhiteSpace(sessionId))
+                    {
+                        var cachedSid = State.ActiveSession.SessionId;
+                        var matchedCached = State.Transcript.IsDetachedCache && cachedSid is not "pending"
+                            ? listedSessions.FirstOrDefault(x => string.Equals(x.SessionId, cachedSid, StringComparison.Ordinal))
+                            : null;
+                        var chosen = matchedCached ?? listedSessions.OrderByDescending(x => x.UpdatedAtUnixMs).First();
+                        sessionId = chosen.SessionId;
+                        listedTitle = chosen.Title;
+                    }
+                    else
+                    {
+                        listedTitle = listedSessions
+                            .FirstOrDefault(x => string.Equals(x.SessionId, sessionId, StringComparison.Ordinal))
+                            ?.Title;
+                    }
                 }
             }
 
-            var createOutcome = await _gateway.CreateOrResumeSessionAsync(
-                new CreateOrResumeSessionRequest(SessionId: sessionId),
-                ct).ConfigureAwait(false);
-            if (!createOutcome.IsOk)
+            // DSH `session/create` 仅复用空白会话；传入已有非空会话 ID 会新建空白 UUID 从而覆盖历史（F17）。
+            // 仅当显式新建（forceCreateNew）或服务端尚无目标已有会话时才调用 `session/create`。
+            string resolvedSessionId;
+            if (forceCreateNew || string.IsNullOrWhiteSpace(sessionId))
             {
-                PublishState(s => s with
+                var createOutcome = await _gateway.CreateOrResumeSessionAsync(
+                    new CreateOrResumeSessionRequest(SessionId: forceCreateNew ? null : sessionId),
+                    ct).ConfigureAwait(false);
+                if (!createOutcome.IsOk)
                 {
-                    IsConnected = false,
-                    IsReconciling = false,
-                    Capabilities = caps,
-                    StatusKey = "chat.status.session_failed",
-                    FailureCode = createOutcome.Error!.Code.ToString(),
-                });
-                return;
+                    var errCode = createOutcome.Error!.Code;
+                    PublishState(s => s with
+                    {
+                        IsConnected = false,
+                        IsReconciling = false,
+                        Capabilities = caps,
+                        NeedsCredentialOnboarding = errCode == DshFailureCode.CredentialsMissing || s.NeedsCredentialOnboarding,
+                        StatusKey = "chat.status.session_failed",
+                        FailureCode = errCode.ToString(),
+                    });
+                    return;
+                }
+                resolvedSessionId = createOutcome.Value!;
+            }
+            else
+            {
+                resolvedSessionId = sessionId!;
             }
 
-            var resolvedSessionId = createOutcome.Value!;
+            listedTitle ??= listedSessions?
+                .FirstOrDefault(x => string.Equals(x.SessionId, resolvedSessionId, StringComparison.Ordinal))
+                ?.Title;
             var scope = new SessionKey(_runtimeId, _profileId, resolvedSessionId);
             var handle = _transcripts.GetOrCreateSession(scope);
-            AttachHandle(handle, sessionTitle: resolvedSessionId);
+            AttachHandle(handle, sessionTitle: !string.IsNullOrWhiteSpace(listedTitle) ? listedTitle! : resolvedSessionId);
 
-            // Best-effort 读取模型标签与可用斜杠命令，不阻断聊天主流程。
+            // Best-effort 读取模型目录、凭据就绪状态与可用斜杠命令，不阻断聊天主流程。
             string? modelLabel = null;
+            ModelSelectionSpec? currentModel = null;
+            IReadOnlyList<ModelProviderGroupView>? modelGroups = null;
             if (caps.SwitchModelInSession)
             {
                 var catalog = await _gateway.GetModelCatalogAsync(ct).ConfigureAwait(false);
                 if (catalog.IsOk)
                 {
-                    modelLabel = $"{catalog.Value!.Default.Provider}/{catalog.Value.Default.Model}";
+                    currentModel = catalog.Value!.Default;
+                    modelGroups = catalog.Value.Groups;
+                    modelLabel = FormatModelLabel(currentModel);
                 }
             }
+
+            var needsOnboarding = await CheckNeedsCredentialOnboardingAsync(caps, modelGroups, resolvedSessionId, ct).ConfigureAwait(false);
 
             var slashCommands = BuiltinSlashCommands;
             if (caps.SlashCommands)
@@ -252,22 +344,30 @@ public sealed class ChatViewModel : IChatActions, IAsyncDisposable
                 _followSub = reconcileOutcome.Value;
             }
 
+            var snap = await handle.WaitForIdleDrainAsync(ct).ConfigureAwait(false);
+            var finalTitle = !string.IsNullOrWhiteSpace(snap.SessionTitle)
+                ? snap.SessionTitle!
+                : (!string.IsNullOrWhiteSpace(listedTitle) ? listedTitle! : resolvedSessionId);
+
             PublishState(s => s with
             {
                 ActiveSession = scope,
-                SessionTitle = resolvedSessionId,
+                SessionTitle = finalTitle,
                 ModelLabel = modelLabel ?? s.ModelLabel,
+                CurrentModel = currentModel ?? s.CurrentModel,
+                ModelGroups = modelGroups ?? s.ModelGroups,
+                NeedsCredentialOnboarding = needsOnboarding,
                 IsConnected = true,
                 IsReconciling = false,
                 Capabilities = caps,
                 SlashCommands = caps.SlashCommands ? slashCommands : [],
                 StatusKey = reconcileOutcome.IsOk ? "chat.status.ready" : "chat.status.partial_history",
                 FailureCode = reconcileOutcome.IsOk ? null : reconcileOutcome.Error!.Code.ToString(),
-                Transcript = handle.CurrentSnapshot,
+                Transcript = snap,
                 PendingRequests = FilterPendingForSession(scope, _requests.Snapshot()),
             });
 
-            await SaveCacheSnapshotAsync(handle.CurrentSnapshot, ct).ConfigureAwait(false);
+            await SaveCacheSnapshotAsync(snap, ct).ConfigureAwait(false);
         }
         finally
         {
@@ -441,10 +541,217 @@ public sealed class ChatViewModel : IChatActions, IAsyncDisposable
     }
 
     public Task RefreshHistoryAsync(CancellationToken ct = default) =>
-        ConnectAndAttachAsync(State.ActiveSession.SessionId is "pending" ? null : State.ActiveSession.SessionId, ct);
+        ConnectAndAttachCoreAsync(State.ActiveSession.SessionId is "pending" ? null : State.ActiveSession.SessionId, forceCreateNew: false, ct);
+
+    /// <summary>冷读分页加载当前窗口之前的历史消息并无闪烁前置（N-05-03）。</summary>
+    public async Task LoadOlderHistoryAsync(CancellationToken ct = default)
+    {
+        ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
+        var current = State;
+        if (!current.IsConnected ||
+            !current.Capabilities.HistoryReplay ||
+            current.IsLoadingOlderHistory ||
+            !current.Transcript.IsPartialHistory ||
+            current.Transcript.EarliestSeq is not { } earliest ||
+            earliest <= 0)
+        {
+            return;
+        }
+
+        TranscriptHandle? handle;
+        lock (_stateLock)
+        {
+            handle = _activeHandle;
+        }
+        if (handle is null || handle.Scope != current.ActiveSession)
+        {
+            return;
+        }
+
+        PublishState(s => s with { IsLoadingOlderHistory = true });
+        try
+        {
+            var pageOutcome = await _gateway.LoadSessionEventsAsync(
+                current.ActiveSession.SessionId,
+                beforeSeq: earliest,
+                maxMessages: 30,
+                ct: ct).ConfigureAwait(false);
+            if (!pageOutcome.IsOk)
+            {
+                PublishState(s => s with
+                {
+                    IsLoadingOlderHistory = false,
+                    FailureCode = pageOutcome.Error!.DiagnosticKey ?? pageOutcome.Error.Code.ToString(),
+                });
+                return;
+            }
+
+            var page = pageOutcome.Value!;
+            handle.PostPrependedPage(current.ActiveSession, page.Events, page.HasMore);
+            var drained = await handle.WaitForIdleDrainAsync(ct).ConfigureAwait(false);
+            PublishState(s => s.ActiveSession == current.ActiveSession
+                ? s with { IsLoadingOlderHistory = false, Transcript = drained }
+                : s with { IsLoadingOlderHistory = false });
+        }
+        catch (OperationCanceledException)
+        {
+            PublishState(s => s with { IsLoadingOlderHistory = false });
+            throw;
+        }
+    }
 
     public Task SwitchOrCreateSessionAsync(string? sessionId = null, CancellationToken ct = default) =>
-        ConnectAndAttachAsync(sessionId, ct);
+        ConnectAndAttachCoreAsync(sessionId, forceCreateNew: string.IsNullOrWhiteSpace(sessionId), ct);
+
+    /// <summary>拉取最新模型目录（N-05-02）。</summary>
+    public async Task RefreshModelCatalogAsync(CancellationToken ct = default)
+    {
+        ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
+        var current = State;
+        if (!current.IsConnected || !current.Capabilities.SwitchModelInSession)
+        {
+            PublishState(s => s with { FailureCode = DshFailureCode.Unsupported.ToString() });
+            return;
+        }
+
+        var catalog = await _gateway.GetModelCatalogAsync(ct).ConfigureAwait(false);
+        if (!catalog.IsOk)
+        {
+            PublishState(s => s with
+            {
+                FailureCode = catalog.Error!.DiagnosticKey ?? catalog.Error.Code.ToString(),
+                NeedsCredentialOnboarding = catalog.Error.Code == DshFailureCode.CredentialsMissing || s.NeedsCredentialOnboarding,
+            });
+            return;
+        }
+
+        PublishState(s => s with
+        {
+            CurrentModel = catalog.Value!.Default,
+            ModelGroups = catalog.Value.Groups,
+            ModelLabel = FormatModelLabel(s.CurrentModel ?? catalog.Value.Default),
+            FailureCode = null,
+        });
+    }
+
+    /// <summary>运行中切换当前会话的模型与 Reasoning Effort（N-05-02）。</summary>
+    public async Task SelectModelAsync(ModelSelectionSpec selection, CancellationToken ct = default)
+    {
+        ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
+        ArgumentNullException.ThrowIfNull(selection);
+        var current = State;
+        if (!current.IsConnected || !current.Capabilities.SwitchModelInSession)
+        {
+            PublishState(s => s with { FailureCode = DshFailureCode.Unsupported.ToString() });
+            return;
+        }
+
+        var outcome = await _gateway.SelectSessionModelAsync(current.ActiveSession.SessionId, selection, ct).ConfigureAwait(false);
+        if (!outcome.IsOk)
+        {
+            var err = outcome.Error!;
+            PublishState(s => s with
+            {
+                FailureCode = err.DiagnosticKey ?? err.Code.ToString(),
+                NeedsCredentialOnboarding = err.Code == DshFailureCode.CredentialsMissing || s.NeedsCredentialOnboarding,
+            });
+            return;
+        }
+
+        var applied = outcome.Value!;
+        PublishState(s => s with
+        {
+            CurrentModel = applied,
+            ModelLabel = FormatModelLabel(applied),
+            NeedsCredentialOnboarding = false,
+            FailureCode = null,
+        });
+    }
+
+    /// <summary>重新检查凭据配置状态（用户完成 N-05-01 配置返回聊天页后调用）。</summary>
+    public async Task RefreshCredentialReadinessAsync(CancellationToken ct = default)
+    {
+        ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
+        var current = State;
+        if (!current.IsConnected)
+        {
+            return;
+        }
+
+        IReadOnlyList<ModelProviderGroupView>? groups = current.ModelGroups;
+        ModelSelectionSpec? currentModel = current.CurrentModel;
+        if (current.Capabilities.SwitchModelInSession)
+        {
+            var catalog = await _gateway.GetModelCatalogAsync(ct).ConfigureAwait(false);
+            if (catalog.IsOk)
+            {
+                groups = catalog.Value!.Groups;
+                currentModel ??= catalog.Value.Default;
+            }
+        }
+
+        var needsOnboarding = await CheckNeedsCredentialOnboardingAsync(current.Capabilities, groups, current.ActiveSession.SessionId, ct).ConfigureAwait(false);
+        PublishState(s => s with
+        {
+            NeedsCredentialOnboarding = needsOnboarding,
+            ModelGroups = groups ?? s.ModelGroups,
+            CurrentModel = currentModel ?? s.CurrentModel,
+            ModelLabel = currentModel is not null ? FormatModelLabel(currentModel) : s.ModelLabel,
+            FailureCode = needsOnboarding ? s.FailureCode : (s.FailureCode is "CredentialsMissing" or "session_error.credentials_missing" or "session/provider-credentials-unavailable" ? null : s.FailureCode),
+        });
+    }
+
+    /// <summary>针对当前会话记录「本次已忽略」首次凭据引导（F19）。</summary>
+    public void DismissCredentialOnboarding()
+    {
+        var sid = State.ActiveSession.SessionId;
+        lock (_stateLock)
+        {
+            _dismissedOnboardingSessions.Add(sid);
+        }
+        PublishState(s => s with { NeedsCredentialOnboarding = false });
+    }
+
+    private async Task<bool> CheckNeedsCredentialOnboardingAsync(
+        DshCapabilities caps,
+        IReadOnlyList<ModelProviderGroupView>? groups,
+        string sessionId,
+        CancellationToken ct)
+    {
+        lock (_stateLock)
+        {
+            if (_dismissedOnboardingSessions.Contains(sessionId))
+            {
+                return false;
+            }
+        }
+
+        // F15：若模型目录已有可用 Provider 模型（含 OAuth 账户模型、内置或自定义 Key），说明聊天就绪，不弹引导。
+        if (groups is { Count: > 0 } && groups.Any(g => g.Models.Count > 0))
+        {
+            return false;
+        }
+
+        if (!caps.ManageCredentials)
+        {
+            return false;
+        }
+        var discover = await _gateway.DiscoverCredentialRefsAsync(ct).ConfigureAwait(false);
+        var refs = discover.IsOk && discover.Value is { Count: > 0 }
+            ? discover.Value
+            : ["DEEPSEEK_API_KEY", "OPENAI_API_KEY", "ANTHROPIC_API_KEY", "GEMINI_API_KEY", "OPENROUTER_API_KEY"];
+        var desc = await _gateway.DescribeCredentialsAsync(refs, ct).ConfigureAwait(false);
+        if (desc.IsOk)
+        {
+            return !desc.Value!.Values.Any(v => v.Configured);
+        }
+        return groups is { Count: 0 };
+    }
+
+    private static string FormatModelLabel(ModelSelectionSpec selection) =>
+        string.IsNullOrWhiteSpace(selection.ReasoningEffort)
+            ? $"{selection.Provider}/{selection.Model}"
+            : $"{selection.Provider}/{selection.Model} · {selection.ReasoningEffort}";
 
     public async Task FlushPendingHoldsAsync(CancellationToken ct = default)
     {
@@ -572,7 +879,11 @@ public sealed class ChatViewModel : IChatActions, IAsyncDisposable
                 break;
             case SessionErrorGatewayEvent sessionEvent when string.Equals(sessionEvent.SessionId, active.SessionId, StringComparison.Ordinal):
                 var mapped = DshFailureMapper.FromSessionError(sessionEvent);
-                PublishState(s => s with { FailureCode = mapped.DiagnosticKey ?? mapped.Code.ToString() });
+                PublishState(s => s with
+                {
+                    FailureCode = mapped.DiagnosticKey ?? mapped.Code.ToString(),
+                    NeedsCredentialOnboarding = mapped.Code == DshFailureCode.CredentialsMissing || s.NeedsCredentialOnboarding,
+                });
                 break;
         }
     }

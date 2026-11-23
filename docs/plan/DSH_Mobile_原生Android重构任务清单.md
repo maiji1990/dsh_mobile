@@ -220,20 +220,25 @@ PR-00 (基线 + 路线A/B PoC + ADR-0033 + DshMobile.Agent骨架 + 门禁)
 - **前置依赖**：PR-04。
 - **退出门禁**：全新零凭据安装无需 WebView 即可完成配置并对话；强杀重启 0.2s 显示上次对话并无缝校准。
 
-### 任务项
+### 任务项（2026-11-23 Android 17 真机：初轮暴露 F15–F19，修复后复测 **F15–F19 全部通过**；仅「全新零凭据安装」场景未重装验证，见 [ACCEPTANCE_PR05.md](../native/ACCEPTANCE_PR05.md) 第 7 节）
 
-- [ ] **N-05-01｜原生 Provider / 凭据配置与首次引导页（P0 必补）**
-  - 落地 `CredentialsFragment` / `OnboardingDialog`（Material 3）：支持配置 DeepSeek API Key 及受支持兼容 Provider、查看凭据状态（已配置/未配置，**绝不回显完整明文密钥**）、一键清除凭据；
-  - 写入路径严格走 DSH 官方 credentials / settings 服务或受控 CLI，不破坏 `WorkspaceProvider` 对 `.dsh/` 的双向不可触保护，严禁落日志与 `OnSaveInstanceState`。
-- [ ] **N-05-02｜模型目录与运行中模型 / Reasoning Effort 切换**
-  - 接入 `IProviderGateway`，在聊天顶栏与设置页展示可用 Provider/模型/Reasoning Effort，按 `DshCapabilities.SwitchModelInSession` 门控；凭据缺失时引导跳转 `N-05-01`。
-- [ ] **N-05-03｜`ChatsFragment` 会话列表与完整生命周期操作**
-  - 实现会话列表（新建、搜索、重命名、最近状态、运行中/待审批角标、子 Agent 入口展示）、冷读分页加载、按能力启用会话取消（`CancelSession` 不可用时明示 `Unsupported`，绝不以杀进程假装取消）。
-- [ ] **N-05-04｜Cache-First 首屏路径全面接通**
-  - 将 `MainActivity` 首屏会话页与 `ChatFragment` 接入 `detachedTranscript` + `KeptTranscriptStore`：冷启 0.2s 呈现真实对话与草稿框，顶部展示真实 `DshHostPhase` 进度条，DSH 就绪后无闪烁交接并增量校准；
-  - 在 `StartupTrace` 记录 `native.activity_visible` 与 `native.cache_first_rendered`。
-- [ ] **N-05-05｜旧 Web Profile 数据只读盘点与保守迁移提示**
-  - 升级首启时对既有 `user-data/.dsh` 生成只读兼容清单（不含凭据）；能通过官方接口恢复的旧会话直接展示，不可验证恢复的如实标示“需迁移/不支持直接恢复”，绝不删除或改名原始目录。
+- [ ] **N-05-01｜原生 Provider / 凭据配置与首次引导页（P0 必补）**（桌面与构建已完成，**待真机验证**）
+  - 落地 `CredentialsViewModel` / `CredentialsActivity` / `CredentialsFragment` / `CredentialsAdapter` 与 Material 3 XML 布局（`activity_credentials.xml`、`fragment_credentials.xml`、`item_credential_entry.xml`、`dialog_credential_input.xml`、`dialog_credential_onboarding.xml`）：支持配置 DeepSeek API Key 及通过 `settings/describe` 发现的 Provider 凭据、查看凭据状态（已配置/未配置，**绝不回显完整明文密钥**）、一键清除凭据；
+  - 写入路径严格走 DSH 官方 `credentials/set` / `credentials/delete`（经 `RemoteDshGatewayClient`），不破坏 `WorkspaceProvider` 对 `.dsh/` 的双向不可触保护，严禁落日志与 `OnSaveInstanceState`（已通过 `SavedStateSecurityTests` 与 `LoggingPrivacyTests` 门禁）。
+  - **真机（2026-11-23 修复后）通过**：`DEEPSEEK_API_KEY` 显示「已配置 · 来源：file」并给出脱敏掩码；自定义引用新增后立即出现在列表、可清除（F15/F16 关闭）。仅「全新零凭据首次安装」未重装验证。
+- [ ] **N-05-02｜模型目录与运行中模型 / Reasoning Effort 切换**（桌面与构建已完成，**待真机验证**）
+  - 接入 `IProviderGateway`（`ChatViewModel.RefreshModelCatalogAsync` / `SelectModelAsync`、`ModelPickerDialog`、`dialog_model_picker.xml` / `item_model_picker_row.xml`），在聊天顶栏与模型选择器展示可用 Provider/模型/Reasoning Effort，按 `DshCapabilities.SwitchModelInSession` 门控；凭据缺失时引导跳转 `N-05-01`。
+  - **真机（2026-11-23）通过**：模型与档位列表正常；切换档位后顶栏 `· max`，切换到 `deepseek-v4-pro` 后模型实际回复 `final`。
+- [ ] **N-05-03｜`ChatsFragment` 会话列表与完整生命周期操作**（桌面与构建已完成，**待真机验证**）
+  - 实现 `SessionsViewModel`、`ChatsFragment`、`ChatsAdapter` 与 XML 布局（`fragment_chats.xml`、`item_session_row.xml`、`dialog_session_rename.xml`、`bottom_nav.xml` 新增 `nav_chats`）：支持会话列表、新建、关键词搜索、重命名、Fork、运行中/待审批角标、冷读分页加载（`LoadOlderHistoryAsync` + `TranscriptReducer.PrependOlderEvents`）、按能力启用会话取消（`CancelSession` 不可用时明示 `Unsupported`，绝不以杀进程假装取消）。
+  - **真机（2026-11-23 修复后）通过**：列表/搜索/重命名/Fork/运行中角标/停止轮次均可用；点击行标题即可打开会话并显示历史（F17/F18 关闭）。
+- [ ] **N-05-04｜Cache-First 首屏路径全面接通**（桌面与构建已完成，**待真机验证**）
+  - 将 `MainActivity`、`ChatActivity` 与 `ChatFragment` 接入 `KeptTranscriptStore.TryLoadMostRecentAsync` + `ChatViewModel.LoadMostRecentCachedSessionAsync`：冷启优先渲染最近缓存对话与草稿框，顶部展示真实 `DshHostPhase` 进度条，DSH 就绪后通过 `WaitForIdleDrainAsync` 与增量校准实现无重复行交接；
+  - 在 `ChatActivity` 通过 `StartupTrace` 记录 `native.activity_visible` 与 `native.cache_first_rendered`。
+  - **真机（2026-11-23 修复后）通过**：测点 `native.activity_visible` = 90.7 ms、`native.cache_first_rendered` = 96.2 ms；DSH 停止时缓存正文可见，启动并连接后正文保留、无空态与重复行（F17 关闭）。
+- [ ] **N-05-05｜旧 Web Profile 数据只读盘点与保守迁移提示**（桌面与构建已完成，**待真机验证**）
+  - 在 `DshMobile.Runtime.Migration.WebProfileInventory` 生成只读兼容清单（严格基于元数据统计 `sessions/`、`settings.json`、`mcp.json` 与 `.credentials.yaml` 存在性，绝不读取凭据内容、绝不删除或改名原始目录）；在 `ChatsFragment` 展示可关闭只读提示横幅与明细弹窗（`WebProfileInventoryTests` 全绿）。
+  - **真机（2026-11-23）通过**：横幅 +「查看详情」列出 `--root-projects-- [需迁移/只读保留]`，可关闭，未读取凭据内容。
 
 ---
 
@@ -370,6 +375,6 @@ PR-00 (基线 + 路线A/B PoC + ADR-0033 + DshMobile.Agent骨架 + 门禁)
 | PR-01 持久传输握手 | 同上 | 同上 | 同上 | 部分通过：启动→握手→停止→无孤儿；缺 `protocol.*` 测点；启动 9.7–14.0 s 待配对 | `docs/native/ACCEPTANCE_PR00_PR04_DEVICE.md` |
 | PR-02 Gateway 契约 & 无 UI 端到端 | 同上 | 同上 | 同上 | 基本通过（联网）：文本/图片/审批三态真机跑通；F9 审批参数、F10 芯片斜杠命令待修 | `docs/native/ACCEPTANCE_PR00_PR04_DEVICE.md` |
 | PR-04 原生聊天切片 | 同上 | 同上 | 同上 | 修复后真机复测：**PASS 18 / FAIL 0 / INFO 2**；F1/F2/F4/F5/F9/F10/F11/F12/F13/F14 通过，**F6（横屏 + 输入法）仍未修复**、中文 IME 未验证 | `docs/native/ACCEPTANCE_PR04.md` |
-| PR-05 零凭据引导 & Cache-First | 待真机验证 | — | — | 待测 | — |
+| PR-05 零凭据引导 & Cache-First | M2007J1SC / LineageOS / Android 17 (API 37) / CP2A.260605.016 | `CC7FD87E…3340EBF2` / PR-05 工作树 | DSH `0.2.2-rc.5` / Node 26.13.1 | 修复后复测通过：F15–F19 关闭；`native.cache_first_rendered`=96.2 ms；仅「全新零凭据安装」未重装验证 | `docs/native/ACCEPTANCE_PR05.md` |
 | PR-08 治理/更新/远程/性能配对 | 待真机验证 | — | — | 待测 | `docs/native/PERFORMANCE_BASELINE.md` |
 | PR-09 覆盖安装 & 零 WebView 终验 | 待真机验证 | — | — | 待测 | `docs/native/ACCEPTANCE_MATRIX.md` |

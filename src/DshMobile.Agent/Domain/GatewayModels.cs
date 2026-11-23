@@ -83,7 +83,9 @@ public sealed record SessionSummaryView(
     string? ParentSessionId = null,
     string? Origin = null,
     string? Cwd = null,
-    string? FormatStatus = null);
+    string? FormatStatus = null,
+    string? Title = null,
+    string? AgentPreset = null);
 
 public sealed record SessionWireEventView(
     string Type,

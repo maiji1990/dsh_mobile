@@ -33,6 +33,8 @@ namespace DshMobile.Agent.Protocol;
 // PR-02 Route B Controller DTOs
 [JsonSerializable(typeof(WireSessionListRequest))]
 [JsonSerializable(typeof(WireSessionListArgs))]
+[JsonSerializable(typeof(WireSessionProjectionValues))]
+[JsonSerializable(typeof(WireSessionProjections))]
 [JsonSerializable(typeof(WireSessionSummary))]
 [JsonSerializable(typeof(WireSessionListValue))]
 [JsonSerializable(typeof(WireSessionCreateRequest))]
