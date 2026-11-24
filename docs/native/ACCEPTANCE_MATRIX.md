@@ -27,7 +27,7 @@
 - 残留 14 处 `WebView` 字样均为 `Mono.Android` 的 `Android.Webkit.WebView` 平台绑定与接口实现类（`mono/android/webkit/WebView_*Implementor`），非业务代码。
 - **F27**：增量构建（未清理 `obj/Release`）会残留已删除类型的 Java 调用包装字符串（`DshWebActivity` 6 处、`CSharpWebUiController` 9 处）；清理后净构建归零。发布验收必须以净构建产物为准。
 
-> UI 布局重构切片验收记录：[Slice 1（公共 XML 底座 + P0 缺陷清零）](ACCEPTANCE_UI_SLICE1.md) · [Slice 2（会话与原生聊天主路径重新布局）](ACCEPTANCE_UI_SLICE2.md) · [Slice 3（工作区重新布局与 XML 化）](ACCEPTANCE_UI_SLICE3.md)。
+> UI 布局重构切片验收记录：[Slice 1（公共 XML 底座 + P0 缺陷清零）](ACCEPTANCE_UI_SLICE1.md) · [Slice 2（会话与原生聊天主路径重新布局）](ACCEPTANCE_UI_SLICE2.md) · [Slice 3（工作区重新布局与 XML 化）](ACCEPTANCE_UI_SLICE3.md) · [Slice 4（更多页与 6 大二级页全面 XML 化）](ACCEPTANCE_UI_SLICE4.md)。
 
 ## 仍未覆盖（不勾通过）
 

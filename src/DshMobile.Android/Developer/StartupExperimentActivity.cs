@@ -1,7 +1,5 @@
 #if DSH_DIAGNOSTICS
-using Android.Content;
 using Android.Views;
-using Android.Widget;
 using DshMobile.App.Bridge;
 using DshMobile.App.Ui;
 using DshMobile.Core.Diagnostics;
@@ -11,10 +9,8 @@ using Google.Android.Material.ProgressIndicator;
 namespace DshMobile.App.Developer;
 
 /// <summary>
-/// Diagnostic-build only (docs/STARTUP_EXPERIMENTS.md): runs the fixed E1-E4 suites from <see cref="StartupExperiments"/>.
-/// The activity compiles only with <c>-p:DshDiagnostics=true</c>, so a normal Release build has no entry at all. Every run
-/// refuses while DSH is running or port 3080 is busy, writes one JSON line per measurement to the app's external files
-/// directory (<c>Android/data/&lt;pkg&gt;/files/startup-experiments</c>) and never touches user data for E3/E4.
+/// 诊断构建专用启动实验页（<c>-p:DshDiagnostics=true</c> 编译启用，普通 Release 构建不包含）。
+/// UI Slice 4 全 XML 化：绑定 <c>activity_startup_experiment.xml</c>。
 /// </summary>
 [Activity(Label = "@string/dev_experiments_title", Exported = false)]
 public sealed class StartupExperimentActivity : DshActivity
@@ -24,38 +20,38 @@ public sealed class StartupExperimentActivity : DshActivity
     private BridgeHost _bridge = null!;
     private LinearProgressIndicator _progress = null!;
     private TextView _status = null!;
-    private readonly List<Rows.Row> _rows = [];
-    private Rows.Row? _cancelRow;
+    private readonly List<View> _rows = [];
+    private View? _cancelRow;
     private CancellationTokenSource? _cts;
 
     protected override void OnCreate(Bundle? savedInstanceState)
     {
         base.OnCreate(savedInstanceState);
-        SetScreen(Resource.Layout.fragment_list, Resource.String.dev_experiments_title);
+        SetScreen(Resource.Layout.activity_startup_experiment, Resource.String.dev_experiments_title);
         _bridge = DshMobileApplication.Current.Bridge;
-        _progress = FindViewById<LinearProgressIndicator>(Resource.Id.list_progress)!;
-        var content = FindViewById<LinearLayout>(Resource.Id.list_content)!;
+        _progress = FindViewById<LinearProgressIndicator>(Resource.Id.experiments_progress)!;
+        _status = FindViewById<TextView>(Resource.Id.exp_status_text)!;
 
-        Rows.Header(content, GetString(Resource.String.dev_experiments_section));
-        Row(content, Resource.String.dev_experiments_e1e2, Resource.String.dev_experiments_e1e2_sub, [StartupExperiments.SuiteE1E2]);
-        Row(content, Resource.String.dev_experiments_e2, Resource.String.dev_experiments_e2_sub, [StartupExperiments.SuiteE2]);
-        Row(content, Resource.String.dev_experiments_e23, Resource.String.dev_experiments_e23_sub, [StartupExperiments.SuiteE2Config]);
-        Row(content, Resource.String.dev_experiments_e3, Resource.String.dev_experiments_e3_sub, [StartupExperiments.SuiteE3]);
-        Row(content, Resource.String.dev_experiments_e4, Resource.String.dev_experiments_e4_sub, [StartupExperiments.SuiteE4]);
-        var webRow = Rows.Add(content, Resource.Drawable.ic_code, GetString(Resource.String.dev_experiments_e5),
+        BindSuite(Resource.Id.exp_row_e1e2, Resource.String.dev_experiments_e1e2, Resource.String.dev_experiments_e1e2_sub, [StartupExperiments.SuiteE1E2]);
+        BindSuite(Resource.Id.exp_row_e2, Resource.String.dev_experiments_e2, Resource.String.dev_experiments_e2_sub, [StartupExperiments.SuiteE2]);
+        BindSuite(Resource.Id.exp_row_e23, Resource.String.dev_experiments_e23, Resource.String.dev_experiments_e23_sub, [StartupExperiments.SuiteE2Config]);
+        BindSuite(Resource.Id.exp_row_e3, Resource.String.dev_experiments_e3, Resource.String.dev_experiments_e3_sub, [StartupExperiments.SuiteE3]);
+        BindSuite(Resource.Id.exp_row_e4, Resource.String.dev_experiments_e4, Resource.String.dev_experiments_e4_sub, [StartupExperiments.SuiteE4]);
+
+        var webRow = FindViewById(Resource.Id.exp_row_e5)!;
+        Rows.BindActionRow(webRow, Resource.Drawable.ic_code, GetString(Resource.String.dev_experiments_e5),
             GetString(Resource.String.dev_experiments_e5_sub), RunWebProfile);
         _rows.Add(webRow);
-        Row(content, Resource.String.dev_experiments_e6, Resource.String.dev_experiments_e6_sub, [StartupExperiments.SuiteE6]);
-        Row(content, Resource.String.dev_experiments_e7, Resource.String.dev_experiments_e7_sub, [StartupExperiments.SuiteE7]);
-        Row(content, Resource.String.dev_experiments_all, Resource.String.dev_experiments_all_sub,
-            [StartupExperiments.SuiteE1E2, StartupExperiments.SuiteE3, StartupExperiments.SuiteE4]);
-        Row(content, Resource.String.dev_experiments_cancel, Resource.String.dev_experiments_cancel_sub, []);
 
-        Rows.Header(content, GetString(Resource.String.dev_experiments_status));
-        var text = (TextView)LayoutInflater.Inflate(Resource.Layout.view_mono_text, content, false)!;
-        text.SetPadding(text.PaddingLeft, 16, text.PaddingRight, 16);
-        _status = text;
-        content.AddView(text, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MatchParent, ViewGroup.LayoutParams.WrapContent));
+        BindSuite(Resource.Id.exp_row_e6, Resource.String.dev_experiments_e6, Resource.String.dev_experiments_e6_sub, [StartupExperiments.SuiteE6]);
+        BindSuite(Resource.Id.exp_row_e7, Resource.String.dev_experiments_e7, Resource.String.dev_experiments_e7_sub, [StartupExperiments.SuiteE7]);
+        BindSuite(Resource.Id.exp_row_all, Resource.String.dev_experiments_all, Resource.String.dev_experiments_all_sub,
+            [StartupExperiments.SuiteE1E2, StartupExperiments.SuiteE3, StartupExperiments.SuiteE4]);
+
+        _cancelRow = FindViewById(Resource.Id.exp_row_cancel)!;
+        Rows.BindActionRow(_cancelRow, Resource.Drawable.ic_close, GetString(Resource.String.dev_experiments_cancel),
+            GetString(Resource.String.dev_experiments_cancel_sub), () => _cts?.Cancel());
+        _rows.Add(_cancelRow);
     }
 
     protected override void OnDestroy()
@@ -64,25 +60,13 @@ public sealed class StartupExperimentActivity : DshActivity
         base.OnDestroy();
     }
 
-    private void Row(LinearLayout content, int title, int subtitle, string[] suites)
+    private void BindSuite(int rowId, int title, int subtitle, string[] suites)
     {
-        var row = Rows.Add(content, Resource.Drawable.ic_code, GetString(title), GetString(subtitle), () =>
-        {
-            if (suites.Length == 0)
-            {
-                _cts?.Cancel();
-                return;
-            }
-            Run(suites, Reps);
-        });
+        var row = FindViewById(rowId)!;
+        Rows.BindActionRow(row, Resource.Drawable.ic_code, GetString(title), GetString(subtitle), () => Run(suites, Reps));
         _rows.Add(row);
-        if (suites.Length == 0)
-        {
-            _cancelRow = row; // stays enabled while a suite runs
-        }
     }
 
-    /// <summary>P0: alternating E5-OFF / E5-PROFILE Web runs with the in-process V8 CPU profile preload.</summary>
     private void RunWebProfile()
     {
         if (_cts is not null)
@@ -120,15 +104,13 @@ public sealed class StartupExperimentActivity : DshActivity
         _cts = cts;
         foreach (var row in _rows)
         {
-            row.View.Enabled = row == _cancelRow;
+            row.Enabled = row == _cancelRow;
         }
         _progress.Visibility = ViewStates.Visible;
         _status.Text = GetString(Resource.String.dev_experiments_running) + "\n" + path;
 
         _ = Task.Run(async () =>
         {
-            var runs = 0;
-            var failures = 0;
             var message = "E5: not run";
             try
             {
@@ -137,11 +119,6 @@ public sealed class StartupExperimentActivity : DshActivity
                     lock (gate)
                     {
                         writer.WriteLine(record.ToJsonLine());
-                        runs++;
-                        if (!string.Equals(record.Result, ExperimentRecord.Ok, StringComparison.Ordinal))
-                        {
-                            failures++;
-                        }
                     }
                 }, cts.Token).ConfigureAwait(false);
                 message = $"E5: {(result.Ran ? "ran" : result.Code)} runs={result.Runs} not-ok={result.Failures}";
@@ -169,7 +146,7 @@ public sealed class StartupExperimentActivity : DshActivity
                     _status.Text = snapshot;
                     foreach (var row in _rows)
                     {
-                        row.View.Enabled = true;
+                        row.Enabled = true;
                     }
                 });
             }
@@ -192,7 +169,7 @@ public sealed class StartupExperimentActivity : DshActivity
         _cts = cts;
         foreach (var row in _rows)
         {
-            row.View.Enabled = row == _cancelRow;
+            row.Enabled = row == _cancelRow;
         }
         _progress.Visibility = ViewStates.Visible;
         _status.Text = GetString(Resource.String.dev_experiments_running) + "\n" + path;
@@ -247,7 +224,7 @@ public sealed class StartupExperimentActivity : DshActivity
                     _status.Text = snapshot;
                     foreach (var row in _rows)
                     {
-                        row.View.Enabled = true;
+                        row.Enabled = true;
                     }
                 });
             }

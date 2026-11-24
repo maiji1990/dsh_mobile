@@ -12,110 +12,117 @@ using DshMobile.Runtime.Automation.Relay.Shizuku;
 using Google.Android.Material.Button;
 using Google.Android.Material.Dialog;
 using Google.Android.Material.MaterialSwitch;
+using Google.Android.Material.ProgressIndicator;
 
 namespace DshMobile.App.Automation;
 
 /// <summary>
-/// Mobile automation (TASK-010, ADR-0004 / ADR-0010), experimental and off by default. Starts/stops the C# Relay on the
-/// guest mailbox, links to system accessibility settings (the user enables the service; the app never does) and runs a
-/// fixed read-only self-test (relay doctor + the ui_* facade over MCP) through the real guest mailbox. ADR-0021: the
-/// same actions as Material 3 rows; the relay is a switch, each permission row opens the system page that grants it.
+/// 手机操控页（TASK-010, ADR-0004 / ADR-0010 / UI Slice 4）：
+/// 全 XML 化布局（<c>activity_automation.xml</c>），严守页顶 <c>automation_approval_slot</c>、<c>FLAG_SECURE</c>、
+/// <c>PageCardShown</c> 生命周期与权限只读引导边界；前置权限清单支持胶囊态直观自检。
 /// </summary>
 [Activity(Label = "@string/automation_title", Exported = false)]
 public sealed class AutomationActivity : DshActivity
 {
     private BridgeHost _bridge = null!;
+    private LinearProgressIndicator _progress = null!;
     private NestedScrollView _page = null!;
     private FrameLayout _cardSlot = null!;
-    private Rows.Row _relay = null!;
+    private TextView _introText = null!;
+    private MaterialButton _introToggle = null!;
+    private bool _introExpanded;
+
+    private View _relayRow = null!;
     private MaterialSwitch _relaySwitch = null!;
     private bool _settingSwitch;
-    private Rows.Row _a11y = null!;
-    private Rows.Row _overlay = null!;
-    private Rows.Row _lan = null!;
-    private Rows.Row _shizuku = null!;
-    private Rows.Row _tools = null!;
-    private Rows.Row _details = null!;
-    private Rows.Row _selftest = null!;
-    private Rows.Row? _surfacePref;
-    private TextView _output = null!;
+    private View _a11yRow = null!;
+    private View _overlayRow = null!;
+    private View _lanRow = null!;
+    private View _shizukuRow = null!;
+    private View _toolsRow = null!;
+    private View _detailsDivider = null!;
+    private View _detailsRow = null!;
+    private View _selftestRow = null!;
+    private View _outputDivider = null!;
     private View _outputCard = null!;
+    private TextView _output = null!;
+    private View? _surfacePrefRow;
     private View[] _actions = [];
 
     protected override void OnCreate(Bundle? savedInstanceState)
     {
         base.OnCreate(savedInstanceState);
-        SetScreen(Resource.Layout.fragment_list, Resource.String.automation_title);
+        SetScreen(Resource.Layout.activity_automation, Resource.String.automation_title);
         _bridge = DshMobileApplication.Current.Bridge;
-        _page = FindViewById<NestedScrollView>(Resource.Id.list_scroll)!;
-        var content = FindViewById<LinearLayout>(Resource.Id.list_content)!;
+        _progress = FindViewById<LinearProgressIndicator>(Resource.Id.automation_progress)!;
+        _page = FindViewById<NestedScrollView>(Resource.Id.automation_scroll)!;
+        _cardSlot = FindViewById<FrameLayout>(Resource.Id.automation_approval_slot)!;
 
-        // ADR-0011: the C# Relay's approval card sits at the top of this page while the page is in front.
-        _cardSlot = new FrameLayout(this) { Visibility = ViewStates.Gone };
-        var m = Rows.Dp(this, 16);
-        _cardSlot.SetPadding(m, m, m, 0);
-        content.AddView(_cardSlot);
-
-        IntroCard(content);
-
-        Rows.Header(content, GetString(Resource.String.automation_section_status));
-        // ADR-0010: the C# Relay serves the guest mailbox.
-        _relay = Rows.Add(content, Resource.Drawable.ic_phone, GetString(Resource.String.automation_relay), null, () => _relaySwitch.Toggle());
-        _relaySwitch = new MaterialSwitch(this);
-        _relaySwitch.ContentDescription = GetString(Resource.String.automation_relay);
-        _relaySwitch.CheckedChange += (_, e) =>
+        _introText = FindViewById<TextView>(Resource.Id.automation_intro_text)!;
+        _introToggle = FindViewById<MaterialButton>(Resource.Id.automation_intro_toggle)!;
+        _introToggle.Click += (_, _) =>
         {
-            if (_settingSwitch)
-            {
-                return;
-            }
-            _ = e.IsChecked ? StartRelayAsync() : StopRelayAsync();
+            _introExpanded = !_introExpanded;
+            _introText.SetText(_introExpanded ? Resource.String.automation_explain : Resource.String.automation_intro);
+            _introToggle.SetText(_introExpanded ? Resource.String.automation_less : Resource.String.automation_more);
         };
-        _relay.SetTrailing(_relaySwitch);
-        _a11y = Rows.Add(content, Resource.Drawable.ic_lock, GetString(Resource.String.automation_a11y), null, OpenAccessibilitySettings);
-        _a11y.SetTrailing(OpenIcon());
-        // ADR-0011: opens the system "display over other apps" page for this app; the user grants it there (or not: the
-        // floating card is then skipped and the notification card asks instead).
-        _overlay = Rows.Add(content, Resource.Drawable.ic_open_in_new, GetString(Resource.String.automation_overlay), null, OpenOverlaySettings);
-        _overlay.SetTrailing(OpenIcon());
-        // ADR-0032: Android 17 gates LAN traffic (the DSH sandbox shares this UID) behind a runtime permission. The row
-        // is the status and the way back in after a denial - the guest shell cannot show a system prompt by itself.
-        _lan = Rows.Add(content, Resource.Drawable.ic_lan, GetString(Resource.String.lan_title), null, () => _ = RequestLanAsync());
-        _lan.SetTrailing(OpenIcon());
-        // ADR-0008: asks Shizuku to show its own grant dialog (the user answers it in Shizuku); never starts Shizuku.
-        _shizuku = Rows.Add(content, Resource.Drawable.ic_key, GetString(Resource.String.automation_shizuku), null, ConnectShizuku);
-        _tools = Rows.Add(content, Resource.Drawable.ic_extension, GetString(Resource.String.automation_tools));
-        _details = Rows.Add(content, Resource.Drawable.ic_info, GetString(Resource.String.automation_details));
-        _details.View.Visibility = ViewStates.Gone;
 
-        Rows.Header(content, GetString(Resource.String.automation_section_check));
-        _selftest = Rows.Add(content, Resource.Drawable.ic_check_circle, GetString(Resource.String.automation_selftest),
+        _relayRow = FindViewById(Resource.Id.automation_row_relay)!;
+        _relaySwitch = Rows.BindSwitchRow(_relayRow, Resource.Drawable.ic_phone, GetString(Resource.String.automation_relay),
+            GetString(Resource.String.automation_relay_card_sub), false, checkedState =>
+            {
+                if (_settingSwitch)
+                {
+                    return;
+                }
+                _ = checkedState ? StartRelayAsync() : StopRelayAsync();
+            });
+
+        _a11yRow = FindViewById(Resource.Id.automation_row_a11y)!;
+        Rows.BindNavRow(_a11yRow, Resource.Drawable.ic_lock, GetString(Resource.String.automation_a11y), null, OpenAccessibilitySettings);
+
+        _overlayRow = FindViewById(Resource.Id.automation_row_overlay)!;
+        Rows.BindNavRow(_overlayRow, Resource.Drawable.ic_open_in_new, GetString(Resource.String.automation_overlay), null, OpenOverlaySettings);
+
+        _lanRow = FindViewById(Resource.Id.automation_row_lan)!;
+        Rows.BindNavRow(_lanRow, Resource.Drawable.ic_lan, GetString(Resource.String.lan_title), null, () => _ = RequestLanAsync());
+
+        _shizukuRow = FindViewById(Resource.Id.automation_row_shizuku)!;
+        Rows.BindNavRow(_shizukuRow, Resource.Drawable.ic_key, GetString(Resource.String.automation_shizuku), null, ConnectShizuku);
+
+        _toolsRow = FindViewById(Resource.Id.automation_row_tools)!;
+        Rows.BindActionRow(_toolsRow, Resource.Drawable.ic_extension, GetString(Resource.String.automation_tools));
+
+        _detailsDivider = FindViewById(Resource.Id.automation_details_divider)!;
+        _detailsRow = FindViewById(Resource.Id.automation_row_details)!;
+        Rows.BindActionRow(_detailsRow, Resource.Drawable.ic_info, GetString(Resource.String.automation_details));
+
+        _selftestRow = FindViewById(Resource.Id.automation_row_selftest)!;
+        Rows.BindActionRow(_selftestRow, Resource.Drawable.ic_check_circle, GetString(Resource.String.automation_selftest),
             GetString(Resource.String.automation_selftest_sub), () => _ = SelfTestAsync());
-        _output = Rows.MonoCard(content, out _outputCard);
-        _output.AccessibilityLiveRegion = AccessibilityLiveRegion.Polite;
-        _outputCard.Visibility = ViewStates.Gone;
+        _outputDivider = FindViewById(Resource.Id.automation_output_divider)!;
+        _outputCard = FindViewById(Resource.Id.automation_output_card)!;
+        _output = FindViewById<TextView>(Resource.Id.automation_output)!;
 
         if (UiPrefs.DeveloperEnabled(this))
         {
-            // PR-07 segment 4, developer action: Relay's own stored surface preference (the setting upstream's UI writes).
-            // It never grants anything: without Shizuku and a trusted display, "background preferred" falls back to the
-            // foreground and Relay says so.
-            Rows.Header(content, GetString(Resource.String.automation_section_developer));
-            _surfacePref = Rows.Add(content, Resource.Drawable.ic_build, "", null, ToggleSurfacePreference);
+            FindViewById(Resource.Id.automation_dev_header)!.Visibility = ViewStates.Visible;
+            FindViewById(Resource.Id.automation_dev_card)!.Visibility = ViewStates.Visible;
+            _surfacePrefRow = FindViewById(Resource.Id.automation_row_surface_pref)!;
+            Rows.BindActionRow(_surfacePrefRow, Resource.Drawable.ic_build, "", null, ToggleSurfacePreference);
             ShowSurfacePreference();
         }
-        _actions = _surfacePref is { } sp
-            ? [_relay.View, _relaySwitch, _selftest.View, _shizuku.View, sp.View]
-            : [_relay.View, _relaySwitch, _selftest.View, _shizuku.View];
 
-        // The selectable output is focusable in touch mode, so it used to take the window's initial focus; the scroll view
-        // then kept that focused view on screen as the output grew and scrolled the page by itself while a self-test ran,
-        // which hid the top of the page under the app bar (the guest's ui_get_element then correctly saw that node as not
-        // visible). The page itself takes focus first; tapping the output still focuses it for selection.
+        _actions = _surfacePrefRow is { } sp
+            ? [_relayRow, _relaySwitch, _selftestRow, _shizukuRow, sp]
+            : [_relayRow, _relaySwitch, _selftestRow, _shizukuRow];
+
+        // 防止只读输出框在自检刷新时抢占焦点导致顶部被 AppBar 遮挡
         _page.Focusable = true;
         _page.FocusableInTouchMode = true;
         _page.DescendantFocusability = DescendantFocusability.BeforeDescendants;
         _page.RequestFocus();
+
         ShowCsRelay();
         ShowLanPermission();
     }
@@ -123,18 +130,16 @@ public sealed class AutomationActivity : DshActivity
     protected override void OnResume()
     {
         base.OnResume();
-        _ = RefreshAsync(); // accessibility may have been toggled in system settings meanwhile
+        _ = RefreshAsync();
         WatchCsRelay(true);
         ShowCsRelay();
         ShowOverlayPermission();
         ShowLanPermission();
-        // Upstream uiInForeground(): from now on a pending C# question is asked on this page.
         Relay.CsRelay.PageCardShown = true;
     }
 
     protected override void OnPause()
     {
-        // The question moves to the floating card or the notification before this page goes away.
         Relay.CsRelay.PageCardShown = false;
         WatchCsRelay(false);
         base.OnPause();
@@ -148,62 +153,30 @@ public sealed class AutomationActivity : DshActivity
     private RelayHost? _watchedHost;
     private Action? _unwatchHost;
 
-    /// <summary>The intro text, with the full approval / permission explanation behind a text button.</summary>
-    private void IntroCard(LinearLayout content)
-    {
-        var box = new LinearLayout(this) { Orientation = Orientation.Vertical };
-        var text = new TextView(this) { Text = GetString(Resource.String.automation_intro) };
-        text.SetTextAppearance(Resource.Style.TextAppearance_Material3_BodyMedium);
-        text.SetTextColor(Android.Content.Res.ColorStateList.ValueOf(new Android.Graphics.Color(Rows.Color(_page, Resource.Attribute.colorOnSurfaceVariant))));
-        box.AddView(text);
-        var more = new MaterialButton(this, null, Resource.Attribute.borderlessButtonStyle) { Text = GetString(Resource.String.automation_more) };
-        var expanded = false;
-        more.Click += (_, _) =>
-        {
-            expanded = !expanded;
-            text.Text = GetString(expanded ? Resource.String.automation_explain : Resource.String.automation_intro);
-            more.Text = GetString(expanded ? Resource.String.automation_less : Resource.String.automation_more);
-        };
-        var lp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WrapContent, ViewGroup.LayoutParams.WrapContent) { Gravity = GravityFlags.Start };
-        box.AddView(more, lp);
-        var card = Rows.Card(content, box);
-        ((ViewGroup.MarginLayoutParams)card.LayoutParameters!).TopMargin = Rows.Dp(this, 16);
-    }
-
-    /// <summary>ADR-0032: the LAN row's status line (granted / still needed / unnecessary / broken build).</summary>
     private void ShowLanPermission()
     {
-        _lan.SetSubtitle(LocalNetworkAccess.Current(this) switch
+        var d = LocalNetworkAccess.Current(this);
+        var (subRes, badgeText, tone) = d switch
         {
-            LocalNetworkDecision.Granted => GetString(Resource.String.lan_sub_granted),
-            LocalNetworkDecision.NotRequired => GetString(Resource.String.lan_sub_notrequired),
-            LocalNetworkDecision.Undeclared => GetString(Resource.String.lan_sub_undeclared),
-            _ => GetString(Resource.String.lan_sub_denied),
-        });
+            LocalNetworkDecision.Granted => (Resource.String.lan_sub_granted, GetString(Resource.String.automation_badge_granted), Rows.BadgeTone.Success),
+            LocalNetworkDecision.NotRequired => (Resource.String.lan_sub_notrequired, GetString(Resource.String.automation_badge_not_required), Rows.BadgeTone.Neutral),
+            LocalNetworkDecision.Undeclared => (Resource.String.lan_sub_undeclared, GetString(Resource.String.automation_badge_conflict), Rows.BadgeTone.Error),
+            _ => (Resource.String.lan_sub_denied, GetString(Resource.String.automation_badge_not_granted), Rows.BadgeTone.Warning),
+        };
+        Rows.SetRowSubtitle(_lanRow, GetString(subRes));
+        Rows.SetBadge(_lanRow.FindViewById<TextView>(Resource.Id.row_trailing_badge)!, badgeText, tone);
     }
 
-    /// <summary>Ask for ACCESS_LOCAL_NETWORK, then show what the answer means; a denial is not an error here.</summary>
     private async Task RequestLanAsync()
     {
         var decision = await LocalNetworkAccess.EnsureAsync(this).ConfigureAwait(true);
         ShowLanPermission();
         if (decision == LocalNetworkDecision.NeedsPermission)
         {
-            Android.Widget.Toast.MakeText(this, GetString(Resource.String.lan_denied_toast), Android.Widget.ToastLength.Long)?.Show();
+            Toast.MakeText(this, GetString(Resource.String.lan_denied_toast), ToastLength.Long)?.Show();
         }
     }
 
-    private ImageView OpenIcon()
-    {
-        var icon = new ImageView(this);
-        icon.SetImageResource(Resource.Drawable.ic_chevron_right);
-        icon.ImportantForAccessibility = ImportantForAccessibility.No;
-        return icon;
-    }
-
-    /// <summary>
-    /// ADR-0010: the C# host serves files/pilot, stages the ui_* guest scripts and registers the ui_* layer.
-    /// </summary>
     private async Task StartRelayAsync()
     {
         Enable(false);
@@ -241,7 +214,6 @@ public sealed class AutomationActivity : DshActivity
         }
         _watchedHost = host;
         _csWatch = new Relay.RelayHostWatch(host, () => RunOnUiThread(ShowCsRelay));
-        // Both arrive on pool threads; every handler re-checks that this host is still the one watched.
         Action<InterlockQueue.Presentation> routing = p => RunOnUiThread(() => ShowRouting(host, p));
         Action<RelayHost.AccessibilityNoticeInfo?> notice = n => RunOnUiThread(() => ShowNotice(host, n));
         host.ApprovalRoutingChanged += routing;
@@ -255,12 +227,6 @@ public sealed class AutomationActivity : DshActivity
         ShowNotice(host, host.AccessibilityNotice);
     }
 
-    /// <summary>
-    /// ADR-0011 in-page card: shown only while the queue routes the displayed question to this page. Answers go to the
-    /// queue by request id, so a card left over from an earlier question can never answer a newer one. The window is
-    /// FLAG_SECURE while it shows; the agent cannot press it (writes on the host display are suspended while any of this
-    /// app's windows is up).
-    /// </summary>
     private void ShowRouting(RelayHost host, InterlockQueue.Presentation? routing)
     {
         if (host != _watchedHost)
@@ -287,8 +253,6 @@ public sealed class AutomationActivity : DshActivity
             _bridge.Note($"c# relay page card: {capability} -> {choice.Wire()} (request {id}{(taken ? "" : ", already settled")})");
         }, onDeadline: () =>
         {
-            // Time is up: take the card (and FLAG_SECURE) down and close this question in the queue, which routes the next
-            // one if any (upstream expireApproval). Card first: the routing callback runs inline on this thread.
             if (_cardRequestId != id)
             {
                 return;
@@ -319,10 +283,6 @@ public sealed class AutomationActivity : DshActivity
         Window?.ClearFlags(WindowManagerFlags.Secure);
     }
 
-    /// <summary>
-    /// Upstream <c>AccessibilityNotice</c> dialog: a call was held back because the accessibility step is missing. It only
-    /// says what to do; the user turns the service on in system settings (the app never does).
-    /// </summary>
     private void ShowNotice(RelayHost host, RelayHost.AccessibilityNoticeInfo? notice)
     {
         if (host != _watchedHost)
@@ -358,13 +318,11 @@ public sealed class AutomationActivity : DshActivity
 
     private void CloseGapDialog()
     {
-        // Dismissing here is not the user's "知道了": the notice stays until they answer it.
         _gapDialog?.Dismiss();
         _gapDialog = null;
         _gapShown = null;
     }
 
-    /// <summary>This app's own service (ADR-0011: the only one), straight to its page where the ROM supports that.</summary>
     private void OpenAccessibilitySettings()
     {
         var component = new ComponentName(PackageName!, "dshmobile.relay.DshAccessibilityService").FlattenToString();
@@ -396,18 +354,24 @@ public sealed class AutomationActivity : DshActivity
         }
     }
 
-    private void ShowOverlayPermission() =>
-        _overlay.SetSubtitle(Rows.AfterLabel(GetString(Android.Provider.Settings.CanDrawOverlays(this)
+    private void ShowOverlayPermission()
+    {
+        var granted = Android.Provider.Settings.CanDrawOverlays(this);
+        Rows.SetRowSubtitle(_overlayRow, Rows.AfterLabel(GetString(granted
             ? Resource.String.automation_overlay_granted
             : Resource.String.automation_overlay_not_granted)));
+        Rows.SetBadge(
+            _overlayRow.FindViewById<TextView>(Resource.Id.row_trailing_badge)!,
+            GetString(granted ? Resource.String.automation_badge_granted : Resource.String.automation_badge_not_granted),
+            granted ? Rows.BadgeTone.Success : Rows.BadgeTone.Neutral);
+    }
 
-    /// <summary>The accessibility line, from this app's own service (ADR-0011).</summary>
-    private string A11yLine(AccessibilityGap? gap) => GetString(gap switch
+    private (string Line, string Badge, Rows.BadgeTone Tone) A11yStatus(AccessibilityGap? gap) => gap switch
     {
-        null => Resource.String.automation_a11y_on,
-        AccessibilityGap.NotBound => Resource.String.automation_a11y_not_bound,
-        _ => Resource.String.automation_a11y_off,
-    });
+        null => (GetString(Resource.String.automation_a11y_on), GetString(Resource.String.automation_badge_enabled), Rows.BadgeTone.Success),
+        AccessibilityGap.NotBound => (GetString(Resource.String.automation_a11y_not_bound), GetString(Resource.String.automation_badge_not_bound), Rows.BadgeTone.Warning),
+        _ => (GetString(Resource.String.automation_a11y_off), GetString(Resource.String.automation_badge_missing), Rows.BadgeTone.Neutral),
+    };
 
     private AccessibilityGap? LocalA11yGap()
     {
@@ -421,25 +385,73 @@ public sealed class AutomationActivity : DshActivity
         return listed ? AccessibilityGap.NotBound : AccessibilityGap.Revoked;
     }
 
-    /// <summary>The status rows while the C# host runs: the host's own.</summary>
     private async Task ShowCsStatusAsync(RelayHost host)
     {
-        // Status() reads the system facts (Shizuku binder included): off the main thread.
         var s = await Task.Run(host.Status);
+        var shizuku = await Task.Run(ShizukuClient.Probe);
         var registered = UiToolsRegistration.IsRegistered(_bridge.Layout.UserDataDir);
         if (IsDestroyed)
         {
             return;
         }
-        _relay.SetSubtitle(RelayLine(s.Phase, s.ChannelRunning, s.DegradedReason));
-        _a11y.SetSubtitle(Rows.AfterLabel(A11yLine(s.AccessibilityGap)));
-        _shizuku.SetSubtitle(Rows.AfterLabel(ShizukuLine(ShizukuClient.Probe())));
-        _tools.SetSubtitle(Rows.AfterLabel(CsToolsLine(registered)));
-        _details.SetSubtitle(string.Join('\n', $"允许的能力：{string.Join(", ", s.Allowed)}", $"guest CLI：{s.GuestEntry}"));
-        _details.View.Visibility = ViewStates.Visible;
+        Rows.SetRowSubtitle(_relayRow, RelayLine(s.Phase, s.ChannelRunning, s.DegradedReason));
+        BindA11yRow(s.AccessibilityGap);
+        BindShizukuRow(shizuku);
+        BindToolsRow(registered);
+        Rows.SetRowSubtitle(_detailsRow, string.Join('\n', $"允许的能力：{string.Join(", ", s.Allowed)}", $"guest CLI：{s.GuestEntry}"));
+        _detailsDivider.Visibility = ViewStates.Visible;
+        _detailsRow.Visibility = ViewStates.Visible;
     }
 
-    /// <summary>The relay row: the phase in words, the mailbox, and a degraded reason as reported.</summary>
+    private void BindA11yRow(AccessibilityGap? gap)
+    {
+        var (line, badge, tone) = A11yStatus(gap);
+        Rows.SetRowSubtitle(_a11yRow, Rows.AfterLabel(line));
+        Rows.SetBadge(_a11yRow.FindViewById<TextView>(Resource.Id.row_trailing_badge)!, badge, tone);
+    }
+
+    private void BindShizukuRow(ShizukuProbe probe)
+    {
+        var line = ShizukuLine(probe);
+        var (badge, tone) = ShizukuConnection.Decide(probe) switch
+        {
+            ShizukuConnectState.Granted => (GetString(Resource.String.automation_badge_granted), Rows.BadgeTone.Success),
+            ShizukuConnectState.CanRequest => (GetString(Resource.String.automation_badge_not_granted), Rows.BadgeTone.Warning),
+            ShizukuConnectState.PermanentlyDenied => (GetString(Resource.String.automation_badge_not_granted), Rows.BadgeTone.Error),
+            _ => (GetString(Resource.String.automation_badge_missing), Rows.BadgeTone.Neutral),
+        };
+        Rows.SetRowSubtitle(_shizukuRow, Rows.AfterLabel(line));
+        Rows.SetBadge(_shizukuRow.FindViewById<TextView>(Resource.Id.row_trailing_badge)!, badge, tone);
+    }
+
+    private void BindToolsRow(bool registered)
+    {
+        string line;
+        string badge;
+        Rows.BadgeTone tone;
+        if (_bridge.Runtime.HostUiToolsAtStart is not null)
+        {
+            var view = WithHostView(new UiToolsView(registered, null, false, false));
+            line = UiToolsLine(view);
+            (badge, tone) = view switch
+            {
+                { Conflict: true } => (GetString(Resource.String.automation_badge_conflict), Rows.BadgeTone.Error),
+                { DshRestartNeeded: true } => (GetString(Resource.String.automation_badge_restart), Rows.BadgeTone.Warning),
+                { LoadedByDsh: true } => (GetString(Resource.String.automation_badge_live), Rows.BadgeTone.Success),
+                { Registered: true } => (GetString(Resource.String.automation_badge_registered), Rows.BadgeTone.Primary),
+                _ => (GetString(Resource.String.automation_badge_missing), Rows.BadgeTone.Neutral),
+            };
+        }
+        else
+        {
+            line = GetString(registered ? Resource.String.automation_tools_cs_registered : Resource.String.automation_tools_off);
+            badge = GetString(registered ? Resource.String.automation_badge_registered : Resource.String.automation_badge_missing);
+            tone = registered ? Rows.BadgeTone.Primary : Rows.BadgeTone.Neutral;
+        }
+        Rows.SetRowSubtitle(_toolsRow, Rows.AfterLabel(line));
+        Rows.SetBadge(_toolsRow.FindViewById<TextView>(Resource.Id.row_trailing_badge)!, badge, tone);
+    }
+
     private string RelayLine(RelayRuntimePhase phase, bool channelRunning, string? degradedReason) =>
         GetString(phase switch
         {
@@ -459,12 +471,13 @@ public sealed class AutomationActivity : DshActivity
         _settingSwitch = true;
         _relaySwitch.Checked = on;
         _settingSwitch = false;
-        _relay.SetSubtitle(on
+        Rows.SetRowSubtitle(_relayRow, on
             ? RelayLine(phase, host?.IsChannelRunning == true, host?.DegradedReason)
-            : GetString(Resource.String.automation_relay_off));
+            : GetString(Resource.String.automation_relay_card_sub));
         if (!on)
         {
-            _details.View.Visibility = ViewStates.Gone;
+            _detailsDivider.Visibility = ViewStates.Gone;
+            _detailsRow.Visibility = ViewStates.Gone;
         }
         if (Relay.CsRelay.GuestFacing && host is not null)
         {
@@ -472,7 +485,6 @@ public sealed class AutomationActivity : DshActivity
         }
     }
 
-    /// <summary>The status rows: the C# host's while it serves the guest mailbox, else the stopped state read by C#.</summary>
     private async Task RefreshAsync()
     {
         if (Relay.CsRelay.GuestFacing && Relay.CsRelay.Host is { } host)
@@ -494,19 +506,14 @@ public sealed class AutomationActivity : DshActivity
         {
             return;
         }
-        _a11y.SetSubtitle(Rows.AfterLabel(A11yLine(gap)));
-        _shizuku.SetSubtitle(Rows.AfterLabel(ShizukuLine(shizuku)));
-        _tools.SetSubtitle(Rows.AfterLabel(CsToolsLine(registered)));
-        _details.View.Visibility = ViewStates.Gone;
+        BindA11yRow(gap);
+        BindShizukuRow(shizuku);
+        BindToolsRow(registered);
+        _detailsDivider.Visibility = ViewStates.Gone;
+        _detailsRow.Visibility = ViewStates.Gone;
         _bridge.Note($"relay status (C#): stopped, ui_* layer {(registered ? "registered" : "absent")}");
     }
 
-    private string CsToolsLine(bool registered) =>
-        _bridge.Runtime.HostUiToolsAtStart is not null
-            ? UiToolsLine(WithHostView(new UiToolsView(registered, null, false, false)))
-            : GetString(registered ? Resource.String.automation_tools_cs_registered : Resource.String.automation_tools_off);
-
-    /// <summary>Relay's stored preference (upstream <c>SurfacePreferences</c>: "relay" prefs, null = never set).</summary>
     private string? StoredSurfacePreference() =>
         GetSharedPreferences(RelaySurfaces.PrefsFile, FileCreationMode.Private)!
             .GetString(RelaySurfaces.PreferenceKey, null);
@@ -521,14 +528,14 @@ public sealed class AutomationActivity : DshActivity
 
     private void ShowSurfacePreference()
     {
-        if (_surfacePref is null)
+        if (_surfacePrefRow is null)
         {
             return;
         }
         var text = GetString(Resource.String.automation_surface_pref, new Java.Lang.String(SurfacePreferenceLabel(CurrentSurfacePreference())));
         var i = text.IndexOf('：', StringComparison.Ordinal);
-        _surfacePref.Title.Text = i < 0 ? text : text[..i];
-        _surfacePref.SetSubtitle(Rows.AfterLabel(text));
+        _surfacePrefRow.FindViewById<TextView>(Resource.Id.row_title)!.Text = i < 0 ? text : text[..i];
+        Rows.SetRowSubtitle(_surfacePrefRow, Rows.AfterLabel(text));
     }
 
     private void ToggleSurfacePreference()
@@ -539,7 +546,6 @@ public sealed class AutomationActivity : DshActivity
         var editor = GetSharedPreferences(RelaySurfaces.PrefsFile, FileCreationMode.Private)!.Edit()!;
         editor.PutString(RelaySurfaces.PreferenceKey, next.Name());
         editor.Commit();
-        // The C# host re-reads its preferences now instead of at the next heartbeat.
         Relay.CsRelay.Host?.OnPreferencesChanged();
         ShowSurfacePreference();
         ShowOutput(GetString(Resource.String.automation_surface_pref_changed, new Java.Lang.String(SurfacePreferenceLabel(next))));
@@ -560,19 +566,13 @@ public sealed class AutomationActivity : DshActivity
     {
         var state = ShizukuClient.RequestIfNeeded(out var probe);
         var line = ShizukuLine(probe);
-        _shizuku.SetSubtitle(Rows.AfterLabel(line));
+        BindShizukuRow(probe);
         ShowOutput(state == ShizukuConnectState.CanRequest ? GetString(Resource.String.automation_shizuku_requested) : line);
         _bridge.Note($"shizuku connect: {state} (v{probe.Version}, uid {probe.Uid})");
     }
 
-    /// <summary>
-    /// Registration of the guest ui_* facade with DSH. <c>Registered</c> is the patch layer on disk; <c>LoadedByDsh</c> is
-    /// what the running DSH read at its start (null when DSH is not running); <c>DshRestartNeeded</c> means the two differ;
-    /// <c>Conflict</c> means the layer file holds content this app did not write (left untouched).
-    /// </summary>
     private sealed record UiToolsView(bool Registered, bool? LoadedByDsh, bool DshRestartNeeded, bool Conflict);
 
-    /// <summary>ADR-0015: the host records whether the ui_* layer was registered each time it spawned DSH.</summary>
     private UiToolsView WithHostView(UiToolsView t)
     {
         if (_bridge.Runtime.HostUiToolsAtStart is not { } loaded)
@@ -582,7 +582,6 @@ public sealed class AutomationActivity : DshActivity
         return t with { LoadedByDsh = loaded, DshRestartNeeded = loaded != t.Registered };
     }
 
-    /// <summary>Says plainly whether DSH has the ui_* tools now; never implies they are live when DSH has not reloaded.</summary>
     private string UiToolsLine(UiToolsView t)
     {
         if (t.Conflict)
@@ -600,10 +599,6 @@ public sealed class AutomationActivity : DshActivity
         return GetString(t.Registered ? Resource.String.automation_tools_registered : Resource.String.automation_tools_off);
     }
 
-    /// <summary>
-    /// The fixed guest check of DSHBox <c>relay.selftest</c> (relay doctor + the ui_* facade over MCP), run by the C# PRoot
-    /// launcher.
-    /// </summary>
     private async Task SelfTestAsync()
     {
         Enable(false);
@@ -625,12 +620,14 @@ public sealed class AutomationActivity : DshActivity
             return;
         }
         _output.Text = text.TrimEnd();
-        _outputCard.Visibility = text.Length == 0 ? ViewStates.Gone : ViewStates.Visible;
+        var visible = text.Length == 0 ? ViewStates.Gone : ViewStates.Visible;
+        _outputDivider.Visibility = visible;
+        _outputCard.Visibility = visible;
     }
 
     private void Enable(bool on)
     {
-        FindViewById(Resource.Id.list_progress)!.Visibility = on ? ViewStates.Gone : ViewStates.Visible;
+        _progress.Visibility = on ? ViewStates.Gone : ViewStates.Visible;
         foreach (var v in _actions)
         {
             v.Enabled = on;

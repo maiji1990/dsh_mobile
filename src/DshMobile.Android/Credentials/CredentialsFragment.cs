@@ -8,6 +8,7 @@ using DshMobile.Runtime.Hosting;
 using Google.Android.Material.AppBar;
 using Google.Android.Material.Button;
 using Google.Android.Material.Dialog;
+using Google.Android.Material.FloatingActionButton;
 using Google.Android.Material.ProgressIndicator;
 using Google.Android.Material.Snackbar;
 using Google.Android.Material.TextField;
@@ -16,19 +17,20 @@ using Fragment = AndroidX.Fragment.App.Fragment;
 namespace DshMobile.App.Credentials;
 
 /// <summary>
-/// PR-05 原生 Provider 与 API Key 凭据配置 Fragment（N-05-01）：
-/// 全 XML 视图渲染，通过 <see cref="CredentialsViewModel"/> 写入 DSH，绝不回显或持久化明文密钥。
+/// PR-05 原生 Provider 与 API Key 凭据配置 Fragment（N-05-01 / UI Slice 4）：
+/// 全 XML 视图渲染，通过 <see cref="CredentialsViewModel"/> 写入 DSH，绝不回显或持久化明文密钥；
+/// 刷新移入顶栏，自定义引用新增改用右下角 ExtendedFAB，消除底部截切并实现双密度一屏全览。
 /// </summary>
 public sealed class CredentialsFragment : Fragment
 {
     private BridgeHost _bridge = null!;
     private CredentialsViewModel _vm = null!;
     private CredentialsAdapter _adapter = null!;
+    private MaterialToolbar _toolbar = null!;
     private LinearProgressIndicator _progress = null!;
     private View _hostBanner = null!;
     private MaterialButton _startDshBtn = null!;
-    private MaterialButton _refreshBtn = null!;
-    private MaterialButton _customBtn = null!;
+    private ExtendedFloatingActionButton _customFab = null!;
     private int _renderPosted;
     private string? _lastToastStatusKey;
 
@@ -38,18 +40,23 @@ public sealed class CredentialsFragment : Fragment
         _bridge = DshMobileApplication.Current.Bridge;
         _vm = _bridge.Agent.Credentials;
 
-        var toolbar = view.FindViewById<MaterialToolbar>(Resource.Id.credentials_toolbar)!;
-        toolbar.NavigationClick += (_, _) => Activity?.Finish();
+        _toolbar = view.FindViewById<MaterialToolbar>(Resource.Id.credentials_toolbar)!;
+        _toolbar.NavigationClick += (_, _) => Activity?.Finish();
+        _toolbar.MenuItemClick += (_, e) =>
+        {
+            if (e.Item?.ItemId == Resource.Id.credentials_menu_refresh)
+            {
+                _ = RefreshWhenReadyAsync();
+            }
+        };
 
         _progress = view.FindViewById<LinearProgressIndicator>(Resource.Id.credentials_progress)!;
         _hostBanner = view.FindViewById(Resource.Id.credentials_host_banner)!;
         _startDshBtn = view.FindViewById<MaterialButton>(Resource.Id.credentials_start_dsh_btn)!;
-        _refreshBtn = view.FindViewById<MaterialButton>(Resource.Id.credentials_refresh_btn)!;
-        _customBtn = view.FindViewById<MaterialButton>(Resource.Id.credentials_custom_btn)!;
+        _customFab = view.FindViewById<ExtendedFloatingActionButton>(Resource.Id.credentials_custom_fab)!;
 
         _startDshBtn.Click += (_, _) => _ = _bridge.RunStartAsync();
-        _refreshBtn.Click += (_, _) => _ = RefreshWhenReadyAsync();
-        _customBtn.Click += (_, _) => ShowCredentialInputDialog(fixedEntry: null);
+        _customFab.Click += (_, _) => ShowCredentialInputDialog(fixedEntry: null);
 
         var list = view.FindViewById<RecyclerView>(Resource.Id.credentials_list)!;
         list.SetLayoutManager(new LinearLayoutManager(RequireContext()));
@@ -111,8 +118,9 @@ public sealed class CredentialsFragment : Fragment
         _progress.Visibility = state.IsLoading || state.IsSaving ? ViewStates.Visible : ViewStates.Gone;
         _hostBanner.Visibility = hostReady ? ViewStates.Gone : ViewStates.Visible;
         _startDshBtn.Enabled = !_bridge.IsBusy;
-        _refreshBtn.Enabled = hostReady && !state.IsLoading && !state.IsSaving;
-        _customBtn.Enabled = hostReady && !state.IsSaving;
+        _toolbar.Menu?.FindItem(Resource.Id.credentials_menu_refresh)?.SetEnabled(hostReady && !state.IsLoading && !state.IsSaving);
+        _customFab.Visibility = hostReady ? ViewStates.Visible : ViewStates.Gone;
+        _customFab.Enabled = hostReady && !state.IsSaving;
         _adapter.Submit(state.Entries);
 
         if (View is { } root)

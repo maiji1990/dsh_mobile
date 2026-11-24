@@ -2,23 +2,20 @@ using Android.Content;
 using Android.Views;
 using DshMobile.App.Bridge;
 using DshMobile.App.Ui;
-using Google.Android.Material.Card;
+using Google.Android.Material.Button;
 using Google.Android.Material.Dialog;
 using Google.Android.Material.ProgressIndicator;
 
 namespace DshMobile.App.Developer;
 
 /// <summary>
-/// Developer options (ADR-0021): the acceptance tools that used to sit on the home screen — device / runtime facts,
-/// diagnostics, the DSH profile probe (MIGRATION row 24), the PTY self-test (PR-06) — and the operation log. Hidden until
-/// enabled from About; they read and run only what the old buttons did.
+/// 开发者选项页（ADR-0021 / UI Slice 4）：
+/// 全 XML 化布局（<c>activity_developer.xml</c>），诊断工具分组、日志卡片头部就近集成复制/清空/全屏查看、
+/// 底部固定危险色「关闭开发者选项」动作卡，不再使用代码拼装卡片或被超长日志挤出视野。
 /// </summary>
 [Activity(Label = "@string/developer_title", Exported = false)]
 public sealed class DeveloperActivity : DshActivity
 {
-    private const int MenuCopy = 1;
-    private const int MenuClear = 2;
-
     private BridgeHost _bridge = null!;
     private LinearProgressIndicator _progress = null!;
     private TextView _log = null!;
@@ -28,54 +25,56 @@ public sealed class DeveloperActivity : DshActivity
     protected override void OnCreate(Bundle? savedInstanceState)
     {
         base.OnCreate(savedInstanceState);
-        SetScreen(Resource.Layout.fragment_list, Resource.String.developer_title);
+        SetScreen(Resource.Layout.activity_developer, Resource.String.developer_title);
         _bridge = DshMobileApplication.Current.Bridge;
-        _progress = FindViewById<LinearProgressIndicator>(Resource.Id.list_progress)!;
-        var content = FindViewById<LinearLayout>(Resource.Id.list_content)!;
+        _progress = FindViewById<LinearProgressIndicator>(Resource.Id.developer_progress)!;
+        _log = FindViewById<TextView>(Resource.Id.dev_log_text)!;
 
-        Toolbar.Menu!.Add(0, MenuCopy, 0, GetString(Resource.String.developer_log_copy))!.SetIcon(Resource.Drawable.ic_copy)!.SetShowAsAction(ShowAsAction.Always);
-        Toolbar.Menu.Add(0, MenuClear, 1, GetString(Resource.String.developer_log_clear))!.SetIcon(Resource.Drawable.ic_delete)!.SetShowAsAction(ShowAsAction.Always);
-        Toolbar.MenuItemClick += (_, e) =>
-        {
-            if (e.Item?.ItemId == MenuCopy)
-            {
-                var cm = (ClipboardManager)GetSystemService(ClipboardService)!;
-                cm.PrimaryClip = ClipData.NewPlainText("dshmobile log", _bridge.LogText);
-                Toast.MakeText(this, Resource.String.developer_log_copied, ToastLength.Short)!.Show();
-            }
-            else if (e.Item?.ItemId == MenuClear)
-            {
-                _bridge.ClearLog();
-            }
-        };
-
-        Rows.Header(content, GetString(Resource.String.developer_section_tools));
-        Tool(content, Resource.Drawable.ic_info, Resource.String.dev_info, Resource.String.dev_info_sub, () => _ = _bridge.RunInfoAsync());
-        Tool(content, Resource.Drawable.ic_build, Resource.String.dev_diag, Resource.String.dev_diag_sub, () => _ = _bridge.RunDiagnosticsAsync());
-        Tool(content, Resource.Drawable.ic_code, Resource.String.dev_probe, Resource.String.dev_probe_sub, () => _ = _bridge.RunProbesAsync());
-        Tool(content, Resource.Drawable.ic_terminal, Resource.String.dev_pty, Resource.String.dev_pty_sub, ConfirmPtyProbe);
+        BindTool(Resource.Id.dev_row_info, Resource.Drawable.ic_info, Resource.String.dev_info, Resource.String.dev_info_sub, () => _ = _bridge.RunInfoAsync());
+        BindTool(Resource.Id.dev_row_diag, Resource.Drawable.ic_build, Resource.String.dev_diag, Resource.String.dev_diag_sub, () => _ = _bridge.RunDiagnosticsAsync());
+        BindTool(Resource.Id.dev_row_probe, Resource.Drawable.ic_code, Resource.String.dev_probe, Resource.String.dev_probe_sub, () => _ = _bridge.RunProbesAsync());
+        BindTool(Resource.Id.dev_row_pty, Resource.Drawable.ic_terminal, Resource.String.dev_pty, Resource.String.dev_pty_sub, ConfirmPtyProbe);
 #if DSH_DIAGNOSTICS
-        Tool(content, Resource.Drawable.ic_code, Resource.String.dev_experiments, Resource.String.dev_experiments_sub,
-            () => StartActivity(new Intent(this, typeof(StartupExperimentActivity))));
+        var expRow = FindViewById(Resource.Id.dev_row_experiments)!;
+        FindViewById(Resource.Id.dev_experiments_divider)!.Visibility = ViewStates.Visible;
+        expRow.Visibility = ViewStates.Visible;
+        Rows.BindNavRow(expRow, Resource.Drawable.ic_code, GetString(Resource.String.dev_experiments),
+            GetString(Resource.String.dev_experiments_sub), () =>
+            {
+                if (!_bridge.IsBusy)
+                {
+                    StartActivity(new Intent(this, typeof(StartupExperimentActivity)));
+                }
+            });
+        _tools.Add(expRow);
 #endif
-        Tool(content, Resource.Drawable.ic_info, Resource.String.dev_update, Resource.String.dev_update_sub, ChooseUpdateChannel);
+        BindTool(Resource.Id.dev_row_update, Resource.Drawable.ic_info, Resource.String.dev_update, Resource.String.dev_update_sub, ChooseUpdateChannel);
 
-        Rows.Header(content, GetString(Resource.String.developer_section_log));
-        var card = new MaterialCardView(this, null, Resource.Attribute.materialCardViewFilledStyle);
-        var lp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MatchParent, ViewGroup.LayoutParams.WrapContent);
-        var m = Rows.Dp(this, 16);
-        lp.SetMargins(m, 0, m, 0);
-        _log = (TextView)LayoutInflater.Inflate(Resource.Layout.view_mono_text, card, false)!;
-        _log.SetPadding(m, m, m, m);
-        card.AddView(_log);
-        content.AddView(card, lp);
-
-        Rows.Header(content, GetString(Resource.String.more_section_developer));
-        Rows.Add(content, Resource.Drawable.ic_close, GetString(Resource.String.developer_disable), null, () =>
+        FindViewById<MaterialButton>(Resource.Id.dev_log_fullscreen_btn)!.Click += (_, _) =>
         {
-            UiPrefs.SetDeveloperEnabled(this, false);
-            Finish();
-        });
+            var text = _bridge.LogText;
+            Rows.ShowScrollableTextDialog(this, Resource.String.developer_section_log,
+                text.Length == 0 ? GetString(Resource.String.developer_log_empty) : text);
+        };
+        FindViewById<MaterialButton>(Resource.Id.dev_log_copy_btn)!.Click += (_, _) =>
+        {
+            var cm = (ClipboardManager)GetSystemService(ClipboardService)!;
+            cm.PrimaryClip = ClipData.NewPlainText("dshmobile log", _bridge.LogText);
+            Toast.MakeText(this, Resource.String.developer_log_copied, ToastLength.Short)!.Show();
+        };
+        FindViewById<MaterialButton>(Resource.Id.dev_log_clear_btn)!.Click += (_, _) => _bridge.ClearLog();
+
+        Rows.BindActionRow(
+            FindViewById(Resource.Id.dev_row_disable)!,
+            Resource.Drawable.ic_close,
+            GetString(Resource.String.developer_disable),
+            GetString(Resource.String.developer_disable_sub),
+            () =>
+            {
+                UiPrefs.SetDeveloperEnabled(this, false);
+                Finish();
+            },
+            destructive: true);
     }
 
     protected override void OnStart()
@@ -112,26 +111,25 @@ public sealed class DeveloperActivity : DshActivity
         _progress.Visibility = busy ? ViewStates.Visible : ViewStates.Gone;
         foreach (var t in _tools)
         {
-            t.Enabled = !busy;
-            t.Alpha = busy ? 0.38f : 1f;
+            Rows.SetRowEnabled(t, !busy);
         }
         var log = _bridge.LogText;
         _log.Text = log.Length == 0 ? GetString(Resource.String.developer_log_empty) : log;
     }
 
-    private void Tool(LinearLayout content, int icon, int title, int subtitle, Action run)
+    private void BindTool(int rowId, int icon, int title, int subtitle, Action run)
     {
-        var row = Rows.Add(content, icon, GetString(title), GetString(subtitle), () =>
+        var row = FindViewById(rowId)!;
+        Rows.BindActionRow(row, icon, GetString(title), GetString(subtitle), () =>
         {
             if (!_bridge.IsBusy)
             {
                 run();
             }
         });
-        _tools.Add(row.View);
+        _tools.Add(row);
     }
 
-    /// <summary>vNext PR-02: read-only update check (signed manifest + catalog) for the chosen channel; installs nothing.</summary>
     private void ChooseUpdateChannel()
     {
         var channels = DshMobile.Runtime.Updates.ReleaseEndpoints.Channels.ToArray();
@@ -142,7 +140,6 @@ public sealed class DeveloperActivity : DshActivity
             .Show();
     }
 
-    /// <summary>PR-06 acceptance: the C#-owned PTY self-test (guest login shell), after a confirmation.</summary>
     private void ConfirmPtyProbe() =>
         new MaterialAlertDialogBuilder(this)
             .SetTitle(Resource.String.dev_pty_confirm_title)!

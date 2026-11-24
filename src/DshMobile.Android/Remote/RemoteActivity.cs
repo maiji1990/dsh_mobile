@@ -34,6 +34,7 @@ public sealed class RemoteActivity : DshActivity
     private LinearProgressIndicator _progress = null!;
     private EditText _label = null!, _host = null!, _port = null!, _user = null!, _dshPort = null!;
     private MaterialButton _connect = null!, _disconnect = null!, _start = null!, _stop = null!, _openChat = null!, _remove = null!;
+    private View _connectedActions = null!;
     private Button[] _buttons = [];
     private RemoteHost? _selected;
 
@@ -48,6 +49,7 @@ public sealed class RemoteActivity : DshActivity
         _statusTitle = FindViewById<TextView>(Resource.Id.remote_status_title)!;
         _statusIcon = FindViewById<ImageView>(Resource.Id.remote_status_icon)!;
         _statusText = FindViewById<TextView>(Resource.Id.remote_status)!;
+        _connectedActions = FindViewById(Resource.Id.remote_connected_actions)!;
         _label = FindViewById<EditText>(Resource.Id.remote_label)!;
         _host = FindViewById<EditText>(Resource.Id.remote_host)!;
         _port = FindViewById<EditText>(Resource.Id.remote_port)!;
@@ -90,6 +92,7 @@ public sealed class RemoteActivity : DshActivity
             ? Rows.Color(_statusIcon, Resource.Attribute.colorPrimary)
             : Rows.Color(_statusIcon, Resource.Attribute.colorOnSurfaceVariant)));
         _connect.Visibility = connected ? ViewStates.Gone : ViewStates.Visible;
+        _connectedActions.Visibility = connected ? ViewStates.Visible : ViewStates.Gone;
         _disconnect.Visibility = connected ? ViewStates.Visible : ViewStates.Gone;
         _start.Visibility = connected ? ViewStates.Visible : ViewStates.Gone;
         _stop.Visibility = connected ? ViewStates.Visible : ViewStates.Gone;

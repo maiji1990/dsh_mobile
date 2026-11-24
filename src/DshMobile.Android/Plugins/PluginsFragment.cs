@@ -9,7 +9,9 @@ using DshMobile.App.Ui;
 using DshMobile.Runtime.Hosting;
 using Google.Android.Material.AppBar;
 using Google.Android.Material.Button;
+using Google.Android.Material.Chip;
 using Google.Android.Material.Dialog;
+using Google.Android.Material.FloatingActionButton;
 using Google.Android.Material.ProgressIndicator;
 using Google.Android.Material.Snackbar;
 using Google.Android.Material.TextField;
@@ -18,22 +20,33 @@ using Fragment = AndroidX.Fragment.App.Fragment;
 namespace DshMobile.App.Plugins;
 
 /// <summary>
-/// PR-07 原生插件目录与 L0/L1 受控管理 Fragment（N-07-02 / ADR-0033）：
-/// 100% 绑定 XML 布局，不内嵌 WebView，不解析 L2 动态 Schema 表单。
+/// PR-07 原生插件目录与 L0/L1 受控管理 Fragment（N-07-02 / ADR-0033 / UI Slice 4）：
+/// 100% 绑定 XML 布局，不内嵌 WebView，不解析 L2 动态 Schema 表单；
+/// 支持状态过滤芯片、胶囊搜索栏与右下角安装 ExtendedFAB。
 /// </summary>
 public sealed class PluginsFragment : Fragment
 {
+    private enum PluginFilter
+    {
+        All,
+        Manageable,
+        Enabled,
+        Protected,
+    }
+
     private BridgeHost _bridge = null!;
     private PluginsViewModel _vm = null!;
     private PluginsAdapter _adapter = null!;
+    private MaterialToolbar _toolbar = null!;
     private LinearProgressIndicator _progress = null!;
     private View _hostBanner = null!;
     private View _restartBanner = null!;
     private MaterialButton _startDshBtn = null!;
     private MaterialButton _restartNowBtn = null!;
-    private MaterialButton _refreshBtn = null!;
-    private MaterialButton _installBtn = null!;
+    private ExtendedFloatingActionButton _installFab = null!;
     private TextInputEditText _searchInput = null!;
+    private ChipGroup _filterChips = null!;
+    private PluginFilter _filter = PluginFilter.All;
     private TextView _emptyView = null!;
     private int _renderPosted;
     private string? _lastShownStatusKey;
@@ -45,24 +58,42 @@ public sealed class PluginsFragment : Fragment
         _bridge = DshMobileApplication.Current.Bridge;
         _vm = _bridge.Agent.Plugins;
 
-        var toolbar = view.FindViewById<MaterialToolbar>(Resource.Id.plugins_toolbar)!;
-        toolbar.NavigationClick += (_, _) => Activity?.Finish();
+        _toolbar = view.FindViewById<MaterialToolbar>(Resource.Id.plugins_toolbar)!;
+        _toolbar.NavigationClick += (_, _) => Activity?.Finish();
+        _toolbar.MenuItemClick += (_, e) =>
+        {
+            if (e.Item?.ItemId == Resource.Id.plugins_menu_refresh)
+            {
+                _ = RefreshWhenReadyAsync();
+            }
+        };
 
         _progress = view.FindViewById<LinearProgressIndicator>(Resource.Id.plugins_progress)!;
         _hostBanner = view.FindViewById(Resource.Id.plugins_host_banner)!;
         _restartBanner = view.FindViewById(Resource.Id.plugins_restart_banner)!;
         _startDshBtn = view.FindViewById<MaterialButton>(Resource.Id.plugins_start_dsh_btn)!;
         _restartNowBtn = view.FindViewById<MaterialButton>(Resource.Id.plugins_restart_now_btn)!;
-        _refreshBtn = view.FindViewById<MaterialButton>(Resource.Id.plugins_refresh_btn)!;
-        _installBtn = view.FindViewById<MaterialButton>(Resource.Id.plugins_install_btn)!;
-        _searchInput = view.FindViewById<TextInputEditText>(Resource.Id.plugins_search_input)!;
+        _installFab = view.FindViewById<ExtendedFloatingActionButton>(Resource.Id.plugins_install_fab)!;
+        _searchInput = view.FindViewById(Resource.Id.plugins_search_layout)!.FindViewById<TextInputEditText>(Resource.Id.search_input)!;
+        _searchInput.Hint = GetString(Resource.String.plugins_search_hint);
+        _filterChips = view.FindViewById<ChipGroup>(Resource.Id.plugins_filter_chips)!;
         _emptyView = view.FindViewById<TextView>(Resource.Id.plugins_empty)!;
 
         _startDshBtn.Click += (_, _) => _ = _bridge.RunStartAsync();
         _restartNowBtn.Click += (_, _) => _ = _vm.RestartDshAsync();
-        _refreshBtn.Click += (_, _) => _ = RefreshWhenReadyAsync();
-        _installBtn.Click += (_, _) => ShowInstallDialog();
+        _installFab.Click += (_, _) => ShowInstallDialog();
         _searchInput.TextChanged += OnSearchTextChanged;
+        _filterChips.CheckedStateChange += (_, _) =>
+        {
+            _filter = _filterChips.CheckedChipId switch
+            {
+                Resource.Id.plugins_filter_manageable => PluginFilter.Manageable,
+                Resource.Id.plugins_filter_enabled => PluginFilter.Enabled,
+                Resource.Id.plugins_filter_protected => PluginFilter.Protected,
+                _ => PluginFilter.All,
+            };
+            Render(_vm.State);
+        };
 
         var list = view.FindViewById<RecyclerView>(Resource.Id.plugins_list)!;
         list.SetLayoutManager(new LinearLayoutManager(RequireContext()));
@@ -133,12 +164,20 @@ public sealed class PluginsFragment : Fragment
 
         _startDshBtn.Enabled = !_bridge.IsBusy;
         _restartNowBtn.Enabled = !busy;
-        _refreshBtn.Enabled = hostReady && !busy;
-        _installBtn.Enabled = hostReady && !busy;
+        _toolbar.Menu?.FindItem(Resource.Id.plugins_menu_refresh)?.SetEnabled(hostReady && !busy);
+        _installFab.Visibility = hostReady ? ViewStates.Visible : ViewStates.Gone;
+        _installFab.Enabled = hostReady && !busy;
 
-        _adapter.Submit(state.Entries, busy);
+        IReadOnlyList<PluginEntryView> visibleEntries = _filter switch
+        {
+            PluginFilter.Manageable => state.Entries.Where(e => !e.IsProtected && (e.CanToggle || e.CanUninstall)).ToArray(),
+            PluginFilter.Enabled => state.Entries.Where(e => e.Enabled).ToArray(),
+            PluginFilter.Protected => state.Entries.Where(e => e.IsProtected).ToArray(),
+            _ => state.Entries,
+        };
+        _adapter.Submit(visibleEntries, busy);
 
-        if (state.Entries.Count == 0 && !state.IsLoading)
+        if (visibleEntries.Count == 0 && !state.IsLoading)
         {
             _emptyView.Visibility = ViewStates.Visible;
             _emptyView.SetText(hostReady && !state.CanListPlugins && state.FailureCode == nameof(DshFailureCode.Unsupported)
