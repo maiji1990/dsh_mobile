@@ -164,4 +164,53 @@ public static class FileListing
         }
         return new SearchResult(matches, false, visited);
     }
+
+    /// <summary>
+    /// 扫描指定目录下一层子目录中的 Git 仓库（跳过受保护 <c>.dsh</c> 与符号链接），供非 Git 根目录快捷跳转使用。
+    /// </summary>
+    public static IReadOnlyList<Breadcrumb> DiscoverGitRepositories(
+        WorkspaceFileSystem fs,
+        string? start,
+        int maxCount = 8,
+        CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(fs);
+        if (maxCount <= 0)
+        {
+            return [];
+        }
+
+        IReadOnlyList<WorkspaceEntry> children;
+        try
+        {
+            children = fs.List(WorkspaceFileSystem.NormalizeRelative(start));
+        }
+        catch (Exception e) when (e is WorkspaceException or IOException or UnauthorizedAccessException)
+        {
+            return [];
+        }
+
+        var repos = new List<Breadcrumb>();
+        foreach (var child in children.Where(e => e.Kind == WorkspaceEntryKind.Directory && !e.Protected))
+        {
+            ct.ThrowIfCancellationRequested();
+            try
+            {
+                var subEntries = fs.List(child.RelativePath);
+                if (subEntries.Any(sub => string.Equals(sub.Name, ".git", StringComparison.Ordinal)))
+                {
+                    repos.Add(new Breadcrumb(child.Name, child.RelativePath));
+                    if (repos.Count >= maxCount)
+                    {
+                        break;
+                    }
+                }
+            }
+            catch (Exception e) when (e is WorkspaceException or IOException or UnauthorizedAccessException)
+            {
+                // Ignore unreadable child directory.
+            }
+        }
+        return repos;
+    }
 }

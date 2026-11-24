@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>DSH Mobile UI Slice 3 真机验收截图（2026-11-24）</title>
+  <style>
+    body { font-family: system-ui, -apple-system, sans-serif; margin: 24px; background: #f6f7f9; color: #1b1c1e; }
+    h1 { font-size: 20px; margin-bottom: 6px; }
+    p.meta { color: #555; font-size: 13px; margin-bottom: 20px; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 16px; }
+    .card { background: #fff; border: 1px solid #e0e2e7; border-radius: 12px; padding: 12px; }
+    .card img { width: 100%; border-radius: 8px; border: 1px solid #eceef2; display: block; }
+    .card h3 { font-size: 14px; margin: 10px 0 4px; }
+    .card p { font-size: 12px; color: #555; margin: 0; line-height: 1.45; }
+  </style>
+</head>
+<body>
+  <h1>DSH Mobile · UI Slice 3 真机验收截图（工作区重新布局与全 XML 化）</h1>
+  <p class="meta">设备：Xiaomi M2007J1SC（LineageOS 24.0 / Android 17 / API 37 / arm64）· Clean Release SHA-256: 7C73C973…C57A · 16 张</p>
+  <div class="grid">
+    <div class="card"><img src="00-chats-search-pill-check.png" alt="00" /><h3>00 · 会话页搜索胶囊回归</h3><p>关闭 TextInputLayout 浮动标签后占位符居 Pill 中心、无边框裁切。</p></div>
+    <div class="card"><img src="01-files-root-light.png" alt="01" /><h3>01 · 工作区根目录（浅色）</h3><p>单行顶栏、文件/Git 分段切换、搜索胶囊与排序钮、XML 行卡(.dsh 锁标)、拇指区 + 新建 FAB。</p></div>
+    <div class="card"><img src="02-create-sheet-light.png" alt="02" /><h3>02 · 新建/导入 BottomSheet</h3><p>由 + 新建 FAB 拉起：新建文件 / 新建文件夹 / 从系统文件选择器导入。</p></div>
+    <div class="card"><img src="03-sort-dialog-light.png" alt="03" /><h3>03 · 排序弹窗</h3><p>名称 ↑ / 大小 / 修改时间 / 类型 单选列表及升/降序切换提示。</p></div>
+    <div class="card"><img src="04-file-actions-sheet-light.png" alt="04" /><h3>04 · 文件操作 BottomSheet</h3><p>点击行尾 ⋮ 展开能力门控抽屉（编辑/导出/重命名/复制/剪切/压缩 zip/error 红删除）。</p></div>
+    <div class="card"><img src="05-editor-read-light.png" alt="05" /><h3>05 · 全屏文本/代码阅读器</h3><p>单击 .md 直进只读阅读视图，顶栏显示「编辑」，底栏展示编码/行数与「只读」。</p></div>
+    <div class="card"><img src="06-editor-edit-light.png" alt="06" /><h3>06 · 全屏编辑器（编辑态）</h3><p>切换后顶栏为「退出编辑 | 保存」，底栏状态徽章清晰标示「编辑中」。</p></div>
+    <div class="card"><img src="07-files-subfolder-light.png" alt="07" /><h3>07 · 子目录与 XML 面包屑</h3><p>pr06-repo 目录与 item_file_crumb.xml（末级高对比加粗不可误点）。</p></div>
+    <div class="card"><img src="08-files-multiselect-light.png" alt="08" /><h3>08 · 长按多选模式</h3><p>顶栏切换为选择批处理菜单（复制/剪切/压缩/删除），选中卡主色边框+勾选徽标。</p></div>
+    <div class="card"><img src="09-files-search-light.png" alt="09" /><h3>09 · 工作区递归搜索</h3><p>输入 hello 并回车直接触发 FileListing.Search，命中 pr06-repo/hello.txt 并显示命中统计。</p></div>
+    <div class="card"><img src="10-git-root-subrepos-light.png" alt="10" /><h3>10 · Git 非仓库自动发现子仓库</h3><p>隐藏无效分支条，自动扫描一级子目录呈现 pr06-repo Chip；顶栏与刷新键零像素漂移。</p></div>
+    <div class="card"><img src="11-git-repo-changes-light.png" alt="11" /><h3>11 · Git 仓库变更列表</h3><p>一键跳转 pr06-repo：展示分支 master、仓库根与 M/U 变更清单。</p></div>
+    <div class="card"><img src="12-git-diff-light.png" alt="12" /><h3>12 · Git Diff 查看</h3><p>展示 hunk 头、行号与红绿差异背景，顶栏支持「预览文件」直达全屏编辑器。</p></div>
+    <div class="card"><img src="13-git-changes-dark.png" alt="13" /><h3>13 · Git 变更列表（深色）</h3><p>OLED 深色主题下卡片描边与状态徽章对比分明。</p></div>
+    <div class="card"><img src="14-files-subfolder-dark.png" alt="14" /><h3>14 · 子目录与面包屑（深色）</h3><p>深色模式下末级面包屑 pr06-repo 加粗白字与父级弱化区分明显。</p></div>
+    <div class="card"><img src="15-editor-read-dark.png" alt="15" /><h3>15 · 全屏阅读器（深色）</h3><p>深色背景下等宽文本与底部状态条清晰可读。</p></div>
+  </div>
+</body>
+</html>

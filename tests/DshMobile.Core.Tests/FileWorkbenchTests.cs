@@ -146,6 +146,23 @@ public sealed class FileWorkbenchTests : IDisposable
         Assert.Equal([".dsh"], FileListing.Search(_p.FileSystem, "", ".dsh").Matches.Select(m => m.RelativePath)); // the name still matches
     }
 
+    [Fact]
+    public void DiscoverGitRepositories_FindsImmediateNonProtectedGitChildren_SkipsSymlinksAndDsh()
+    {
+        Directory.CreateDirectory(Host("pr06-repo/.git"));
+        Directory.CreateDirectory(Host("worktree-repo"));
+        File.WriteAllText(Host("worktree-repo/.git"), "gitdir: ../.git");
+        Directory.CreateDirectory(Host("plain-dir/nested/.git"));
+        Directory.CreateDirectory(Host(".dsh/.git"));
+        Directory.CreateDirectory(Path.Combine(_outside, "outside-repo/.git"));
+        WorkspaceProviderTests.TryLinkDirectory(Host("linked-repo"), Path.Combine(_outside, "outside-repo"));
+
+        var found = FileListing.DiscoverGitRepositories(_p.FileSystem, "");
+        Assert.Equal([("pr06-repo", "pr06-repo"), ("worktree-repo", "worktree-repo")], found.Select(r => (r.Label, r.Path)));
+        Assert.Equal([("nested", "plain-dir/nested")], FileListing.DiscoverGitRepositories(_p.FileSystem, "plain-dir", maxCount: 4).Select(r => (r.Label, r.Path)));
+        Assert.Empty(FileListing.DiscoverGitRepositories(_p.FileSystem, "plain-dir/nested", maxCount: 4));
+    }
+
     // ── archives ──────────────────────────────────────────────────────────
 
     private string Zip(string name, Action<ZipArchive> fill)

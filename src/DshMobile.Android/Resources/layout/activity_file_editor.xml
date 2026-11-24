@@ -1,0 +1,103 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/screen_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="?attr/colorSurface"
+    android:orientation="vertical">
+
+    <com.google.android.material.appbar.AppBarLayout
+        android:id="@+id/editor_appbar"
+        style="@style/Widget.DshMobile.AppBar"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content">
+
+        <com.google.android.material.appbar.MaterialToolbar
+            android:id="@+id/editor_toolbar"
+            style="@style/Widget.DshMobile.Toolbar.InAppBar"
+            android:layout_width="match_parent"
+            android:layout_height="?attr/actionBarSize"
+            app:menu="@menu/file_editor_toolbar"
+            app:navigationIcon="@drawable/ic_arrow_back"
+            app:subtitleTextAppearance="?attr/textAppearanceBodySmall"
+            app:title="@string/files_editor_title"
+            app:titleTextAppearance="?attr/textAppearanceTitleMedium" />
+
+        <com.google.android.material.progressindicator.LinearProgressIndicator
+            android:id="@+id/editor_progress"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:indeterminate="true"
+            android:visibility="gone" />
+    </com.google.android.material.appbar.AppBarLayout>
+
+    <TextView
+        android:id="@+id/editor_notice"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="?attr/colorSecondaryContainer"
+        android:paddingStart="16dp"
+        android:paddingTop="8dp"
+        android:paddingEnd="16dp"
+        android:paddingBottom="8dp"
+        android:textAppearance="?attr/textAppearanceBodySmall"
+        android:textColor="?attr/colorOnSecondaryContainer"
+        android:visibility="gone" />
+
+    <ScrollView
+        android:id="@+id/editor_scroll"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:fillViewport="true">
+
+        <EditText
+            android:id="@+id/editor_input"
+            style="@style/Widget.DshMobile.Mono"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:background="@android:color/transparent"
+            android:gravity="top|start"
+            android:importantForAutofill="no"
+            android:inputType="textMultiLine|textNoSuggestions"
+            android:padding="16dp"
+            android:scrollHorizontally="false"
+            android:textColor="?attr/colorOnSurface"
+            android:textSize="13sp" />
+    </ScrollView>
+
+    <com.google.android.material.divider.MaterialDivider
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content" />
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="?attr/colorSurfaceContainerLow"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingStart="16dp"
+        android:paddingTop="6dp"
+        android:paddingEnd="12dp"
+        android:paddingBottom="6dp">
+
+        <TextView
+            android:id="@+id/editor_meta"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:ellipsize="end"
+            android:maxLines="1"
+            android:textAppearance="?attr/textAppearanceBodySmall"
+            android:textColor="?attr/colorOnSurfaceVariant" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/editor_mode_pill"
+            style="@style/Widget.Material3.Button.TextButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/files_editor_mode_read"
+            android:textAppearance="?attr/textAppearanceLabelMedium" />
+    </LinearLayout>
+</LinearLayout>

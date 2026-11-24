@@ -1,47 +1,40 @@
-using System.Text;
 using Android.Content;
+using Android.Content.Res;
 using Android.Views;
+using Android.Views.InputMethods;
+using Android.Widget;
 using AndroidX.RecyclerView.Widget;
 using DshMobile.App.Ui;
 using DshMobile.Core.Files;
 using Google.Android.Material.AppBar;
 using Google.Android.Material.Button;
+using Google.Android.Material.Card;
+using Google.Android.Material.Chip;
 using Google.Android.Material.Dialog;
+using Google.Android.Material.FloatingActionButton;
 using Google.Android.Material.ProgressIndicator;
 using Google.Android.Material.Snackbar;
+using Google.Android.Material.TextField;
 using Fragment = AndroidX.Fragment.App.Fragment;
 using Log = Android.Util.Log;
 
 namespace DshMobile.App.Files;
 
 /// <summary>
-/// Files tab (TASK-007, ADR-0021; vNext PR-09 workbench). Browses the DSH workspace (guest /root/projects = host
-/// files/user-data) through <see cref="WorkspaceProvider"/>: every path rule and every refusal is the provider's (no
-/// symlink traversal, <c>.dsh</c> untouchable, no overwrite, conflict-checked saves); this screen only offers the
-/// actions <see cref="IFileProvider.CapabilitiesOf"/> allows. RecyclerView + DiffUtil, path bar, filter, sort, recursive
-/// search, long-press multi-select with copy / cut / paste / delete (to a trash, undoable) / zip, extraction, a text
-/// editor that never silently overwrites, SAF import / export. Back leaves search, then selection, then goes up.
+/// 工作区工作台页签（TASK-007 / N-06-02 / UI Slice 3）：
+/// 全 XML 化布局（<c>fragment_files.xml</c> / <c>item_workspace_entry.xml</c> / <c>item_file_crumb.xml</c>），
+/// 单击文本/代码文件直达全屏 <see cref="WorkspaceEditorActivity"/>，行尾 <c>⋮</c> 拉起底部操作抽屉，
+/// 单手 FAB 承接新建/导入，Git 非仓库时自动扫描子仓库提供一键跳转；
+/// 所有路径校验、符号链接拦截、<c>.dsh</c> 保护与冲突检测严格委托 <see cref="WorkspaceProvider"/>。
 /// </summary>
 public sealed class FilesFragment : Fragment, ITabRoot
 {
     private const int RequestImport = 71;
     private const int RequestExport = 72;
+    private const int RequestEditor = 73;
     private const string GuestRoot = "/root/projects";
-    private const int DiffLimit = 5000; // above this a full rebind is cheaper than a diff
+    private const int DiffLimit = 5000;
     private static readonly TimeSpan TrashAge = TimeSpan.FromDays(7);
-
-    private const int MenuImport = 1;
-    private const int MenuRefresh = 2;
-    private const int MenuSearch = 3;
-    private const int MenuSort = 4;
-    private const int MenuNewFolder = 5;
-    private const int MenuNewFile = 6;
-    private const int MenuCopy = 10;
-    private const int MenuCut = 11;
-    private const int MenuDelete = 12;
-    private const int MenuZip = 13;
-    private const int MenuSelectAll = 14;
-    private const int MenuClearSelection = 15;
 
     private WorkspaceProvider? _provider;
     private string _dir = "";
@@ -62,12 +55,16 @@ public sealed class FilesFragment : Fragment, ITabRoot
     private string? _activeDiffFile;
     private string? _pendingTargetPath;
     private bool _pendingTargetDiff;
+    private bool _menuIsSelection;
+    private string? _lastCrumbsKey;
 
     private MaterialToolbar _toolbar = null!;
+    private LinearProgressIndicator _filesProgress = null!;
     private MaterialButtonToggleGroup _modeToggle = null!;
     private View _browserPane = null!;
     private View _gitPane = null!;
     private LinearProgressIndicator _gitProgress = null!;
+    private View _gitHeaderBar = null!;
     private TextView _gitBranchText = null!;
     private TextView _gitRepoRootText = null!;
     private View _gitDiffHeader = null!;
@@ -75,35 +72,44 @@ public sealed class FilesFragment : Fragment, ITabRoot
     private TextView _gitDiffNotice = null!;
     private RecyclerView _gitChangesList = null!;
     private RecyclerView _gitDiffList = null!;
-    private View _gitEmpty = null!;
+    private View _gitEmptyWrapper = null!;
+    private TextView _gitEmptyText = null!;
+    private View _gitSubreposBar = null!;
+    private ChipGroup _gitSubreposChips = null!;
     private GitChangesAdapter _gitChangesAdapter = null!;
     private GitDiffAdapter _gitDiffAdapter = null!;
 
     private LinearLayout _crumbs = null!;
     private HorizontalScrollView _crumbsScroll = null!;
-    private EditText _filterText = null!;
+    private TextInputEditText _filterText = null!;
+    private MaterialButton _sortBtn = null!;
     private TextView _status = null!;
     private RecyclerView _list = null!;
     private View _empty = null!;
     private View _pasteBar = null!;
     private TextView _pasteText = null!;
+    private ExtendedFloatingActionButton _createFab = null!;
     private EntryAdapter _adapter = null!;
     private IReadOnlyList<WorkspaceEntry> _entries = [];
 
     public override View OnCreateView(LayoutInflater inflater, ViewGroup? container, Bundle? savedInstanceState)
     {
         var view = inflater.Inflate(Resource.Layout.fragment_files, container, false)!;
+        _lastCrumbsKey = null;
         _dir = savedInstanceState?.GetString("dir") ?? _dir;
         _gitMode = savedInstanceState?.GetBoolean("gitMode", false) ?? _gitMode;
+
         _toolbar = view.FindViewById<MaterialToolbar>(Resource.Id.toolbar)!;
         _toolbar.SetTitle(Resource.String.files_title);
         _toolbar.MenuItemClick += (_, e) => OnMenu(e.Item?.ItemId ?? 0);
         _toolbar.NavigationClick += (_, _) => OnBack();
+        _filesProgress = view.FindViewById<LinearProgressIndicator>(Resource.Id.files_progress)!;
 
         _modeToggle = view.FindViewById<MaterialButtonToggleGroup>(Resource.Id.files_mode_toggle)!;
         _browserPane = view.FindViewById(Resource.Id.files_browser_pane)!;
         _gitPane = view.FindViewById(Resource.Id.files_git_pane)!;
         _gitProgress = view.FindViewById<LinearProgressIndicator>(Resource.Id.git_progress)!;
+        _gitHeaderBar = view.FindViewById(Resource.Id.git_header_bar)!;
         _gitBranchText = view.FindViewById<TextView>(Resource.Id.git_branch_text)!;
         _gitRepoRootText = view.FindViewById<TextView>(Resource.Id.git_repo_root_text)!;
         _gitDiffHeader = view.FindViewById(Resource.Id.git_diff_header)!;
@@ -111,8 +117,10 @@ public sealed class FilesFragment : Fragment, ITabRoot
         _gitDiffNotice = view.FindViewById<TextView>(Resource.Id.git_diff_notice)!;
         _gitChangesList = view.FindViewById<RecyclerView>(Resource.Id.git_changes_list)!;
         _gitDiffList = view.FindViewById<RecyclerView>(Resource.Id.git_diff_list)!;
-        _gitEmpty = view.FindViewById(Resource.Id.git_empty)!;
-        _gitEmpty.FindViewById<ImageView>(Resource.Id.empty_icon)!.SetImageResource(Resource.Drawable.ic_code);
+        _gitEmptyWrapper = view.FindViewById(Resource.Id.git_empty_wrapper)!;
+        _gitEmptyText = view.FindViewById<TextView>(Resource.Id.git_empty_text)!;
+        _gitSubreposBar = view.FindViewById(Resource.Id.git_subrepos_bar)!;
+        _gitSubreposChips = view.FindViewById<ChipGroup>(Resource.Id.git_subrepos_chips)!;
 
         _gitChangesList.SetLayoutManager(new LinearLayoutManager(RequireContext()));
         _gitChangesAdapter = new GitChangesAdapter(entry => _ = OpenGitDiffAsync(_gitRepoRoot, entry.RelativePath));
@@ -123,7 +131,6 @@ public sealed class FilesFragment : Fragment, ITabRoot
         _gitDiffAdapter = new GitDiffAdapter();
         _gitDiffList.SetAdapter(_gitDiffAdapter);
 
-        view.FindViewById<MaterialButton>(Resource.Id.git_refresh_btn)!.Click += (_, _) => _ = LoadGitStatusAsync(_dir);
         view.FindViewById<MaterialButton>(Resource.Id.git_diff_back_btn)!.Click += (_, _) => ExitDiffView();
         view.FindViewById<MaterialButton>(Resource.Id.git_diff_open_file_btn)!.Click += (_, _) => OpenDiffTargetFilePreview();
 
@@ -141,18 +148,50 @@ public sealed class FilesFragment : Fragment, ITabRoot
 
         _crumbs = view.FindViewById<LinearLayout>(Resource.Id.files_crumbs)!;
         _crumbsScroll = view.FindViewById<HorizontalScrollView>(Resource.Id.files_crumbs_scroll)!;
-        _filterText = view.FindViewById<EditText>(Resource.Id.files_filter)!;
+
+        var filterLayout = view.FindViewById(Resource.Id.files_filter_layout)!;
+        _filterText = filterLayout.FindViewById<TextInputEditText>(Resource.Id.search_input)!;
+        _filterText.Hint = GetString(Resource.String.files_filter_or_search_hint);
         _filterText.TextChanged += (_, _) =>
         {
             _filter = _filterText.Text ?? "";
             Show();
         };
+        _filterText.EditorAction += (_, e) =>
+        {
+            if (e.ActionId is ImeAction.Search or ImeAction.Done or ImeAction.Go or ImeAction.Unspecified
+                || e.Event?.KeyCode == Keycode.Enter)
+            {
+                e.Handled = true;
+                TriggerInlineSearch();
+            }
+        };
+        _filterText.KeyPress += (_, e) =>
+        {
+            if (e.KeyCode == Keycode.Enter)
+            {
+                e.Handled = true;
+                if (e.Event?.Action == KeyEventActions.Up)
+                {
+                    TriggerInlineSearch();
+                }
+            }
+            else
+            {
+                e.Handled = false;
+            }
+        };
+
+        _sortBtn = view.FindViewById<MaterialButton>(Resource.Id.files_sort_btn)!;
+        _sortBtn.Click += (_, _) => ChooseSort();
+
         _status = view.FindViewById<TextView>(Resource.Id.files_status)!;
         _list = view.FindViewById<RecyclerView>(Resource.Id.files_list)!;
         _list.SetLayoutManager(new LinearLayoutManager(RequireContext()));
-        _list.SetItemAnimator(null); // no flicker on 10k-row directories
+        _list.SetItemAnimator(null);
         _adapter = new EntryAdapter(this);
         _list.SetAdapter(_adapter);
+
         _empty = view.FindViewById(Resource.Id.files_empty)!;
         _empty.FindViewById<ImageView>(Resource.Id.empty_icon)!.SetImageResource(Resource.Drawable.ic_folder);
         _pasteBar = view.FindViewById(Resource.Id.files_paste_bar)!;
@@ -163,6 +202,11 @@ public sealed class FilesFragment : Fragment, ITabRoot
             _clip = [];
             UpdateChrome();
         };
+
+        _createFab = view.FindViewById<ExtendedFloatingActionButton>(Resource.Id.files_create_fab)!;
+        _createFab.Click += (_, _) => ShowCreateSheet();
+        _list.AddOnScrollListener(new FabScrollListener(_createFab));
+
         EnsureProvider();
         ApplyModeVisibility();
         if (_pendingTargetPath is { } pendingPath)
@@ -203,7 +247,7 @@ public sealed class FilesFragment : Fragment, ITabRoot
             }
             else if (_searchQuery is null)
             {
-                _ = LoadAsync(); // DSH may have changed the workspace meanwhile
+                _ = LoadAsync();
             }
         }
     }
@@ -225,6 +269,8 @@ public sealed class FilesFragment : Fragment, ITabRoot
         {
             _searchQuery = null;
             _searchResult = null;
+            _filter = "";
+            _filterText.Text = "";
             _ = LoadAsync();
             return true;
         }
@@ -344,7 +390,14 @@ public sealed class FilesFragment : Fragment, ITabRoot
         _gitDiffNotice.Visibility = ViewStates.Gone;
         _gitDiffList.Visibility = ViewStates.Gone;
         _gitChangesList.Visibility = ViewStates.Visible;
-        _gitEmpty.Visibility = _gitChangesAdapter.ItemCount == 0 ? ViewStates.Visible : ViewStates.Gone;
+        if (_gitChangesAdapter.ItemCount == 0)
+        {
+            _gitEmptyWrapper.Visibility = ViewStates.Visible;
+        }
+        else
+        {
+            _gitEmptyWrapper.Visibility = ViewStates.Gone;
+        }
         UpdateChrome();
     }
 
@@ -353,7 +406,8 @@ public sealed class FilesFragment : Fragment, ITabRoot
         var git = DshMobileApplication.Current.Bridge.CreateWorkspaceGitService();
         if (git is null)
         {
-            ShowGitEmpty(GetString(Resource.String.files_no_workspace));
+            _gitHeaderBar.Visibility = ViewStates.Gone;
+            ShowGitEmpty(GetString(Resource.String.files_no_workspace), subRepos: []);
             return;
         }
         var gen = ++_gitGeneration;
@@ -362,7 +416,16 @@ public sealed class FilesFragment : Fragment, ITabRoot
         ExitDiffView();
         try
         {
-            var status = await Task.Run(() => git.GetStatusAsync(repoSearchDir)).ConfigureAwait(false);
+            var fs = _provider?.FileSystem;
+            var (status, subRepos) = await Task.Run(async () =>
+            {
+                var st = await git.GetStatusAsync(repoSearchDir).ConfigureAwait(false);
+                IReadOnlyList<Breadcrumb> subs = !st.IsRepository && fs is not null && st.ErrorCode != GitErrors.GitUnavailable
+                    ? FileListing.DiscoverGitRepositories(fs, repoSearchDir)
+                    : [];
+                return (st, subs);
+            }).ConfigureAwait(false);
+
             Activity?.RunOnUiThread(() =>
             {
                 if (gen != _gitGeneration || !IsAdded)
@@ -370,7 +433,7 @@ public sealed class FilesFragment : Fragment, ITabRoot
                     return;
                 }
                 _gitProgress.Visibility = ViewStates.Gone;
-                ApplyGitStatus(status);
+                ApplyGitStatus(status, subRepos);
             });
         }
         catch (WorkspaceException ex)
@@ -380,27 +443,32 @@ public sealed class FilesFragment : Fragment, ITabRoot
                 if (gen == _gitGeneration && IsAdded)
                 {
                     _gitProgress.Visibility = ViewStates.Gone;
-                    ShowGitEmpty($"{ex.Code}: {ex.Message}");
+                    _gitHeaderBar.Visibility = ViewStates.Gone;
+                    ShowGitEmpty($"{ex.Code}: {ex.Message}", subRepos: []);
                 }
             });
         }
     }
 
-    private void ApplyGitStatus(GitStatusResult status)
+    private void ApplyGitStatus(GitStatusResult status, IReadOnlyList<Breadcrumb> subRepos)
     {
         var ctx = RequireContext();
         if (!status.IsRepository)
         {
+            _gitHeaderBar.Visibility = ViewStates.Gone;
             _gitBranchText.Text = string.Empty;
             _gitRepoRootText.Text = string.Empty;
             _gitChangesAdapter.Submit([]);
             var msg = status.ErrorCode == GitErrors.GitUnavailable
                 ? GetString(Resource.String.git_unavailable)
                 : GetString(Resource.String.git_not_repo);
-            ShowGitEmpty(msg);
+            ShowGitEmpty(msg, subRepos);
+            UpdateChrome();
             return;
         }
 
+        _gitHeaderBar.Visibility = ViewStates.Visible;
+        _gitSubreposBar.Visibility = ViewStates.Gone;
         _gitRepoRoot = status.RepoRelativeRoot;
         _gitBranchText.Text = status.IsDetachedHead
             ? Rows.Fmt(ctx, Resource.String.git_branch_detached, status.BranchName ?? "HEAD")
@@ -420,18 +488,44 @@ public sealed class FilesFragment : Fragment, ITabRoot
         {
             _gitDiffNotice.Visibility = ViewStates.Gone;
         }
-        _gitEmpty.Visibility = status.Changes.Count == 0 ? ViewStates.Visible : ViewStates.Gone;
+
         if (status.Changes.Count == 0)
         {
-            _gitEmpty.FindViewById<TextView>(Resource.Id.empty_text)!.SetText(Resource.String.git_clean);
+            ShowGitEmpty(GetString(Resource.String.git_clean), subRepos: []);
         }
+        else
+        {
+            _gitEmptyWrapper.Visibility = ViewStates.Gone;
+        }
+        UpdateChrome();
     }
 
-    private void ShowGitEmpty(string message)
+    private void ShowGitEmpty(string message, IReadOnlyList<Breadcrumb> subRepos)
     {
         _gitChangesAdapter.Submit([]);
-        _gitEmpty.FindViewById<TextView>(Resource.Id.empty_text)!.Text = message;
-        _gitEmpty.Visibility = ViewStates.Visible;
+        _gitEmptyText.Text = message;
+        _gitEmptyWrapper.Visibility = ViewStates.Visible;
+
+        _gitSubreposChips.RemoveAllViews();
+        if (subRepos.Count == 0)
+        {
+            _gitSubreposBar.Visibility = ViewStates.Gone;
+            return;
+        }
+
+        _gitSubreposBar.Visibility = ViewStates.Visible;
+        var inflater = LayoutInflater.From(RequireContext())!;
+        foreach (var repo in subRepos)
+        {
+            var chip = (Chip)inflater.Inflate(Resource.Layout.item_git_subrepo_chip, _gitSubreposChips, false)!;
+            chip.Text = repo.Label;
+            chip.Click += (_, _) =>
+            {
+                _dir = repo.Path;
+                _ = LoadGitStatusAsync(_dir);
+            };
+            _gitSubreposChips.AddView(chip);
+        }
     }
 
     private async Task OpenGitDiffAsync(string repoRelRoot, string fileRelativeToRepo)
@@ -475,7 +569,7 @@ public sealed class FilesFragment : Fragment, ITabRoot
         _gitDiffHeader.Visibility = ViewStates.Visible;
         _gitDiffFileTitle.Text = doc.FileRelativePath;
         _gitChangesList.Visibility = ViewStates.Gone;
-        _gitEmpty.Visibility = ViewStates.Gone;
+        _gitEmptyWrapper.Visibility = ViewStates.Gone;
         _gitDiffList.Visibility = ViewStates.Visible;
 
         if (doc.IsBinary)
@@ -547,10 +641,9 @@ public sealed class FilesFragment : Fragment, ITabRoot
                     return;
                 }
                 _gitProgress.Visibility = ViewStates.Gone;
-                ApplyGitStatus(status);
+                ApplyGitStatus(status, []);
                 if (!doc.IsBinary && doc.Lines.Count == 0)
                 {
-                    // 该文件无未提交差异时回退到文件预览，避免空页困惑
                     ShowStatus(GetString(Resource.String.git_jump_no_diff_fallback));
                     _modeToggle.Check(Resource.Id.files_mode_files);
                     SetGitMode(false, triggerLoad: false);
@@ -586,7 +679,7 @@ public sealed class FilesFragment : Fragment, ITabRoot
             var entry = await _provider.StatAsync(workspaceRelativePath, CancellationToken.None);
             if (entry.Kind == WorkspaceEntryKind.File && _provider.CapabilitiesOf(entry).HasFlag(FileCapabilities.Read))
             {
-                await OpenTextAsync(entry);
+                OpenEditorActivity(entry, startEditing: false);
             }
             else if (entry.Kind == WorkspaceEntryKind.Symlink)
             {
@@ -623,9 +716,8 @@ public sealed class FilesFragment : Fragment, ITabRoot
         var workspace = Path.Combine(files, "user-data");
         if (!Directory.Exists(workspace))
         {
-            return false; // appears with the first runtime import
+            return false;
         }
-        // The trash lives next to the workspace (same filesystem: deleting is a rename), outside what DSH can see.
         var provider = new WorkspaceProvider(new WorkspaceFileSystem(workspace), Path.Combine(files, "dshmobile-files-trash"), GuestRoot);
         _provider = provider;
         _ = Task.Run(() =>
@@ -653,8 +745,6 @@ public sealed class FilesFragment : Fragment, ITabRoot
         ShowStatus(null);
         _ = LoadAsync();
     }
-
-    // ── loading and showing ───────────────────────────────────────────────
 
     private async Task LoadAsync()
     {
@@ -703,9 +793,21 @@ public sealed class FilesFragment : Fragment, ITabRoot
     private void UpdateChrome()
     {
         var ctx = RequireContext();
+        _filesProgress.Visibility = _busy ? ViewStates.Visible : ViewStates.Gone;
+
+        var showFab = !_gitMode && _selected.Count == 0 && _provider is not null;
+        if (showFab)
+        {
+            _createFab.Show();
+        }
+        else
+        {
+            _createFab.Hide();
+        }
+
         if (_gitMode)
         {
-            _toolbar.Subtitle = _activeDiffFile ?? (string.IsNullOrEmpty(_gitRepoRoot) ? GuestRoot : GuestRoot + "/" + _gitRepoRoot);
+            _toolbar.Subtitle = null;
             if (_activeDiffFile is not null)
             {
                 _toolbar.SetNavigationIcon(Resource.Drawable.ic_arrow_back);
@@ -715,9 +817,10 @@ public sealed class FilesFragment : Fragment, ITabRoot
             {
                 _toolbar.NavigationIcon = null;
             }
-            _toolbar.Menu?.Clear();
+            SyncMenu(isSelection: false, isGitMode: true);
             return;
         }
+
         _toolbar.Subtitle = _selected.Count > 0
             ? Rows.Fmt(ctx, Resource.String.files_selected, _selected.Count)
             : _searchQuery is { } q ? Rows.Fmt(ctx, Resource.String.files_search_title, q) : null;
@@ -730,8 +833,19 @@ public sealed class FilesFragment : Fragment, ITabRoot
             _toolbar.SetNavigationIcon(_selected.Count > 0 ? Resource.Drawable.ic_close : Resource.Drawable.ic_arrow_back);
             _toolbar.SetNavigationContentDescription(Resource.String.files_up);
         }
-        BuildMenu();
+
+        var sortName = GetString(_sort switch
+        {
+            FileSort.Size => Resource.String.files_sort_size,
+            FileSort.Modified => Resource.String.files_sort_modified,
+            FileSort.Type => Resource.String.files_sort_type,
+            _ => Resource.String.files_sort_name,
+        });
+        _sortBtn.Text = $"{sortName} {(_descending ? "↓" : "↑")}";
+
+        SyncMenu(isSelection: _selected.Count > 0, isGitMode: false);
         BuildCrumbs(ctx);
+
         _pasteBar.Visibility = _clip.Count > 0 && _searchQuery is null ? ViewStates.Visible : ViewStates.Gone;
         if (_clip.Count > 0)
         {
@@ -739,120 +853,165 @@ public sealed class FilesFragment : Fragment, ITabRoot
         }
     }
 
-    private void BuildMenu()
+    private void SyncMenu(bool isSelection, bool isGitMode)
     {
         var menu = _toolbar.Menu!;
-        menu.Clear();
-        void Item(int id, int title, int? icon = null)
+        if (menu.Size() == 0 || isSelection != _menuIsSelection)
         {
-            var item = menu.Add(0, id, id, GetString(title))!;
-            if (icon is { } i)
+            menu.Clear();
+            _toolbar.InflateMenu(isSelection ? Resource.Menu.files_selection_toolbar : Resource.Menu.files_toolbar);
+            _menuIsSelection = isSelection;
+        }
+
+        for (var i = 0; i < menu.Size(); i++)
+        {
+            var item = menu.GetItem(i)!;
+            var id = item.ItemId;
+            if (!isSelection)
             {
-                item.SetIcon(i);
-                item.SetShowAsAction(ShowAsAction.IfRoom);
+                var visible = !isGitMode
+                    || id == Resource.Id.files_menu_refresh
+                    || id == Resource.Id.files_menu_open_root;
+                item.SetVisible(visible);
+                item.SetEnabled(!_busy && (id != Resource.Id.files_menu_open_root || _dir.Length > 0));
             }
             else
             {
-                item.SetShowAsAction(ShowAsAction.Never);
+                item.SetEnabled(!_busy);
             }
-            item.SetEnabled(!_busy);
         }
-        if (_selected.Count > 0)
-        {
-            Item(MenuCopy, Resource.String.files_copy, Resource.Drawable.ic_copy);
-            Item(MenuDelete, Resource.String.files_delete, Resource.Drawable.ic_delete);
-            Item(MenuCut, Resource.String.files_cut);
-            Item(MenuZip, Resource.String.files_compress);
-            Item(MenuSelectAll, Resource.String.files_select_all);
-            Item(MenuClearSelection, Resource.String.files_clear_selection);
-            return;
-        }
-        Item(MenuImport, Resource.String.files_import, Resource.Drawable.ic_upload);
-        Item(MenuRefresh, Resource.String.files_refresh, Resource.Drawable.ic_refresh);
-        Item(MenuSearch, Resource.String.files_search);
-        Item(MenuSort, Resource.String.files_sort);
-        Item(MenuNewFolder, Resource.String.files_new_folder);
-        Item(MenuNewFile, Resource.String.files_new_file);
     }
 
     private void BuildCrumbs(Context ctx)
     {
+        var key = $"{_dir}|{_searchQuery}";
+        if (string.Equals(_lastCrumbsKey, key, StringComparison.Ordinal) && _crumbs.ChildCount > 0)
+        {
+            return;
+        }
+        _lastCrumbsKey = key;
         _crumbs.RemoveAllViews();
+        var inflater = LayoutInflater.From(ctx)!;
         var crumbs = FileListing.Breadcrumbs(GuestRoot, _dir);
         for (var i = 0; i < crumbs.Count; i++)
         {
             var crumb = crumbs[i];
-            if (i > 0)
-            {
-                var sep = new ImageView(ctx);
-                sep.SetImageResource(Resource.Drawable.ic_chevron_right);
-                _crumbs.AddView(sep);
-            }
-            var b = new MaterialButton(ctx, null, Resource.Attribute.borderlessButtonStyle) { Text = crumb.Label };
-            b.SetAllCaps(false);
-            b.SetMinWidth(0);
-            b.SetMinimumWidth(0);
-            var last = i == crumbs.Count - 1 && _searchQuery is null;
-            b.Enabled = !last;
-            b.Click += (_, _) => Navigate(crumb.Path);
-            _crumbs.AddView(b);
-        }
-        _crumbsScroll.Post(() => _crumbsScroll.FullScroll(FocusSearchDirection.Right));
-    }
+            var crumbView = inflater.Inflate(Resource.Layout.item_file_crumb, _crumbs, false)!;
+            var sep = crumbView.FindViewById(Resource.Id.crumb_sep)!;
+            var label = crumbView.FindViewById<TextView>(Resource.Id.crumb_label)!;
 
-    // ── menu ──────────────────────────────────────────────────────────────
+            sep.Visibility = i == 0 ? ViewStates.Gone : ViewStates.Visible;
+            label.Text = crumb.Label;
+
+            var isCurrent = i == crumbs.Count - 1 && _searchQuery is null;
+            if (isCurrent)
+            {
+                label.Clickable = false;
+                label.Focusable = false;
+                label.SetTypeface(null, global::Android.Graphics.TypefaceStyle.Bold);
+                label.SetTextColor(new global::Android.Graphics.Color(Rows.Color(label, Resource.Attribute.colorOnSurface)));
+            }
+            else
+            {
+                label.Clickable = true;
+                label.Focusable = true;
+                label.SetTypeface(null, global::Android.Graphics.TypefaceStyle.Normal);
+                label.SetTextColor(new global::Android.Graphics.Color(Rows.Color(label, Resource.Attribute.colorOnSurfaceVariant)));
+                label.Click += (_, _) => Navigate(crumb.Path);
+            }
+            _crumbs.AddView(crumbView);
+        }
+        _crumbsScroll.Post(() => _crumbsScroll.ScrollTo(Math.Max(0, _crumbs.Width - _crumbsScroll.Width), 0));
+    }
 
     private void OnMenu(int id)
     {
-        switch (id)
+        if (id == Resource.Id.files_menu_refresh)
         {
-            case MenuImport:
-                StartImport();
-                break;
-            case MenuRefresh:
+            if (_gitMode)
+            {
+                _ = LoadGitStatusAsync(_dir);
+            }
+            else
+            {
                 ShowStatus(null);
                 _ = LoadAsync();
-                break;
-            case MenuSearch:
-                AskName(Resource.String.files_search, Resource.String.files_search_hint, "", q => _ = SearchAsync(q));
-                break;
-            case MenuSort:
-                ChooseSort();
-                break;
-            case MenuNewFolder:
-                AskName(Resource.String.files_new_folder, Resource.String.files_name_hint, "", n => Run(() => _provider!.CreateDirectory(_dir, n)));
-                break;
-            case MenuNewFile:
-                AskName(Resource.String.files_new_file, Resource.String.files_name_hint, "", n => Run(() => _provider!.CreateFile(_dir, n)));
-                break;
-            case MenuCopy:
-            case MenuCut:
-                _clip = [.. _selected];
-                _clipCut = id == MenuCut;
-                _selected.Clear();
-                Show();
-                break;
-            case MenuDelete:
-                ConfirmDelete([.. _selected]);
-                break;
-            case MenuZip:
-                _ = ZipAsync([.. _selected]);
-                break;
-            case MenuSelectAll:
-                foreach (var e in _adapter.Items)
-                {
-                    if (_provider!.CapabilitiesOf(e).HasFlag(FileCapabilities.Delete))
-                    {
-                        _selected.Add(e.RelativePath);
-                    }
-                }
-                Show();
-                break;
-            case MenuClearSelection:
-                _selected.Clear();
-                Show();
-                break;
+            }
         }
+        else if (id == Resource.Id.files_menu_open_root)
+        {
+            if (_gitMode)
+            {
+                _dir = "";
+                _ = LoadGitStatusAsync("");
+            }
+            else
+            {
+                Navigate("");
+            }
+        }
+        else if (id == Resource.Id.files_menu_import)
+        {
+            StartImport();
+        }
+        else if (id == Resource.Id.files_menu_search)
+        {
+            AskName(Resource.String.files_search, Resource.String.files_search_hint, "", q => _ = SearchAsync(q));
+        }
+        else if (id == Resource.Id.files_menu_sort)
+        {
+            ChooseSort();
+        }
+        else if (id == Resource.Id.files_menu_new_folder)
+        {
+            AskName(Resource.String.files_new_folder, Resource.String.files_name_hint, "", n => Run(() => _provider!.CreateDirectory(_dir, n)));
+        }
+        else if (id == Resource.Id.files_menu_new_file)
+        {
+            AskName(Resource.String.files_new_file, Resource.String.files_name_hint, "", n => Run(() => _provider!.CreateFile(_dir, n)));
+        }
+        else if (id == Resource.Id.files_menu_copy || id == Resource.Id.files_menu_cut)
+        {
+            _clip = [.. _selected];
+            _clipCut = id == Resource.Id.files_menu_cut;
+            _selected.Clear();
+            Show();
+        }
+        else if (id == Resource.Id.files_menu_delete)
+        {
+            ConfirmDelete([.. _selected]);
+        }
+        else if (id == Resource.Id.files_menu_zip)
+        {
+            _ = ZipAsync([.. _selected]);
+        }
+        else if (id == Resource.Id.files_menu_select_all)
+        {
+            foreach (var e in _adapter.Items)
+            {
+                if (_provider!.CapabilitiesOf(e).HasFlag(FileCapabilities.Delete))
+                {
+                    _selected.Add(e.RelativePath);
+                }
+            }
+            Show();
+        }
+        else if (id == Resource.Id.files_menu_clear_selection)
+        {
+            _selected.Clear();
+            Show();
+        }
+    }
+
+    private void ShowCreateSheet()
+    {
+        var displayDir = string.IsNullOrEmpty(_dir) ? GuestRoot : $"{GuestRoot}/{_dir}";
+        WorkspaceCreateBottomSheet.Show(
+            RequireContext(),
+            displayDir,
+            () => AskName(Resource.String.files_new_file, Resource.String.files_name_hint, "", n => Run(() => _provider!.CreateFile(_dir, n))),
+            () => AskName(Resource.String.files_new_folder, Resource.String.files_name_hint, "", n => Run(() => _provider!.CreateDirectory(_dir, n))),
+            StartImport);
     }
 
     private void ChooseSort()
@@ -870,10 +1029,8 @@ public sealed class FilesFragment : Fragment, ITabRoot
                 (d as IDialogInterface)?.Dismiss();
                 Show();
             })!
-            .Show(); // no SetMessage: an AlertDialog with a message hides its choice list
+            .Show();
     }
-
-    // ── entries ───────────────────────────────────────────────────────────
 
     private void OnClick(WorkspaceEntry e)
     {
@@ -882,9 +1039,16 @@ public sealed class FilesFragment : Fragment, ITabRoot
             Toggle(e);
             return;
         }
-        if (e.Kind == WorkspaceEntryKind.Directory) // .dsh too: it is listed (read-only), never read
+        if (e.Kind == WorkspaceEntryKind.Directory)
         {
             Navigate(e.RelativePath);
+            return;
+        }
+        if (e.Kind == WorkspaceEntryKind.File
+            && WorkspaceProvider.FormatOf(e.Name) is null
+            && _provider!.CapabilitiesOf(e).HasFlag(FileCapabilities.Read))
+        {
+            OpenEditorActivity(e, startEditing: false);
             return;
         }
         ShowActions(e);
@@ -906,59 +1070,44 @@ public sealed class FilesFragment : Fragment, ITabRoot
         Show();
     }
 
-    /// <summary>Exactly the actions this entry's capabilities allow.</summary>
     private void ShowActions(WorkspaceEntry e)
     {
         var provider = _provider!;
         var caps = provider.CapabilitiesOf(e);
-        var actions = new List<(string Label, Action Run)>();
         if (e.Kind == WorkspaceEntryKind.Symlink)
         {
             ShowStatus(GetString(Resource.String.files_symlink_blocked) + " → " + (e.LinkTarget ?? "?"));
         }
-        if (caps.HasFlag(FileCapabilities.Read))
-        {
-            actions.Add((GetString(caps.HasFlag(FileCapabilities.Write) ? Resource.String.files_edit : Resource.String.files_open_text), () => _ = OpenTextAsync(e)));
-            actions.Add((GetString(Resource.String.files_export), () =>
-            {
-                _pendingExport = e.RelativePath;
-                StartActivityForResult(DocumentPicker.CreateIntent(e.Name), RequestExport);
-            }));
-        }
-        if (caps.HasFlag(FileCapabilities.Archive) && e.Kind == WorkspaceEntryKind.File && WorkspaceProvider.FormatOf(e.Name) is not null)
-        {
-            actions.Add((GetString(Resource.String.files_extract), () => _ = ExtractAsync(e)));
-        }
-        if (caps.HasFlag(FileCapabilities.Rename))
-        {
-            actions.Add((GetString(Resource.String.files_rename), () =>
-                AskName(Resource.String.files_rename, Resource.String.files_name_hint, e.Name, n => Run(() => provider.Rename(e.RelativePath, n)))));
-        }
-        if (caps.HasFlag(FileCapabilities.Copy))
-        {
-            actions.Add((GetString(Resource.String.files_copy), () => SetClip([e.RelativePath], cut: false)));
-        }
-        if (caps.HasFlag(FileCapabilities.Move))
-        {
-            actions.Add((GetString(Resource.String.files_cut), () => SetClip([e.RelativePath], cut: true)));
-        }
-        if (caps.HasFlag(FileCapabilities.Archive) && e.Kind is WorkspaceEntryKind.File or WorkspaceEntryKind.Directory)
-        {
-            actions.Add((GetString(Resource.String.files_compress), () => _ = ZipAsync([e.RelativePath])));
-        }
-        if (caps.HasFlag(FileCapabilities.Delete))
-        {
-            actions.Add((GetString(Resource.String.files_delete), () => ConfirmDelete([e.RelativePath])));
-        }
-        if (actions.Count == 0)
+        if (caps == FileCapabilities.None)
         {
             ShowStatus(GetString(Resource.String.files_protected));
             return;
         }
-        new MaterialAlertDialogBuilder(RequireContext())
-            .SetTitle(e.Name)!
-            .SetItems(actions.Select(a => a.Label).ToArray(), (_, a) => actions[a.Which].Run())!
-            .Show();
+        FileActionsBottomSheet.Show(
+            RequireContext(),
+            e,
+            caps,
+            onOpenOrEdit: () => OpenEditorActivity(e, startEditing: caps.HasFlag(FileCapabilities.Write)),
+            onExport: () =>
+            {
+                _pendingExport = e.RelativePath;
+#pragma warning disable CS0618
+                StartActivityForResult(DocumentPicker.CreateIntent(e.Name), RequestExport);
+#pragma warning restore CS0618
+            },
+            onExtract: () => _ = ExtractAsync(e),
+            onRename: () => AskName(Resource.String.files_rename, Resource.String.files_name_hint, e.Name, n => Run(() => provider.Rename(e.RelativePath, n))),
+            onCopy: () => SetClip([e.RelativePath], cut: false),
+            onCut: () => SetClip([e.RelativePath], cut: true),
+            onZip: () => _ = ZipAsync([e.RelativePath]),
+            onDelete: () => ConfirmDelete([e.RelativePath]));
+    }
+
+    private void OpenEditorActivity(WorkspaceEntry e, bool startEditing)
+    {
+#pragma warning disable CS0618
+        StartActivityForResult(WorkspaceEditorActivity.CreateIntent(RequireContext(), e.RelativePath, startEditing), RequestEditor);
+#pragma warning restore CS0618
     }
 
     private void SetClip(List<string> paths, bool cut)
@@ -968,9 +1117,6 @@ public sealed class FilesFragment : Fragment, ITabRoot
         UpdateChrome();
     }
 
-    // ── operations ────────────────────────────────────────────────────────
-
-    /// <summary>A quick synchronous provider call: result in the status line, then reload.</summary>
     private void Run(Func<string> op)
     {
         try
@@ -989,7 +1135,6 @@ public sealed class FilesFragment : Fragment, ITabRoot
         _ = LoadAsync();
     }
 
-    /// <summary>A long provider call off the UI thread, with the menu disabled meanwhile.</summary>
     private async Task Busy(Func<Task<string?>> op)
     {
         if (_busy)
@@ -998,7 +1143,7 @@ public sealed class FilesFragment : Fragment, ITabRoot
         }
         _busy = true;
         ShowStatus(GetString(Resource.String.files_busy));
-        BuildMenu();
+        UpdateChrome();
         try
         {
             ShowStatus(await op());
@@ -1114,6 +1259,20 @@ public sealed class FilesFragment : Fragment, ITabRoot
         });
     }
 
+    private void TriggerInlineSearch()
+    {
+        var query = _filterText.Text?.Trim();
+        if (Context?.GetSystemService(Context.InputMethodService) is InputMethodManager imm && _filterText.WindowToken is { } token)
+        {
+            imm.HideSoftInputFromWindow(token, HideSoftInputFlags.None);
+        }
+        _filterText.ClearFocus();
+        if (!string.IsNullOrEmpty(query))
+        {
+            _ = SearchAsync(query);
+        }
+    }
+
     private async Task SearchAsync(string query)
     {
         if (string.IsNullOrWhiteSpace(query) || _provider is null)
@@ -1133,167 +1292,19 @@ public sealed class FilesFragment : Fragment, ITabRoot
         Show();
     }
 
-    // ── text editor ───────────────────────────────────────────────────────
-
-    private async Task OpenTextAsync(WorkspaceEntry e, string? keepEdits = null)
-    {
-        TextDocument? doc;
-        try
-        {
-            var (bytes, version) = await Task.Run(() =>
-            {
-                var v = _provider!.Version(e.RelativePath);
-                using var s = _provider.FileSystem.OpenRead(e.RelativePath, TextDocument.EditLimit);
-                var b = new byte[s.Length];
-                s.ReadExactly(b);
-                return (b, v);
-            });
-            doc = TextDocument.Decode(bytes, version);
-        }
-        catch (WorkspaceException ex)
-        {
-            ShowError(ex);
-            return;
-        }
-        catch (IOException ex)
-        {
-            ShowStatus($"{WorkspaceErrors.IoError}: {ex.Message}");
-            return;
-        }
-        if (!IsAdded)
-        {
-            return;
-        }
-        if (doc is null)
-        {
-            ShowStatus(GetString(Resource.String.files_binary));
-            return;
-        }
-        var writable = !doc.ReadOnly && _provider!.CapabilitiesOf(e).HasFlag(FileCapabilities.Write);
-        ShowEditor(e, doc, keepEdits ?? doc.Text, writable);
-    }
-
-    private void ShowEditor(WorkspaceEntry e, TextDocument doc, string text, bool writable)
-    {
-        var ctx = RequireContext();
-        var editor = new EditText(ctx)
-        {
-            Text = text,
-            Typeface = Android.Graphics.Typeface.Monospace,
-            Gravity = GravityFlags.Top | GravityFlags.Start,
-            InputType = Android.Text.InputTypes.ClassText | Android.Text.InputTypes.TextFlagMultiLine | Android.Text.InputTypes.TextFlagNoSuggestions,
-        };
-        editor.SetHorizontallyScrolling(true);
-        editor.SetTextSize(Android.Util.ComplexUnitType.Sp, 13);
-        if (!writable)
-        {
-            editor.KeyListener = null; // selectable, not editable
-            editor.SetTextIsSelectable(true);
-        }
-        var pad = Rows.Dp(ctx, 16);
-        var frame = new FrameLayout(ctx);
-        frame.SetPadding(pad, Rows.Dp(ctx, 8), pad, 0);
-        frame.AddView(editor, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MatchParent, Rows.Dp(ctx, 420)));
-        var kind = TextDocument.KindOf(e.Name);
-        var title = e.Name + (doc.ReadOnly ? " · " + Rows.Fmt(ctx, Resource.String.files_readonly, doc.ReadOnlyReason ?? "") : "");
-        var builder = new MaterialAlertDialogBuilder(ctx).SetTitle(title)!.SetView(frame)!;
-        if (writable)
-        {
-            builder.SetPositiveButton(Resource.String.files_save, (_, _) =>
-            {
-                var edited = editor.Text ?? "";
-                if (TextDocument.Validate(kind, edited) is { } warning)
-                {
-                    new MaterialAlertDialogBuilder(ctx)
-                        .SetTitle(Resource.String.files_validate_title)!
-                        .SetMessage(warning)!
-                        .SetPositiveButton(Resource.String.files_save_anyway, (_, _) => _ = SaveAsync(e, doc, edited, doc.Version))!
-                        .SetNegativeButton(Resource.String.files_conflict_keep, (_, _) => ShowEditor(e, doc, edited, writable))!
-                        .Show();
-                    return;
-                }
-                _ = SaveAsync(e, doc, edited, doc.Version);
-            });
-            builder.SetNegativeButton(Android.Resource.String.Cancel, (_, _) => { });
-        }
-        else
-        {
-            builder.SetPositiveButton(Android.Resource.String.Ok, (_, _) => { });
-        }
-        builder.Show();
-    }
-
-    /// <summary>Saves against the version the editor read; a changed file is a choice for the user, never an overwrite.</summary>
-    private async Task SaveAsync(WorkspaceEntry e, TextDocument doc, string edited, FileVersion expected)
-    {
-        try
-        {
-            var bytes = doc.Encode(edited);
-            await _provider!.WriteAsync(e.RelativePath, new MemoryStream(bytes), expected, CancellationToken.None);
-            ShowStatus(Rows.Fmt(RequireContext(), Resource.String.files_saved, GuestRoot + "/" + e.RelativePath));
-            _ = LoadAsync();
-        }
-        catch (WorkspaceException ex) when (ex.Code == WorkspaceErrors.Conflict && IsAdded)
-        {
-            var ctx = RequireContext();
-            new MaterialAlertDialogBuilder(ctx)
-                .SetIcon(Resource.Drawable.ic_error)!
-                .SetTitle(Resource.String.files_conflict_title)!
-                .SetMessage(Rows.Fmt(ctx, Resource.String.files_conflict_message, e.Name))!
-                .SetPositiveButton(Resource.String.files_conflict_keep, (_, _) => ShowEditor(e, doc, edited, writable: true))!
-                .SetNeutralButton(Resource.String.files_conflict_reload, (_, _) => _ = OpenTextAsync(e))!
-                .SetNegativeButton(Resource.String.files_conflict_overwrite, (_, _) => _ = OverwriteAsync(e, doc, edited))!
-                .Show();
-        }
-        catch (WorkspaceException ex)
-        {
-            ShowError(ex);
-        }
-        catch (IOException ex)
-        {
-            ShowStatus($"{WorkspaceErrors.IoError}: {ex.Message}");
-        }
-    }
-
-    /// <summary>The user chose to overwrite the other change: save against what is there now (still atomic).</summary>
-    private async Task OverwriteAsync(WorkspaceEntry e, TextDocument doc, string edited)
-    {
-        FileVersion? current = null;
-        try
-        {
-            current = await _provider!.VersionAsync(e.RelativePath, CancellationToken.None);
-        }
-        catch (WorkspaceException ex) when (ex.Code == WorkspaceErrors.NotFound)
-        {
-            // deleted meanwhile: write it as a new file
-        }
-        try
-        {
-            var bytes = doc.Encode(edited);
-            await _provider!.WriteAsync(e.RelativePath, new MemoryStream(bytes), current, CancellationToken.None);
-            ShowStatus(Rows.Fmt(RequireContext(), Resource.String.files_saved, GuestRoot + "/" + e.RelativePath));
-            _ = LoadAsync();
-        }
-        catch (WorkspaceException ex)
-        {
-            ShowError(ex); // changed yet again: the user sees it and decides again
-        }
-    }
-
-    // ── dialogs, import / export ──────────────────────────────────────────
-
     private void AskName(int title, int hint, string initial, Action<string> onOk)
     {
         var ctx = RequireContext();
-        var input = new EditText(ctx) { Text = initial, Hint = GetString(hint), InputType = Android.Text.InputTypes.ClassText };
-        input.SetSingleLine(true);
-        var frame = new FrameLayout(ctx);
-        var pad = Rows.Dp(ctx, 20);
-        frame.SetPadding(pad, Rows.Dp(ctx, 8), pad, 0);
-        frame.AddView(input);
+        var content = LayoutInflater.From(ctx)!.Inflate(Resource.Layout.dialog_text_input, null)!;
+        var layout = content.FindViewById<TextInputLayout>(Resource.Id.dialog_text_input_layout)!;
+        layout.Hint = GetString(hint);
+        var input = content.FindViewById<TextInputEditText>(Resource.Id.dialog_text_input)!;
+        input.Text = initial;
+        input.SetSelection(initial.Length);
+
         new MaterialAlertDialogBuilder(ctx)
             .SetTitle(title)!
-            .SetView(frame)!
+            .SetView(content)!
             .SetPositiveButton(Android.Resource.String.Ok, (_, _) =>
             {
                 var text = input.Text ?? "";
@@ -1313,16 +1324,32 @@ public sealed class FilesFragment : Fragment, ITabRoot
             ShowStatus(GetString(Resource.String.files_no_workspace));
             return;
         }
+#pragma warning disable CS0618
         StartActivityForResult(DocumentPicker.OpenIntent(null, multiple: true), RequestImport);
+#pragma warning restore CS0618
     }
 
+    [Obsolete("Uses Fragment activity result for SAF import/export parity")]
     public override async void OnActivityResult(int requestCode, int resultCode, Intent? data)
     {
+#pragma warning disable CS0618
         base.OnActivityResult(requestCode, resultCode, data);
+#pragma warning restore CS0618
         if (resultCode != (int)Android.App.Result.Ok || !EnsureProvider())
         {
             return;
         }
+
+        if (requestCode == RequestEditor)
+        {
+            if (data?.GetStringExtra(WorkspaceEditorActivity.ExtraSavedPath) is { Length: > 0 } savedRel)
+            {
+                ShowStatus(Rows.Fmt(RequireContext(), Resource.String.files_saved, $"{GuestRoot}/{savedRel}"));
+            }
+            await LoadAsync();
+            return;
+        }
+
         var fs = _provider!.FileSystem;
         var resolver = RequireContext().ContentResolver!;
         try
@@ -1383,19 +1410,22 @@ public sealed class FilesFragment : Fragment, ITabRoot
         _ => $"{bytes / 1024.0 / 1024.0 / 1024.0:F1} GB",
     };
 
-    // ── list ──────────────────────────────────────────────────────────────
-
     private sealed class RowHolder(View view) : RecyclerView.ViewHolder(view)
     {
-        public Rows.Row Row { get; } = new(view);
-
+        public MaterialCardView Card { get; } = (MaterialCardView)view;
+        public ImageView Icon { get; } = view.FindViewById<ImageView>(Resource.Id.workspace_entry_icon)!;
+        public TextView Title { get; } = view.FindViewById<TextView>(Resource.Id.workspace_entry_title)!;
+        public TextView Subtitle { get; } = view.FindViewById<TextView>(Resource.Id.workspace_entry_subtitle)!;
+        public View Check { get; } = view.FindViewById(Resource.Id.workspace_entry_check)!;
+        public View Lock { get; } = view.FindViewById(Resource.Id.workspace_entry_lock)!;
+        public MaterialButton MoreBtn { get; } = view.FindViewById<MaterialButton>(Resource.Id.workspace_entry_more)!;
         public WorkspaceEntry? Entry { get; set; }
     }
 
-    /// <summary>One <c>item_row</c> per entry; DiffUtil keeps updates cheap and the scroll position stable.</summary>
+    /// <summary>全 XML 工作区列表适配器（<c>item_workspace_entry.xml</c>），零运行期动态创建视图。</summary>
     private sealed class EntryAdapter(FilesFragment owner) : RecyclerView.Adapter
     {
-        private List<(WorkspaceEntry Entry, bool Selected)> _rows = [];
+        private List<(WorkspaceEntry Entry, bool Selected, bool InSelectionMode)> _rows = [];
         private bool _inSearch;
 
         public IEnumerable<WorkspaceEntry> Items => _rows.Select(r => r.Entry);
@@ -1404,7 +1434,8 @@ public sealed class FilesFragment : Fragment, ITabRoot
 
         public void Update(IReadOnlyList<WorkspaceEntry> entries, HashSet<string> selected, bool inSearch)
         {
-            var next = entries.Select(e => (e, selected.Contains(e.RelativePath))).ToList();
+            var inSelectionMode = selected.Count > 0;
+            var next = entries.Select(e => (e, selected.Contains(e.RelativePath), inSelectionMode)).ToList();
             var old = _rows;
             var searchChanged = inSearch != _inSearch;
             _rows = next;
@@ -1419,7 +1450,7 @@ public sealed class FilesFragment : Fragment, ITabRoot
 
         public override RecyclerView.ViewHolder OnCreateViewHolder(ViewGroup parent, int viewType)
         {
-            var view = LayoutInflater.From(parent.Context)!.Inflate(Resource.Layout.item_row, parent, false)!;
+            var view = LayoutInflater.From(parent.Context)!.Inflate(Resource.Layout.item_workspace_entry, parent, false)!;
             var holder = new RowHolder(view);
             view.Click += (_, _) =>
             {
@@ -1436,49 +1467,71 @@ public sealed class FilesFragment : Fragment, ITabRoot
                     owner.OnLongClick(e);
                 }
             };
+            holder.MoreBtn.Click += (_, _) =>
+            {
+                if (holder.Entry is { } e)
+                {
+                    owner.ShowActions(e);
+                }
+            };
             return holder;
         }
 
         public override void OnBindViewHolder(RecyclerView.ViewHolder holder, int position)
         {
             var h = (RowHolder)holder;
-            var (e, selected) = _rows[position];
+            var (e, selected, inSelectionMode) = _rows[position];
             h.Entry = e;
-            var row = h.Row;
-            var context = row.View.Context!;
-            row.Title.Text = e.Name;
+            var context = h.ItemView.Context!;
+            h.Title.Text = e.Name;
             var where = _inSearch ? WhereOf(e.RelativePath) : null;
+
+            string? subtitle = null;
             switch (e.Kind)
             {
                 case WorkspaceEntryKind.Directory:
-                    row.Icon.SetImageResource(Resource.Drawable.ic_folder);
-                    row.SetSubtitle(where);
+                    h.Icon.SetImageResource(Resource.Drawable.ic_folder);
+                    subtitle = where;
                     break;
                 case WorkspaceEntryKind.Symlink:
-                    row.Icon.SetImageResource(Resource.Drawable.ic_link);
-                    row.SetSubtitle("→ " + (e.LinkTarget ?? "?") + (where is null ? "" : " · " + where));
+                    h.Icon.SetImageResource(Resource.Drawable.ic_link);
+                    subtitle = "→ " + (e.LinkTarget ?? "?") + (where is null ? "" : " · " + where);
                     break;
                 default:
-                    row.Icon.SetImageResource(WorkspaceProvider.FormatOf(e.Name) is not null ? Resource.Drawable.ic_storage
-                        : TextDocument.KindOf(e.Name) == TextKind.Plain ? Resource.Drawable.ic_file : Resource.Drawable.ic_code);
-                    row.SetSubtitle(FormatSize(e.Size) + " · " + e.Modified.ToLocalTime().ToString("yyyy-MM-dd HH:mm", System.Globalization.CultureInfo.InvariantCulture)
-                        + (where is null ? "" : " · " + where));
+                    h.Icon.SetImageResource(WorkspaceProvider.FormatOf(e.Name) is not null
+                        ? Resource.Drawable.ic_storage
+                        : TextDocument.KindOf(e.Name) == TextKind.Plain
+                            ? Resource.Drawable.ic_file
+                            : Resource.Drawable.ic_code);
+                    subtitle = FormatSize(e.Size) + " · " + e.Modified.ToLocalTime().ToString("yyyy-MM-dd HH:mm", System.Globalization.CultureInfo.InvariantCulture)
+                        + (where is null ? "" : " · " + where);
                     break;
             }
-            if (selected || e.Protected)
+
+            if (string.IsNullOrEmpty(subtitle))
             {
-                var icon = new ImageView(context);
-                icon.SetImageResource(selected ? Resource.Drawable.ic_check_circle : Resource.Drawable.ic_lock);
-                icon.ContentDescription = context.GetString(selected ? Resource.String.files_clear_selection : Resource.String.files_protected_short);
-                row.SetTrailing(icon);
+                h.Subtitle.Visibility = ViewStates.Gone;
+                h.Subtitle.Text = string.Empty;
             }
             else
             {
-                row.SetTrailing(null);
+                h.Subtitle.Visibility = ViewStates.Visible;
+                h.Subtitle.Text = subtitle;
             }
-            row.View.SetBackgroundColor(selected
-                ? new Android.Graphics.Color(Rows.Color(row.View, Resource.Attribute.colorSecondaryContainer))
-                : Android.Graphics.Color.Transparent);
+
+            h.Check.Visibility = selected ? ViewStates.Visible : ViewStates.Gone;
+            h.Lock.Visibility = !selected && e.Protected ? ViewStates.Visible : ViewStates.Gone;
+            h.MoreBtn.Visibility = !selected && !e.Protected && !inSelectionMode ? ViewStates.Visible : ViewStates.Gone;
+
+            h.Card.SetCardBackgroundColor(Rows.Color(
+                h.Card,
+                selected ? Resource.Attribute.colorSecondaryContainer : Resource.Attribute.colorSurfaceContainerLow));
+            h.Card.StrokeWidth = selected
+                ? Rows.Dp(context, 1.5f)
+                : context.Resources!.GetDimensionPixelSize(Resource.Dimension.dshm_card_stroke_width);
+            h.Card.StrokeColor = Rows.Color(
+                h.Card,
+                selected ? Resource.Attribute.colorPrimary : Resource.Attribute.colorOutlineVariant);
         }
 
         private static string WhereOf(string path)
@@ -1487,10 +1540,11 @@ public sealed class FilesFragment : Fragment, ITabRoot
             return GuestRoot + (i < 0 ? "" : "/" + path[..i]);
         }
 
-        private sealed class Diff(List<(WorkspaceEntry Entry, bool Selected)> old, List<(WorkspaceEntry Entry, bool Selected)> next) : DiffUtil.Callback
+        private sealed class Diff(
+            List<(WorkspaceEntry Entry, bool Selected, bool InSelectionMode)> old,
+            List<(WorkspaceEntry Entry, bool Selected, bool InSelectionMode)> next) : DiffUtil.Callback
         {
             public override int OldListSize => old.Count;
-
             public override int NewListSize => next.Count;
 
             public override bool AreItemsTheSame(int oldItemPosition, int newItemPosition) =>
@@ -1498,6 +1552,26 @@ public sealed class FilesFragment : Fragment, ITabRoot
 
             public override bool AreContentsTheSame(int oldItemPosition, int newItemPosition) =>
                 old[oldItemPosition] == next[newItemPosition];
+        }
+    }
+
+    private sealed class FabScrollListener(ExtendedFloatingActionButton fab) : RecyclerView.OnScrollListener
+    {
+        public override void OnScrolled(RecyclerView recyclerView, int dx, int dy)
+        {
+            base.OnScrolled(recyclerView, dx, dy);
+            if (dy > 6 && fab.Extended)
+            {
+                fab.Shrink();
+            }
+            else if (dy < -6 && !fab.Extended)
+            {
+                fab.Extend();
+            }
+            else if (!recyclerView.CanScrollVertically(-1) && !fab.Extended)
+            {
+                fab.Extend();
+            }
         }
     }
 }
