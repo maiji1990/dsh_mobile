@@ -66,6 +66,19 @@
     <item name="navigationIconTint">?attr/colorOnSurface</item>
   </style>
 
+  <!-- AppBarLayout with M3 tonal lift-on-scroll to separate scrolled content cleanly. -->
+  <style name="Widget.DshMobile.AppBar" parent="Widget.Material3.AppBarLayout">
+    <item name="android:background">?attr/colorSurface</item>
+    <item name="liftOnScroll">true</item>
+  </style>
+
+  <!-- Toolbar nested inside AppBarLayout (transparent so AppBarLayout liftOnScroll tint shows through). -->
+  <style name="Widget.DshMobile.Toolbar.InAppBar" parent="Widget.Material3.Toolbar">
+    <item name="android:background">@android:color/transparent</item>
+    <item name="navigationIconTint">?attr/colorOnSurface</item>
+    <item name="titleTextAppearance">?attr/textAppearanceTitleLarge</item>
+  </style>
+
   <!-- Monospace output (command results, keys, logs), selectable. -->
   <style name="Widget.DshMobile.Mono" parent="">
     <item name="android:fontFamily">monospace</item>
@@ -74,8 +87,75 @@
     <item name="android:textColor">?attr/colorOnSurfaceVariant</item>
   </style>
 
+  <!-- Non-selectable monospace summary inside RecyclerView items (avoids clipped lines with maxLines). -->
+  <style name="Widget.DshMobile.Mono.Static" parent="">
+    <item name="android:fontFamily">monospace</item>
+    <item name="android:textSize">12sp</item>
+    <item name="android:textIsSelectable">false</item>
+    <item name="android:textColor">?attr/colorOnSurfaceVariant</item>
+  </style>
+
+  <!-- Unified pill search / filter field across Chats, Workspace and Plugins. -->
+  <style name="Widget.DshMobile.SearchField" parent="Widget.Material3.TextInputLayout.OutlinedBox.Dense">
+    <item name="boxBackgroundColor">?attr/colorSurfaceContainerLow</item>
+    <item name="boxCornerRadiusTopStart">@dimen/dshm_search_corner_radius</item>
+    <item name="boxCornerRadiusTopEnd">@dimen/dshm_search_corner_radius</item>
+    <item name="boxCornerRadiusBottomStart">@dimen/dshm_search_corner_radius</item>
+    <item name="boxCornerRadiusBottomEnd">@dimen/dshm_search_corner_radius</item>
+    <item name="boxStrokeColor">?attr/colorOutlineVariant</item>
+    <item name="boxStrokeWidth">0.5dp</item>
+    <item name="boxStrokeWidthFocused">1.5dp</item>
+    <item name="startIconDrawable">@drawable/ic_search</item>
+    <item name="startIconTint">?attr/colorOnSurfaceVariant</item>
+    <item name="endIconMode">clear_text</item>
+  </style>
+
   <!-- Card that groups a screen's content (status, settings group, form). -->
   <style name="Widget.DshMobile.Card" parent="Widget.Material3.CardView.Filled">
     <item name="cardBackgroundColor">?attr/colorSurfaceContainerLow</item>
+  </style>
+
+  <!-- Grouped settings / feature card with subtle dark-mode stroke separation. -->
+  <style name="Widget.DshMobile.Card.Group" parent="Widget.Material3.CardView.Filled">
+    <item name="cardBackgroundColor">?attr/colorSurfaceContainerLow</item>
+    <item name="cardCornerRadius">@dimen/dshm_card_corner_radius</item>
+    <item name="strokeColor">?attr/colorOutlineVariant</item>
+    <item name="strokeWidth">@dimen/dshm_card_stroke_width</item>
+  </style>
+
+  <!-- Compact pill badges for status indicators. -->
+  <style name="Widget.DshMobile.Badge" parent="">
+    <item name="android:background">@drawable/bg_status_pill</item>
+    <item name="android:paddingStart">8dp</item>
+    <item name="android:paddingEnd">8dp</item>
+    <item name="android:paddingTop">2dp</item>
+    <item name="android:paddingBottom">2dp</item>
+    <item name="android:textAppearance">?attr/textAppearanceLabelSmall</item>
+    <item name="android:maxLines">1</item>
+  </style>
+
+  <style name="Widget.DshMobile.Badge.Neutral" parent="Widget.DshMobile.Badge">
+    <item name="android:backgroundTint">?attr/colorSurfaceContainerHigh</item>
+    <item name="android:textColor">?attr/colorOnSurfaceVariant</item>
+  </style>
+
+  <style name="Widget.DshMobile.Badge.Primary" parent="Widget.DshMobile.Badge">
+    <item name="android:backgroundTint">?attr/colorPrimaryContainer</item>
+    <item name="android:textColor">?attr/colorOnPrimaryContainer</item>
+  </style>
+
+  <style name="Widget.DshMobile.Badge.Success" parent="Widget.DshMobile.Badge">
+    <item name="android:backgroundTint">?attr/colorSecondaryContainer</item>
+    <item name="android:textColor">@color/dshm_running</item>
+  </style>
+
+  <style name="Widget.DshMobile.Badge.Warning" parent="Widget.DshMobile.Badge">
+    <item name="android:backgroundTint">?attr/colorTertiaryContainer</item>
+    <item name="android:textColor">?attr/colorOnTertiaryContainer</item>
+  </style>
+
+  <style name="Widget.DshMobile.Badge.Error" parent="Widget.DshMobile.Badge">
+    <item name="android:backgroundTint">?attr/colorErrorContainer</item>
+    <item name="android:textColor">?attr/colorOnErrorContainer</item>
   </style>
 </resources>

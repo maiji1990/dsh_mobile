@@ -3,6 +3,8 @@ using Android.Views;
 using Android.Widget;
 using AndroidX.RecyclerView.Widget;
 using DshMobile.Agent.Domain;
+using DshMobile.App.Ui;
+using Google.Android.Material.Card;
 using Google.Android.Material.Chip;
 using Google.Android.Material.Dialog;
 
@@ -93,6 +95,7 @@ internal static class ModelPickerDialog
 
         private sealed class Holder(View itemView, Action<ModelSelectionSpec> onPick) : RecyclerView.ViewHolder(itemView)
         {
+            private readonly MaterialCardView _card = itemView.FindViewById<MaterialCardView>(Resource.Id.model_row_card)!;
             private readonly TextView _provider = itemView.FindViewById<TextView>(Resource.Id.model_row_provider)!;
             private readonly TextView _name = itemView.FindViewById<TextView>(Resource.Id.model_row_name)!;
             private readonly TextView _desc = itemView.FindViewById<TextView>(Resource.Id.model_row_desc)!;
@@ -105,6 +108,7 @@ internal static class ModelPickerDialog
                 bool isSelected,
                 string? currentEffort)
             {
+                var ctx = ItemView.Context!;
                 _provider.Text = group.Name;
                 _name.Text = string.IsNullOrWhiteSpace(model.Name) ? model.Id : model.Name;
                 if (string.IsNullOrWhiteSpace(model.Description))
@@ -117,6 +121,8 @@ internal static class ModelPickerDialog
                     _desc.Text = model.Description;
                 }
                 _check.Visibility = isSelected ? ViewStates.Visible : ViewStates.Gone;
+                _card.StrokeWidth = Rows.Dp(ctx, isSelected ? 1.5f : 1f);
+                _card.StrokeColor = Rows.Color(_card, isSelected ? Resource.Attribute.colorPrimary : Resource.Attribute.colorOutlineVariant);
 
                 ItemView.Click -= OnItemClick;
                 _boundSpec = new ModelSelectionSpec(group.Id, model.Id, model.DefaultReasoningEffort);
@@ -130,12 +136,14 @@ internal static class ModelPickerDialog
                 }
 
                 _efforts.Visibility = ViewStates.Visible;
-                var inflater = LayoutInflater.From(ItemView.Context)!;
+                var inflater = LayoutInflater.From(ctx)!;
+                var activeEffort = currentEffort ?? model.DefaultReasoningEffort;
                 foreach (var effort in model.ReasoningEfforts)
                 {
-                    var chip = (Chip)inflater.Inflate(Resource.Layout.item_chat_slash_chip, _efforts, false)!;
+                    var chip = (Chip)inflater.Inflate(Resource.Layout.item_model_effort_chip, _efforts, false)!;
+                    chip.Id = View.GenerateViewId();
                     chip.Text = effort.Name;
-                    chip.Checked = isSelected && string.Equals(currentEffort ?? model.DefaultReasoningEffort, effort.Id, StringComparison.Ordinal);
+                    chip.Checked = isSelected && string.Equals(activeEffort, effort.Id, StringComparison.OrdinalIgnoreCase);
                     chip.Click += (_, _) => onPick(new ModelSelectionSpec(group.Id, model.Id, effort.Id));
                     _efforts.AddView(chip);
                 }

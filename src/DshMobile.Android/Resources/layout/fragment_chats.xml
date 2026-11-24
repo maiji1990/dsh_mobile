@@ -82,7 +82,8 @@
                         android:layout_width="0dp"
                         android:layout_height="wrap_content"
                         android:layout_weight="1"
-                        android:text="@string/chat_status_start_dsh" />
+                        android:text="@string/chat_status_start_dsh"
+                        app:iconGravity="textStart" />
 
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/chats_host_secondary"
@@ -91,7 +92,8 @@
                         android:layout_height="wrap_content"
                         android:layout_marginStart="8dp"
                         android:layout_weight="1"
-                        android:visibility="gone" />
+                        android:visibility="gone"
+                        app:iconGravity="textStart" />
                 </LinearLayout>
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
@@ -252,15 +254,15 @@
         </com.google.android.material.card.MaterialCardView>
 
         <com.google.android.material.textfield.TextInputLayout
-            style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
+            android:id="@+id/chats_search_layout"
+            style="@style/Widget.DshMobile.SearchField"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginStart="16dp"
             android:layout_marginTop="10dp"
             android:layout_marginEnd="16dp"
             android:layout_marginBottom="8dp"
-            android:hint="@string/chats_search_hint"
-            app:endIconMode="clear_text">
+            android:hint="@string/chats_search_hint">
 
             <com.google.android.material.textfield.TextInputEditText
                 android:id="@+id/chats_search_input"

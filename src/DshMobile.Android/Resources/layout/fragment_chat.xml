@@ -261,11 +261,9 @@
     </HorizontalScrollView>
 
     <com.google.android.material.divider.MaterialDivider
-        android:id="@+id/chat_header_divider"
+        android:id="@+id/chat_composer_divider"
         android:layout_width="match_parent"
         android:layout_height="wrap_content" />
-
-    <!-- 底部输入区（对照参考图：左侧 + 按钮 + 中央胶囊输入框 + 右侧圆形发送/停止按钮 + 底部快捷操作条） -->
     <LinearLayout
         android:id="@+id/chat_composer"
         android:layout_width="match_parent"

@@ -481,6 +481,7 @@
     <string name="credentials_source_fmt">来源：%1$s</string>
     <string name="credentials_action_set">设置 / 更新</string>
     <string name="credentials_action_clear">清除</string>
+    <string name="credentials_action_refresh">刷新凭据状态</string>
     <string name="credentials_dialog_ref_hint">凭据引用名（例如 DEEPSEEK_API_KEY）</string>
     <string name="credentials_invalid_ref">引用名需符合环境变量格式（字母或下划线开头，仅含字母/数字/下划线）</string>
     <string name="credentials_dialog_secret_hint">输入 API Key（不会回显保存）</string>
@@ -509,6 +510,7 @@
     <string name="chats_host_stopped">DSH 尚未启动，点击下方按钮启动或安装运行环境后再创建实时会话。</string>
     <string name="chats_menu_stop_dsh">停止 DSH</string>
     <string name="chats_empty">暂无会话，点击右下角 + 开启新对话。</string>
+    <string name="chats_empty_search">未找到匹配的会话</string>
     <string name="chats_badge_running">运行中</string>
     <string name="chats_badge_pending">待确认 %1$d</string>
     <string name="chats_badge_subagent">子会话</string>
