@@ -115,39 +115,55 @@ public sealed class KeptTranscriptStore
     /// <summary>冷启 0.2s 从已有 <c>*.kept.json</c> 快照恢复最近一次会话（N-05-04），损坏或不存在时安静返回 null。</summary>
     public async Task<LoadedRecentSession?> TryLoadMostRecentAsync(CancellationToken ct = default)
     {
-        if (!Directory.Exists(_directory))
+        var list = await ListRecentAsync(maxCount: 1, ct).ConfigureAwait(false);
+        return list.Count > 0 ? list[0] : null;
+    }
+
+    /// <summary>列出磁盘上按时间倒序排列的有效离线会话快照（只读回看用途），自动跳过损坏条目。</summary>
+    public async Task<IReadOnlyList<LoadedRecentSession>> ListRecentAsync(int maxCount = 20, CancellationToken ct = default)
+    {
+        if (maxCount <= 0 || !Directory.Exists(_directory))
         {
-            return null;
+            return [];
         }
-        LoadedRecentSession? newest = null;
-        long newestSavedAt = long.MinValue;
+
+        var loaded = new List<LoadedRecentSession>();
         foreach (var path in Directory.EnumerateFiles(_directory, "*.kept.json"))
         {
             ct.ThrowIfCancellationRequested();
-            try
+            if (await TryReadRecordAsync(path, ct).ConfigureAwait(false) is { } parsed)
             {
-                var json = await File.ReadAllTextAsync(path, ct).ConfigureAwait(false);
-                var parsed = JsonSerializer.Deserialize(json, KeptTranscriptJsonContext.Default.KeptTranscriptRecord);
-                if (parsed is null || parsed.SchemaVersion != CurrentSchemaVersion || string.IsNullOrWhiteSpace(parsed.Scope.SessionId))
-                {
-                    continue;
-                }
-                if (newest is null || parsed.SavedAtUnixMs > newestSavedAt)
-                {
-                    newestSavedAt = parsed.SavedAtUnixMs;
-                    newest = new LoadedRecentSession(parsed.Scope, parsed.SessionTitle, parsed);
-                }
-            }
-            catch (OperationCanceledException)
-            {
-                throw;
-            }
-            catch (Exception ex) when (ex is not OperationCanceledException)
-            {
-                _ = ex;
+                loaded.Add(new LoadedRecentSession(parsed.Scope, parsed.SessionTitle, parsed));
             }
         }
-        return newest;
+
+        return loaded
+            .OrderByDescending(item => item.Record.SavedAtUnixMs)
+            .Take(maxCount)
+            .ToArray();
+    }
+
+    private static async Task<KeptTranscriptRecord?> TryReadRecordAsync(string path, CancellationToken ct)
+    {
+        try
+        {
+            var json = await File.ReadAllTextAsync(path, ct).ConfigureAwait(false);
+            var parsed = JsonSerializer.Deserialize(json, KeptTranscriptJsonContext.Default.KeptTranscriptRecord);
+            if (parsed is null || parsed.SchemaVersion != CurrentSchemaVersion || string.IsNullOrWhiteSpace(parsed.Scope.SessionId))
+            {
+                return null;
+            }
+            return parsed;
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _ = ex;
+            return null;
+        }
     }
 
     private static async Task WriteFileAtomicallyAsync(string finalPath, string content, CancellationToken ct)

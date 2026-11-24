@@ -641,4 +641,40 @@
     <string name="remote_open_chat">打开远程原生对话</string>
     <string name="remote_chat_title_fmt">远程 · %1$s</string>
     <string name="remote_chat_disconnected">远程 SSH 隧道或远端 DSH 已断开，请返回「远程主机」重新连接并启动后再试</string>
+
+    <!-- UI Slice 2: Chats & Native Chat Main Flow Redesign. -->
+    <string name="chats_pill_stopped">未启动</string>
+    <string name="chats_pill_not_installed">未安装</string>
+    <string name="chats_pill_starting">启动中</string>
+    <string name="chats_pill_running">运行中</string>
+    <string name="chats_pill_stopping">停止中</string>
+    <string name="chats_pill_failed">异常</string>
+    <string name="chats_pill_remote">远程已连</string>
+    <string name="chats_host_pill_desc">宿主运行状态与快速控制</string>
+    <string name="chats_remote_pill_desc">打开远程原生会话</string>
+    <string name="chats_menu_host_control">DSH 状态与控制</string>
+    <string name="chats_filter_all">全部</string>
+    <string name="chats_filter_running">进行中</string>
+    <string name="chats_filter_pending_fmt">待审批 (%1$d)</string>
+    <string name="chats_untitled_prefix">未命名会话</string>
+    <string name="chats_cached_section">离线缓存会话（只读）</string>
+    <string name="chats_cached_badge">离线缓存</string>
+    <string name="chats_cached_meta_fmt">离线缓存 · %1$s</string>
+    <string name="chats_action_stop_short">停止</string>
+    <string name="chats_item_more_desc">更多会话操作</string>
+    <string name="chats_sheet_actions_subtitle">选择要对该会话执行的操作</string>
+    <string name="chats_sheet_open_sub">恢复并进入原生对话</string>
+    <string name="chats_sheet_rename_sub">修改列表中的会话标题</string>
+    <string name="chats_sheet_fork_sub">基于当前历史派生新分支会话</string>
+    <string name="chats_sheet_cancel_sub">中断正在进行的生成轮次</string>
+    <string name="host_sheet_nav_remote_sub">连接或切换远程 SSH 主机</string>
+    <string name="host_sheet_nav_runtime_sub">版本信息、导入与包回滚</string>
+    <string name="host_sheet_nav_creds_sub">管理 DeepSeek 及兼容 Provider Key</string>
+    <string name="chat_model_pill_fallback">切换模型</string>
+    <string name="chat_slash_panel_title">斜杠命令</string>
+    <string name="chat_slash_panel_empty">未找到匹配的斜杠命令</string>
+    <string name="chat_slash_action_run">立即执行</string>
+    <string name="chat_slash_action_args">需补参数</string>
+    <string name="chat_tool_toggle_desc">展开或收起工具详情</string>
+    <string name="chat_model_sheet_manage_creds">凭据配置</string>
 </resources>

@@ -1,0 +1,16 @@
+01-chats-stopped.png	会话页 · 未启动态（顶栏「未启动 ▾」药丸 + 宿主启动卡 + 胶囊搜索框 + 「离线缓存会话（只读）」紧凑列表）
+02-host-quick-sheet.png	顶栏宿主药丸弹出底部快速控制抽屉（一键启动 + 远程主机/运行环境版本徽标/凭据配置入口）
+03-session-actions-cached.png	离线缓存会话操作抽屉（长按/⋮ 弹出，只读模式仅展示「打开」）
+04-chats-ready.png	会话页 · 就绪态（绿底「运行中 ▾」药丸 + 一屏 7+ 条紧凑卡片 + session-<uuid> 转「未命名会话 · #bcce5e」 + ExtendedFAB）
+05-session-actions-live.png	就绪会话操作抽屉（打开 / 重命名 / Fork 分支，替代原卡片底三按钮）
+06-chats-scrolled-fab-shrink.png	会话列表下滚（AppBar 抬升 + ExtendedFAB 自动收缩为「+」）
+07-chat-conversation.png	原生聊天页（单层 56dp 顶栏融合标题与工作区路径 + 结构化 16dp 左缩进工具卡 + 底部融合输入与模型胶囊）
+08-chat-tool-expanded.png	工具调用卡片点击展开（chevron 旋转 180° + 美化无转义 JSON 详情 + 可复制输出框）
+09-chat-model-sheet.png	模型与推理档位 BottomSheet（全宽可拖拽 + 右上角「凭据配置」直达 + Filter Chip 高亮）
+10-chat-slash-panel.png	点击 <> 弹出斜杠命令浮层（/command + 说明摘要 + 右侧「立即执行 / 需补参数」徽章）
+11-chat-slash-filtered.png	输入「/co」自动展开并实时过滤斜杠命令列表（紧贴输入面板上方，高度随结果收缩）
+12-dark-chats-ready.png	深色模式 · 会话就绪页（OLED 1dp 卡片描边 + 绿底「运行中 ▾」 + 「未命名会话 · #...」）
+13-dark-chat.png	深色模式 · 原生聊天与结构化工具卡（单层顶栏 + 底部模型胶囊与发送键对比度）
+14-dark-model-sheet.png	深色模式 · 模型选择 BottomSheet（主色选中框 + Max 勾选填充）
+15-landscape-chat-ime.png	横屏 · 原生聊天页（2340×1080，单层顶栏显著增加横屏正文视野）
+16-landscape-chat-ime-open.png	横屏 + 输入法聚焦输入区（记录系统键盘默认全屏抽取形态与「发送」键，flagNoExtractUi 留待 Slice 5 处理）

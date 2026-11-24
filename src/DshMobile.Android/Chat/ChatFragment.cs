@@ -43,10 +43,7 @@ public sealed class ChatFragment : Fragment
     private readonly List<PromptAttachmentImage> _attachments = [];
 
     private MaterialToolbar _toolbar = null!;
-    private View _sessionHeader = null!;
-    private View _headerDivider = null!;
-    private TextView _sessionTitle = null!;
-    private TextView _sessionSubtitle = null!;
+    private IMenuItem? _cancelMenuItem;
     private View _composerActions = null!;
     private View _statusBanner = null!;
     private LinearProgressIndicator _statusProgress = null!;
@@ -59,18 +56,22 @@ public sealed class ChatFragment : Fragment
     private RecyclerView _list = null!;
     private View _empty = null!;
     private FloatingActionButton _scrollToBottom = null!;
-    private View _slashBar = null!;
-    private ChipGroup _slashChips = null!;
+    private View _slashPanel = null!;
+    private RecyclerView _slashList = null!;
+    private View _slashEmpty = null!;
+    private SlashCommandAdapter _slashAdapter = null!;
     private View _attachmentsBar = null!;
     private LinearLayout _attachmentsList = null!;
     private EditText _input = null!;
-    private MaterialButton _addBtn = null!;
+    private MaterialButton _modelPill = null!;
     private MaterialButton _sendBtn = null!;
     private MaterialButton _attachImageBtn = null!;
     private MaterialButton _slashToggleBtn = null!;
 
     private bool _followBottom = true;
     private bool _slashExpanded;
+    private bool _slashAutoFromInput;
+    private string _slashFilterQuery = string.Empty;
     private bool _isRemote;
     private bool _connectInitiated;
     private bool _cacheLoadInitiated;
@@ -80,7 +81,6 @@ public sealed class ChatFragment : Fragment
     private string? _pendingFocusEventId;
     private int _renderPosted;
     private PromptSendRequest? _lastSubmittedRequest;
-    private IReadOnlyList<SlashCommandDescriptorView> _renderedSlash = [];
 
     public override View OnCreateView(LayoutInflater inflater, ViewGroup? container, Bundle? savedInstanceState)
     {
@@ -93,14 +93,10 @@ public sealed class ChatFragment : Fragment
 
         _toolbar = view.FindViewById<MaterialToolbar>(Resource.Id.chat_toolbar)!;
         _toolbar.NavigationClick += (_, _) => Activity?.Finish();
-        _toolbar.Menu?.FindItem(Resource.Id.chat_menu_stop_dsh)?.SetVisible(false);
+        _cancelMenuItem = _toolbar.Menu?.FindItem(Resource.Id.chat_menu_cancel);
+        _cancelMenuItem?.SetVisible(false);
         _toolbar.MenuItemClick += (_, e) => OnMenuClicked(e.Item?.ItemId ?? 0);
-
-        _sessionHeader = view.FindViewById(Resource.Id.chat_session_header)!;
-        _headerDivider = view.FindViewById(Resource.Id.chat_header_divider)!;
-        _sessionTitle = view.FindViewById<TextView>(Resource.Id.chat_session_title)!;
-        _sessionSubtitle = view.FindViewById<TextView>(Resource.Id.chat_session_subtitle)!;
-        _sessionHeader.Click += (_, _) => OnSessionHeaderClicked();
+        _toolbar.Click += (_, _) => OnSessionHeaderClicked();
 
         _statusBanner = view.FindViewById(Resource.Id.chat_status_banner)!;
         _statusProgress = view.FindViewById<LinearProgressIndicator>(Resource.Id.chat_status_progress)!;
@@ -139,8 +135,19 @@ public sealed class ChatFragment : Fragment
         _scrollToBottom = view.FindViewById<FloatingActionButton>(Resource.Id.chat_scroll_to_bottom)!;
         _scrollToBottom.Click += (_, _) => ScrollToBottomAndFollow();
 
-        _slashBar = view.FindViewById(Resource.Id.chat_slash_bar)!;
-        _slashChips = view.FindViewById<ChipGroup>(Resource.Id.chat_slash_chips)!;
+        _slashPanel = view.FindViewById(Resource.Id.chat_slash_panel)!;
+        _slashList = _slashPanel.FindViewById<RecyclerView>(Resource.Id.chat_slash_list)!;
+        _slashEmpty = _slashPanel.FindViewById(Resource.Id.chat_slash_empty)!;
+        _slashList.SetLayoutManager(new LinearLayoutManager(RequireContext()));
+        _slashAdapter = new SlashCommandAdapter(OnSlashChipClicked);
+        _slashList.SetAdapter(_slashAdapter);
+        _slashPanel.FindViewById(Resource.Id.chat_slash_close_btn)!.Click += (_, _) =>
+        {
+            _slashExpanded = false;
+            _slashAutoFromInput = false;
+            RenderSlashBar(_vm.State);
+        };
+
         _attachmentsBar = view.FindViewById(Resource.Id.chat_attachments_bar)!;
         _attachmentsList = view.FindViewById<LinearLayout>(Resource.Id.chat_attachments_list)!;
 
@@ -151,6 +158,7 @@ public sealed class ChatFragment : Fragment
             _input.Text = restoredDraft;
         }
         _slashExpanded = savedInstanceState?.GetBoolean(SlashExpandedKey, false) ?? false;
+        _input.TextChanged += (_, e) => OnInputTextChanged(e.Text?.ToString());
         _input.EditorAction += (_, e) =>
         {
             if (e.ActionId == ImeAction.Send)
@@ -160,26 +168,23 @@ public sealed class ChatFragment : Fragment
             }
         };
 
-        _addBtn = view.FindViewById<MaterialButton>(Resource.Id.chat_add_btn)!;
+        _modelPill = view.FindViewById<MaterialButton>(Resource.Id.chat_model_pill)!;
         _sendBtn = view.FindViewById<MaterialButton>(Resource.Id.chat_send_btn)!;
         _attachImageBtn = view.FindViewById<MaterialButton>(Resource.Id.chat_attach_image_btn)!;
         _slashToggleBtn = view.FindViewById<MaterialButton>(Resource.Id.chat_slash_toggle_btn)!;
 
-        _addBtn.Click += (_, _) => ToggleSlashBar();
+        _modelPill.Click += (_, _) => OpenModelPicker();
         _slashToggleBtn.Click += (_, _) => ToggleSlashBar();
         _attachImageBtn.Click += (_, _) => OpenImagePicker();
         _sendBtn.Click += (_, _) => _ = SendOrCancelAsync();
 
-        // 横屏弹起软键盘时收起非核心辅助条，避免挤压消息列表高度（F6）。
+        // 横屏弹起软键盘时收起底部快捷操作行，保住输入框与对话可视区（F6）。
         ViewCompat.SetOnApplyWindowInsetsListener(view, new Edges.Listener((_, insets) =>
         {
             var isLandscape = Resources?.Configuration?.Orientation == global::Android.Content.Res.Orientation.Landscape;
             var imeVisible = insets.IsVisible(WindowInsetsCompat.Type.Ime());
             var compact = isLandscape && imeVisible;
-            var visibility = compact ? ViewStates.Gone : ViewStates.Visible;
-            _sessionHeader.Visibility = visibility;
-            _headerDivider.Visibility = visibility;
-            _composerActions.Visibility = visibility;
+            _composerActions.Visibility = compact ? ViewStates.Gone : ViewStates.Visible;
             return insets;
         }));
 
@@ -323,15 +328,21 @@ public sealed class ChatFragment : Fragment
     private void RenderState(ChatUiState s)
     {
         var ctx = RequireContext();
-        _toolbar.Title = _isRemote && _bridge.Agent.RemoteHostLabel is { Length: > 0 } remoteLabel
-            ? Rows.Fmt(ctx, Resource.String.remote_chat_title_fmt, remoteLabel)
-            : GetString(Resource.String.chat_title);
-        _sessionTitle.Text = string.IsNullOrWhiteSpace(s.SessionTitle)
+        var untitledPrefix = GetString(Resource.String.chats_untitled_prefix);
+        _toolbar.Title = string.IsNullOrWhiteSpace(s.SessionTitle)
             ? GetString(Resource.String.chat_session_default_title)
-            : s.SessionTitle;
-        _sessionSubtitle.Text = string.IsNullOrWhiteSpace(s.ModelLabel)
-            ? GetString(Resource.String.chat_session_subtitle_default)
-            : $"{s.ModelLabel} · {GetString(Resource.String.chat_session_subtitle_default)}";
+            : ChatDisplayFormatter.FormatShortSessionTitle(s.ActiveSession.SessionId, s.SessionTitle, untitledPrefix);
+
+        var workspaceSubtitle = GetString(Resource.String.chat_session_subtitle_default);
+        _toolbar.Subtitle = _isRemote && _bridge.Agent.RemoteHostLabel is { Length: > 0 } remoteLabel
+            ? Rows.Fmt(ctx, Resource.String.remote_chat_title_fmt, remoteLabel)
+            : workspaceSubtitle;
+
+        _modelPill.Text = ChatDisplayFormatter.FormatCompactModelBadge(
+            s.ModelLabel,
+            s.CurrentModel,
+            GetString(Resource.String.chat_model_pill_fallback));
+        _modelPill.Enabled = s.IsConnected;
 
         RenderStatusBanner(ctx, s);
         RenderUnknownSendBanner(s);
@@ -377,6 +388,7 @@ public sealed class ChatFragment : Fragment
         }
 
         var isRunningTurn = s.Transcript.Phase is RunPhase.Starting or RunPhase.Streaming;
+        _cancelMenuItem?.SetVisible(isRunningTurn && s.Capabilities.CancelSession);
         if (isRunningTurn && s.Capabilities.CancelSession)
         {
             _sendBtn.SetIconResource(Resource.Drawable.ic_stop);
@@ -392,7 +404,6 @@ public sealed class ChatFragment : Fragment
 
         _attachImageBtn.Visibility = s.Capabilities.PromptImages ? ViewStates.Visible : ViewStates.Gone;
         _slashToggleBtn.Visibility = s.Capabilities.SlashCommands ? ViewStates.Visible : ViewStates.Gone;
-        _addBtn.Enabled = s.Capabilities.SlashCommands || s.Capabilities.PromptImages;
         RenderSlashBar(s);
     }
 
@@ -477,27 +488,55 @@ public sealed class ChatFragment : Fragment
         }
     }
 
+    private void OnInputTextChanged(string? text)
+    {
+        var raw = text ?? string.Empty;
+        var state = _vm.State;
+        if (state.Capabilities.SlashCommands
+            && state.SlashCommands.Count > 0
+            && raw.StartsWith('/')
+            && !raw.Contains('\n')
+            && raw.Length <= 32
+            && !raw.Contains(' '))
+        {
+            _slashFilterQuery = raw;
+            _slashExpanded = true;
+            _slashAutoFromInput = true;
+            RenderSlashBar(state);
+            return;
+        }
+
+        if (_slashAutoFromInput)
+        {
+            _slashAutoFromInput = false;
+            _slashExpanded = false;
+            _slashFilterQuery = string.Empty;
+            RenderSlashBar(state);
+        }
+    }
+
     private void RenderSlashBar(ChatUiState s)
     {
         if (!s.Capabilities.SlashCommands || !_slashExpanded || s.SlashCommands.Count == 0)
         {
-            _slashBar.Visibility = ViewStates.Gone;
+            _slashPanel.Visibility = ViewStates.Gone;
             return;
         }
-        _slashBar.Visibility = ViewStates.Visible;
-        if (ReferenceEquals(_renderedSlash, s.SlashCommands))
+        _slashPanel.Visibility = ViewStates.Visible;
+        _slashAdapter.Submit(s.SlashCommands, _slashAutoFromInput ? _slashFilterQuery : string.Empty);
+
+        var count = _slashAdapter.ItemCount;
+        _slashList.Visibility = count > 0 ? ViewStates.Visible : ViewStates.Gone;
+        _slashEmpty.Visibility = count == 0 ? ViewStates.Visible : ViewStates.Gone;
+
+        if (_slashList.LayoutParameters is { } lp)
         {
-            return;
-        }
-        _renderedSlash = s.SlashCommands;
-        _slashChips.RemoveAllViews();
-        var inflater = LayoutInflater.From(RequireContext())!;
-        foreach (var cmd in s.SlashCommands)
-        {
-            var chip = (Chip)inflater.Inflate(Resource.Layout.item_chat_slash_chip, _slashChips, false)!;
-            chip.Text = EnsureLeadingSlash(cmd.Name);
-            chip.Click += (_, _) => OnSlashChipClicked(cmd);
-            _slashChips.AddView(chip);
+            var desiredHeight = count > 4 ? Rows.Dp(RequireContext(), 210) : ViewGroup.LayoutParams.WrapContent;
+            if (lp.Height != desiredHeight)
+            {
+                lp.Height = desiredHeight;
+                _slashList.LayoutParameters = lp;
+            }
         }
     }
 
@@ -531,6 +570,8 @@ public sealed class ChatFragment : Fragment
 
     private void ToggleSlashBar()
     {
+        _slashAutoFromInput = false;
+        _slashFilterQuery = string.Empty;
         _slashExpanded = !_slashExpanded;
         RenderSlashBar(_vm.State);
     }
@@ -538,16 +579,20 @@ public sealed class ChatFragment : Fragment
     private void OnSlashChipClicked(SlashCommandDescriptorView cmd)
     {
         var commandName = EnsureLeadingSlash(cmd.Name);
+        _slashExpanded = false;
+        _slashAutoFromInput = false;
+        _slashFilterQuery = string.Empty;
         if (string.IsNullOrWhiteSpace(cmd.InputHint))
         {
-            _ = _vm.RunSlashCommandAsync(commandName);
-            _slashExpanded = false;
+            _input.Text = string.Empty;
             RenderSlashBar(_vm.State);
+            _ = _vm.RunSlashCommandAsync(commandName);
             return;
         }
         _input.Text = $"{commandName} ";
         _input.SetSelection(_input.Text?.Length ?? 0);
         _input.RequestFocus();
+        RenderSlashBar(_vm.State);
     }
 
     private static string EnsureLeadingSlash(string name)

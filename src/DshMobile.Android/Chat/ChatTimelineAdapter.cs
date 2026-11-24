@@ -319,10 +319,13 @@ internal sealed class ChatTimelineAdapter : RecyclerView.Adapter
 
     private sealed class ToolCallHolder : RecyclerView.ViewHolder
     {
+        private readonly ImageView _icon;
         private readonly TextView _title;
         private readonly TextView _phaseText;
         private readonly ImageView _statusIcon;
+        private readonly ImageView _chevron;
         private readonly TextView _args;
+        private readonly TextView _detailJson;
         private readonly TextView _output;
         private readonly View _workspaceBar;
         private readonly MaterialButton _openFileBtn;
@@ -330,6 +333,7 @@ internal sealed class ChatTimelineAdapter : RecyclerView.Adapter
         private readonly HashSet<string> _expanded;
         private string? _itemId;
         private string? _workspacePath;
+        private bool _hasDetailJson;
         private bool _hasOutput;
 
         public ToolCallHolder(
@@ -338,10 +342,13 @@ internal sealed class ChatTimelineAdapter : RecyclerView.Adapter
             Action<string, bool>? onOpenWorkspaceFile) : base(itemView)
         {
             _expanded = expanded;
+            _icon = itemView.FindViewById<ImageView>(Resource.Id.chat_tool_icon)!;
             _title = itemView.FindViewById<TextView>(Resource.Id.chat_tool_title)!;
             _phaseText = itemView.FindViewById<TextView>(Resource.Id.chat_tool_phase_text)!;
             _statusIcon = itemView.FindViewById<ImageView>(Resource.Id.chat_tool_status_icon)!;
+            _chevron = itemView.FindViewById<ImageView>(Resource.Id.chat_tool_chevron)!;
             _args = itemView.FindViewById<TextView>(Resource.Id.chat_tool_args)!;
+            _detailJson = itemView.FindViewById<TextView>(Resource.Id.chat_tool_detail_json)!;
             _output = itemView.FindViewById<TextView>(Resource.Id.chat_tool_output)!;
             _workspaceBar = itemView.FindViewById(Resource.Id.chat_tool_workspace_bar)!;
             _openFileBtn = itemView.FindViewById<MaterialButton>(Resource.Id.chat_tool_open_file_btn)!;
@@ -383,9 +390,25 @@ internal sealed class ChatTimelineAdapter : RecyclerView.Adapter
         {
             _itemId = row.ItemId;
             var ctx = ItemView.Context!;
-            _title.Text = Rows.Fmt(ctx, Resource.String.chat_tool_title, row.ToolName);
-            _args.Text = row.ArgumentsJson;
-            _args.Visibility = string.IsNullOrWhiteSpace(row.ArgumentsJson) ? ViewStates.Gone : ViewStates.Visible;
+            var summary = ChatDisplayFormatter.FormatToolCallSummary(row.ToolName, row.ArgumentsJson);
+            _title.Text = summary.HeaderLabel;
+            _icon.SetImageResource(ResolveToolIcon(row.ToolName));
+
+            if (string.IsNullOrWhiteSpace(summary.SummaryLine))
+            {
+                _args.Visibility = ViewStates.Gone;
+                _args.Text = string.Empty;
+            }
+            else
+            {
+                _args.Visibility = ViewStates.Visible;
+                _args.Text = summary.SummaryLine;
+            }
+
+            _hasDetailJson = !string.IsNullOrWhiteSpace(summary.DetailJson)
+                && !string.Equals(summary.DetailJson, summary.SummaryLine, StringComparison.Ordinal);
+            _detailJson.Text = summary.DetailJson ?? string.Empty;
+
             _hasOutput = !string.IsNullOrWhiteSpace(row.OutputSummary);
             _output.Text = row.OutputSummary ?? string.Empty;
 
@@ -418,9 +441,33 @@ internal sealed class ChatTimelineAdapter : RecyclerView.Adapter
 
         private void ApplyExpanded(bool isOpen)
         {
-            _args.SetMaxLines(isOpen ? int.MaxValue : 4);
+            _args.SetMaxLines(isOpen ? 6 : 2);
             _args.Ellipsize = isOpen ? null : Android.Text.TextUtils.TruncateAt.End;
+            _detailJson.Visibility = isOpen && _hasDetailJson ? ViewStates.Visible : ViewStates.Gone;
             _output.Visibility = isOpen && _hasOutput ? ViewStates.Visible : ViewStates.Gone;
+            _chevron.Rotation = isOpen ? 180f : 0f;
+        }
+
+        private static int ResolveToolIcon(string toolName)
+        {
+            var lower = toolName.Trim().ToLowerInvariant();
+            if (lower.Contains("bash", StringComparison.Ordinal) || lower.Contains("shell", StringComparison.Ordinal) || lower.Contains("exec", StringComparison.Ordinal) || lower == "sh")
+            {
+                return Resource.Drawable.ic_terminal;
+            }
+            if (lower.Contains("read", StringComparison.Ordinal) || lower.Contains("view", StringComparison.Ordinal) || lower.Contains("cat", StringComparison.Ordinal))
+            {
+                return Resource.Drawable.ic_article;
+            }
+            if (lower.Contains("edit", StringComparison.Ordinal) || lower.Contains("write", StringComparison.Ordinal) || lower.Contains("patch", StringComparison.Ordinal))
+            {
+                return Resource.Drawable.ic_code;
+            }
+            if (lower.Contains("search", StringComparison.Ordinal) || lower.Contains("grep", StringComparison.Ordinal) || lower.Contains("glob", StringComparison.Ordinal) || lower.Contains("find", StringComparison.Ordinal))
+            {
+                return Resource.Drawable.ic_search;
+            }
+            return Resource.Drawable.ic_build;
         }
     }
 
