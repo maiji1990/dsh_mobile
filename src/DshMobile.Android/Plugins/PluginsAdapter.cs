@@ -1,16 +1,16 @@
-using Android.Content.Res;
 using Android.Views;
-using Android.Widget;
 using AndroidX.RecyclerView.Widget;
 using DshMobile.Agent.Domain;
+using DshMobile.Agent.Presentation;
+using DshMobile.App.Ui;
 using Google.Android.Material.Button;
 using Google.Android.Material.MaterialSwitch;
 
 namespace DshMobile.App.Plugins;
 
 /// <summary>
-/// 原生插件目录列表适配器（PR-07, N-07-02）：
-/// 仅渲染 L0 状态标签、脱敏报错摘要、自定义 WebUI 提示与 L1 启停/卸载操作，无 L2 动态表单与 WebView。
+/// 原生插件目录列表适配器（PR-07 / N-07-02 / UI Slice 4）：
+/// 仅渲染 L0 状态标签、精简短模块主标题 + 中文功能副描述 + 去重包名，无 L2 动态表单与 WebView。
 /// </summary>
 internal sealed class PluginsAdapter(
     Action<PluginEntryView, bool> onToggleRequested,
@@ -42,6 +42,7 @@ internal sealed class PluginsAdapter(
     private sealed class Holder : RecyclerView.ViewHolder
     {
         private readonly TextView _name;
+        private readonly TextView _desc;
         private readonly TextView _status;
         private readonly TextView _version;
         private readonly TextView _protectedBadge;
@@ -60,6 +61,7 @@ internal sealed class PluginsAdapter(
             Action<PluginEntryView> onUninstallRequested) : base(itemView)
         {
             _name = itemView.FindViewById<TextView>(Resource.Id.plugin_item_name)!;
+            _desc = itemView.FindViewById<TextView>(Resource.Id.plugin_item_desc)!;
             _status = itemView.FindViewById<TextView>(Resource.Id.plugin_item_status)!;
             _version = itemView.FindViewById<TextView>(Resource.Id.plugin_item_version)!;
             _protectedBadge = itemView.FindViewById<TextView>(Resource.Id.plugin_item_protected)!;
@@ -100,11 +102,19 @@ internal sealed class PluginsAdapter(
             _bound = entry;
             _isBusy = isBusy;
             var ctx = ItemView.Context!;
+            var display = PluginDisplayFormatter.Format(entry);
 
-            _name.Text = entry.DisplayName;
-            _module.Text = string.Equals(entry.ModuleName, entry.PackageName, StringComparison.Ordinal) || string.IsNullOrEmpty(entry.PackageName)
-                ? entry.ModuleName
-                : $"{entry.ModuleName} · {entry.PackageName}";
+            _name.Text = display.ShortTitle;
+            if (!string.IsNullOrWhiteSpace(display.Description))
+            {
+                _desc.Visibility = ViewStates.Visible;
+                _desc.Text = display.Description;
+            }
+            else
+            {
+                _desc.Visibility = ViewStates.Gone;
+            }
+            _module.Text = display.Meta;
 
             if (!string.IsNullOrWhiteSpace(entry.Version))
             {
@@ -117,13 +127,12 @@ internal sealed class PluginsAdapter(
             }
 
             _protectedBadge.Visibility = entry.IsProtected ? ViewStates.Visible : ViewStates.Gone;
-
             BindStatus(ctx, entry);
 
             _toggleSwitch.Checked = entry.Enabled;
             _toggleSwitch.Enabled = entry.CanToggle && !isBusy;
             _toggleSwitch.Visibility = entry.CanToggle ? ViewStates.Visible : ViewStates.Gone;
-            _toggleSwitch.ContentDescription = entry.DisplayName;
+            _toggleSwitch.ContentDescription = display.ShortTitle;
 
             _webUiNotice.Visibility = entry.HasCustomWebUi ? ViewStates.Visible : ViewStates.Gone;
 
@@ -143,26 +152,16 @@ internal sealed class PluginsAdapter(
 
         private void BindStatus(Android.Content.Context ctx, PluginEntryView entry)
         {
-            var (textRes, color) = entry.FiberPhase switch
+            var (textRes, tone) = entry.FiberPhase switch
             {
-                "failed" => (Resource.String.plugins_status_failed, ResolveAttrColor(ctx, Android.Resource.Attribute.ColorError)),
-                "pending-restart" => (Resource.String.plugins_status_pending_restart, ResolveAttrColor(ctx, Resource.Attribute.colorPrimary)),
-                "loading" or "pending" when entry.Enabled => (Resource.String.plugins_status_loading, ResolveAttrColor(ctx, Resource.Attribute.colorPrimary)),
-                "active" when entry.Enabled => (Resource.String.plugins_status_active, new Android.Graphics.Color(ctx.GetColor(Resource.Color.dshm_running))),
-                _ when !entry.Enabled => (Resource.String.plugins_status_disabled, ResolveAttrColor(ctx, Android.Resource.Attribute.TextColorSecondary)),
-                _ => (Resource.String.plugins_status_inactive, ResolveAttrColor(ctx, Android.Resource.Attribute.TextColorSecondary)),
+                "failed" => (Resource.String.plugins_status_failed, Rows.BadgeTone.Error),
+                "pending-restart" => (Resource.String.plugins_status_pending_restart, Rows.BadgeTone.Primary),
+                "loading" or "pending" when entry.Enabled => (Resource.String.plugins_status_loading, Rows.BadgeTone.Primary),
+                "active" when entry.Enabled => (Resource.String.plugins_status_active, Rows.BadgeTone.Success),
+                _ when !entry.Enabled => (Resource.String.plugins_status_disabled, Rows.BadgeTone.Neutral),
+                _ => (Resource.String.plugins_status_inactive, Rows.BadgeTone.Neutral),
             };
-            _status.SetText(textRes);
-            _status.SetTextColor(ColorStateList.ValueOf(color));
-        }
-
-        private static Android.Graphics.Color ResolveAttrColor(Android.Content.Context ctx, int attr)
-        {
-            using var tv = new Android.Util.TypedValue();
-            ctx.Theme?.ResolveAttribute(attr, tv, true);
-            return tv.ResourceId != 0
-                ? new Android.Graphics.Color(ctx.GetColor(tv.ResourceId))
-                : new Android.Graphics.Color(tv.Data);
+            Rows.SetBadge(_status, ctx.GetString(textRes), tone);
         }
     }
 }

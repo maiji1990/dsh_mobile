@@ -710,4 +710,42 @@
     <string name="files_editor_discard_message">当前文件有尚未保存的更改，离开将会丢失。</string>
     <string name="files_editor_discard_confirm">放弃修改</string>
     <string name="files_editor_meta_fmt">%1$s · %2$d 行 · %3$d 字符</string>
+
+    <!-- UI Slice 4: More & 6 Secondary Screens Full XML Refactor. -->
+    <string name="more_overview_remote_connected">远程 · %1$s</string>
+    <string name="more_overview_remote_disconnected">远程未连接</string>
+    <string name="more_badge_configured_count">已配置 %1$d 项</string>
+    <string name="more_badge_unconfigured">未配置</string>
+    <string name="more_badge_connected">已连接</string>
+    <string name="more_badge_disconnected">未连接</string>
+    <string name="more_warmup_short_sub">回到 App 时静默启动以加快就绪（低电量与手动停止时不触发）</string>
+    <string name="credentials_action_set_short">配置</string>
+    <string name="plugins_filter_all">全部</string>
+    <string name="plugins_filter_manageable">可管理</string>
+    <string name="plugins_filter_enabled">已启用</string>
+    <string name="plugins_filter_protected">核心保护</string>
+    <string name="runtime_stop_before_import_title">需要先停止 DSH</string>
+    <string name="runtime_stop_before_import_msg">DSH 正在运行，导入或替换运行层前须先停止。是否立即停止并选择文件？</string>
+    <string name="runtime_stop_before_import_action">停止并继续</string>
+    <string name="runtime_tile_layers_label">运行环境层</string>
+    <string name="runtime_tile_shim_label">链接兼容层</string>
+    <string name="runtime_tile_free_label">可用空间</string>
+    <string name="runtime_tile_last_op_label">上次操作</string>
+    <string name="runtime_tile_last_none">暂无</string>
+    <string name="runtime_phantom_ratio_fmt">%1$d / %2$d</string>
+    <string name="runtime_channel_stable_short">稳定版</string>
+    <string name="runtime_channel_preview_short">预览版</string>
+    <string name="automation_relay_card_sub">默认关闭；停止 DSH 时自动注销并停止</string>
+    <string name="automation_badge_granted">已允许</string>
+    <string name="automation_badge_enabled">已开启</string>
+    <string name="automation_badge_missing">未开启</string>
+    <string name="automation_badge_not_granted">未允许</string>
+    <string name="automation_badge_not_bound">未连接</string>
+    <string name="automation_badge_not_required">免授权</string>
+    <string name="automation_badge_live">已生效</string>
+    <string name="automation_badge_registered">已注册</string>
+    <string name="automation_badge_restart">需重启</string>
+    <string name="automation_badge_conflict">文件冲突</string>
+    <string name="developer_log_fullscreen">全屏查看</string>
+    <string name="developer_disable_sub">隐藏「更多」页开发者入口（可连点版本号 7 次重新开启）</string>
 </resources>

@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>DSH Mobile UI Slice 4 真机验收截图（2026-11-24）</title>
+  <style>
+    body { font-family: system-ui, -apple-system, sans-serif; margin: 24px; background: #f6f7f9; color: #1b1c1e; }
+    h1 { font-size: 20px; margin-bottom: 6px; }
+    p.meta { color: #555; font-size: 13px; margin-bottom: 20px; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 16px; }
+    .card { background: #fff; border: 1px solid #e0e2e7; border-radius: 12px; padding: 12px; }
+    .card img { width: 100%; border-radius: 8px; border: 1px solid #eceef2; display: block; }
+    .card h3 { font-size: 14px; margin: 10px 0 4px; }
+    .card p { font-size: 12px; color: #555; margin: 0; line-height: 1.45; }
+  </style>
+</head>
+<body>
+  <h1>DSH Mobile · UI Slice 4 真机验收截图（更多页与 6 大二级页全面 XML 化）</h1>
+  <p class="meta">设备：Xiaomi M2007J1SC（LineageOS 24.0 / Android 17 / API 37 / arm64）· Clean Release SHA-256: 04DBF481…CC97 · 18 张</p>
+  <div class="grid">
+    <div class="card"><img src="01-more-overview-stopped-light.png" alt="01" /><h3>01 · 更多页（DSH 未启动）</h3><p>M3 概览卡（未运行 / DSH 版本 / 启动按钮）+ 功能分组卡 + 运行环境分组卡。</p></div>
+    <div class="card"><img src="02-more-bottom-light.png" alt="02" /><h3>02 · 更多页底部（已解锁开发者）</h3><p>后台预热 MaterialSwitch、关于 / 开源许可 / 开发者选项卡片组。</p></div>
+    <div class="card"><img src="03-more-licenses-dialog-light.png" alt="03" /><h3>03 · 开源许可弹窗</h3><p>M3 对话框呈现 GPL-3.0 声明及 PRoot / talloc / SSH.NET 等上游许可证清单。</p></div>
+    <div class="card"><img src="04-runtime-dashboard-light.png" alt="04" /><h3>04 · 运行环境仪表板</h3><p>2×2 关键指标磁贴（运行环境层 / 链接兼容层 / 可用空间 102.7 GB / 上次操作）与离线维护组。</p></div>
+    <div class="card"><img src="05-runtime-governance-light.png" alt="05" /><h3>05 · 在线更新与系统治理</h3><p>更新通道徽章、自动检查开关与 32 槽位进程配额进度条及温控/空闲租约指标。</p></div>
+    <div class="card"><img src="06-automation-light.png" alt="06" /><h3>06 · 手机操控首页</h3><p>可折叠实验说明卡、Relay 总开关与权限状态分组顶部。</p></div>
+    <div class="card"><img src="07-automation-bottom-light.png" alt="07" /><h3>07 · 手机操控权限与检查区</h3><p>无障碍/悬浮窗（未开启/未允许）、局域网（已允许）、只读自检与执行面偏好入口。</p></div>
+    <div class="card"><img src="08-remote-light.png" alt="08" /><h3>08 · 远程主机（SSH）</h3><p>M3 TextInputLayout 表单（名称/地址/SSH 端口/用户名/远端端口）与 Keystore 等宽公钥卡。</p></div>
+    <div class="card"><img src="09-developer-tools-light.png" alt="09" /><h3>09 · 开发者选项与日志预览</h3><p>诊断工具列表卡片 + 内嵌等宽日志预览卡（全屏查看 / 复制 / 清空）。</p></div>
+    <div class="card"><img src="10-developer-log-dialog-light.png" alt="10" /><h3>10 · 开发者全屏日志弹窗</h3><p>Rows.ShowScrollableTextDialog 展示完整诊断与 Keystore SHA256 日志。</p></div>
+    <div class="card"><img src="11-more-running-light.png" alt="11" /><h3>11 · 更多页（DSH 运行中）</h3><p>概览卡实时切换为绿色「运行中」徽章与「停止」按钮。</p></div>
+    <div class="card"><img src="12-credentials-live-light.png" alt="12" /><h3>12 · 模型与凭据配置（实时）</h3><p>安全提示条、已配置 DEEPSEEK_API_KEY 脱敏掩码框（绝不回显明文）与未配置紧凑行 + 新增 FAB。</p></div>
+    <div class="card"><img src="13-plugins-live-light.png" alt="13" /><h3>13 · 插件目录（全部）</h3><p>搜索框 + FilterChip 筛选 + 短模块标题与中文描述（核心保护卡不显示开关）+ 安装 FAB。</p></div>
+    <div class="card"><img src="14-plugins-filtered-light.png" alt="14" /><h3>14 · 插件目录（可管理筛选）</h3><p>切换「可管理」FilterChip 后仅展示允许用户启停或卸载的插件。</p></div>
+    <div class="card"><img src="15-more-dark.png" alt="15" /><h3>15 · 更多页（深色模式）</h3><p>OLED 深色模式卡片描边清晰，且进入凭据页后主卡片已更新为「已配置 1 项」。</p></div>
+    <div class="card"><img src="16-credentials-dark.png" alt="16" /><h3>16 · 模型与凭据配置（深色模式）</h3><p>深色背景下脱敏框、清除红色警告字样与配置钮对比清晰。</p></div>
+    <div class="card"><img src="17-plugins-dark.png" alt="17" /><h3>17 · 插件目录（深色模式）</h3><p>深色模式搜索栏、运行中/核心保护徽章与 MaterialSwitch 高对比可读。</p></div>
+    <div class="card"><img src="18-runtime-dark.png" alt="18" /><h3>18 · 运行环境仪表板（深色模式）</h3><p>运行中状态卡、「停止 DSH」钮与 2×2 指标磁贴在深色模式下层次清楚。</p></div>
+  </div>
+</body>
+</html>

@@ -1,113 +1,162 @@
 using Android.Content;
+using Android.Content.Res;
 using Android.Views;
 using Google.Android.Material.Color;
+using Google.Android.Material.Dialog;
+using Google.Android.Material.MaterialSwitch;
 
 namespace DshMobile.App.Ui;
 
-/// <summary>Builds the one list-row layout (<c>item_row.xml</c>) every list screen uses, and small shared view helpers.</summary>
+/// <summary>设置行、状态徽标与统计小卡（<c>view_setting_*_row.xml</c> / <c>view_metric_tile.xml</c>）绑定与无状态主题/格式化工具。</summary>
 public static class Rows
 {
-    public sealed class Row(View view)
+    public enum BadgeTone
     {
-        public View View { get; } = view;
-
-        public ImageView Icon { get; } = view.FindViewById<ImageView>(Resource.Id.row_icon)!;
-
-        public TextView Title { get; } = view.FindViewById<TextView>(Resource.Id.row_title)!;
-
-        public TextView Subtitle { get; } = view.FindViewById<TextView>(Resource.Id.row_subtitle)!;
-
-        public FrameLayout Trailing { get; } = view.FindViewById<FrameLayout>(Resource.Id.row_trailing)!;
-
-        public void SetSubtitle(string? text)
-        {
-            Subtitle.Text = text;
-            Subtitle.Visibility = string.IsNullOrEmpty(text) ? ViewStates.Gone : ViewStates.Visible;
-        }
-
-        /// <summary>Puts <paramref name="view"/> (a button, a switch, a chevron) at the row's end.</summary>
-        public void SetTrailing(View? view)
-        {
-            Trailing.RemoveAllViews();
-            if (view is not null)
-            {
-                Trailing.AddView(view);
-            }
-            Trailing.Visibility = view is null ? ViewStates.Gone : ViewStates.Visible;
-        }
+        Neutral,
+        Primary,
+        Success,
+        Warning,
+        Error,
     }
 
-    /// <summary>Inflates a row into <paramref name="parent"/>; <paramref name="onClick"/> makes the whole row a target.</summary>
-    public static Row Add(ViewGroup parent, int icon, string title, string? subtitle = null, Action? onClick = null, bool chevron = false)
+    public static void BindActionRow(
+        View rowView,
+        int iconRes,
+        string title,
+        string? subtitle = null,
+        Action? onClick = null,
+        bool destructive = false)
     {
-        var view = LayoutInflater.From(parent.Context)!.Inflate(Resource.Layout.item_row, parent, false)!;
-        var row = new Row(view);
-        if (icon != 0)
+        var icon = rowView.FindViewById<ImageView>(Resource.Id.row_icon)!;
+        var titleView = rowView.FindViewById<TextView>(Resource.Id.row_title)!;
+        var subView = rowView.FindViewById<TextView>(Resource.Id.row_subtitle)!;
+        if (iconRes != 0)
         {
-            row.Icon.SetImageResource(icon);
+            icon.Visibility = ViewStates.Visible;
+            icon.SetImageResource(iconRes);
+            var tintAttr = destructive ? Android.Resource.Attribute.ColorError : Resource.Attribute.colorOnSurfaceVariant;
+            icon.ImageTintList = ColorStateList.ValueOf(new Android.Graphics.Color(Color(rowView, tintAttr)));
         }
         else
         {
-            row.Icon.Visibility = ViewStates.Gone;
+            icon.Visibility = ViewStates.Gone;
         }
-        row.Title.Text = title;
-        row.SetSubtitle(subtitle);
+        titleView.Text = title;
+        titleView.SetTextColor(new Android.Graphics.Color(Color(
+            rowView,
+            destructive ? Android.Resource.Attribute.ColorError : Resource.Attribute.colorOnSurface)));
+        SetOptionalText(subView, subtitle);
         if (onClick is not null)
         {
-            view.Clickable = true;
-            view.Focusable = true;
-            view.Click += (_, _) => onClick();
+            rowView.Clickable = true;
+            rowView.Focusable = true;
+            rowView.Click += (_, _) => onClick();
         }
         else
         {
-            view.Background = null;
+            rowView.Clickable = false;
+            rowView.Focusable = false;
         }
-        if (chevron)
+    }
+
+    public static void BindNavRow(
+        View rowView,
+        int iconRes,
+        string title,
+        string? subtitle = null,
+        Action? onClick = null,
+        string? badge = null,
+        BadgeTone badgeTone = BadgeTone.Neutral)
+    {
+        BindActionRow(rowView, iconRes, title, subtitle, onClick);
+        var badgeView = rowView.FindViewById<TextView>(Resource.Id.row_trailing_badge);
+        if (badgeView is not null)
         {
-            var c = new ImageView(parent.Context);
-            c.SetImageResource(Resource.Drawable.ic_chevron_right);
-            c.ImportantForAccessibility = ImportantForAccessibility.No;
-            row.SetTrailing(c);
+            SetBadge(badgeView, badge, badgeTone);
         }
-        else
+    }
+
+    public static MaterialSwitch BindSwitchRow(
+        View rowView,
+        int iconRes,
+        string title,
+        string? subtitle,
+        bool isChecked,
+        Action<bool> onChanged)
+    {
+        BindActionRow(rowView, iconRes, title, subtitle, onClick: null);
+        var toggle = rowView.FindViewById<MaterialSwitch>(Resource.Id.row_switch)!;
+        toggle.ContentDescription = title;
+        toggle.Checked = isChecked;
+        toggle.CheckedChange += (_, e) => onChanged(e.IsChecked);
+        rowView.Clickable = true;
+        rowView.Focusable = true;
+        rowView.Click += (_, _) =>
         {
-            row.SetTrailing(null);
+            if (toggle.Enabled)
+            {
+                toggle.Toggle();
+            }
+        };
+        return toggle;
+    }
+
+    public static void BindMetricTile(View tileView, int iconRes, string label, string value)
+    {
+        tileView.FindViewById<ImageView>(Resource.Id.metric_icon)!.SetImageResource(iconRes);
+        tileView.FindViewById<TextView>(Resource.Id.metric_label)!.Text = label;
+        tileView.FindViewById<TextView>(Resource.Id.metric_value)!.Text = value;
+    }
+
+    public static void SetRowSubtitle(View rowView, string? subtitle) =>
+        SetOptionalText(rowView.FindViewById<TextView>(Resource.Id.row_subtitle)!, subtitle);
+
+    public static void SetRowEnabled(View rowView, bool enabled)
+    {
+        rowView.Enabled = enabled;
+        rowView.Alpha = enabled ? 1f : 0.38f;
+    }
+
+    public static void SetBadge(TextView badge, string? text, BadgeTone tone = BadgeTone.Neutral)
+    {
+        if (string.IsNullOrEmpty(text))
+        {
+            badge.Visibility = ViewStates.Gone;
+            return;
         }
-        parent.AddView(view);
-        return row;
+        badge.Visibility = ViewStates.Visible;
+        badge.Text = text;
+        var (bg, fg) = tone switch
+        {
+            BadgeTone.Primary => (
+                Color(badge, Resource.Attribute.colorPrimaryContainer),
+                Color(badge, Resource.Attribute.colorOnPrimaryContainer)),
+            BadgeTone.Success => (
+                Color(badge, Resource.Attribute.colorSecondaryContainer),
+                badge.Context!.GetColor(Resource.Color.dshm_running)),
+            BadgeTone.Warning => (
+                Color(badge, Resource.Attribute.colorTertiaryContainer),
+                Color(badge, Resource.Attribute.colorOnTertiaryContainer)),
+            BadgeTone.Error => (
+                Color(badge, Resource.Attribute.colorErrorContainer),
+                Color(badge, Resource.Attribute.colorOnErrorContainer)),
+            _ => (
+                Color(badge, Resource.Attribute.colorSurfaceContainerHigh),
+                Color(badge, Resource.Attribute.colorOnSurfaceVariant)),
+        };
+        badge.BackgroundTintList = ColorStateList.ValueOf(new Android.Graphics.Color(bg));
+        badge.SetTextColor(new Android.Graphics.Color(fg));
     }
 
-    /// <summary>A section heading (<c>Widget.DshMobile.SectionHeader</c>).</summary>
-    public static TextView Header(ViewGroup parent, string text)
+    public static void ShowScrollableTextDialog(Context ctx, int titleRes, string text)
     {
-        var view = (TextView)LayoutInflater.From(parent.Context)!.Inflate(Resource.Layout.item_section_header, parent, false)!;
-        view.Text = text;
-        parent.AddView(view);
-        return view;
-    }
-
-    /// <summary>A filled card with 16dp side margins holding <paramref name="child"/> (text blocks, logs, outputs).</summary>
-    public static Google.Android.Material.Card.MaterialCardView Card(ViewGroup parent, View child, int padDp = 16)
-    {
-        var context = parent.Context!;
-        var card = new Google.Android.Material.Card.MaterialCardView(context, null, Resource.Attribute.materialCardViewFilledStyle);
-        card.SetCardBackgroundColor(MaterialColors.GetColor(parent, Resource.Attribute.colorSurfaceContainerLow));
-        var lp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MatchParent, ViewGroup.LayoutParams.WrapContent);
-        var m = Dp(context, 16);
-        lp.SetMargins(m, Dp(context, 4), m, Dp(context, 4));
-        var p = Dp(context, padDp);
-        child.SetPadding(p, p, p, p);
-        card.AddView(child);
-        parent.AddView(card, lp);
-        return card;
-    }
-
-    /// <summary>A selectable monospace output block (<c>view_mono_text.xml</c>) in a <see cref="Card"/>.</summary>
-    public static TextView MonoCard(ViewGroup parent, out View card)
-    {
-        var text = (TextView)LayoutInflater.From(parent.Context)!.Inflate(Resource.Layout.view_mono_text, parent, false)!;
-        card = Card(parent, text);
-        return text;
+        var view = LayoutInflater.From(ctx)!.Inflate(Resource.Layout.dialog_scrollable_text, null, false)!;
+        view.FindViewById<TextView>(Resource.Id.dialog_scrollable_text)!.Text = text;
+        new MaterialAlertDialogBuilder(ctx)
+            .SetTitle(titleRes)!
+            .SetView(view)!
+            .SetPositiveButton(Android.Resource.String.Ok, (_, _) => { })!
+            .Show();
     }
 
     public static int Dp(Context context, float dp) => (int)(dp * context.Resources!.DisplayMetrics!.Density + 0.5f);
@@ -129,5 +178,11 @@ public static class Rows
     {
         var i = text.IndexOf('：', StringComparison.Ordinal);
         return i < 0 ? text : text[(i + 1)..];
+    }
+
+    private static void SetOptionalText(TextView view, string? text)
+    {
+        view.Text = text ?? "";
+        view.Visibility = string.IsNullOrEmpty(text) ? ViewStates.Gone : ViewStates.Visible;
     }
 }
