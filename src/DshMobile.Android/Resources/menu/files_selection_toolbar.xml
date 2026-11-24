@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<menu xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto">
+    <item
+        android:id="@+id/files_menu_copy"
+        android:icon="@drawable/ic_copy"
+        android:title="@string/files_copy"
+        app:showAsAction="ifRoom" />
+    <item
+        android:id="@+id/files_menu_delete"
+        android:icon="@drawable/ic_delete"
+        android:title="@string/files_delete"
+        app:showAsAction="ifRoom" />
+    <item
+        android:id="@+id/files_menu_cut"
+        android:title="@string/files_cut"
+        app:showAsAction="never" />
+    <item
+        android:id="@+id/files_menu_zip"
+        android:title="@string/files_compress"
+        app:showAsAction="never" />
+    <item
+        android:id="@+id/files_menu_select_all"
+        android:title="@string/files_select_all"
+        app:showAsAction="never" />
+    <item
+        android:id="@+id/files_menu_clear_selection"
+        android:title="@string/files_clear_selection"
+        app:showAsAction="never" />
+</menu>

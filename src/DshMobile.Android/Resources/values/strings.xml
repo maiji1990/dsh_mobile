@@ -677,4 +677,37 @@
     <string name="chat_slash_action_args">需补参数</string>
     <string name="chat_tool_toggle_desc">展开或收起工具详情</string>
     <string name="chat_model_sheet_manage_creds">凭据配置</string>
+
+    <!-- UI Slice 3: Workspace Workbench & Full XML Refactor. -->
+    <string name="files_filter_or_search_hint">筛选或回车搜索工作区…</string>
+    <string name="files_sort_short">排序</string>
+    <string name="files_create_fab_desc">新建或导入</string>
+    <string name="files_create_short">新建</string>
+    <string name="files_create_sheet_title">新建或导入到当前目录</string>
+    <string name="files_create_file_sub">在当前目录下新建空白文件</string>
+    <string name="files_create_folder_sub">在当前目录下新建子文件夹</string>
+    <string name="files_import_sub">从系统文件选择器导入文件</string>
+    <string name="files_item_more_desc">更多文件操作</string>
+    <string name="files_sheet_dir_subtitle">文件夹</string>
+    <string name="files_sheet_symlink_subtitle">符号链接（只读展示，不跟随访问）</string>
+    <string name="files_sheet_open_edit_sub">在全屏编辑器中打开</string>
+    <string name="files_sheet_open_read_sub">在全屏阅读器中查看</string>
+    <string name="files_sheet_export_sub">保存到系统其他位置</string>
+    <string name="files_sheet_extract_sub">解压压缩包内容到当前目录</string>
+    <string name="files_sheet_rename_sub">修改文件或文件夹名称</string>
+    <string name="files_sheet_copy_sub">放入剪贴板以便粘贴副本</string>
+    <string name="files_sheet_cut_sub">剪切并移动到目标文件夹</string>
+    <string name="files_sheet_compress_sub">打包为 zip 压缩文件</string>
+    <string name="files_sheet_delete_sub">移入回收站或移除</string>
+    <string name="git_subrepos_found">当前目录不是 Git 仓库，发现以下子仓库：</string>
+    <string name="files_editor_title">文件查看与编辑</string>
+    <string name="files_editor_mode_edit">编辑</string>
+    <string name="files_editor_exit_edit">退出编辑</string>
+    <string name="files_editor_state_editing">编辑中</string>
+    <string name="files_editor_mode_read">只读</string>
+    <string name="files_go_root">回到工作区根目录</string>
+    <string name="files_editor_discard_title">放弃未保存的修改？</string>
+    <string name="files_editor_discard_message">当前文件有尚未保存的更改，离开将会丢失。</string>
+    <string name="files_editor_discard_confirm">放弃修改</string>
+    <string name="files_editor_meta_fmt">%1$s · %2$d 行 · %3$d 字符</string>
 </resources>

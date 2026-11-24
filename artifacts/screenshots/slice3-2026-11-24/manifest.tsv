@@ -1,0 +1,18 @@
+# slice3-2026-11-24 screenshot manifest (Android 17 / M2007J1SC / clean Release 7C73C973...57A)
+filename	bytes	theme	screen	notes
+00-chats-search-pill-check.png	205885	light	会话列表搜索胶囊回归	view_search_pill 关闭浮动标签后占位符垂直居中、无顶边框裁切
+01-files-root-light.png	113684	light	工作区文件浏览根目录	单行顶栏（[44,133][227,222] + 刷新 [837,112][969,244] + ⋮）、分段开关、搜索胶囊与排序按钮、XML 卡片(.dsh 受保护锁 / pr06-repo / print-statements-demo.md)、+ 新建 ExtendedFAB
+02-create-sheet-light.png	166274	light	新建或导入底部抽屉	sheet_workspace_create.xml 展示新建文件/新建文件夹/系统选择器导入
+03-sort-dialog-light.png	148225	light	排序选择弹窗	名称 ↑ / 大小 / 修改时间 / 类型 单选及二次点击升降序说明
+04-file-actions-sheet-light.png	184398	light	文件行操作底部抽屉	行尾 ⋮ 打开 sheet_file_actions.xml：编辑/导出/重命名/复制/剪切/压缩/error 红色删除
+05-editor-read-light.png	295746	light	全屏阅读器（只读初态）	单击 print-statements-demo.md 直达 WorkspaceEditorActivity：等宽正文、顶栏「编辑」、底栏编码行数与「只读」徽章
+06-editor-edit-light.png	299797	light	全屏编辑器（编辑态）	切换编辑后顶栏清晰区分「退出编辑 | 保存」、底栏状态徽章为「编辑中」
+07-files-subfolder-light.png	132715	light	子文件夹与 XML 面包屑	pr06-repo 目录内容与 item_file_crumb.xml（末级 pr06-repo 加粗 colorOnSurface）
+08-files-multiselect-light.png	129497	light	多选批量操作模式	长按 hello.txt 进入多选：卡片高亮描边+勾选、顶栏副标题「已选 1 项」、batch 菜单与关闭图标
+09-files-search-light.png	113296	light	工作区递归搜索	输入 hello 并回车直接触发 FileListing.Search（修复 FullScroll 抢焦问题），命中 pr06-repo/hello.txt 并显示统计条
+10-git-root-subrepos-light.png	91428	light	Git 非仓库自动发现子仓库	/root/projects 隐藏无效分支条、发现子仓库 Chip「pr06-repo」，顶栏工作区与刷新位置([837,112][969,244])零漂移
+11-git-repo-changes-light.png	98903	light	Git 仓库变更列表	点击 pr06-repo Chip 直达分支 master 与 M/U 变更清单（单行顶栏无副标题跳动）
+12-git-diff-light.png	119335	light	Git 原生 Diff 视图	README.md hunk、行号与红绿增删背景高亮，顶部提供返回与「预览文件」直达全屏编辑器
+13-git-changes-dark.png	99300	dark	深色模式 Git 变更页	OLED 深色背景、outline 描边与 M/? 状态徽章清晰可辨
+14-files-subfolder-dark.png	138509	dark	深色模式文件子目录与面包屑	pr06-repo 末级面包屑高对比加粗可读、卡片 1dp 描边分明
+15-editor-read-dark.png	63079	dark	深色模式全屏代码/文本阅读器	hello.txt 深色全屏阅读视图、等宽正文与底栏元信息栏清晰对比

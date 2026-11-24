@@ -164,11 +164,8 @@ public sealed class ChatsFragment : Fragment, ITabRoot
         view.FindViewById<MaterialButton>(Resource.Id.chats_web_inventory_details)!.Click += (_, _) => ShowWebInventoryDetails();
 
         _searchLayout = view.FindViewById(Resource.Id.chats_search_layout)!;
-        if (_searchLayout is TextInputLayout til)
-        {
-            til.Hint = GetString(Resource.String.chats_search_hint);
-        }
         var search = _searchLayout.FindViewById<TextInputEditText>(Resource.Id.search_input)!;
+        search.Hint = GetString(Resource.String.chats_search_hint);
         search.TextChanged += (_, e) => _vm.SetSearchQuery(e.Text?.ToString());
 
         _filterBar = view.FindViewById(Resource.Id.chats_filter_bar)!;
