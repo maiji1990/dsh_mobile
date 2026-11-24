@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<menu xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto">
+    <item
+        android:id="@+id/chats_menu_refresh"
+        android:icon="@drawable/ic_refresh"
+        android:title="@string/chat_menu_refresh"
+        app:showAsAction="ifRoom" />
+    <item
+        android:id="@+id/chats_menu_host_control"
+        android:title="@string/chats_menu_host_control"
+        app:showAsAction="never" />
+    <item
+        android:id="@+id/chats_menu_remote_host"
+        android:title="@string/more_remote"
+        app:showAsAction="never" />
+    <item
+        android:id="@+id/chats_menu_credentials"
+        android:title="@string/more_credentials"
+        app:showAsAction="never" />
+    <item
+        android:id="@+id/chats_menu_stop_dsh"
+        android:title="@string/chats_menu_stop_dsh"
+        app:showAsAction="never" />
+</menu>

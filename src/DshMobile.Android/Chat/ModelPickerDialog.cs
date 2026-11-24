@@ -4,15 +4,16 @@ using Android.Widget;
 using AndroidX.RecyclerView.Widget;
 using DshMobile.Agent.Domain;
 using DshMobile.App.Ui;
+using Google.Android.Material.BottomSheet;
+using Google.Android.Material.Button;
 using Google.Android.Material.Card;
 using Google.Android.Material.Chip;
-using Google.Android.Material.Dialog;
 
 namespace DshMobile.App.Chat;
 
 /// <summary>
-/// PR-05 模型与 Reasoning Effort 切换弹窗（N-05-02）：
-/// 全 XML 布局（<c>dialog_model_picker.xml</c> / <c>item_model_picker_row.xml</c>），按能力门控且支持凭据缺失跳转。
+/// PR-05 / UI Slice 2 模型与推理档位底部选择器（<c>BottomSheetDialog</c> + 全 XML <c>sheet_model_picker.xml</c> / <c>item_model_picker_row.xml</c> / <c>item_model_effort_chip.xml</c>）：
+/// 全宽弹窗支持拖拽手势、Provider 分组标识、右上角直达凭据配置，并保留 Filter Chip 单选高亮。
 /// </summary>
 internal static class ModelPickerDialog
 {
@@ -23,9 +24,12 @@ internal static class ModelPickerDialog
         Action<ModelSelectionSpec> onSelected,
         Action onOpenCredentials)
     {
-        var content = LayoutInflater.From(ctx)!.Inflate(Resource.Layout.dialog_model_picker, null)!;
+        var content = LayoutInflater.From(ctx)!.Inflate(Resource.Layout.sheet_model_picker, null)!;
+        Edges.Pad(content, top: false, bottom: true);
+
         var emptyText = content.FindViewById<TextView>(Resource.Id.model_picker_empty)!;
         var list = content.FindViewById<RecyclerView>(Resource.Id.model_picker_list)!;
+        var credsBtn = content.FindViewById<MaterialButton>(Resource.Id.model_picker_creds_btn)!;
 
         var rows = new List<(ModelProviderGroupView Group, ModelInfoView Model)>();
         if (groups is not null)
@@ -39,7 +43,17 @@ internal static class ModelPickerDialog
             }
         }
 
-        AndroidX.AppCompat.App.AlertDialog? dialog = null;
+        var sheet = new BottomSheetDialog(ctx);
+        sheet.SetContentView(content);
+        sheet.Behavior.SkipCollapsed = true;
+        sheet.Behavior.State = BottomSheetBehavior.StateExpanded;
+
+        credsBtn.Click += (_, _) =>
+        {
+            sheet.Dismiss();
+            onOpenCredentials();
+        };
+
         if (rows.Count == 0)
         {
             emptyText.Visibility = ViewStates.Visible;
@@ -52,23 +66,12 @@ internal static class ModelPickerDialog
             list.SetLayoutManager(new LinearLayoutManager(ctx));
             list.SetAdapter(new Adapter(rows, current, spec =>
             {
-                dialog?.Dismiss();
+                sheet.Dismiss();
                 onSelected(spec);
             }));
         }
 
-        var builder = new MaterialAlertDialogBuilder(ctx)
-            .SetTitle(Resource.String.chat_model_picker_title)!
-            .SetView(content)!
-            .SetNegativeButton(Android.Resource.String.Cancel, (_, _) => { })!;
-
-        if (rows.Count == 0)
-        {
-            builder.SetPositiveButton(Resource.String.chat_model_picker_open_creds, (_, _) => onOpenCredentials());
-        }
-
-        dialog = builder.Create();
-        dialog.Show();
+        sheet.Show();
     }
 
     private sealed class Adapter(
@@ -101,6 +104,7 @@ internal static class ModelPickerDialog
             private readonly TextView _desc = itemView.FindViewById<TextView>(Resource.Id.model_row_desc)!;
             private readonly View _check = itemView.FindViewById(Resource.Id.model_row_check)!;
             private readonly ChipGroup _efforts = itemView.FindViewById<ChipGroup>(Resource.Id.model_row_efforts)!;
+            private ModelSelectionSpec? _boundSpec;
 
             public void Bind(
                 ModelProviderGroupView group,
@@ -149,7 +153,6 @@ internal static class ModelPickerDialog
                 }
             }
 
-            private ModelSelectionSpec? _boundSpec;
             private void OnItemClick(object? sender, EventArgs e)
             {
                 if (_boundSpec is { } spec)

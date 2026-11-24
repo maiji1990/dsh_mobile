@@ -7,6 +7,7 @@ using DshMobile.Agent.Presentation;
 using DshMobile.App.Bridge;
 using DshMobile.App.Chat;
 using DshMobile.App.LocalNetwork;
+using DshMobile.App.Remote;
 using DshMobile.App.RuntimeUi;
 using DshMobile.App.Ui;
 using DshMobile.Application.LocalNetwork;
@@ -16,6 +17,7 @@ using DshMobile.Runtime.Migration;
 using DshMobile.Runtime.Updates;
 using Google.Android.Material.AppBar;
 using Google.Android.Material.Button;
+using Google.Android.Material.Chip;
 using Google.Android.Material.Dialog;
 using Google.Android.Material.FloatingActionButton;
 using Google.Android.Material.ProgressIndicator;
@@ -26,16 +28,25 @@ using Fragment = AndroidX.Fragment.App.Fragment;
 namespace DshMobile.App.Chats;
 
 /// <summary>
-/// PR-05 / PR-09 默认主入口原生会话列表页签（N-05-03 + N-05-05 + N-09-01）：
-/// 承载新建、搜索、重命名、Fork、状态/待审批角标、按能力停止、旧 Web Profile 只读盘点提示，
-/// 并在未安装/停止/启动/失败/有新版本时就地承接运行环境安装、启动、停止与更新引导。
+/// PR-05 / PR-09 / UI Slice 2 默认主入口原生会话列表页签：
+/// 承载顶栏宿主状态药丸与远程快捷入口、胶囊搜索框与轻量筛选芯片、紧凑会话卡片与底部操作抽屉、
+/// 离线缓存会话回看、以及未安装/停止/启动/失败/更新的就地快速控制。
 /// </summary>
 public sealed class ChatsFragment : Fragment, ITabRoot
 {
+    private enum SessionFilterMode
+    {
+        All,
+        Running,
+        Pending,
+    }
+
     private BridgeHost _bridge = null!;
     private SessionsViewModel _vm = null!;
     private ChatsAdapter _adapter = null!;
     private LinearProgressIndicator _progress = null!;
+    private TextView _hostPill = null!;
+    private TextView _remotePill = null!;
     private View _hostBanner = null!;
     private TextView _hostTitle = null!;
     private TextView _hostText = null!;
@@ -52,10 +63,16 @@ public sealed class ChatsFragment : Fragment, ITabRoot
     private View _webInvCard = null!;
     private TextView _webInvSummary = null!;
     private View _searchLayout = null!;
+    private View _filterBar = null!;
+    private Chip _filterAll = null!;
+    private Chip _filterRunning = null!;
+    private Chip _filterPending = null!;
+    private View _cachedSubheader = null!;
     private RecyclerView _list = null!;
     private View _empty = null!;
     private TextView _emptyText = null!;
-    private FloatingActionButton _newFab = null!;
+    private ExtendedFloatingActionButton _newFab = null!;
+    private SessionFilterMode _filterMode = SessionFilterMode.All;
     private HomeStatus? _shownStatus;
     private UpdatePlan? _bannerPlan;
     private bool _secondaryCancelsDownload;
@@ -70,28 +87,37 @@ public sealed class ChatsFragment : Fragment, ITabRoot
         _vm = _bridge.Agent.Sessions;
 
         var toolbar = view.FindViewById<MaterialToolbar>(Resource.Id.chats_toolbar)!;
-        toolbar.InflateMenu(Resource.Menu.chat_toolbar);
-        toolbar.Menu!.FindItem(Resource.Id.chat_menu_switch_model)?.SetVisible(false);
-        toolbar.Menu.FindItem(Resource.Id.chat_menu_cancel)?.SetVisible(false);
-        toolbar.Menu.FindItem(Resource.Id.chat_menu_new_session)?.SetVisible(false);
-        _stopMenuItem = toolbar.Menu.FindItem(Resource.Id.chat_menu_stop_dsh);
+        _stopMenuItem = toolbar.Menu?.FindItem(Resource.Id.chats_menu_stop_dsh);
         _stopMenuItem?.SetVisible(false);
         toolbar.MenuItemClick += (_, e) =>
         {
             var id = e.Item?.ItemId ?? 0;
-            if (id == Resource.Id.chat_menu_refresh)
+            if (id == Resource.Id.chats_menu_refresh)
             {
                 _ = RefreshIfReadyAsync();
             }
-            else if (id == Resource.Id.chat_menu_credentials)
+            else if (id == Resource.Id.chats_menu_host_control)
+            {
+                OpenHostQuickControl();
+            }
+            else if (id == Resource.Id.chats_menu_remote_host)
+            {
+                StartActivity(new Intent(RequireContext(), typeof(RemoteActivity)));
+            }
+            else if (id == Resource.Id.chats_menu_credentials)
             {
                 StartActivity(new Intent(RequireContext(), typeof(Credentials.CredentialsActivity)));
             }
-            else if (id == Resource.Id.chat_menu_stop_dsh)
+            else if (id == Resource.Id.chats_menu_stop_dsh)
             {
                 _ = _bridge.RunStopAsync();
             }
         };
+
+        _hostPill = view.FindViewById<TextView>(Resource.Id.chats_host_pill)!;
+        _hostPill.Click += (_, _) => OpenHostQuickControl();
+        _remotePill = view.FindViewById<TextView>(Resource.Id.chats_remote_pill)!;
+        _remotePill.Click += (_, _) => OpenRemoteChatOrSettings();
 
         _progress = view.FindViewById<LinearProgressIndicator>(Resource.Id.chats_progress)!;
         _hostBanner = view.FindViewById(Resource.Id.chats_host_banner)!;
@@ -138,15 +164,36 @@ public sealed class ChatsFragment : Fragment, ITabRoot
         view.FindViewById<MaterialButton>(Resource.Id.chats_web_inventory_details)!.Click += (_, _) => ShowWebInventoryDetails();
 
         _searchLayout = view.FindViewById(Resource.Id.chats_search_layout)!;
-        var search = view.FindViewById<TextInputEditText>(Resource.Id.chats_search_input)!;
+        if (_searchLayout is TextInputLayout til)
+        {
+            til.Hint = GetString(Resource.String.chats_search_hint);
+        }
+        var search = _searchLayout.FindViewById<TextInputEditText>(Resource.Id.search_input)!;
         search.TextChanged += (_, e) => _vm.SetSearchQuery(e.Text?.ToString());
+
+        _filterBar = view.FindViewById(Resource.Id.chats_filter_bar)!;
+        var filterChips = view.FindViewById<ChipGroup>(Resource.Id.chats_filter_chips)!;
+        _filterAll = view.FindViewById<Chip>(Resource.Id.chats_filter_all)!;
+        _filterRunning = view.FindViewById<Chip>(Resource.Id.chats_filter_running)!;
+        _filterPending = view.FindViewById<Chip>(Resource.Id.chats_filter_pending)!;
+        filterChips.CheckedStateChange += (_, e) =>
+        {
+            var checkedId = filterChips.CheckedChipId;
+            _filterMode = checkedId == Resource.Id.chats_filter_running
+                ? SessionFilterMode.Running
+                : checkedId == Resource.Id.chats_filter_pending
+                    ? SessionFilterMode.Pending
+                    : SessionFilterMode.All;
+            Render(_vm.State);
+        };
+
+        _cachedSubheader = view.FindViewById(Resource.Id.chats_cached_subheader)!;
 
         _list = view.FindViewById<RecyclerView>(Resource.Id.chats_list)!;
         _list.SetLayoutManager(new LinearLayoutManager(RequireContext()));
         _adapter = new ChatsAdapter(
             item => OpenChatSession(item.SessionId),
-            ShowRenameDialog,
-            item => _ = ForkAndOpenAsync(item.SessionId),
+            ShowSessionActionsSheet,
             item => _ = CancelSessionAsync(item.SessionId));
         _list.SetAdapter(_adapter);
 
@@ -155,8 +202,9 @@ public sealed class ChatsFragment : Fragment, ITabRoot
         _emptyText = _empty.FindViewById<TextView>(Resource.Id.empty_text)!;
         _emptyText.SetText(Resource.String.chats_empty);
 
-        _newFab = view.FindViewById<FloatingActionButton>(Resource.Id.chats_new_fab)!;
+        _newFab = view.FindViewById<ExtendedFloatingActionButton>(Resource.Id.chats_new_fab)!;
         _newFab.Click += (_, _) => _ = CreateAndOpenSessionAsync();
+        _list.AddOnScrollListener(new FabScrollListener(_newFab));
 
         return view;
     }
@@ -226,6 +274,9 @@ public sealed class ChatsFragment : Fragment, ITabRoot
         var status = _bridge.Status;
         _shownStatus = status;
 
+        HostQuickControlBottomSheet.ApplyHostPillAppearance(ctx, _hostPill, status.Phase, appendCaret: true);
+        _remotePill.Visibility = _bridge.Agent.IsRemoteEndpointReady ? ViewStates.Visible : ViewStates.Gone;
+
         _progress.Visibility = state.IsLoading ? ViewStates.Visible : ViewStates.Gone;
         _stopMenuItem?.SetVisible(hostReady && !_bridge.IsBusy);
         _newFab.Enabled = hostReady;
@@ -240,12 +291,59 @@ public sealed class ChatsFragment : Fragment, ITabRoot
 
         RenderHostLifecycleCard(ctx, status, hostReady);
 
-        var hasSessions = state.Sessions.Count > 0;
-        var hasQuery = !string.IsNullOrWhiteSpace(state.SearchQuery);
-        _searchLayout.Visibility = hostReady || hasSessions || hasQuery ? ViewStates.Visible : ViewStates.Gone;
+        var cachedItems = state.EffectiveCachedSessions;
+        var liveSessions = state.Sessions;
+        var runningCount = liveSessions.Count(s => s.Running);
+        var pendingTotal = liveSessions.Count(s => s.PendingRequestCount > 0);
+        var showFilters = hostReady && (runningCount > 0 || pendingTotal > 0);
+        _filterBar.Visibility = showFilters ? ViewStates.Visible : ViewStates.Gone;
+        if (showFilters)
+        {
+            _filterRunning.Visibility = runningCount > 0 ? ViewStates.Visible : ViewStates.Gone;
+            _filterPending.Visibility = pendingTotal > 0 ? ViewStates.Visible : ViewStates.Gone;
+            if (pendingTotal > 0)
+            {
+                _filterPending.Text = Rows.Fmt(ctx, Resource.String.chats_filter_pending_fmt, pendingTotal);
+            }
+            if ((_filterMode == SessionFilterMode.Running && runningCount == 0)
+                || (_filterMode == SessionFilterMode.Pending && pendingTotal == 0))
+            {
+                _filterMode = SessionFilterMode.All;
+                _filterAll.Checked = true;
+            }
+        }
+        else if (_filterMode != SessionFilterMode.All)
+        {
+            _filterMode = SessionFilterMode.All;
+            _filterAll.Checked = true;
+        }
 
-        _adapter.Submit(state.Sessions, state.ActiveSessionId, state.CanCancelSession);
-        if (!hasSessions && (hostReady || hasQuery))
+        IReadOnlyList<SessionListItemView> displayed;
+        var isCachedMode = !hostReady && cachedItems.Count > 0;
+        if (isCachedMode)
+        {
+            displayed = cachedItems;
+        }
+        else if (hostReady && _filterMode == SessionFilterMode.Running)
+        {
+            displayed = liveSessions.Where(s => s.Running).ToArray();
+        }
+        else if (hostReady && _filterMode == SessionFilterMode.Pending)
+        {
+            displayed = liveSessions.Where(s => s.PendingRequestCount > 0).ToArray();
+        }
+        else
+        {
+            displayed = liveSessions;
+        }
+
+        var hasDisplayed = displayed.Count > 0;
+        var hasQuery = !string.IsNullOrWhiteSpace(state.SearchQuery);
+        _searchLayout.Visibility = hostReady || hasDisplayed || hasQuery ? ViewStates.Visible : ViewStates.Gone;
+        _cachedSubheader.Visibility = isCachedMode ? ViewStates.Visible : ViewStates.Gone;
+
+        _adapter.Submit(displayed, state.ActiveSessionId, state.CanCancelSession, isCachedOffline: isCachedMode);
+        if (!hasDisplayed && (hostReady || hasQuery))
         {
             _emptyText.SetText(hasQuery ? Resource.String.chats_empty_search : Resource.String.chats_empty);
             _empty.Visibility = ViewStates.Visible;
@@ -520,12 +618,67 @@ public sealed class ChatsFragment : Fragment, ITabRoot
             {
             }
         }
+        else
+        {
+            try
+            {
+                await _vm.LoadCachedSessionsAsync().ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+            }
+        }
         if (Interlocked.Exchange(ref _inventoryChecked, 1) == 0 || _bridge.Runtime.Host?.State == DshHostState.Ready)
         {
             var report = await Task.Run(() => _bridge.Agent.InspectWebProfileReadOnly()).ConfigureAwait(false);
             Volatile.Write(ref _lastWebInventory, report);
             ScheduleRender();
         }
+    }
+
+    private void OpenHostQuickControl()
+    {
+        var ctx = RequireContext();
+        var status = _bridge.Status;
+        var (titleText, detailText) = DescribeHostStatus(ctx, status);
+        HostQuickControlBottomSheet.Show(
+            ctx,
+            _bridge,
+            status,
+            titleText,
+            detailText,
+            HandleHostAction,
+            OpenRemoteChatOrSettings,
+            () => StartActivity(new Intent(ctx, typeof(RuntimeActivity))),
+            () => StartActivity(new Intent(ctx, typeof(Credentials.CredentialsActivity))));
+    }
+
+    private void OpenRemoteChatOrSettings()
+    {
+        var ctx = RequireContext();
+        if (_bridge.Agent.IsRemoteEndpointReady)
+        {
+            var intent = new Intent(ctx, typeof(ChatActivity));
+            intent.PutExtra(ChatActivity.ExtraIsRemote, true);
+            StartActivity(intent);
+            return;
+        }
+        StartActivity(new Intent(ctx, typeof(RemoteActivity)));
+    }
+
+    private void ShowSessionActionsSheet(SessionListItemView item)
+    {
+        var ctx = RequireContext();
+        var hostReady = _bridge.Runtime.Host?.State == DshHostState.Ready;
+        SessionActionsBottomSheet.Show(
+            ctx,
+            item,
+            hostReady,
+            _vm.State.CanCancelSession,
+            () => OpenChatSession(item.SessionId),
+            () => ShowRenameDialog(item),
+            () => _ = ForkAndOpenAsync(item.SessionId),
+            () => _ = CancelSessionAsync(item.SessionId));
     }
 
     private void OpenChatSession(string sessionId)
@@ -558,9 +711,14 @@ public sealed class ChatsFragment : Fragment, ITabRoot
     private void ShowRenameDialog(SessionListItemView item)
     {
         var ctx = RequireContext();
-        var content = LayoutInflater.From(ctx)!.Inflate(Resource.Layout.dialog_session_rename, null)!;
-        var input = content.FindViewById<TextInputEditText>(Resource.Id.session_rename_input)!;
-        input.Text = item.DisplayTitle;
+        var content = LayoutInflater.From(ctx)!.Inflate(Resource.Layout.dialog_text_input, null)!;
+        var layout = content.FindViewById<TextInputLayout>(Resource.Id.dialog_text_input_layout)!;
+        layout.Hint = GetString(Resource.String.chats_rename_hint);
+        var input = content.FindViewById<TextInputEditText>(Resource.Id.dialog_text_input)!;
+        input.Text = ChatDisplayFormatter.FormatShortSessionTitle(
+            item.SessionId,
+            item.DisplayTitle,
+            ctx.GetString(Resource.String.chats_untitled_prefix));
         input.SetSelection(input.Text?.Length ?? 0);
 
         new MaterialAlertDialogBuilder(ctx)
@@ -640,5 +798,25 @@ public sealed class ChatsFragment : Fragment, ITabRoot
             .SetMessage(string.Join('\n', lines))!
             .SetPositiveButton(Android.Resource.String.Ok, (_, _) => { })!
             .Show();
+    }
+
+    private sealed class FabScrollListener(ExtendedFloatingActionButton fab) : RecyclerView.OnScrollListener
+    {
+        public override void OnScrolled(RecyclerView recyclerView, int dx, int dy)
+        {
+            base.OnScrolled(recyclerView, dx, dy);
+            if (dy > 6 && fab.Extended)
+            {
+                fab.Shrink();
+            }
+            else if (dy < -6 && !fab.Extended)
+            {
+                fab.Extend();
+            }
+            else if (!recyclerView.CanScrollVertically(-1) && !fab.Extended)
+            {
+                fab.Extend();
+            }
+        }
     }
 }

@@ -69,7 +69,7 @@ public sealed class AgentConnectionScope : IDisposable
         _keptStore = new KeptTranscriptStore(Path.Combine(layout.HostStateDir, "agent-cache"));
         Chat = new ChatViewModel(_gateway, _transcripts, _requests, _sends, _reconciler, _keptStore);
         Credentials = new CredentialsViewModel(_gateway, Path.Combine(layout.HostStateDir, "custom-credential-refs.txt"));
-        Sessions = new SessionsViewModel(_gateway, _requests);
+        Sessions = new SessionsViewModel(_gateway, _requests, _keptStore);
         var pluginOps = new RuntimePluginOperations(
             runtime,
             restartHostAsync ?? (ct => runtime.RestartWebHostAsync(ct)));

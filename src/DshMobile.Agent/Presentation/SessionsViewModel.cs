@@ -26,12 +26,17 @@ public sealed record SessionsUiState(
     string? ActiveSessionId,
     string? FailureCode,
     bool CanListSessions,
-    bool CanCancelSession);
+    bool CanCancelSession,
+    IReadOnlyList<SessionListItemView>? CachedSessions = null)
+{
+    public IReadOnlyList<SessionListItemView> EffectiveCachedSessions => CachedSessions ?? [];
+}
 
 /// <summary>会话列表向业务层派发的动作契约（N-05-03）。</summary>
 public interface ISessionsActions
 {
     Task RefreshAsync(CancellationToken ct = default);
+    Task LoadCachedSessionsAsync(CancellationToken ct = default);
     void SetSearchQuery(string? query);
     Task<Outcome<string>> CreateSessionAsync(CancellationToken ct = default);
     Task<Outcome<string>> RenameSessionAsync(string sessionId, string newTitle, CancellationToken ct = default);
@@ -41,24 +46,28 @@ public interface ISessionsActions
 
 /// <summary>
 /// 纯托管会话列表与生命周期 ViewModel（N-05-03）：
-/// 聚合 <see cref="ISessionGateway"/>、<see cref="RequestsEngine"/> 与 <see cref="IEventGateway"/> 实时状态。
+/// 聚合 <see cref="ISessionGateway"/>、<see cref="RequestsEngine"/> 与 <see cref="IEventGateway"/> 实时状态，
+/// 并在未连接时提供 <see cref="KeptTranscriptStore"/> 离线只读快照摘要。
 /// </summary>
 public sealed class SessionsViewModel : ISessionsActions, IAsyncDisposable
 {
     private readonly IDshGateway _gateway;
     private readonly RequestsEngine _requests;
+    private readonly KeptTranscriptStore? _keptStore;
     private readonly Lock _stateLock = new();
     private readonly SemaphoreSlim _opGate = new(1, 1);
 
     private IReadOnlyList<SessionSummaryView> _rawSessions = [];
+    private IReadOnlyList<LoadedRecentSession> _cachedSessions = [];
     private IReadOnlyList<PendingInteractionCard> _pendingCards = [];
     private SessionsUiState _state;
     private int _disposed;
 
-    public SessionsViewModel(IDshGateway gateway, RequestsEngine requests)
+    public SessionsViewModel(IDshGateway gateway, RequestsEngine requests, KeptTranscriptStore? keptStore = null)
     {
         _gateway = gateway ?? throw new ArgumentNullException(nameof(gateway));
         _requests = requests ?? throw new ArgumentNullException(nameof(requests));
+        _keptStore = keptStore;
         _pendingCards = _requests.Snapshot();
         _state = new SessionsUiState(
             IsLoading: false,
@@ -68,7 +77,8 @@ public sealed class SessionsViewModel : ISessionsActions, IAsyncDisposable
             ActiveSessionId: null,
             FailureCode: null,
             CanListSessions: gateway.Capabilities.ListSessions,
-            CanCancelSession: gateway.Capabilities.CancelSession);
+            CanCancelSession: gateway.Capabilities.CancelSession,
+            CachedSessions: []);
 
         _requests.RequestsChanged += OnRequestsChanged;
         _gateway.ForwardedEvent += OnForwardedEvent;
@@ -95,6 +105,26 @@ public sealed class SessionsViewModel : ISessionsActions, IAsyncDisposable
     public void NotifyHostStopping()
     {
         PublishState(s => s with { IsConnected = false, IsLoading = false });
+    }
+
+    public async Task LoadCachedSessionsAsync(CancellationToken ct = default)
+    {
+        ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
+        if (_keptStore is null)
+        {
+            return;
+        }
+        var recent = await _keptStore.ListRecentAsync(maxCount: 20, ct).ConfigureAwait(false);
+        lock (_stateLock)
+        {
+            _cachedSessions = recent;
+        }
+        RebuildFilteredState(
+            isLoading: State.IsLoading,
+            isConnected: State.IsConnected,
+            canList: State.CanListSessions,
+            canCancel: State.CanCancelSession,
+            failureCode: State.FailureCode);
     }
 
     public async Task RefreshAsync(CancellationToken ct = default)
@@ -353,6 +383,24 @@ public sealed class SessionsViewModel : ISessionsActions, IAsyncDisposable
                     (item.Cwd?.Contains(query, StringComparison.OrdinalIgnoreCase) ?? false))
                 .ToArray();
 
+            var filteredCached = _cachedSessions
+                .Select(c => new SessionListItemView(
+                    SessionId: c.Scope.SessionId,
+                    DisplayTitle: !string.IsNullOrWhiteSpace(c.SessionTitle) ? c.SessionTitle! : c.Scope.SessionId,
+                    UpdatedAtUnixMs: c.Record.SavedAtUnixMs,
+                    Running: false,
+                    Blank: c.Record.Rows.Count == 0,
+                    AgentAvailable: false,
+                    PendingRequestCount: 0,
+                    ParentSessionId: null,
+                    Cwd: null,
+                    AgentPreset: null,
+                    FormatStatus: null))
+                .Where(item => query.Length == 0 ||
+                    item.DisplayTitle.Contains(query, StringComparison.OrdinalIgnoreCase) ||
+                    item.SessionId.Contains(query, StringComparison.OrdinalIgnoreCase))
+                .ToArray();
+
             next = _state with
             {
                 IsLoading = isLoading,
@@ -361,6 +409,7 @@ public sealed class SessionsViewModel : ISessionsActions, IAsyncDisposable
                 FailureCode = failureCode,
                 CanListSessions = canList,
                 CanCancelSession = canCancel,
+                CachedSessions = filteredCached,
             };
             if (next == _state)
             {
