@@ -1,0 +1,34 @@
+01-chats-stopped	会话页 · 未启动（宿主卡片 + 空列表）
+02-chats-ready	会话页 · 就绪（历史会话列表）
+03-chat-empty	原生会话 · 新会话空态
+04-chat-conversation	原生会话 · 一问一答
+04b-chat-tool-cards	原生会话 · 工具卡（bash 执行中/失败状态）
+05-chat-slash-menu	原生会话 · 斜杠命令栏展开
+06-workspace-files	工作区 · 文件视图
+07-workspace-git	工作区 · Git 视图（非 Git 仓库空态）
+08-more-top	更多 · 顶部（功能 / 运行环境）
+09-more-bottom	更多 · 底部（应用 / 开发者）
+10-credentials	模型与凭据配置
+11-plugins	插件目录（L0 清单 / 启停开关）
+12-automation	手机操控（Relay / ui_*）
+13-remote	远程主机（未连接 / 公钥 / 主机表单）
+14-runtime-status	运行环境 · 状态区
+15-runtime-actions	运行环境 · 维护动作
+16-runtime-updates	运行环境 · 在线更新
+17-runtime-governance	运行环境 · 系统治理与进程健康
+17b-runtime-governance-tail	运行环境 · 治理尾部（租约 / 退出死因）
+18-chat-session	原生会话 · 恢复历史（正文 + 工具卡）
+19-chat-toolbar-menu	原生会话 · 工具栏菜单
+20-chat-model-picker	原生会话 · 模型与推理档位弹窗
+21-more-app-section	更多 · 应用 / 开发者区段
+22-developer-options	开发者选项（内部工具与操作日志）
+24-plugin-install-dialog	插件目录 · 安装插件弹窗
+25-file-preview	工作区 · Markdown 文件预览
+26-update-channel-dialog	运行环境 · 更新通道弹窗
+28-dark-chats	深色主题 · 会话页
+29-dark-chat	深色主题 · 原生会话
+30-dark-workspace	深色主题 · 工作区
+31-dark-more	深色主题 · 更多
+32-dark-runtime	深色主题 · 运行环境
+33-landscape-chats	横屏 · 会话页（NavigationRail 宽屏）
+34-landscape-chat	横屏 · 原生会话
