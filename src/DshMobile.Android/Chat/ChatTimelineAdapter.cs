@@ -347,7 +347,7 @@ internal sealed class ChatTimelineAdapter : RecyclerView.Adapter
             _openFileBtn = itemView.FindViewById<MaterialButton>(Resource.Id.chat_tool_open_file_btn)!;
             _openDiffBtn = itemView.FindViewById<MaterialButton>(Resource.Id.chat_tool_open_diff_btn)!;
 
-            itemView.FindViewById(Resource.Id.chat_tool_header)!.Click += (_, _) =>
+            void ToggleExpand()
             {
                 if (_itemId is null)
                 {
@@ -358,7 +358,10 @@ internal sealed class ChatTimelineAdapter : RecyclerView.Adapter
                     _expanded.Remove(_itemId);
                 }
                 ApplyExpanded(_expanded.Contains(_itemId));
-            };
+            }
+
+            itemView.FindViewById(Resource.Id.chat_tool_header)!.Click += (_, _) => ToggleExpand();
+            _args.Click += (_, _) => ToggleExpand();
 
             _openFileBtn.Click += (_, _) =>
             {
@@ -416,6 +419,7 @@ internal sealed class ChatTimelineAdapter : RecyclerView.Adapter
         private void ApplyExpanded(bool isOpen)
         {
             _args.SetMaxLines(isOpen ? int.MaxValue : 4);
+            _args.Ellipsize = isOpen ? null : Android.Text.TextUtils.TruncateAt.End;
             _output.Visibility = isOpen && _hasOutput ? ViewStates.Visible : ViewStates.Gone;
         }
     }

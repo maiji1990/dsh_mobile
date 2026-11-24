@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <dimen name="dshm_page_padding_horizontal">16dp</dimen>
+    <dimen name="dshm_card_corner_radius">16dp</dimen>
+    <dimen name="dshm_search_corner_radius">24dp</dimen>
+    <dimen name="dshm_card_stroke_width">0dp</dimen>
+</resources>

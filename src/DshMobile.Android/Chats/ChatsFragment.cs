@@ -51,8 +51,10 @@ public sealed class ChatsFragment : Fragment, ITabRoot
     private IMenuItem? _stopMenuItem;
     private View _webInvCard = null!;
     private TextView _webInvSummary = null!;
+    private View _searchLayout = null!;
     private RecyclerView _list = null!;
     private View _empty = null!;
+    private TextView _emptyText = null!;
     private FloatingActionButton _newFab = null!;
     private HomeStatus? _shownStatus;
     private UpdatePlan? _bannerPlan;
@@ -135,6 +137,7 @@ public sealed class ChatsFragment : Fragment, ITabRoot
         };
         view.FindViewById<MaterialButton>(Resource.Id.chats_web_inventory_details)!.Click += (_, _) => ShowWebInventoryDetails();
 
+        _searchLayout = view.FindViewById(Resource.Id.chats_search_layout)!;
         var search = view.FindViewById<TextInputEditText>(Resource.Id.chats_search_input)!;
         search.TextChanged += (_, e) => _vm.SetSearchQuery(e.Text?.ToString());
 
@@ -149,7 +152,8 @@ public sealed class ChatsFragment : Fragment, ITabRoot
 
         _empty = view.FindViewById(Resource.Id.chats_empty)!;
         _empty.FindViewById<ImageView>(Resource.Id.empty_icon)!.SetImageResource(Resource.Drawable.ic_chat);
-        _empty.FindViewById<TextView>(Resource.Id.empty_text)!.SetText(Resource.String.chats_empty);
+        _emptyText = _empty.FindViewById<TextView>(Resource.Id.empty_text)!;
+        _emptyText.SetText(Resource.String.chats_empty);
 
         _newFab = view.FindViewById<FloatingActionButton>(Resource.Id.chats_new_fab)!;
         _newFab.Click += (_, _) => _ = CreateAndOpenSessionAsync();
@@ -225,11 +229,31 @@ public sealed class ChatsFragment : Fragment, ITabRoot
         _progress.Visibility = state.IsLoading ? ViewStates.Visible : ViewStates.Gone;
         _stopMenuItem?.SetVisible(hostReady && !_bridge.IsBusy);
         _newFab.Enabled = hostReady;
+        if (hostReady)
+        {
+            _newFab.Show();
+        }
+        else
+        {
+            _newFab.Hide();
+        }
 
         RenderHostLifecycleCard(ctx, status, hostReady);
 
+        var hasSessions = state.Sessions.Count > 0;
+        var hasQuery = !string.IsNullOrWhiteSpace(state.SearchQuery);
+        _searchLayout.Visibility = hostReady || hasSessions || hasQuery ? ViewStates.Visible : ViewStates.Gone;
+
         _adapter.Submit(state.Sessions, state.ActiveSessionId, state.CanCancelSession);
-        _empty.Visibility = state.Sessions.Count == 0 ? ViewStates.Visible : ViewStates.Gone;
+        if (!hasSessions && (hostReady || hasQuery))
+        {
+            _emptyText.SetText(hasQuery ? Resource.String.chats_empty_search : Resource.String.chats_empty);
+            _empty.Visibility = ViewStates.Visible;
+        }
+        else
+        {
+            _empty.Visibility = ViewStates.Gone;
+        }
 
         RenderWebInventoryCard();
     }

@@ -70,13 +70,13 @@
 
             <TextView
                 android:id="@+id/chat_tool_args"
-                style="@style/Widget.DshMobile.Mono"
+                style="@style/Widget.DshMobile.Mono.Static"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="10dp"
-                android:maxLines="4"
                 android:ellipsize="end"
-                android:textColor="?attr/colorOnSurfaceVariant" />
+                android:lineSpacingExtra="2dp"
+                android:maxLines="4" />
 
             <TextView
                 android:id="@+id/chat_tool_output"

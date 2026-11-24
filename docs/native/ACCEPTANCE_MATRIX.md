@@ -27,6 +27,8 @@
 - 残留 14 处 `WebView` 字样均为 `Mono.Android` 的 `Android.Webkit.WebView` 平台绑定与接口实现类（`mono/android/webkit/WebView_*Implementor`），非业务代码。
 - **F27**：增量构建（未清理 `obj/Release`）会残留已删除类型的 Java 调用包装字符串（`DshWebActivity` 6 处、`CSharpWebUiController` 9 处）；清理后净构建归零。发布验收必须以净构建产物为准。
 
+> UI 布局重构切片（公共 XML 底座 + P0 缺陷清零等）另有独立验收记录：[ACCEPTANCE_UI_SLICE1.md](ACCEPTANCE_UI_SLICE1.md)。
+
 ## 仍未覆盖（不勾通过）
 
 - T01 的全新零凭据安装首次引导；T05 的并发/子代理隔离；T04 的拒绝零执行与 Hold-to-undo；T07 的固定 6,000 词负载；T08 的 FLAG_SECURE 与真实第三方插件装卸；T09 的真实 LAN / 公网；T11 的 exit 137 / MemoryLimiter 归因；T12 的在线更新探测提交与回滚。

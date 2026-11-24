@@ -1,0 +1,23 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">
+<title>DSH Mobile 界面截图（UI Slice 1 / Android 17）</title>
+<style>body{font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;margin:24px;background:#faf9fd;color:#1b1b1f}h1{font-size:20px}.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:18px}.card{background:#fff;border-radius:14px;padding:10px;box-shadow:0 1px 3px rgba(0,0,0,.12)}.card img{width:100%;border-radius:10px;display:block}.name{font-weight:600;margin:8px 0 2px;font-size:13px}.desc{font-size:12px;color:#5c5f66}</style></head><body>
+<h1>DSH Mobile 界面截图 · UI Slice 1 / Android 17（2026-11-24）</h1>
+<p class="desc">共 17 张（横屏两张为 2340×1080），取自净构建 Release APK <code>1D127DB6…4FD5DE</code>；manifest.tsv 为清单。</p><div class="grid">
+<div class="card"><a href="01-chats-stopped.png"><img src="01-chats-stopped.png" loading="lazy"></a><div class="name">01-chats-stopped</div><div class="desc">会话页 · DSH 未启动（仅宿主卡；无搜索框/FAB/矛盾空态，启动按钮图标贴文字）</div></div>
+<div class="card"><a href="02-chats-ready.png"><img src="02-chats-ready.png" loading="lazy"></a><div class="name">02-chats-ready</div><div class="desc">会话页 · 就绪（新胶囊搜索框 + 历史会话 + FAB 仅在就绪时显示）</div></div>
+<div class="card"><a href="03-chat-tool-cards.png"><img src="03-chat-tool-cards.png" loading="lazy"></a><div class="name">03-chat-tool-cards</div><div class="desc">原生会话 · 工具卡折叠态（4 行完整不裁切、行尾省略号）</div></div>
+<div class="card"><a href="04-chat-tool-expanded.png"><img src="04-chat-tool-expanded.png" loading="lazy"></a><div class="name">04-chat-tool-expanded</div><div class="desc">原生会话 · 点参数字体即展开（JSON + 输出，折叠/展开可逆）</div></div>
+<div class="card"><a href="05-model-picker.png"><img src="05-model-picker.png" loading="lazy"></a><div class="name">05-model-picker</div><div class="desc">模型与推理档位弹窗 · Filter Chip 高亮（Max 选中：勾选图标 + 容器填充 + 卡片主色描边，四档同行）</div></div>
+<div class="card"><a href="06-credentials-refresh-label.png"><img src="06-credentials-refresh-label.png" loading="lazy"></a><div class="name">06-credentials-refresh-label</div><div class="desc">模型与凭据配置 · 底部按钮文案（刷新凭据状态）</div></div>
+<div class="card"><a href="07-credentials-bottom.png"><img src="07-credentials-bottom.png" loading="lazy"></a><div class="name">07-credentials-bottom</div><div class="desc">模型与凭据配置 · 滚到底（固定操作栏 + 分隔线，自定义引用可见）</div></div>
+<div class="card"><a href="08-more-top.png"><img src="08-more-top.png" loading="lazy"></a><div class="name">08-more-top</div><div class="desc">更多 · 顶部（新 AppBarLayout，未滚动无抬升）</div></div>
+<div class="card"><a href="09-more-scrolled-appbar.png"><img src="09-more-scrolled-appbar.png" loading="lazy"></a><div class="name">09-more-scrolled-appbar</div><div class="desc">更多 · 滚动后（liftOnScroll 抬升色调，标题区不再透出正文残影）</div></div>
+<div class="card"><a href="09b-appbar-crop.png"><img src="09b-appbar-crop.png" loading="lazy"></a><div class="name">09b-appbar-crop</div><div class="desc">更多 · 滚动后顶栏局部 2x（证据：抬升色调不透明）</div></div>
+<div class="card"><a href="10-dark-more-appbar.png"><img src="10-dark-more-appbar.png" loading="lazy"></a><div class="name">10-dark-more-appbar</div><div class="desc">深色 · 更多滚动后顶栏</div></div>
+<div class="card"><a href="11-dark-chats.png"><img src="11-dark-chats.png" loading="lazy"></a><div class="name">11-dark-chats</div><div class="desc">深色 · 会话页（胶囊搜索框/卡片对比）</div></div>
+<div class="card"><a href="12-dark-model-picker.png"><img src="12-dark-model-picker.png" loading="lazy"></a><div class="name">12-dark-model-picker</div><div class="desc">深色 · 模型与档位弹窗（选中 Chip 勾选与填充对比）</div></div>
+<div class="card"><a href="13-runtime-shared-list-appbar.png"><img src="13-runtime-shared-list-appbar.png" loading="lazy"></a><div class="name">13-runtime-shared-list-appbar</div><div class="desc">运行环境（与更多共用 fragment_list 新 AppBarLayout，回归）</div></div>
+<div class="card"><a href="14-automation-shared-list-appbar.png"><img src="14-automation-shared-list-appbar.png" loading="lazy"></a><div class="name">14-automation-shared-list-appbar</div><div class="desc">手机操控（共用 fragment_list 新 AppBarLayout，回归）</div></div>
+<div class="card"><a href="15-landscape-chat-compact.png"><img src="15-landscape-chat-compact.png" loading="lazy"></a><div class="name">15-landscape-chat-compact</div><div class="desc">横屏 · 会话页（双方均可见：会话头分隔线 + 输入区上方分隔线）</div></div>
+<div class="card"><a href="16-landscape-ime-compact.png"><img src="16-landscape-ime-compact.png" loading="lazy"></a><div class="name">16-landscape-ime-compact</div><div class="desc">横屏 + 输入法（compact：会话头与其分隔线隐藏，输入区上方分隔线保留——重复 ID 修复的真机证据）</div></div>
+</div></body></html>

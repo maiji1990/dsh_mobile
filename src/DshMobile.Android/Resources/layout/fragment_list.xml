@@ -1,32 +1,46 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- A tab or screen that is a toolbar over a scrolling column of sections and rows (built in code). -->
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<!-- A tab or screen that is an elevated AppBarLayout over a scrolling column of sections and rows. -->
+<androidx.coordinatorlayout.widget.CoordinatorLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:id="@+id/screen_root"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="?attr/colorSurface"
-    android:orientation="vertical">
+    android:background="?attr/colorSurface">
 
-    <include layout="@layout/view_toolbar" />
-
-    <com.google.android.material.progressindicator.LinearProgressIndicator
-        android:id="@+id/list_progress"
+    <com.google.android.material.appbar.AppBarLayout
+        android:id="@+id/list_appbar"
+        style="@style/Widget.DshMobile.AppBar"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:indeterminate="true"
-        android:visibility="gone" />
+        app:liftOnScrollTargetViewId="@id/list_scroll">
+
+        <com.google.android.material.appbar.MaterialToolbar
+            android:id="@+id/toolbar"
+            style="@style/Widget.DshMobile.Toolbar.InAppBar"
+            android:layout_width="match_parent"
+            android:layout_height="?attr/actionBarSize" />
+
+        <com.google.android.material.progressindicator.LinearProgressIndicator
+            android:id="@+id/list_progress"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:indeterminate="true"
+            android:visibility="gone" />
+    </com.google.android.material.appbar.AppBarLayout>
 
     <androidx.core.widget.NestedScrollView
         android:id="@+id/list_scroll"
         android:layout_width="match_parent"
-        android:layout_height="0dp"
-        android:layout_weight="1">
+        android:layout_height="match_parent"
+        android:clipToPadding="false"
+        app:layout_behavior="@string/appbar_scrolling_view_behavior">
 
         <LinearLayout
             android:id="@+id/list_content"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="vertical"
+            android:paddingTop="4dp"
             android:paddingBottom="24dp" />
     </androidx.core.widget.NestedScrollView>
-</LinearLayout>
+</androidx.coordinatorlayout.widget.CoordinatorLayout>

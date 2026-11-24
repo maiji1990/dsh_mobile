@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- M3 filter chip for reasoning-effort selection: fixed compact paddings so the
+     checked state's leading icon does not reflow the four-chip row inside a narrow dialog. -->
+<com.google.android.material.chip.Chip xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    style="@style/Widget.Material3.Chip.Filter"
+    android:layout_width="wrap_content"
+    android:layout_height="wrap_content"
+    android:checkable="true"
+    app:checkedIconMargin="2dp"
+    app:checkedIconSize="16dp"
+    app:checkedIconVisible="true"
+    app:chipEndPadding="4dp"
+    app:chipStartPadding="4dp"
+    app:iconStartPadding="2dp"
+    app:textEndPadding="4dp"
+    app:textStartPadding="4dp" />
