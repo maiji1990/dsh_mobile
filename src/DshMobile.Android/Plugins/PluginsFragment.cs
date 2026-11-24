@@ -100,6 +100,11 @@ public sealed class PluginsFragment : Fragment
         _adapter = new PluginsAdapter(ConfirmTogglePlugin, ConfirmUninstallPlugin);
         list.SetAdapter(_adapter);
 
+        Edges.ClampMaxWidth(list, view.FindViewById(Resource.Id.plugins_filter_scroll));
+        Edges.ClampMaxWidthByMargin(
+            view.FindViewById(Resource.Id.plugins_search_layout),
+            _restartBanner);
+
         return view;
     }
 

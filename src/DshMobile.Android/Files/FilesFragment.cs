@@ -207,6 +207,14 @@ public sealed class FilesFragment : Fragment, ITabRoot
         _createFab.Click += (_, _) => ShowCreateSheet();
         _list.AddOnScrollListener(new FabScrollListener(_createFab));
 
+        Edges.ClampMaxWidth(
+            view.FindViewById(Resource.Id.files_mode_toggle),
+            view.FindViewById(Resource.Id.files_search_row),
+            view.FindViewById(Resource.Id.files_crumbs_scroll),
+            _list,
+            view.FindViewById(Resource.Id.git_changes_list),
+            view.FindViewById(Resource.Id.git_diff_list));
+
         EnsureProvider();
         ApplyModeVisibility();
         if (_pendingTargetPath is { } pendingPath)

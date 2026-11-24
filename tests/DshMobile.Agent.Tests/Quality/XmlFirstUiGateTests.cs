@@ -78,6 +78,31 @@ public sealed partial class XmlFirstUiGateTests
         Assert.Contains("android:filterTouchesWhenObscured=\"true\"", confirmXml, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void LandscapeNoExtractUiAndResponsiveMaxWidth_AreDeclaredAndConsumed()
+    {
+        var repoRoot = RepoLocator.FindRepoRoot();
+        var layoutRoot = Path.Combine(repoRoot, "src", "DshMobile.Android", "Resources", "layout");
+        var resRoot = Path.Combine(repoRoot, "src", "DshMobile.Android", "Resources");
+
+        var chatXml = File.ReadAllText(Path.Combine(layoutRoot, "fragment_chat.xml"));
+        var searchXml = File.ReadAllText(Path.Combine(layoutRoot, "view_search_pill.xml"));
+        var editorXml = File.ReadAllText(Path.Combine(layoutRoot, "activity_file_editor.xml"));
+
+        Assert.Contains("flagNoExtractUi", chatXml, StringComparison.Ordinal);
+        Assert.Contains("flagNoExtractUi", searchXml, StringComparison.Ordinal);
+        Assert.Contains("flagNoExtractUi", editorXml, StringComparison.Ordinal);
+
+        var narrowDimens = File.ReadAllText(Path.Combine(resRoot, "values", "dimens.xml"));
+        var wideDimens = File.ReadAllText(Path.Combine(resRoot, "values-w600dp", "dimens.xml"));
+        var edgesCs = File.ReadAllText(Path.Combine(repoRoot, "src", "DshMobile.Android", "Ui", "Edges.cs"));
+
+        Assert.Contains("dshm_content_max_width", narrowDimens, StringComparison.Ordinal);
+        Assert.Contains("dshm_content_max_width", wideDimens, StringComparison.Ordinal);
+        Assert.Contains("ClampMaxWidth", edgesCs, StringComparison.Ordinal);
+        Assert.Contains("dshm_content_max_width", edgesCs, StringComparison.Ordinal);
+    }
+
     private static string StripCSharpComments(string source)
     {
         var sb = new StringBuilder(source.Length);

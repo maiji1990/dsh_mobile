@@ -110,6 +110,8 @@ public sealed class WorkspaceEditorActivity : AppCompatActivity
             : Path.GetFileName(_relativePath);
         _toolbar.Subtitle = string.IsNullOrWhiteSpace(_relativePath) ? GuestRoot : $"{GuestRoot}/{_relativePath}";
 
+        Edges.ClampMaxWidth(FindViewById(Resource.Id.editor_scroll));
+
         _ = LoadFileAsync();
     }
 

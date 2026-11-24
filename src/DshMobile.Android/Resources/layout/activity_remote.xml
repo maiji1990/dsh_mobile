@@ -100,10 +100,11 @@
                             android:id="@+id/remote_connect"
                             style="@style/Widget.Material3.Button"
                             android:layout_width="wrap_content"
-                            android:layout_height="40dp"
+                            android:layout_height="wrap_content"
                             android:layout_marginStart="8dp"
                             android:insetTop="0dp"
                             android:insetBottom="0dp"
+                            android:minHeight="40dp"
                             android:text="@string/remote_connect"
                             app:icon="@drawable/ic_link" />
                     </LinearLayout>
