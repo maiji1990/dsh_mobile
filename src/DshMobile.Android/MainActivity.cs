@@ -8,7 +8,6 @@ using AndroidX.Fragment.App;
 using DshMobile.Agent.Presentation;
 using DshMobile.App.Chats;
 using DshMobile.App.Files;
-using DshMobile.App.Home;
 using DshMobile.App.Inbox;
 using DshMobile.App.LocalNetwork;
 using DshMobile.App.More;
@@ -21,8 +20,8 @@ using Google.Android.Material.NavigationRail;
 namespace DshMobile.App;
 
 /// <summary>
-/// App shell (ADR-0021 + N-06-02 / N-06-03):
-/// Home, Chats, Files, and More use a Material 3 bottom bar or a navigation rail at 600dp;
+/// App shell (ADR-0021 + N-06-02 / N-06-03 + PR-09 N-09-01):
+/// 会话、工作区与更多三栏采用 Material 3 底栏或 600dp 侧边 NavigationRailView，默认进入原生会话列表；
 /// 顶部展示跨会话待办收件箱横幅并在 <c>nav_chats</c> 实时显示待办角标，支持从聊天工具卡直达工作区预览/Diff。
 /// </summary>
 [Activity(
@@ -43,7 +42,6 @@ public sealed class MainActivity : AppCompatActivity
     private const string TabKey = "navigation.tab.tag";
     private static readonly (int Id, string Tag)[] Tabs =
     [
-        (Resource.Id.nav_home, "home"),
         (Resource.Id.nav_chats, "chats"),
         (Resource.Id.nav_files, "files"),
         (Resource.Id.nav_more, "more"),
@@ -58,7 +56,7 @@ public sealed class MainActivity : AppCompatActivity
     private View _inboxBanner = null!;
     private TextView _inboxBannerText = null!;
     private bool _wide;
-    private int _tab = Resource.Id.nav_home;
+    private int _tab = Resource.Id.nav_chats;
     private int _inboxRenderPosted;
 
     /// <summary>构造从原生聊天等页面直达工作区文件预览或 Git Diff 的 Intent（N-06-02）。</summary>
@@ -101,7 +99,7 @@ public sealed class MainActivity : AppCompatActivity
             return insets;
         }));
 
-        _tab = savedTab ?? Resource.Id.nav_home;
+        _tab = savedTab ?? Resource.Id.nav_chats;
         foreach (NavigationBarView nav in new NavigationBarView[] { _bar, _rail })
         {
             nav.ItemSelected += (_, e) =>
@@ -304,6 +302,11 @@ public sealed class MainActivity : AppCompatActivity
     {
         var fm = SupportFragmentManager;
         var tx = fm.BeginTransaction();
+        if (fm.FindFragmentByTag("home") is { } removedHome)
+        {
+            // 升级覆盖安装保留状态时若残留旧 "home" 栈标签，统一安全清理避免异常。
+            tx.Remove(removedHome);
+        }
         foreach (var (tabId, tag) in Tabs)
         {
             var f = fm.FindFragmentByTag(tag);
@@ -338,16 +341,15 @@ public sealed class MainActivity : AppCompatActivity
 
     private static AndroidX.Fragment.App.Fragment Create(int id) => id switch
     {
-        _ when id == Resource.Id.nav_chats => new ChatsFragment(),
         _ when id == Resource.Id.nav_files => new FilesFragment(),
         _ when id == Resource.Id.nav_more => new MoreFragment(),
-        _ => new HomeFragment(),
+        _ => new ChatsFragment(),
     };
 
     private AndroidX.Fragment.App.Fragment? Current() =>
         SupportFragmentManager.FindFragmentByTag(Tabs.First(t => t.Id == _tab).Tag);
 
-    /// <summary>Back: the tab's own back first (a folder up), then to Home, then out of the app.</summary>
+    /// <summary>Back: the tab's own back first (a folder up), then back to Chats, then out of the app.</summary>
     private sealed class BackCallback(MainActivity owner) : OnBackPressedCallback(true)
     {
         public override void HandleOnBackPressed()
@@ -356,9 +358,9 @@ public sealed class MainActivity : AppCompatActivity
             {
                 return;
             }
-            if (owner._tab != Resource.Id.nav_home)
+            if (owner._tab != Resource.Id.nav_chats)
             {
-                owner.Nav.SelectedItemId = Resource.Id.nav_home;
+                owner.Nav.SelectedItemId = Resource.Id.nav_chats;
                 return;
             }
             Enabled = false;

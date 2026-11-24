@@ -112,6 +112,14 @@ public sealed class RuntimeActivity : DshActivity
         }
 
         Rows.Header(_content, GetString(Resource.String.runtime_section_actions));
+        if (status.Primary == HomeAction.Start)
+        {
+            Action(Resource.Drawable.ic_play, Resource.String.op_start, 0, busy, () => _ = _bridge.RunStartAsync());
+        }
+        else if (status.Secondary == HomeAction.Stop)
+        {
+            Action(Resource.Drawable.ic_stop, Resource.String.op_stop, 0, busy, () => _ = _bridge.RunStopAsync());
+        }
         Action(Resource.Drawable.ic_upload, Resource.String.runtime_import, Resource.String.runtime_import_sub, busy,
             () => StartActivityForResult(RuntimeImportFlow.PickIntent(), RuntimeImportFlow.RequestCode));
         Action(Resource.Drawable.ic_download, Resource.String.runtime_import_dsh, Resource.String.runtime_import_dsh_sub, busy,
@@ -300,7 +308,7 @@ public sealed class RuntimeActivity : DshActivity
     {
         HomePhase.NotInstalled => Resource.String.home_label_not_installed,
         HomePhase.Stopped => Resource.String.home_label_stopped,
-        HomePhase.Starting or HomePhase.WaitingForWebUi => Resource.String.home_label_starting,
+        HomePhase.Starting or HomePhase.WaitingForDsh => Resource.String.home_label_starting,
         HomePhase.Ready => Resource.String.home_label_ready,
         HomePhase.Stopping => Resource.String.home_label_stopping,
         HomePhase.Busy => Resource.String.home_label_busy,

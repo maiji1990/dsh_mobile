@@ -78,8 +78,11 @@ jobs:
           ./runtime-bundle/fetch-runtime.ps1
           if ($LASTEXITCODE -ne 0) { throw "fetch-runtime.ps1 failed" }
 
-      - name: Build app
-        run: dotnet build src/DshMobile.Android -c Release
+      # Clean-build Release APK (clears obj/Release & bin/Release to prevent stale F27 incremental DEX wrappers)
+      # and run NoBusinessWebViewGateTests against the resulting *-Signed.apk via DSHM_VERIFY_APK_PATH.
+      - name: Clean-build app and verify APK has zero business WebView
+        shell: pwsh
+        run: ./tooling/build-clean-release-apk.ps1 -NoBuildTests
 
       # CI preview only: this is not an independently signed stable release.
       # Runtime/DSH are separately versioned and downloaded from their Releases.

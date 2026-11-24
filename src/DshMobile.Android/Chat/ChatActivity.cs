@@ -11,10 +11,9 @@ using Log = Android.Util.Log;
 namespace DshMobile.App.Chat;
 
 /// <summary>
-/// PR-04 / PR-05 / PR-06 纯原生聊天并行入口 Activity（N-04-03 / N-04-05 / N-05-04 / N-06-03）：
+/// PR-04 / PR-05 / PR-06 / PR-09 纯原生聊天 Activity（N-04-03 / N-04-05 / N-05-04 / N-06-03）：
 /// 承载 <see cref="ChatFragment"/>，配置变更（横竖屏/键盘）不销毁会话状态，深色模式（<c>UiMode</c>）交由系统重建以完整刷新 Material 3 主题（F2）；
-/// 支持从跨会话收件箱或后台系统通知跳转并定位到指定交互卡片（<see cref="ExtraFocusEventId"/>）。
-/// 原 <see cref="DshWebActivity"/> 完整保留作为回滚路径。
+/// 支持从跨会话收件箱、远程主机页或后台系统通知跳转并定位到指定交互卡片（<see cref="ExtraFocusEventId"/>）。
 /// </summary>
 [Activity(
     Label = "@string/chat_title",

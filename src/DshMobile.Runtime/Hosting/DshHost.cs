@@ -1,6 +1,5 @@
 using System.Diagnostics;
 using DshMobile.Core.Diagnostics;
-using DshMobile.Core.WebUi;
 using DshMobile.Native;
 using DshMobile.Runtime.Guest;
 using DshMobile.Runtime.Supervision;
@@ -47,7 +46,7 @@ public sealed record DshHostOptions(
     bool TrimmedWeb = false,
     Func<IDshTokenSource, Action<DshHostPhase>, StartupTrace?, CancellationToken, Task<DshHostResult>>? ProtocolHandshakeAsync = null);
 
-/// <summary>Read-only view of the launch token for the C# WebView host. The token never leaves the process.</summary>
+/// <summary>Read-only in-memory view of the launch token for native DSH clients. The token never leaves the process.</summary>
 public interface IDshTokenSource
 {
     /// <summary>The current launch token, or null. Callers must not log or persist it.</summary>

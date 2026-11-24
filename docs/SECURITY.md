@@ -7,7 +7,7 @@
 - 不提交密钥、Keystore、Token、测试私钥（`.gitignore` 已排除 `*.keystore` / `*.jks` / `*.p12`）。
 - 日志不得记录密码、Token、Cookie、SSH 私钥、完整屏幕内容；运行时日志只记录操作 / 错误码 / 耗时，DSH 输出经 `LogRedactor` 脱敏。
 - 新增对 Agent 暴露的设备能力必须走 `ui_*` 与 Relay 的档位 / 上限 / 逐次与本会话审批（ADR-0008），并说明权限等级（R0–R4）。
-- 不向 WebView 暴露任意 Native 调用或 shell 接口。
+- 禁止引入任何业务 `WebView`（`NoBusinessWebViewGateTests` 永久门禁），外部网页统一经明确确认后交由受控系统浏览器处理。
 - Root / ADB 只在 `optional.developer` 中存在，默认关闭，Agent 默认无权使用。
 
 ## 已落实
@@ -21,10 +21,9 @@
 | 诊断只运行固定只读命令；不提供任意 guest shell | `GuestDiagnostics.Commands` |
 | DSH 探测只接受白名单 profile 名，运行 APK 内固定脚本（argv 逐 token 引号）；不发起模型调用 | `DshProbe`、`DshProfiles.All`、`src/DshMobile.Runtime/Guest/Assets/dsh-probe.mjs` |
 | 不打包 DSHBox 的手机操控插件（mobile-pilot 等）与任何 DSHBox 插件，避免出现第二套自动化工具；APK 资产只有登记的 4 个上游文件 | `src/DshMobile.Android/Assets/README.md`、`UpstreamPinnedValuesTests` |
-| DSH launch token 只在 `DshHost` 内存，状态只暴露有无 token；DSH 日志经 `LogRedactor` 脱敏 | `DshLaunchToken`、`LogRedactor` |
-| WebUI：token 只在 `CSharpWebUiController` 内拼进 `loadUrl`，状态条只给状态与路径，不入日志 | `CSharpWebUiController` |
-| WebUI：仅允许回环 DSH 源（`DshOriginPolicy`，不用 `System.Uri`）；外部 http(s) 交给系统浏览器，其它 scheme 拦截；无 `addJavascriptInterface`；禁用 file/content 访问；混合内容禁止；第三方 Cookie 关闭 | `CSharpWebUiController`、`WebUiPolicy` |
-| WebUI：401 恢复每个 token 修订仅一次，避免循环 | `WebUiPolicy`、`DshTokenRevisionTracker` |
+| DSH launch token 只在 `DshHost` / `RemoteSshSession` 内存，状态只暴露有无 token；DSH 日志经 `LogRedactor` 脱敏 | `DshLaunchToken`、`LogRedactor` |
+| 原生对话零业务 `WebView`（PR-09 已删除 `DshWebActivity` / `CSharpWebUiController` / `WebUiPolicy` / `DshOriginPolicy`）；外部 `http(s)` 链接经 `MaterialAlertDialogBuilder` 二次确认后交由系统浏览器（`Intent.ActionView` + `CategoryBrowsable`） | `NoBusinessWebViewGateTests`、`ChatMarkdownBinder` |
+| 客户端传输层仅连接 `127.0.0.1` / `localhost` 回环基地址（`ValidateLoopbackBaseUri`），token 代次由 `DshTokenRevisionTracker` 仅在内存追踪且绝不写日志 | `DshHost`、`DshRemoteConnection`、`DshTokenRevisionTracker` |
 | 工作区文件：拒绝绝对路径 / `..` / NUL；任何路径分量是符号链接（含悬空链接）即拒绝，链接只列出不跟随（guest 链接在宿主侧会指向宿主路径） | `src/DshMobile.Core/Files/WorkspaceFileSystem.cs` |
 | 工作区文件：`.dsh/`（DSH_HOME，含 `.credentials.yaml`）只列出，不可预览 / 导出 / 写入（真机验证） | 同上 |
 | 工作区导入：不覆盖已有文件；先写临时文件再改名，失败不留半成品；文件名净化为单一路径分量 | 同上 |
@@ -70,7 +69,7 @@
 ## 待实现（按里程碑）
 
 - M2：Runtime 层**签名**清单校验——验证器与只读发现已实现（ADR-0022，见上表），**尚未内置发布公钥、未接 UI**，离线导入仍只校验固定哈希；回滚 UI；PRoot 不是安全隔离，guest 内代码按不可信处理。
-- M3：WebUI 已落实 loopback-only / token 轮换 / origin 校验（见上）；待做：DSHBox 完整导航鉴权状态机、下载与上传审批（TASK-007）。
+- M3：原生对话通道已落实回环地址强校验（`ValidateLoopbackBaseUri`）、`IDshTokenSource` 内存令牌与外链系统浏览器二次确认，业务 `WebView` 栈已于 PR-09 移除并启用 `NoBusinessWebViewGateTests` 门禁。
 - M5：R0–R4 审批、审计日志、单写者设备租约。
 - 手机操控写操作（ADR-0008）：确认页的保护依赖无障碍后端的 `selfWindowVisible`；C# 接管执行层时必须原样保留，并把
   「确认页在前台时写操作被拒」「伪造广播被丢弃」列入真机验收。批准 shell 类能力等于交出 shell 身份的能力，卡片须显示命令。

@@ -22,4 +22,8 @@
         android:id="@+id/chat_menu_cancel"
         android:title="@string/chat_menu_cancel"
         app:showAsAction="never" />
+    <item
+        android:id="@+id/chat_menu_stop_dsh"
+        android:title="@string/chats_menu_stop_dsh"
+        app:showAsAction="never" />
 </menu>

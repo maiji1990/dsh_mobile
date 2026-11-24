@@ -38,7 +38,8 @@
 |---|---|---|
 | .NET 11 Android 空壳（TASK-002） | **待复测**：Release full-trim 证据仅 PR-10 前；11-16 两次真机均为 Debug 构建 | Release（full trim，CoreCLR）在 Honor PTP-AN10 / Android 17 运行，冷启动约 220–290 ms；Android 10 未测。证据见 COMPATIBILITY.md 真机记录 |
 | ~~C# ↔ Java ↔ DSHBox Kotlin Bridge（TASK-003）~~ | **已删除（ADR-0018）**；此前：通过（Android 17 真机），旋转与 Android 10 未测 | 31 轮×1000 次全部成功、双端在途为 0；强制 GC 后 JNI GREF 恒为 37、Java 存活持平。证据见 COMPATIBILITY.md 真机记录 |
-| DSH WebUI（System WebView，TASK-006） | 通过（真机·当前 C#（11-16）），401 恢复 / 下载 / 文件选择**待测** | 官方 WebUI 加载 0.3–0.5 s；launch token 只在原生侧；DSH 重启换 token 后重开可鉴权；返回键正常。未测：401 自动恢复路径、外链交给浏览器、旋转、文件选择/下载（TASK-007） |
+| ~~DSH WebUI（System WebView，TASK-006）~~ | **已移除（PR-09，[ADR-0033](ADR/0033-native-agent-client.md)）**：由纯原生聊天客户端取代，启用 `NoBusinessWebViewGateTests` 门禁 | 历史真机（2026-11-16）与 PR-08 性能基线（`PERFORMANCE_BASELINE.md`）作为对照存档；PR-09 起全仓无业务 WebView，外部链接经系统浏览器确认后打开 |
+| 原生客户端核心能力（PR-00 ～ PR-09，ADR-0033） | **真机已验证主体闭环**；详见 `docs/native/ACCEPTANCE_PR04.md` ～ `ACCEPTANCE_PR09.md` | Material 3 纯原生会话（流式 Markdown/Diff/代码块、工具审批/问答/Hold-to-undo、图片附件、斜杠命令）、凭据管理与模型切换、Cache-First 首屏（96.2 ms）、工作区 Git/Diff、跨会话收件箱与后台通知、插件目录 L0/L1、系统治理（空闲停机/租约/32 预警）、远程 SSH 原生对话（WSL 隧道）；仍待真机补验项（如 F6 横屏 IME、MemoryLimiter 实发、在线更新回滚、真机 LAN 与覆盖安装 T10/T12）以各报告为准 |
 | 前台服务 | 部分：前台服务通知通过（真机·当前 C#（11-16））；后台 90 s 存活**待复测**（仅 PR-10 前） | `specialUse`，后台 90 s DSH 存活 |
 | Android 硬链接兼容垫片（link-shim） | 通过（真机·当前 C#（11-16）：DSH 启动即依赖） | DSH 以 `node --expose-internals --import /opt/dshmobile/link-shim.mjs … --profile web` 运行（与 DSHBox 一致；路径 ADR-0019 由 `/opt/dshbox` 改名）；TASK-004 初版缺失此垫片，已补 |
 | Runtime 层管理（TASK-004） | 部分：导入 + 装后核对通过（真机·当前 C#（11-16））；低磁盘 / 中途强杀**待测**；DSH 层换层事务（#41）仅单测 | 磁盘不足 / 层缺失 / 更新失败未测；见 milestones/M2.md |

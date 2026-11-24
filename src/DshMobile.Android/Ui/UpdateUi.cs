@@ -6,7 +6,7 @@ using Google.Android.Material.Dialog;
 namespace DshMobile.App.Ui;
 
 /// <summary>
-/// ADR-0029: 首页与运行环境页共用的在线更新摘要与确认弹窗辅助方法。
+/// ADR-0029: 会话页与运行环境页共用的在线更新摘要与确认弹窗辅助方法。
 /// 所有操作均在用户确认后才触发下载与换层，绝不在后台静默停止正在运行的 DSH。
 /// </summary>
 public static class UpdateUi

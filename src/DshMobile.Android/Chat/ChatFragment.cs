@@ -93,6 +93,7 @@ public sealed class ChatFragment : Fragment
 
         _toolbar = view.FindViewById<MaterialToolbar>(Resource.Id.chat_toolbar)!;
         _toolbar.NavigationClick += (_, _) => Activity?.Finish();
+        _toolbar.Menu?.FindItem(Resource.Id.chat_menu_stop_dsh)?.SetVisible(false);
         _toolbar.MenuItemClick += (_, e) => OnMenuClicked(e.Item?.ItemId ?? 0);
 
         _sessionHeader = view.FindViewById(Resource.Id.chat_session_header)!;
