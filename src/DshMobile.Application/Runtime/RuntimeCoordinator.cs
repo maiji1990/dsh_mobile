@@ -133,7 +133,7 @@ public sealed class RuntimeCoordinator : IDisposable
         }
     }
 
-    /// <summary>The C# host (created on the first start); exposes the launch token to the C# WebView only.</summary>
+    /// <summary>The C# host (created on the first start); exposes the in-memory launch token to native clients.</summary>
     public DshHost? Host => _host as DshHost;
 
     /// <summary>State of the C# host, or null before its first start.</summary>

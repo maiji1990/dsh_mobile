@@ -6,9 +6,14 @@ using DshMobile.Agent.Domain;
 using DshMobile.Agent.Presentation;
 using DshMobile.App.Bridge;
 using DshMobile.App.Chat;
+using DshMobile.App.LocalNetwork;
+using DshMobile.App.RuntimeUi;
 using DshMobile.App.Ui;
+using DshMobile.Application.LocalNetwork;
+using DshMobile.Application.Ui;
 using DshMobile.Runtime.Hosting;
 using DshMobile.Runtime.Migration;
+using DshMobile.Runtime.Updates;
 using Google.Android.Material.AppBar;
 using Google.Android.Material.Button;
 using Google.Android.Material.Dialog;
@@ -21,8 +26,9 @@ using Fragment = AndroidX.Fragment.App.Fragment;
 namespace DshMobile.App.Chats;
 
 /// <summary>
-/// PR-05 原生会话列表页签（N-05-03 + N-05-05）：
-/// 承载新建、搜索、重命名、Fork、状态/待审批角标、按能力停止，以及旧 Web Profile 只读盘点提示。
+/// PR-05 / PR-09 默认主入口原生会话列表页签（N-05-03 + N-05-05 + N-09-01）：
+/// 承载新建、搜索、重命名、Fork、状态/待审批角标、按能力停止、旧 Web Profile 只读盘点提示，
+/// 并在未安装/停止/启动/失败/有新版本时就地承接运行环境安装、启动、停止与更新引导。
 /// </summary>
 public sealed class ChatsFragment : Fragment, ITabRoot
 {
@@ -31,12 +37,26 @@ public sealed class ChatsFragment : Fragment, ITabRoot
     private ChatsAdapter _adapter = null!;
     private LinearProgressIndicator _progress = null!;
     private View _hostBanner = null!;
+    private TextView _hostTitle = null!;
+    private TextView _hostText = null!;
+    private LinearProgressIndicator _hostProgress = null!;
     private MaterialButton _hostAction = null!;
+    private MaterialButton _hostSecondary = null!;
+    private View _failureCard = null!;
+    private TextView _failureTitle = null!;
+    private TextView _failureDetail = null!;
+    private View _updateBanner = null!;
+    private TextView _updateBannerTitle = null!;
+    private TextView _updateBannerDetail = null!;
+    private IMenuItem? _stopMenuItem;
     private View _webInvCard = null!;
     private TextView _webInvSummary = null!;
     private RecyclerView _list = null!;
     private View _empty = null!;
     private FloatingActionButton _newFab = null!;
+    private HomeStatus? _shownStatus;
+    private UpdatePlan? _bannerPlan;
+    private bool _secondaryCancelsDownload;
     private int _renderPosted;
     private WebProfileInventoryReport? _lastWebInventory;
     private int _inventoryChecked;
@@ -52,6 +72,8 @@ public sealed class ChatsFragment : Fragment, ITabRoot
         toolbar.Menu!.FindItem(Resource.Id.chat_menu_switch_model)?.SetVisible(false);
         toolbar.Menu.FindItem(Resource.Id.chat_menu_cancel)?.SetVisible(false);
         toolbar.Menu.FindItem(Resource.Id.chat_menu_new_session)?.SetVisible(false);
+        _stopMenuItem = toolbar.Menu.FindItem(Resource.Id.chat_menu_stop_dsh);
+        _stopMenuItem?.SetVisible(false);
         toolbar.MenuItemClick += (_, e) =>
         {
             var id = e.Item?.ItemId ?? 0;
@@ -63,12 +85,46 @@ public sealed class ChatsFragment : Fragment, ITabRoot
             {
                 StartActivity(new Intent(RequireContext(), typeof(Credentials.CredentialsActivity)));
             }
+            else if (id == Resource.Id.chat_menu_stop_dsh)
+            {
+                _ = _bridge.RunStopAsync();
+            }
         };
 
         _progress = view.FindViewById<LinearProgressIndicator>(Resource.Id.chats_progress)!;
         _hostBanner = view.FindViewById(Resource.Id.chats_host_banner)!;
+        _hostTitle = view.FindViewById<TextView>(Resource.Id.chats_host_title)!;
+        _hostText = view.FindViewById<TextView>(Resource.Id.chats_host_text)!;
+        _hostProgress = view.FindViewById<LinearProgressIndicator>(Resource.Id.chats_host_progress)!;
         _hostAction = view.FindViewById<MaterialButton>(Resource.Id.chats_host_action)!;
-        _hostAction.Click += (_, _) => _ = _bridge.RunStartAsync();
+        _hostSecondary = view.FindViewById<MaterialButton>(Resource.Id.chats_host_secondary)!;
+        _hostAction.Click += (_, _) => HandleHostAction(_shownStatus?.Primary ?? HomeAction.None);
+        _hostSecondary.Click += (_, _) =>
+        {
+            if (_secondaryCancelsDownload)
+            {
+                _bridge.CancelUpdate();
+                return;
+            }
+            HandleHostAction(_shownStatus?.Secondary ?? HomeAction.None);
+        };
+
+        _failureCard = view.FindViewById(Resource.Id.chats_failure_card)!;
+        _failureTitle = view.FindViewById<TextView>(Resource.Id.chats_failure_title)!;
+        _failureDetail = view.FindViewById<TextView>(Resource.Id.chats_failure_detail)!;
+
+        _updateBanner = view.FindViewById(Resource.Id.chats_update_banner_card)!;
+        _updateBannerTitle = view.FindViewById<TextView>(Resource.Id.chats_update_banner_title)!;
+        _updateBannerDetail = view.FindViewById<TextView>(Resource.Id.chats_update_banner_detail)!;
+        view.FindViewById<MaterialButton>(Resource.Id.chats_update_banner_details)!.Click += (_, _) =>
+            StartActivity(new Intent(RequireContext(), typeof(RuntimeActivity)));
+        view.FindViewById<MaterialButton>(Resource.Id.chats_update_banner_install)!.Click += (_, _) =>
+        {
+            if (_bannerPlan is { HasWork: true } plan && !_bridge.IsBusy)
+            {
+                UpdateUi.ShowConfirmInstallDialog(RequireContext(), _bridge, plan);
+            }
+        };
 
         _webInvCard = view.FindViewById(Resource.Id.chats_web_inventory_card)!;
         _webInvSummary = view.FindViewById<TextView>(Resource.Id.chats_web_inventory_summary)!;
@@ -161,16 +217,255 @@ public sealed class ChatsFragment : Fragment, ITabRoot
 
     private void Render(SessionsUiState state)
     {
+        var ctx = RequireContext();
         var hostReady = _bridge.Runtime.Host?.State == DshHostState.Ready;
+        var status = _bridge.Status;
+        _shownStatus = status;
+
         _progress.Visibility = state.IsLoading ? ViewStates.Visible : ViewStates.Gone;
-        _hostBanner.Visibility = hostReady ? ViewStates.Gone : ViewStates.Visible;
-        _hostAction.Enabled = !_bridge.IsBusy;
+        _stopMenuItem?.SetVisible(hostReady && !_bridge.IsBusy);
         _newFab.Enabled = hostReady;
+
+        RenderHostLifecycleCard(ctx, status, hostReady);
 
         _adapter.Submit(state.Sessions, state.ActiveSessionId, state.CanCancelSession);
         _empty.Visibility = state.Sessions.Count == 0 ? ViewStates.Visible : ViewStates.Gone;
 
         RenderWebInventoryCard();
+    }
+
+    private void RenderHostLifecycleCard(Context ctx, HomeStatus status, bool hostReady)
+    {
+        var busy = status.Phase is HomePhase.Starting or HomePhase.WaitingForDsh or HomePhase.Stopping or HomePhase.Busy;
+        _hostBanner.Visibility = hostReady && status.Phase == HomePhase.Ready ? ViewStates.Gone : ViewStates.Visible;
+        if (_hostBanner.Visibility == ViewStates.Visible)
+        {
+            var (titleText, detailText) = DescribeHostStatus(ctx, status);
+            _hostTitle.Text = titleText;
+            _hostText.Text = detailText;
+            _hostProgress.Visibility = busy ? ViewStates.Visible : ViewStates.Gone;
+            if (busy && _bridge.Progress is { Total: > 0 } p)
+            {
+                _hostProgress.Indeterminate = false;
+                _hostProgress.SetProgressCompat((int)Math.Clamp(p.Done * 100 / p.Total, 0, 100), true);
+            }
+            else if (busy && !_hostProgress.Indeterminate)
+            {
+                _hostProgress.Indeterminate = true;
+            }
+
+            BindActionButton(_hostAction, status.Primary, status.Phase);
+            _secondaryCancelsDownload = busy
+                && _bridge.CurrentOperation == HomeStatus.UpdateInstallOperation
+                && _bridge.Progress is { Step: UpdatePhases.Downloading };
+            if (_secondaryCancelsDownload)
+            {
+                _hostSecondary.Visibility = ViewStates.Visible;
+                _hostSecondary.SetText(Resource.String.update_cancel);
+                _hostSecondary.SetIconResource(Resource.Drawable.ic_close);
+            }
+            else
+            {
+                BindActionButton(_hostSecondary, status.Secondary, status.Phase);
+            }
+        }
+        else
+        {
+            _secondaryCancelsDownload = false;
+        }
+
+        if (status.FailedOperation is { } f)
+        {
+            _failureCard.Visibility = ViewStates.Visible;
+            _failureTitle.Text = Rows.Fmt(ctx, Resource.String.home_failed_operation, OperationNames.Label(ctx, f.Operation));
+            _failureDetail.Text = OperationNames.Error(f.Code, f.Message);
+        }
+        else
+        {
+            _failureCard.Visibility = ViewStates.Gone;
+        }
+
+        var channel = UiPrefs.UpdateChannel(ctx);
+        if (!busy
+            && status.Phase is not HomePhase.NotInstalled
+            && status.DshVersion is not null
+            && _bridge.LastCheck is { Ok: true } check
+            && _bridge.LastCheckChannel == channel)
+        {
+            var plan = UpdatePlanner.Plan(check.Choices);
+            if (plan.HasWork)
+            {
+                _bannerPlan = plan;
+                _updateBanner.Visibility = ViewStates.Visible;
+                _updateBannerTitle.Text = Rows.Fmt(ctx, Resource.String.home_update_banner_title, UpdateUi.DescribePlan(plan));
+                _updateBannerDetail.Text = Rows.Fmt(ctx, Resource.String.update_install_plan_sub, UpdateUi.DigestHint(plan), UpdateUi.TotalMiB(plan));
+                return;
+            }
+        }
+        _bannerPlan = null;
+        _updateBanner.Visibility = ViewStates.Gone;
+    }
+
+    private (string Title, string Detail) DescribeHostStatus(Context ctx, HomeStatus status)
+    {
+        var version = status.DshVersion;
+        return status.Phase switch
+        {
+            HomePhase.NotInstalled => (GetString(Resource.String.home_title_not_installed), GetString(Resource.String.home_detail_not_installed)),
+            HomePhase.Stopped => (
+                GetString(Resource.String.home_title_stopped),
+                version is null ? GetString(Resource.String.home_detail_stopped) : GetString(Resource.String.chats_host_stopped)),
+            HomePhase.Starting or HomePhase.WaitingForDsh => (
+                GetString(Resource.String.home_title_starting),
+                StartingPhaseDetail()),
+            HomePhase.Stopping => (GetString(Resource.String.home_title_stopping), GetString(Resource.String.home_detail_stopping)),
+            HomePhase.Busy => (
+                Rows.Fmt(ctx, Resource.String.home_title_busy, OperationNames.Label(ctx, status.Operation ?? "")),
+                _bridge.Progress is { } p
+                    ? (p.Total > 0 ? Rows.Fmt(ctx, Resource.String.home_detail_progress, p.Step, (int)Math.Clamp(p.Done * 100 / p.Total, 0, 100)) : p.Step)
+                    : GetString(Resource.String.home_detail_busy)),
+            HomePhase.Ready => (
+                GetString(Resource.String.home_title_ready),
+                Rows.Fmt(ctx, Resource.String.home_detail_ready, version ?? "?")),
+            _ => (
+                GetString(Resource.String.home_title_failed),
+                OperationNames.Error(status.ErrorCode ?? "?", status.ErrorMessage)),
+        };
+    }
+
+    private string StartingPhaseDetail() => _bridge.HostPhase switch
+    {
+        DshHostPhase.SandboxStarting => GetString(Resource.String.home_detail_phase_sandbox),
+        DshHostPhase.SandboxReady => GetString(Resource.String.home_detail_phase_sandbox_ready),
+        DshHostPhase.DshStarting => GetString(Resource.String.home_detail_phase_dsh_spawned),
+        DshHostPhase.DshFirstOutput => GetString(Resource.String.home_detail_phase_first_output),
+        DshHostPhase.DshTokenAvailable => GetString(Resource.String.home_detail_phase_token),
+        DshHostPhase.ProtocolConnecting => GetString(Resource.String.home_detail_phase_protocol),
+        DshHostPhase.Initializing => GetString(Resource.String.home_detail_phase_initializing),
+        _ => GetString(Resource.String.home_detail_starting),
+    };
+
+    private static void BindActionButton(MaterialButton button, HomeAction action, HomePhase phase)
+    {
+        if (action == HomeAction.None)
+        {
+            button.Visibility = ViewStates.Gone;
+            return;
+        }
+        button.Visibility = ViewStates.Visible;
+        var (textRes, iconRes) = action switch
+        {
+            HomeAction.OnlineInstall => phase switch
+            {
+                HomePhase.NotInstalled => (Resource.String.home_action_online_setup, Resource.Drawable.ic_download),
+                HomePhase.Failed => (Resource.String.home_action_online_retry, Resource.Drawable.ic_download),
+                _ => (Resource.String.home_action_online_dsh, Resource.Drawable.ic_download),
+            },
+            HomeAction.ImportRuntime => (Resource.String.home_action_import, Resource.Drawable.ic_upload),
+            HomeAction.ImportDsh => (Resource.String.home_action_import_dsh, Resource.Drawable.ic_upload),
+            HomeAction.Start => (phase == HomePhase.Failed ? Resource.String.home_action_retry : Resource.String.home_action_start, Resource.Drawable.ic_play),
+            HomeAction.OpenChat => (Resource.String.home_action_open_chat, Resource.Drawable.ic_chat),
+            _ => (Resource.String.home_action_stop, Resource.Drawable.ic_stop),
+        };
+        button.SetText(textRes);
+        button.SetIconResource(iconRes);
+    }
+
+    private void HandleHostAction(HomeAction action)
+    {
+        switch (action)
+        {
+            case HomeAction.OnlineInstall:
+                _ = StartOnlineInstallFlowAsync();
+                break;
+            case HomeAction.ImportRuntime:
+                StartActivityForResult(RuntimeImportFlow.PickIntent(), RuntimeImportFlow.RequestCode);
+                break;
+            case HomeAction.ImportDsh:
+                StartActivityForResult(RuntimeImportFlow.PickDshIntent(), RuntimeImportFlow.DshRequestCode);
+                break;
+            case HomeAction.Start:
+                _ = StartDshAsync();
+                break;
+            case HomeAction.OpenChat:
+                StartActivity(new Intent(RequireContext(), typeof(ChatActivity)));
+                break;
+            case HomeAction.Stop:
+                _ = _bridge.RunStopAsync();
+                break;
+        }
+    }
+
+    private async Task StartDshAsync()
+    {
+        var decision = LocalNetworkDecision.NotRequired;
+        if (Activity is { } activity && !UiPrefs.LanPermissionAsked(activity))
+        {
+            UiPrefs.SetLanPermissionAsked(activity, true);
+            try
+            {
+                decision = await LocalNetworkAccess.EnsureAsync(activity).ConfigureAwait(true);
+            }
+            catch (Exception e)
+            {
+                Android.Util.Log.Warn("DshMobile", "lan permission gate failed: " + e.GetType().Name);
+            }
+        }
+        if (decision == LocalNetworkDecision.NeedsPermission && Context is { } ctx)
+        {
+            Android.Widget.Toast.MakeText(ctx, GetString(Resource.String.lan_denied_toast), ToastLength.Long)?.Show();
+        }
+        await _bridge.RunStartAsync().ConfigureAwait(false);
+    }
+
+    private async Task StartOnlineInstallFlowAsync()
+    {
+        var context = Context;
+        if (context is null)
+        {
+            return;
+        }
+        var channel = UiPrefs.UpdateChannel(context);
+        var check = await _bridge.RunUpdateCheckForResultAsync(channel).ConfigureAwait(false);
+        Activity?.RunOnUiThread(() =>
+        {
+            if (View is null || Context is not { } ctx || check is not { Ok: true })
+            {
+                return;
+            }
+            var plan = UpdatePlanner.Plan(check.Choices);
+            if (!plan.HasWork)
+            {
+                var detail = plan.Notes.Count > 0
+                    ? string.Join('\n', plan.Notes)
+                    : UpdateTransactionCodes.NothingToInstall;
+                new MaterialAlertDialogBuilder(ctx)
+                    .SetIcon(Resource.Drawable.ic_info)!
+                    .SetTitle(Resource.String.update_nothing_title)!
+                    .SetMessage(detail)!
+                    .SetPositiveButton(Android.Resource.String.Ok, (_, _) => { })!
+                    .Show();
+                return;
+            }
+            UpdateUi.ShowConfirmInstallDialog(ctx, _bridge, plan);
+        });
+    }
+
+    public override void OnActivityResult(int requestCode, int resultCode, Intent? data)
+    {
+        base.OnActivityResult(requestCode, resultCode, data);
+        if (resultCode != (int)Android.App.Result.Ok || data?.Data is not { } uri)
+        {
+            return;
+        }
+        if (requestCode == RuntimeImportFlow.RequestCode)
+        {
+            _ = RuntimeImportFlow.ImportAsync(uri);
+        }
+        else if (requestCode == RuntimeImportFlow.DshRequestCode)
+        {
+            _ = RuntimeImportFlow.ImportDshAsync(uri);
+        }
     }
 
     private void RenderWebInventoryCard()

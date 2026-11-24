@@ -2,32 +2,32 @@
 
 <img src="docs/brand/dsh-mobile-logo.png" width="160" align="right" alt="DSH Mobile">
 
-在 Android 手机上本地运行 [DeepSeek Harness（DSH）](https://www.npmjs.com/package/@deepseek-ai/dsh) 的客户端，用 **.NET 11 for Android（C#）** 编写。
-DSH 原样运行在 App 私有目录里的 Debian 沙箱（PRoot）中。App 负责安装与启停运行环境、承载官方网页界面，并提供文件、手机操控与远程主机等能力。
+在 Android 手机上本地运行 [DeepSeek Harness（DSH）](https://www.npmjs.com/package/@deepseek-ai/dsh) 的纯原生客户端，用 **.NET 11 for Android（C#）** 编写。
+DSH 原样运行在 App 私有目录里的 Debian 沙箱（PRoot）中。App 负责安装与启停运行环境，并通过 Material 3 原生会话界面提供流式对话、工具审批、工作区管理、手机操控与远程主机等能力。
 
-> **实验性项目**，与 DeepSeek、DSHBox 均无隶属关系，不是官方客户端。基于预览版 .NET 11 SDK 构建。
+> **实验性项目**，与 DeepSeek、DSHBox 均无隶属关系，不是官方客户端。基于 .NET 11 SDK 构建。
 > 部分 C# 代码移植自 [DSHBox](https://github.com/WSK-build/DSHBox)（GPL-3.0，逐项登记于 [docs/UPSTREAMS.md](docs/UPSTREAMS.md)），不含其品牌资产。
 
 ## 功能
 
 | | 说明 |
 |---|---|
-| **本地运行 DSH** | 一键启动 / 停止沙箱内的官方 DSH（`web` profile），在 App 内全屏打开其网页界面；后台运行时通知栏常驻（前台服务） |
-| **文件** | 浏览工作区 `/root/projects`，从系统文件选择器导入、导出与预览文件；`.dsh` 等受保护目录只读 |
-| **插件** | 在 DSH 内管理 Cordis 插件 |
+| **本地运行 DSH 与原生会话** | 一键安装/启停沙箱内的官方 DSH，提供 Material 3 原生流式对话（Markdown/代码块/Diff、工具审批与撤销、问答、图片、斜杠命令、Cache-First 首屏、凭据与模型管理）；后台运行时通知栏常驻 |
+| **工作区与 Git** | 浏览工作区 `/root/projects`，SAF 导入导出、安全文本编辑、回收站撤销、压缩解压，以及只读 Git 状态与原生 Diff 查看器；`.dsh/` 双向受保护 |
+| **插件目录** | 原生 L0 状态清单与 L1 受控装卸/启停 |
 | **手机操控（实验）** | 让 DSH 通过 `ui_*` 工具读取和操作手机界面；每次写操作都需要你本人批准 |
-| **远程主机** | 通过 SSH 连接你自己电脑或服务器上的 DSH：端口转发、远端 DSH 启停 |
-| **运行环境维护** | 导入运行环境包（逐层校验）、导入 DSH 层、回滚到上一版 |
+| **远程主机** | 通过 SSH 连接电脑或服务器上的 DSH：端口转发、远端 DSH 启停与原生对话 |
+| **运行环境维护与治理** | 在线签名更新/回滚、离线导入、32 幻影进程预算预警、后台租约与空闲优雅停机 |
 
-界面为 Material 3，导航包含 **首页 / 文件 / 更多**（横屏或宽屏时使用左侧导航栏）。主题跟随系统深浅色，Android 12+ 按壁纸取色。诊断、模式探测、PTY 自检与日志在
-「更多 → 开发者选项」里，默认隐藏，在「关于」上连点 7 次开启（[ADR-0021](docs/ADR/0021-product-ui-material3.md)）。启动分段计时以 `startup-perf` 行写入 Logcat；采集日志、导出 CSV 与计算各阶段 P50/P95 见 [docs/STARTUP_PERF.md](docs/STARTUP_PERF.md)（真实耗时待真机验证）。
+界面为 Material 3，默认入口为主导航三栏：**会话 / 工作区 / 更多**（600dp 以上使用左侧导航栏）。主题跟随系统深浅色，Android 12+ 按壁纸取色。诊断、模式探测、PTY 自检与日志在
+「更多 → 开发者选项」里，默认隐藏，在「关于」上连点 7 次开启（[ADR-0021](docs/ADR/0021-product-ui-material3.md)）。启动分段计时以 `startup-perf` 行写入 Logcat；采集日志、导出 CSV 与计算各阶段 P50/P95 见 [docs/STARTUP_PERF.md](docs/STARTUP_PERF.md)。
 
 ## 安全设计
 
 - **手机操控需逐次批准**：审批卡显示期间窗口禁止截屏，Agent 的点击 / 滑动 / 按键全部暂停，它按不到「允许」。无障碍服务、悬浮窗与
   Shizuku 授权都由你本人在系统里开启，App 不会代为开启。默认关闭，停止 DSH 时自动关闭。
 - **SSH 私钥不可导出**：本机密钥在 Android Keystore 内生成；首次连接必须逐字核对主机指纹，固定后指纹变化即拒绝连接。远端 DSH 无法使用本机的手机操控。
-- **DSH 只在本机访问**：launch token 只留在 App 原生侧，网页界面里拿不到。
+- **DSH 只在本机访问且零业务 WebView**：launch token 仅驻留原生进程内存，原生客户端经本地回环传输交互；外部链接经确认后交由系统浏览器。
 - **沙箱命令不拼字符串**：guest 命令一律由参数数组逐个加引号构建。
 - **不伪造成功**：系统限制以稳定错误码报告并显示在界面上。
 
@@ -39,9 +39,8 @@ DSH 原样运行在 App 私有目录里的 Debian 沙箱（PRoot）中。App 负
 沙箱会立即退出（`DSH_EXITED`），只能看界面。
 
 1. 安装 APK（目前需[从源码构建](#从源码构建)）。
-2. 首页点「导入运行环境包」，选择 Runtime Release 中的 `dshmobile-runtime-debian-arm64-*.zip`。导入会逐层校验 SHA-256。
-3. 首页点「导入 DSH 层」，选择本项目 DSH Release 中的 `<版本>.tar.zst`。保留下载时的文件名。
-4. 点「启动 DSH」，就绪后点「打开 DSH」。
+2. 在默认「会话」页顶部卡片点击「在线下载运行环境」，或前往「更多 → 运行环境」从本地导入 `dshmobile-runtime-debian-arm64-*.zip` 与 `<版本>.tar.zst`。
+3. 点击「启动 DSH」，就绪后在「会话」页点击 `+` 或打开最近会话进入原生对话；首次使用可在右上角菜单或「更多 → 模型与凭据配置」写入 API Key。
 
 运行环境和 DSH 层由本仓库构建并分别发布。当前锁定版本的下载地址见 [runtime-assets.lock](runtime-bundle/runtime-assets.lock)，发布流程见 [ADR-0020](docs/ADR/0020-self-built-runtime-layers.md) 和 [自动升级与发布流程](docs/RELEASE_AUTOMATION.md)。
 
@@ -113,8 +112,12 @@ dotnet test tests/DshMobile.Application.Tests
 node tooling/run-node-tests.mjs tests/guest
 ```
 
+```bash
+dotnet test tests/DshMobile.Agent.Tests
+```
+
 行为由 `tests/TestVectors/*.json` 共享向量锁定；原样复制进仓库的上游文件由测试钉住 SHA-256。CI（`.github/workflows/android-dotnet.yml`）
-构建原生层与 App 并运行以上全部测试。
+构建原生层与 App 并运行以上全部测试（含 `NoBusinessWebViewGateTests` 等 7 组质量与性能门禁）。
 
 ### 构建排障
 
@@ -127,11 +130,12 @@ node tooling/run-node-tests.mjs tests/guest
 ## 架构
 
 ```text
-DshMobile.Android      Activity / Fragment（Material 3）、前台服务、平台适配、Relay 组合根
-DshMobile.Application  编排：RuntimeCoordinator（状态机 + journal、导入 / 回滚）、PTY 自检、首页状态模型、DI
-DshMobile.Runtime      层校验与安装、PRoot 启动、DSH 宿主、Relay（ui_*）、远程 SSH（SSH.NET）
+DshMobile.Android      Activity / Fragment（Material 3 三栏：会话 | 工作区 | 更多）、前台服务、平台适配、Relay 组合根
+DshMobile.Agent        纯托管原生客户端（ADR-0033）：协议 STJ 源生、Transcript/Requests 引擎、Markdig 渲染缓存、ViewModel
+DshMobile.Application  编排：RuntimeCoordinator（状态机 + journal、导入 / 回滚 / 更新探针）、系统治理策略、HomeStatus、DI
+DshMobile.Runtime      层校验与安装、PRoot 启动、DSH 宿主与 token 追踪、Relay（ui_*）、远程 SSH（SSH.NET）、插件 L0/L1
 DshMobile.Native       最小原生边界：W^X 可执行策略、libdshmobile_native（PTY、进程组）P/Invoke
-DshMobile.Core         通用协议类型、WebView 策略、工作区文件系统
+DshMobile.Core         通用协议类型、StartupTrace、工作区文件系统与 Provider V2
 ```
 
 业务逻辑、状态机、权限策略与进程监管都在 C#（[ADR-0007](docs/ADR/0007-source-ownership-csharp-first.md)）；必须原生的部分放在本仓库可追溯的
@@ -159,12 +163,9 @@ DshMobile.Core         通用协议类型、WebView 策略、工作区文件系�
 
 ## 现状与限制
 
-- App 只有 C# 实现（[ADR-0018](docs/ADR/0018-remove-dshbox.md) 删除了 DSHBox 子模块、AAR 与 Kotlin 层）。新界面（ADR-0021）已在 Android 17 真机上
-  逐页验收（启动 / WebUI / 终端 / 文件 / 停止、诊断与 PTY 自检，导入 / 回滚，手机操控中继与审批卡，深色模式与横屏）；远程主机连接尚未在新实现上真机复验。
-  各项状态与证据以 [docs/MIGRATION.md](docs/MIGRATION.md) 为准。
-- DSH 首次打开会提示「无法创建默认工作区」（guest 内没有 Documents 目录配置），需在 DSH 里手动选择工作区。
-- 「回滚到上一版」只有在 `runtime-current/previous/` 已存在时才有上一版可回（继承旧实现，向量锁定），目前实际使用中通常会如实提示没有上一版。
-- 模型凭据相关能力（会话、工具调用、Subagent 等）尚未验证。
+- App 只有纯 C# 原生实现（[ADR-0018](docs/ADR/0018-remove-dshbox.md) 删除了 DSHBox 子模块、AAR 与 Kotlin 层；PR-09 切换为原生「会话 | 工作区 | 更多」三栏入口并彻底删除业务 WebView，由 `NoBusinessWebViewGateTests` 门禁锁定）。
+  各项状态与真机证据以 [docs/MIGRATION.md](docs/MIGRATION.md) 与 [docs/native/ACCEPTANCE_PR09.md](docs/native/ACCEPTANCE_PR09.md) 为准。
+- 「回滚到上一版」只有在 `runtime-current/previous/` 已存在时才有上一版可回（继承旧实现，向量锁定）。
 - 浏览器自动化（`browser_*`）不提供。
 
 ## 许可

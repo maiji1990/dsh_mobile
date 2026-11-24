@@ -1,10 +1,5 @@
 <resources>
     <string name="app_name">DSH Mobile</string>
-    <string name="dsh_title">DSH</string>
-    <string name="web_waiting">等待 DSH 启动（未取得 launch token）…</string>
-    <string name="web_loading">正在加载 DSH…</string>
-    <string name="web_unauthorized">DSH 拒绝访问（401）。请回到首页停止并重新启动 DSH 后重试。</string>
-    <string name="web_unreachable">无法连接本机 DSH：</string>
     <string name="automation_title">手机操控</string>
     <string name="automation_explain">让沙箱内的 DSH 通过 ui_* 工具读取和操作手机界面（点击、输入、滑动、按键、截图）。每一次写操作都要你本人回答审批：停留在本页时审批卡显示在本页顶部；在其他应用里时，若你在系统里允许了「显示在其他应用上层」，审批卡浮在当前界面上，否则走通知卡 → 应用内确认页。任何审批卡或本页显示期间，Agent 的点击、滑动与按键都会被暂停，它按不到“允许”。无障碍服务（只用本应用自己的「DSH Mobile 手机操控」服务）、悬浮窗与 Shizuku 授权都需要你本人在系统 / Shizuku 里开启，App 不会替你开启。默认关闭，停止沙箱时自动关闭。</string>
     <string name="automation_start">开启中继</string>
@@ -88,13 +83,13 @@
     <string name="automation_tools_restart_on">DSH 工具（mcp__ui__*）：已注册，需重启 DSH 才会加载</string>
     <string name="automation_tools_restart_off">DSH 工具（mcp__ui__*）：已注销，当前 DSH 仍保留到重启（调用会失败）</string>
     <string name="automation_tools_conflict">DSH 工具（mcp__ui__*）：注册文件被其他内容占用，未改动，请检查</string>
-    <string name="files_title">文件</string>
+    <string name="files_title">工作区</string>
     <string name="files_up">上一级</string>
     <string name="files_import">导入</string>
     <string name="files_refresh">刷新</string>
     <string name="files_preview">预览</string>
     <string name="files_export">导出到…</string>
-    <string name="files_no_workspace">工作区尚不存在：先在首页导入运行环境</string>
+    <string name="files_no_workspace">工作区尚不存在：请先在会话页或「更多 → 运行环境」安装运行环境</string>
     <string name="files_protected">受保护（DSH_HOME，可能含凭据）：不能在此预览或导出</string>
     <string name="files_symlink_blocked">符号链接不会在宿主侧跟随</string>
     <string name="files_binary">（二进制文件，不预览）</string>
@@ -126,9 +121,8 @@
     <string name="relay_cs_channel_text">C# 手机操控通道正在接收请求</string>
     <string name="relay_cs_char_count">%1$d 个字符</string>
 
-    <!-- ADR-0021: product UI -->
-    <string name="nav_home">首页</string>
-    <string name="nav_files">文件</string>
+    <!-- ADR-0021 / PR-09: product UI (Sessions | Workspace | More) -->
+    <string name="nav_files">工作区</string>
     <string name="nav_more">更多</string>
 
     <string name="home_label_not_installed">未安装</string>
@@ -141,7 +135,6 @@
     <string name="home_title_not_installed">运行环境未安装</string>
     <string name="home_title_stopped">DSH 未启动</string>
     <string name="home_title_starting">正在启动 DSH…</string>
-    <string name="home_title_waiting">等待 DSH 页面就绪…</string>
     <string name="home_title_ready">DSH 已就绪</string>
     <string name="home_title_stopping">正在停止 DSH…</string>
     <string name="home_title_failed">DSH 未能运行</string>
@@ -155,10 +148,9 @@
     <string name="home_detail_phase_sandbox_ready">沙箱已就绪，正在启动 DSH 进程…</string>
     <string name="home_detail_phase_dsh_spawned">DSH 进程已启动，等待首行输出…</string>
     <string name="home_detail_phase_first_output">DSH 已开始输出，等待启动令牌与本地端口…</string>
-    <string name="home_detail_phase_token">已取得启动令牌，正在等待 Web 服务就绪…</string>
+    <string name="home_detail_phase_token">已取得启动令牌，正在等待本地服务就绪…</string>
     <string name="home_detail_phase_protocol">正在建立本地协议通道（/api/remote.mux）…</string>
     <string name="home_detail_phase_initializing">正在完成协议握手校验…</string>
-    <string name="home_detail_waiting">DSH 进程已启动，正在等待它的网页界面响应。</string>
     <string name="home_detail_ready">DSH %1$s · 只在本机访问；在后台运行时通知栏常驻</string>
     <string name="home_detail_stopping">正在结束 DSH 与 Linux 沙箱。</string>
     <string name="home_detail_busy">请稍候，完成后这里会显示结果。</string>
@@ -170,17 +162,12 @@
     <string name="home_action_import_dsh">本地导入 DSH 层</string>
     <string name="home_action_start">启动 DSH</string>
     <string name="home_action_retry">重新启动</string>
-    <string name="home_action_open">打开 DSH</string>
+    <string name="home_action_open_chat">打开对话</string>
     <string name="home_action_stop">停止</string>
     <string name="home_update_banner_title">发现新版本（%1$s）</string>
     <string name="home_update_banner_install">立即更新</string>
     <string name="home_update_banner_details">查看详情</string>
     <string name="home_failed_operation">上次「%1$s」未成功</string>
-    <string name="home_section_features">功能</string>
-    <string name="home_shortcut_automation_sub">让 DSH 操作手机界面（实验）</string>
-    <string name="home_shortcut_automation_on">手机操控中继已开启</string>
-    <string name="home_shortcut_remote_sub">连接电脑上的 DSH</string>
-    <string name="home_shortcut_runtime_sub">版本、导入与回滚</string>
 
     <string name="op_start">启动 DSH</string>
     <string name="op_stop">停止 DSH</string>
@@ -422,10 +409,7 @@
     <string name="lan_dialog_later">暂不</string>
     <string name="lan_denied_toast">未允许局域网访问：沙箱访问内网地址会超时，可在「更多 → 手机操控 → 局域网访问」里允许</string>
 
-    <!-- PR-04: Pure Native Chat (ADR-0033). -->
-    <string name="home_action_open_native_chat">打开原生会话（实验）</string>
-    <string name="home_shortcut_native_chat_title">原生会话（实验）</string>
-    <string name="home_shortcut_native_chat_sub">Material 3 原生流式对话与审批</string>
+    <!-- PR-04 / PR-09: Pure Native Chat (ADR-0033). -->
     <string name="chat_title">DSH</string>
     <string name="chat_session_default_title">原生会话</string>
     <string name="chat_session_subtitle_default">/root/projects</string>
@@ -483,11 +467,10 @@
     <string name="chat_image_rejected">图片校验未通过（%1$s）</string>
     <string name="chat_error_banner">操作受限（%1$s）</string>
 
-    <!-- PR-05: Native Onboarding / Credentials / Models / Sessions / Web Inventory. -->
-    <string name="nav_chats">对话</string>
+    <!-- PR-05 / PR-09: Native Onboarding / Credentials / Models / Sessions / Web Inventory. -->
+    <string name="nav_chats">会话</string>
     <string name="more_credentials">模型与凭据配置</string>
     <string name="more_credentials_sub">配置 DeepSeek 及兼容 Provider API Key（不回显明文）</string>
-    <string name="home_shortcut_credentials_sub">原生 API Key 配置与就绪检查</string>
     <string name="credentials_title">Provider 与凭据</string>
     <string name="credentials_intro">API Key 通过 DSH 官方凭据通道写入私有凭据存储，界面仅显示已配置状态与脱敏掩码，绝不回显明文或落日志。</string>
     <string name="credentials_host_required">需先启动 DSH 后才能查询和写入凭据。</string>
@@ -520,10 +503,11 @@
     <string name="chat_load_older">加载更早历史消息</string>
     <string name="chat_loading_older">正在加载更早历史…</string>
 
-    <string name="chats_title">原生会话</string>
+    <string name="chats_title">会话</string>
     <string name="chats_search_hint">搜索会话标题、ID 或工作区…</string>
     <string name="chats_new_desc">新建会话</string>
-    <string name="chats_host_stopped">DSH 尚未启动，请先在首页启动后再拉取或新建实时会话。</string>
+    <string name="chats_host_stopped">DSH 尚未启动，点击下方按钮启动或安装运行环境后再创建实时会话。</string>
+    <string name="chats_menu_stop_dsh">停止 DSH</string>
     <string name="chats_empty">暂无会话，点击右下角 + 开启新对话。</string>
     <string name="chats_badge_running">运行中</string>
     <string name="chats_badge_pending">待确认 %1$d</string>

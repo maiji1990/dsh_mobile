@@ -6,7 +6,7 @@ namespace DshMobile.App.RuntimeUi;
 /// <summary>
 /// Runtime imports from the system document picker (no storage permission, no adb): copy the picked file into the
 /// app cache (an allowed import root), import it with the C# installers through <c>BridgeHost</c>, delete the copy.
-/// Two flows, both used by Home and the Runtime screen: the runtime bundle zip (base/node/android-side) and, since
+/// Two flows, both used by Chats and the Runtime screen: the runtime bundle zip (base/node/android-side) and, since
 /// ADR-0027, the DSH layer archive (<c>&lt;version&gt;.tar.zst</c>).
 /// </summary>
 public static class RuntimeImportFlow

@@ -1,6 +1,6 @@
 # 兼容性（COMPATIBILITY）
 
-> **PR-10（[ADR-0018](ADR/0018-remove-dshbox.md)）后为历史文档**：下列真机记录多数采集于 PR-10 之前（旧桥 / DSHBox 实现或当时可选的 C# 路径），作为历史证据保留；PR-10 之后的模拟器冒烟见 `migration/parity/2026-11-15-emulator-A17-x86_64-pr10-remove-dshbox.md`。
+> **PR-10（[ADR-0018](ADR/0018-remove-dshbox.md)）后为历史文档；PR-09（[ADR-0033](ADR/0033-native-agent-client.md)）起业务 WebView 已彻底移除**：下列真机记录多数采集于 PR-10 之前（旧桥 / DSHBox 实现或当时可选的 C# 路径），作为历史证据保留；原生 UI 重构各切片最新真机验收见 `docs/native/ACCEPTANCE_PR04.md` ～ `docs/native/ACCEPTANCE_PR09.md`（无真机证据的场景仍标待测，见 [AGENTS.md](../AGENTS.md) 规则 9）。
 
 ## 设备边界（V1）
 

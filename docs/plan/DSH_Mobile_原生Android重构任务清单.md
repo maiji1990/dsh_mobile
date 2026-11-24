@@ -327,16 +327,17 @@ PR-00 (基线 + 路线A/B PoC + ADR-0033 + DshMobile.Agent骨架 + 门禁)
 
 ### 任务项
 
-- [ ] **N-09-01｜切换默认主入口至原生会话**
-  - 更新 `MainActivity` 默认 Tab 与导航结构（`会话 | 工作区 | 更多` + 600dp `NavigationRailView`），移除并行旧 Web 入口开关；确保升级保留导航恢复兼容（沿用 tag 恢复机制，不触发旧 Fragment 崩溃）。
-- [ ] **N-09-02｜彻底删除业务 WebView 栈**
-  - 先全局检索引用确认无遗留后删除：[DshWebActivity.cs](../../src/DshMobile.Android/DshWebActivity.cs)、[CSharpWebUiController.cs](../../src/DshMobile.Android/WebUi/CSharpWebUiController.cs)、`activity_web.xml`、废弃的 `WebUiPolicy` / `DshOriginPolicy` 及对应文案与旧 WebView 单测；
-  - 检查 `AndroidManifest.xml` 与 `DshMobile.Android.csproj`，确认无无用权限与依赖；外部网页预览统一走受控系统浏览器。
-- [ ] **N-09-03｜启用 `NoBusinessWebViewGateTests` 永久 CI 门禁**
-  - 在 `tests/DshMobile.Agent.Tests/Quality/` 启用源码、XML、Manifest 扫描，永久禁止业务路径重新引入 `Android.Webkit.WebView`。
-- [ ] **N-09-04｜同步仓库文档与验收证据**
-  - 更新 [ARCHITECTURE.md](../ARCHITECTURE.md)、[FEATURES.md](../FEATURES.md)、[SECURITY.md](../SECURITY.md)、[COMPATIBILITY.md](../COMPATIBILITY.md)、[README.md](../../README.md) 及 [MIGRATION.md](../MIGRATION.md)；
-  - 完成从旧 WebView Release APK 覆盖安装到新原生 Release APK 的真机 T01–T12 全套验收，归档报告至 `docs/native/ACCEPTANCE_MATRIX.md`。
+- [x] **N-09-01｜切换默认主入口至原生会话**（桌面实现、单测与 Release 裁剪构建已通过；2026-11-24 真机：旧四栏包在「首页」标签下被覆盖安装，新版首屏直达「会话」、三栏导航、无 Fragment 崩溃，`home` 旧状态被丢弃，会话页 Back 直接退出）
+  - 已更新 [MainActivity.cs](../../src/DshMobile.Android/MainActivity.cs) 默认 Tab 为 `nav_chats` 与三栏导航结构（`会话 | 工作区 | 更多` + 600dp `NavigationRailView`），删除 `HomeFragment.cs`、`fragment_home.xml` 与并行旧 Web 入口开关；[HomeStatus.cs](../../src/DshMobile.Application/Ui/HomeStatus.cs) 移除 `WaitingForWebUi`/`OpenDsh`，[ChatsFragment.cs](../../src/DshMobile.Android/Chats/ChatsFragment.cs) 与 [RuntimeActivity.cs](../../src/DshMobile.Android/RuntimeUi/RuntimeActivity.cs) 就地承接运行环境安装、启停、更新与局域网引导；保留 `TabKey` tag 恢复并在 `Show()` 中清理残留 `"home"` tag 防旧版状态崩溃。
+- [x] **N-09-02｜彻底删除业务 WebView 栈**（源码/XML/Manifest 与 Release 构建已通过；2026-11-24 净构建 APK 产物核对：`classes*.dex` 中 `DshWebActivity`/`CSharpWebUiController`/`activity_web`/`WebUiPolicy`/`DshOriginPolicy` 命中 0，Manifest 与资源零 `WebView`/`WebKit`；残留 14 处 `WebView` 均为 `Mono.Android` 平台绑定。**登记 F27：增量构建会残留已删除类的包装字符串，产物验收必须净构建**）
+  - 全局检索确认后已删除：`DshWebActivity.cs`、`WebUi/CSharpWebUiController.cs`、`activity_web.xml`、废弃的 `WebUiPolicy` / `DshOriginPolicy`、`WebViewPolicyParityTests` 及对应废止文案（将 `DshTokenRevisionTracker` 迁至 [DshTokenRevisionTracker.cs](../../src/DshMobile.Runtime/Hosting/DshTokenRevisionTracker.cs) 并新增 [TokenRevisionTrackerTests.cs](../../tests/DshMobile.Runtime.Tests/TokenRevisionTrackerTests.cs)）；
+  - 已核对 [AndroidManifest.xml](../../src/DshMobile.Android/AndroidManifest.xml) 与 [DshMobile.Android.csproj](../../src/DshMobile.Android/DshMobile.Android.csproj) 无多余 WebKit 依赖；外部网页预览统一经 [ChatMarkdownBinder.cs](../../src/DshMobile.Android/Chat/ChatMarkdownBinder.cs) 二次确认后交由受控系统浏览器。
+- [x] **N-09-03｜启用 `NoBusinessWebViewGateTests` 永久 CI 门禁与发布前净构建产物核查**
+  - 已在 [NoBusinessWebViewGateTests.cs](../../tests/DshMobile.Agent.Tests/Quality/NoBusinessWebViewGateTests.cs) 启用源码、XML、`.csproj`、Manifest、已删除文件及 APK 二进制（`classes*.dex` DEX 字符串表 + Manifest/资源 + ZIP 路径）扫描门禁（对 `Android.Webkit` 严格限定仅用于 `MimeTypeMap` 与 `Mono.Android` 既有平台绑定）；
+  - 已新增 [build-clean-release-apk.ps1](../../tooling/build-clean-release-apk.ps1) 并接入 [.github/workflows/android-dotnet.yml](../../.github/workflows/android-dotnet.yml) 发布/CI 构建前清理 `obj/Release` 与 `bin/Release` 后注入 `DSHM_VERIFY_APK_PATH` 复核最终签名 APK（消除 F27 增量构建残留风险）。
+- [x] **N-09-04｜同步仓库文档与验收证据**（仓库文档已同步；2026-11-24 完成从旧 WebView Release 包到新原生 Release 包的覆盖安装终验并归档 [ACCEPTANCE_MATRIX.md](../native/ACCEPTANCE_MATRIX.md)——T10 通过、T12 的 APK 产物零业务 WebView 通过；T01/T04/T07/T08/T09/T11/T12 的余项仍按矩阵标注为部分通过或未验证）
+  - 已更新 [ARCHITECTURE.md](../ARCHITECTURE.md)、[FEATURES.md](../FEATURES.md)、[SECURITY.md](../SECURITY.md)、[COMPATIBILITY.md](../COMPATIBILITY.md)、[README.md](../../README.md)、[MIGRATION.md](../MIGRATION.md) 与 [ACCEPTANCE_PR09.md](../native/ACCEPTANCE_PR09.md)；
+  - 已完成覆盖安装终验并归档 `docs/native/ACCEPTANCE_MATRIX.md`（2026-11-24）：T02/T03/T06/T10 通过，其余按既有证据标注部分通过或未验证，未覆盖项列在矩阵末尾。
 
 ---
 
@@ -344,18 +345,18 @@ PR-00 (基线 + 路线A/B PoC + ADR-0033 + DshMobile.Agent骨架 + 门禁)
 
 | 场景 ID | 验收目标 | 归属 PR / 核心任务 | 当前状态 |
 |---|---|---|---|
-| **T01** | 全新安装 → 运行层就绪 → 原生凭据配置 → 首次真实对话 | PR-04 / PR-05（`N-04-03`、`N-05-01`） | `[ ]` 待测 |
-| **T02** | 已安装重启 → 0.2s Cache-First 首屏 → 后台就绪无闪烁校准 | PR-03 / PR-05（`N-03-05`、`N-05-04`） | `[ ]` 待测 |
-| **T03** | 入队回执与 `turn/end` 分离，失败轮次如实报错不假成功 | PR-02 / PR-03（`N-02-03`、`N-03-03`） | `[ ]` 待测 |
-| **T04** | 后台到达审批/问答 → 通知 + 参数回溯 + Hold-to-undo + 拒绝零执行 | PR-03 / PR-06（`N-03-07`、`N-06-04`） | `[ ]` 待测 |
+| **T01** | 全新安装 → 运行层就绪 → 原生凭据配置 → 首次真实对话 | PR-04 / PR-05（`N-04-03`、`N-05-01`） | `[~]` 凭据与真实对话在既有安装态通过（PR-05 / 2026-11-24 覆盖安装后 PR09_OK）；**全新零凭据安装首次引导未覆盖** |
+| **T02** | 已安装重启 → 0.2s Cache-First 首屏 → 后台就绪无闪烁校准 | PR-03 / PR-05（`N-03-05`、`N-05-04`） | `[x]` 通过：`native.activity_visible` 90.7 ms / `native.cache_first_rendered` 96.2 ms（PR-05），F15–F19 修复后复测；2026-11-24 冷启直达「会话」、就绪后校准无重复行 |
+| **T03** | 入队回执与 `turn/end` 分离，失败轮次如实报错不假成功 | PR-02 / PR-03（`N-02-03`、`N-03-03`） | `[x]` 通过：PR-04 真机回执/结束分离与 F3 领域错码透传；2026-11-24 PR09_OK 轮次回执与结束态一致 |
+| **T04** | 后台到达审批/问答 → 通知 + 参数回溯 + Hold-to-undo + 拒绝零执行 | PR-03 / PR-06（`N-03-07`、`N-06-04`） | `[~]` 部分通过：PR-06 通知去重与参数回溯通过；拒绝零执行与 Hold-to-undo 样本待补（F22–F23） |
 | **T05** | 多并发 Session 与 Subagent 隔离，隐藏页跳过派生 | PR-03 / PR-04（`N-03-01`、`N-03-04`） | `[ ]` 待测 |
-| **T06** | 运行中杀 DSH/断线 → 恢复校准无重复消息、不盲目重发 | PR-03 / PR-05（`N-03-06`） | `[ ]` 待测 |
-| **T07** | 6,000 词 + 400 行代码块流式不卡主线程，回看不被抢滚 | PR-03 / PR-04（`N-03-02`、`N-03-08`、`N-04-04`） | `[ ]` 待测 |
-| **T08** | Relay `ui_*` 双安全域隔离（`FLAG_SECURE`）+ 插件装卸边界 | PR-01 / PR-06 / PR-07（`N-01-01`、`N-07-01`） | `[ ]` 待测 |
+| **T06** | 运行中杀 DSH/断线 → 恢复校准无重复消息、不盲目重发 | PR-03 / PR-05（`N-03-06`） | `[x]` 通过：PR-05 F14 修复后复测；PR-08 远程链路断线后 `transport.timeout` + 「上条消息发送状态未确认」+ 重连恢复 |
+| **T07** | 6,000 词 + 400 行代码块流式不卡主线程，回看不被抢滚 | PR-03 / PR-04（`N-03-02`、`N-03-08`、`N-04-04`） | `[~]` 部分通过：PR-04 长文渲染 917 帧 / 2 janky / p90 11 ms；固定 6,000 词 + 400 行负载未复测 |
+| **T08** | Relay `ui_*` 双安全域隔离（`FLAG_SECURE`）+ 插件装卸边界 | PR-01 / PR-06 / PR-07（`N-01-01`、`N-07-01`） | `[~]` 部分通过：PR-06 通知隔离、PR-07 L0/L1 边界；`FLAG_SECURE` 与真实第三方装卸未验证（F20–F21） |
 | **T09** | Android 17 loopback / LAN（ADR-0032）/ 公网 / SSH 远程原生对话 | PR-08（`N-08-06`） | `[~]` SSH 远程原生对话、断线、重连与 `HOST_KEY_CHANGED` 已于 2026-11-24 通过（测试隧道）；LAN / 公网路径待测 |
-| **T10** | 从旧 WebView 版本覆盖安装保留工作区、凭据与可恢复会话 | PR-05 / PR-09（`N-05-05`、`N-09-04`） | `[ ]` 待测 |
+| **T10** | 从旧 WebView 版本覆盖安装保留工作区、凭据与可恢复会话 | PR-05 / PR-09（`N-05-05`、`N-09-04`） | `[x]` 2026-11-24 通过：5 个会话、`/root/projects` 文件与 API 凭据在覆盖安装后均可用 |
 | **T11** | 停机/强杀无孤儿进程；32 进程上限与 A17 内存限制清晰归因 | PR-08（`N-08-01`、`N-08-03`、`N-08-04`） | `[~]` 停机与 `force-stop` 零残留、31/32 预警已过；32 上限下 `exit 137` 归因与 A17 MemoryLimiter 归因待补 |
-| **T12** | DSH/Runtime 在线更新探针与回滚通过；全仓与 APK 零业务 WebView | PR-08 / PR-09（`N-08-05`、`N-09-02`、`N-09-03`） | `[ ]` 待测 |
+| **T12** | DSH/Runtime 在线更新探针与回滚通过；全仓与 APK 零业务 WebView | PR-08 / PR-09（`N-08-05`、`N-09-02`、`N-09-03`） | `[~]` 源码门禁与净构建 APK 产物（SHA-256 `AC41C634…15DB1`）零业务 WebView 已于 2026-11-24 核对通过，外链二次确认 + 系统浏览器通过；在线更新探测/回滚仍受 GitHub 不可达限制 |
 
 ---
 
@@ -369,7 +370,7 @@ PR-00 (基线 + 路线A/B PoC + ADR-0033 + DshMobile.Agent骨架 + 门禁)
 | `SavedStateSecurityTests` | PR-00（`N-00-07`） | PR-00 起零容忍 | `[x]` |
 | `LoggingPrivacyTests` | PR-00（`N-00-07`） | PR-00 起零容忍 | `[x]` |
 | `TranscriptPerfGateTests`（`Stream6000`） | PR-03（`N-03-08`） | PR-03 起锁定上限 | `[x]` |
-| `NoBusinessWebViewGateTests` | PR-09（`N-09-03`） | PR-09 起永久生效 | `[ ]` |
+| `NoBusinessWebViewGateTests` | PR-09（`N-09-03`） | PR-09 起永久生效 | `[x]` |
 
 ---
 
@@ -385,4 +386,4 @@ PR-00 (基线 + 路线A/B PoC + ADR-0033 + DshMobile.Agent骨架 + 门禁)
 | PR-06 Git / Diff / 收件箱 / 通知 | M2007J1SC / LineageOS / Android 17 (API 37) / CP2A.260605.016 | `B6E7FD99…594686` / `pr06-device-test` | DSH `0.2.2-rc.5` / Node 26.13.1 | 部分通过：Git/Diff、收件箱与后台问答通知通过；审批动作（`approval/policy=never`）、超长/二进制 Diff 与工具卡点击未覆盖；登记 F22–F23 | `docs/native/ACCEPTANCE_PR06.md` |
 | PR-07 插件目录 L0 / 受控 L1 | M2007J1SC / LineageOS / Android 17 (API 37) / CP2A.260605.016 | `57F522B9…2A511D` / `pr07-device-test` | DSH `0.2.2-rc.5` / Node 26.13.1 | 部分通过：L0 清单、L1 启停与重启闭环通过；真实装卸与自定义 WebUI 未覆盖；登记 F20–F21 | `docs/native/ACCEPTANCE_PR07.md` |
 | PR-08 治理/更新/远程/性能配对 | M2007J1SC / LineageOS 24.0 / Android 17 (API 37) / 非 root | `C0A35590…B430E8` / `feat/native-pr08-governance-remote-probe` | DSH `0.2.2-rc.5` / Node 26.13.1 | 部分通过：`N-08-02`、`N-08-03` 31/32 预警、`N-08-06`（测试隧道）、`N-08-07`（A/B/C）通过；`N-08-04`/`N-08-05`/`exit 137`/LAN 待补；登记 F24–F26 | `docs/native/ACCEPTANCE_PR08.md`、`docs/native/PERFORMANCE_BASELINE.md` |
-| PR-09 覆盖安装 & 零 WebView 终验 | 待真机验证 | — | — | 待测 | `docs/native/ACCEPTANCE_MATRIX.md` |
+| PR-09 覆盖安装 & 零 WebView 终验 | M2007J1SC / LineageOS 24.0 / Android 17 (API 37) / 非 root | `AC41C634…15DB1` / `feat/native-pr09-default-entry-remove-webview` | DSH 0.2.2-rc.5 / Node 26.13.1 | 部分通过：覆盖安装 T10 与净构建 APK 零业务 WebView（T02/T03/T06/T10 通过，T05 未验，余项见总表）；登记 F27（增量构建残留） | `docs/native/ACCEPTANCE_PR09.md`、`docs/native/ACCEPTANCE_MATRIX.md` |

@@ -10,9 +10,9 @@ public enum HomePhase
     /// <summary>Installed; sandbox and DSH not running.</summary>
     Stopped,
     Starting,
-    /// <summary>Sandbox up, DSH process up, WebUI not answering yet.</summary>
-    WaitingForWebUi,
-    /// <summary>DSH answered; the WebUI can be opened.</summary>
+    /// <summary>Sandbox up, DSH process up, waiting for agent readiness.</summary>
+    WaitingForDsh,
+    /// <summary>DSH answered; native chat can be opened.</summary>
     Ready,
     Stopping,
     /// <summary>The runtime journal says the last operation failed (<see cref="HomeStatus.ErrorCode"/>).</summary>
@@ -31,7 +31,7 @@ public enum HomeAction
     /// <summary>The runtime body is installed but the DSH layer is not (ADR-0027: it is imported separately).</summary>
     ImportDsh,
     Start,
-    OpenDsh,
+    OpenChat,
     Stop,
 }
 
@@ -95,8 +95,8 @@ public sealed record HomeStatus(
             RuntimeState.Starting or RuntimeState.Recovering => Make(HomePhase.Starting, HomeAction.None, HomeAction.Stop),
             RuntimeState.Running => snapshot.Harness switch
             {
-                HarnessState.Ready => Make(HomePhase.Ready, HomeAction.OpenDsh, HomeAction.Stop),
-                HarnessState.Starting or HarnessState.Running => Make(HomePhase.WaitingForWebUi, HomeAction.None, HomeAction.Stop),
+                HarnessState.Ready => Make(HomePhase.Ready, HomeAction.OpenChat, HomeAction.Stop),
+                HarnessState.Starting or HarnessState.Running => Make(HomePhase.WaitingForDsh, HomeAction.None, HomeAction.Stop),
                 // Sandbox kept but DSH is gone: say it failed, offer the stop that cleans up and a fresh start.
                 _ => Make(HomePhase.Failed, HomeAction.Start, HomeAction.Stop),
             },
