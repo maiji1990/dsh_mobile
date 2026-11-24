@@ -70,6 +70,9 @@ public sealed class RuntimeCoordinatorIsolationTests : IDisposable
             return Task.FromResult(new DshHostResult(true, "OK", null));
         }
 
+        public Task<DshHealthProbeResult> ProbeHealthAsync(CancellationToken ct) =>
+            Task.FromResult(new DshHealthProbeResult(true, "OK", "ready"));
+
         public ValueTask DisposeAsync() => ValueTask.CompletedTask;
     }
 

@@ -11,6 +11,7 @@ public enum WarmupDecision
     RuntimeNotReady,
     LowBattery,
     PowerSave,
+    ThermalThrottled,
 }
 
 /// <summary>
@@ -31,7 +32,18 @@ public static class WarmupPolicy
         bool busy,
         bool idle,
         bool lowBattery,
-        bool powerSave)
+        bool powerSave) =>
+        Decide(enabled, userStopped, busy, idle, lowBattery, powerSave, HeatTier.Nominal);
+
+    /// <summary>含设备温控阶梯校验的后台预热决策（N-08-04）：中重度发热时抑制预热但不强杀活跃会话。</summary>
+    public static WarmupDecision Decide(
+        bool enabled,
+        bool userStopped,
+        bool busy,
+        bool idle,
+        bool lowBattery,
+        bool powerSave,
+        HeatTier heatTier)
     {
         if (!enabled)
         {
@@ -56,6 +68,10 @@ public static class WarmupPolicy
         if (powerSave)
         {
             return WarmupDecision.PowerSave;
+        }
+        if (heatTier >= HeatTier.Moderate)
+        {
+            return WarmupDecision.ThermalThrottled;
         }
         return WarmupDecision.Start;
     }

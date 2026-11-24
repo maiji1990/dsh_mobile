@@ -146,7 +146,7 @@ public sealed class UpdateCoordinatorTests : IDisposable
             Assert.True(r.Ok, $"{r.Code} {r.Message}");
             Assert.Equal((UpdatePhases.Committed, Target), (r.Phase, r.InstalledVersion));
             Assert.Equal([UpdatePhases.Downloading, UpdatePhases.Verified, UpdatePhases.Swapping, UpdatePhases.Probing, UpdatePhases.Committed], phases.Distinct());
-            Assert.Equal(["host.start", "host.stop"], _calls); // the probe; DSH was not running before, so no restart
+            Assert.Equal(["host.probe"], _calls); // the probe; DSH was not running before, so no restart
             Assert.Equal(Target, Dsh.InstalledVersion());
             Assert.False(Dsh.IsHeldForProbe);
             Assert.False(Directory.Exists(Dsh.AsideDir));
@@ -159,7 +159,7 @@ public sealed class UpdateCoordinatorTests : IDisposable
     public async Task UnhealthyNewLayer_IsRolledBack_ToTheOldOne()
     {
         using var runtime = Coordinator();
-        _host.OnStart = () => new DshHostResult(false, "DSH_START_TIMEOUT", "no READY within 60 s");
+        _host.OnProbe = () => new DshHealthProbeResult(false, "DSH_START_TIMEOUT", "no READY within 60 s");
         var (u, _, http, d) = Updates(runtime);
         using (http)
         using (d)
@@ -196,7 +196,7 @@ public sealed class UpdateCoordinatorTests : IDisposable
             var r = await u.InstallDshAsync(check, "preview", stopConfirmed: true, null, CancellationToken.None);
             Assert.True(r.Ok, $"{r.Code} {r.Message}");
             Assert.True(r.Restarted);
-            Assert.Equal(["host.start", "host.stop", "host.start", "host.stop", "host.start"], _calls);
+            Assert.Equal(["host.start", "host.stop", "host.probe", "host.start"], _calls);
             Assert.Equal(Target, Dsh.InstalledVersion());
         }
     }
@@ -352,7 +352,7 @@ public sealed class UpdateCoordinatorTests : IDisposable
         using var u = new UpdateCoordinator(runtime, downloader, new UpdateStateStore(Layout), _time);
 
         // 1. 健康探测失败：DSH 与 Runtime 均自动回滚到旧版本。
-        _host.OnStart = () => new DshHostResult(false, "DSH_START_TIMEOUT", "no READY within 60 s");
+        _host.OnProbe = () => new DshHealthProbeResult(false, "DSH_START_TIMEOUT", "no READY within 60 s");
         var failed = await u.InstallPlanAsync(await CombinedDiscovery(), "preview", stopConfirmed: false, null, CancellationToken.None);
         Assert.False(failed.Ok);
         Assert.Equal(UpdateTransactionCodes.HealthFailed, failed.Code);
@@ -362,7 +362,7 @@ public sealed class UpdateCoordinatorTests : IDisposable
         Assert.False(Dsh.IsHeldForProbe);
 
         // 2. 健康探测通过：Runtime 与 DSH 一并提交。
-        _host.OnStart = null;
+        _host.OnProbe = null;
         var ok = await u.InstallPlanAsync(await CombinedDiscovery(), "preview", stopConfirmed: false, null, CancellationToken.None);
         Assert.True(ok.Ok, $"{ok.Code} {ok.Message}");
         Assert.Equal((UpdatePhases.Committed, Target), (ok.Phase, ok.InstalledVersion));

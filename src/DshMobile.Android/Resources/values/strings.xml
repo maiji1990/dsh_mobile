@@ -630,4 +630,29 @@
     <string name="agent_notify_session_prefix">会话：%1$s</string>
     <string name="agent_notify_allow_once">允许一次</string>
     <string name="agent_notify_reject">拒绝</string>
+
+    <!-- PR-08: System Governance, Phantom Processes, Thermal/Memory Limits, Remote Native Chat. -->
+    <string name="governance_section">系统治理与进程健康</string>
+    <string name="governance_phantom_title">子进程预算（Android 12+ 32 上限）</string>
+    <string name="governance_phantom_fmt">当前 UID 子进程：%1$d / %2$d</string>
+    <string name="governance_phantom_warn_fmt">已接近上限（%1$d / %2$d）：可能触发系统 SIGKILL(137)，点此跳转开发者选项检查幻影进程限制</string>
+    <string name="governance_phantom_unsupported">当前系统无法读取 /proc 子进程计数</string>
+    <string name="governance_phantom_dev_btn">前往开发者选项检查限制</string>
+    <string name="governance_heat_title">温控与后台预热阶梯</string>
+    <string name="governance_heat_fmt">%1$s · 后台预热：%2$s · 后台并发：%3$d</string>
+    <string name="governance_heat_allow">允许</string>
+    <string name="governance_heat_suppress">已抑制</string>
+    <string name="governance_heat_nominal">正常（Nominal）</string>
+    <string name="governance_heat_moderate">中度发热（Moderate）</string>
+    <string name="governance_heat_severe">重度发热（Severe）</string>
+    <string name="governance_heat_critical">临界高温（Critical）</string>
+    <string name="governance_leases_title">活跃工作租约与空闲停机</string>
+    <string name="governance_leases_idle">当前无活跃租约（后台空闲超阈值可优雅停机）</string>
+    <string name="governance_leases_active_fmt">活跃租约 %1$d 项：%2$s</string>
+    <string name="governance_exit_title">上次退出死因分类</string>
+    <string name="governance_exit_memory_limited">检测到上次进程被 Android 17 MemoryLimiter:AnonSwap 终止（已自动安全恢复）</string>
+    <string name="governance_exit_none">未检测到异常内存终止记录</string>
+    <string name="remote_open_chat">打开远程原生对话</string>
+    <string name="remote_chat_title_fmt">远程 · %1$s</string>
+    <string name="remote_chat_disconnected">远程 SSH 隧道或远端 DSH 已断开，请返回「远程主机」重新连接并启动后再试</string>
 </resources>

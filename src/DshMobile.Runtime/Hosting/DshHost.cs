@@ -18,6 +18,9 @@ public enum DshHostState
 
 public sealed record DshHostResult(bool Ok, string Code, string? Message);
 
+/// <summary>在线更新与换层时的独立健康探针结果（N-08-05 / ADR-0029）。</summary>
+public sealed record DshHealthProbeResult(bool Ok, string Code, string? Message, string? DshVersion = null);
+
 /// <summary>
 /// Observable start/stop milestones of <see cref="DshHost"/> (ADR-0031): the UI shows the real stage instead of a
 /// generic spinner, and never reports READY before <see cref="DshHostState.Ready"/>.
@@ -79,6 +82,9 @@ public interface IDshHost : IAsyncDisposable
     Task<DshHostResult> StartAsync(CancellationToken ct, StartupTrace? trace = null);
 
     Task<DshHostResult> StopAsync(CancellationToken ct);
+
+    /// <summary>执行自包含的新层健康探针（启动→就绪/401 检查→停机清理）并返回观测到的 DSH 版本（N-08-05）。</summary>
+    Task<DshHealthProbeResult> ProbeHealthAsync(CancellationToken ct);
 }
 
 /// <summary>
@@ -255,6 +261,10 @@ public sealed class DshHost : IDshTokenSource, IDshHost
                 await KillEverythingAsync().ConfigureAwait(false);
                 SetState(DshHostState.Failed);
                 SetPhase(DshHostPhase.Failed);
+                if (code == 137)
+                {
+                    return new DshHostResult(false, RuntimeErrorCodes.PhantomProcessLimit, "sandbox PRoot exited with 137 (SIGKILL / possible Android 32 phantom process limit)");
+                }
                 return new DshHostResult(false, Exited, $"sandbox PRoot exited immediately (exit {code})");
             }
 
@@ -331,6 +341,101 @@ public sealed class DshHost : IDshTokenSource, IDshHost
             return left == 0
                 ? new DshHostResult(true, "OK", null)
                 : new DshHostResult(false, Orphans, $"{left} process(es) with a runtime marker still alive after stop");
+        }
+        finally
+        {
+            _op.Release();
+        }
+    }
+
+    /// <summary>
+    /// 在线更新与换层独立健康探针（N-08-05 / ADR-0029）：
+    /// 启动沙箱与 <c>dsh web</c> 并等待 HTTP 健康检查（端口 + 401/就绪）通过，读取磁盘 DSH 版本后在 <c>finally</c> 中安全停机清理；
+    /// 不建立 Route B 长连接、不改写业务状态。
+    /// </summary>
+    public async Task<DshHealthProbeResult> ProbeHealthAsync(CancellationToken ct)
+    {
+        await _op.WaitAsync(ct).ConfigureAwait(false);
+        try
+        {
+            if (State is not (DshHostState.Stopped or DshHostState.Failed))
+            {
+                return new DshHealthProbeResult(false, Conflict, $"host is {State}");
+            }
+            if (Preconditions() is { } failed)
+            {
+                return new DshHealthProbeResult(false, failed.Code, failed.Message);
+            }
+            if (RuntimeProcessSnapshot.Observe(Environment.ProcessId) is { } running
+                && (running.SandboxRootPid is not null || running.DshRootPid is not null))
+            {
+                return new DshHealthProbeResult(false, Conflict, $"a legacy-started PRoot tree is running (sandbox {running.SandboxRootPid?.ToString() ?? "-"}, dsh {running.DshRootPid?.ToString() ?? "-"}); stop it first");
+            }
+            ReapOrphanProotLoaders();
+            SetState(DshHostState.Starting);
+            SetPhase(DshHostPhase.SandboxStarting);
+
+            DshHostResult probeOutcome;
+            try
+            {
+                var sandboxReady = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+                _sandbox = Spawn(
+                    _builder.SandboxCommand(),
+                    _builder.Environment("sandbox"),
+                    "sandbox",
+                    line =>
+                    {
+                        if (line.Contains(RuntimeConstants.SandboxKeepaliveMarker, StringComparison.Ordinal))
+                        {
+                            sandboxReady.TrySetResult(true);
+                        }
+                    });
+                await WaitSandboxReadyAsync(_sandbox, sandboxReady.Task, SandboxReadyMaxWait, ct).ConfigureAwait(false);
+                SetPhase(DshHostPhase.SandboxReady);
+                if (_sandbox.HasExited)
+                {
+                    var code = _sandbox.ExitCode;
+                    probeOutcome = code == 137
+                        ? new DshHostResult(false, RuntimeErrorCodes.PhantomProcessLimit, "sandbox PRoot exited with 137 (SIGKILL / possible Android 32 phantom process limit)")
+                        : new DshHostResult(false, Exited, $"sandbox PRoot exited immediately (exit {code})");
+                }
+                else
+                {
+                    KillTreesByMarker(RuntimeConstants.DshStartScript);
+                    DshWriterLockSweeper.SweepOnThisDevice(_layout.UserDataDir);
+                    using var startupWake = new SemaphoreSlim(0, 1);
+                    SetPhase(DshHostPhase.DshStarting);
+                    _dsh = SpawnDsh(null, () => SignalStartupWake(startupWake));
+                    probeOutcome = await WaitReadyAsync(ct, null, startupWake).ConfigureAwait(false);
+                }
+            }
+            catch (Exception e) when (e is System.ComponentModel.Win32Exception or IOException or InvalidOperationException)
+            {
+                probeOutcome = new DshHostResult(false, ProotGuestProcess.SpawnFailed, e.Message);
+            }
+
+            var detectedVersion = probeOutcome.Ok
+                ? DshMobile.Runtime.Updates.InstalledVersionsReader.Read(_layout, "0.0.0").Dsh
+                : null;
+
+            SetState(DshHostState.Stopping);
+            SetPhase(DshHostPhase.Stopping);
+            await StopDshGracefullyAsync().ConfigureAwait(false);
+            var left = await KillEverythingAsync().ConfigureAwait(false);
+            ReapOrphanProotLoaders();
+            UiToolsAtStart = null;
+            SetState(left == 0 ? DshHostState.Stopped : DshHostState.Failed);
+            SetPhase(left == 0 ? DshHostPhase.Idle : DshHostPhase.Failed);
+
+            if (!probeOutcome.Ok)
+            {
+                return new DshHealthProbeResult(false, probeOutcome.Code, probeOutcome.Message, detectedVersion);
+            }
+            if (left > 0)
+            {
+                return new DshHealthProbeResult(false, Orphans, $"{left} process(es) with a runtime marker still alive after probe stop", detectedVersion);
+            }
+            return new DshHealthProbeResult(true, "OK", "ready", detectedVersion);
         }
         finally
         {
@@ -504,8 +609,14 @@ public sealed class DshHost : IDshTokenSource, IDshHost
                     trace?.EmitSpan("host.ready", _dshSpawnMark, StartupTrace.Failed, new Dictionary<string, object?> { ["probes"] = probes, ["code"] = NotReady });
                     return new DshHostResult(false, NotReady, $"DSH not ready within {RuntimeConstants.DshReadyTimeout.TotalSeconds:F0} s");
                 case DshHealthAction.Restart or DshHealthAction.Exhausted when !alive:
+                    var exitCode = _dsh?.ExitCode;
+                    if (exitCode == 137)
+                    {
+                        trace?.EmitSpan("host.ready", _dshSpawnMark, StartupTrace.Failed, new Dictionary<string, object?> { ["probes"] = probes, ["code"] = RuntimeErrorCodes.PhantomProcessLimit });
+                        return new DshHostResult(false, RuntimeErrorCodes.PhantomProcessLimit, "DSH exited during start with 137 (SIGKILL / possible Android 32 phantom process limit)");
+                    }
                     trace?.EmitSpan("host.ready", _dshSpawnMark, StartupTrace.Failed, new Dictionary<string, object?> { ["probes"] = probes, ["code"] = Exited });
-                    return new DshHostResult(false, Exited, $"DSH exited during start (exit {_dsh?.ExitCode})");
+                    return new DshHostResult(false, Exited, $"DSH exited during start (exit {exitCode})");
             }
             var interval = StartupProbeInterval(now - _window.StartedAtMs);
             if (startupWake is not null)
@@ -545,7 +656,14 @@ public sealed class DshHost : IDshTokenSource, IDshHost
                 }
                 else if (d.Action is DshHealthAction.Exhausted or DshHealthAction.InitialTimeout)
                 {
-                    _log($"host: dsh {d.Action}; stopping DSH (sandbox kept)");
+                    if (_dsh is { HasExited: true, ExitCode: 137 })
+                    {
+                        _log($"host: dsh exited 137 ({RuntimeErrorCodes.PhantomProcessLimit}); stopping sandbox-kept failure state");
+                    }
+                    else
+                    {
+                        _log($"host: dsh {d.Action}; stopping DSH (sandbox kept)");
+                    }
                     KillProcessTree(_dsh);
                     KillTreesByMarker(RuntimeConstants.DshStartScript);
                     SetState(DshHostState.Failed);

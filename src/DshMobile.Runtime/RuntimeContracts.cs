@@ -75,6 +75,10 @@ public static class RuntimeErrorCodes
     public const string BundleNotFound = "RUNTIME_BUNDLE_NOT_FOUND";
     /// <summary>The picked runtime bundle could not be read or copied into the app.</summary>
     public const string BundleUnreadable = "RUNTIME_BUNDLE_UNREADABLE";
+    /// <summary>guest/沙箱进程以 SIGKILL(137) 退出，可能触及 Android 12+ 32 幻影进程预算上限（N-08-03）。</summary>
+    public const string PhantomProcessLimit = "PHANTOM_PROCESS_LIMIT";
+    /// <summary>上一次进程被 Android 17 MemoryLimiter:AnonSwap 终止（N-08-04）。</summary>
+    public const string MemoryLimited = "MEMORY_LIMITED";
 }
 
 public sealed record GuestExecutionOptions(

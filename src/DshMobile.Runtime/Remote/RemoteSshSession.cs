@@ -7,6 +7,7 @@ using System.Net;
 using System.Net.Sockets;
 using System.Text;
 using DshMobile.Core.Contracts;
+using DshMobile.Runtime.Hosting;
 using Renci.SshNet;
 using Renci.SshNet.Common;
 
@@ -29,7 +30,7 @@ public sealed record RemoteDshStatus(
 /// A live C# SSH session to one remote host profile, and the remote <c>dsh web</c> it may run (one at a time). Operations
 /// are serialised; <see cref="Refresh"/> may be called from any thread. Dispose to stop everything and disconnect.
 /// </summary>
-public sealed class RemoteSshSession : IDisposable
+public sealed class RemoteSshSession : IDisposable, IDshTokenSource
 {
     private readonly SshClient _client;
     private readonly SemaphoreSlim _op = new(1, 1);
@@ -43,6 +44,7 @@ public sealed class RemoteSshSession : IDisposable
     private SshCommand? _dsh;
     private Task? _dshRun;
     private string? _launchToken; // only ever in memory (ADR-0006)
+    private long _tokenRevision;
     private ForwardedPortLocal? _forward;
 
     internal RemoteSshSession(SshClient client, RemoteHostProfile profile)
@@ -56,6 +58,31 @@ public sealed class RemoteSshSession : IDisposable
     /// <summary>False after a keepalive / socket failure or <see cref="Dispose"/>.</summary>
     public bool IsConnected => Volatile.Read(ref _disposed) == 0 && _client.IsConnected;
 
+    /// <summary>当前远程启动令牌（仅驻留内存，N-08-06 供 <see cref="IDshTokenSource"/> 原生网关复用，绝不落盘或打印）。</summary>
+    public string? Token
+    {
+        get
+        {
+            lock (_gate)
+            {
+                return Volatile.Read(ref _disposed) == 0 && _client.IsConnected ? _launchToken : null;
+            }
+        }
+    }
+
+    public long? TokenRevision
+    {
+        get
+        {
+            lock (_gate)
+            {
+                return _tokenRevision == 0 ? null : _tokenRevision;
+            }
+        }
+    }
+
+    public event EventHandler? TokenChanged;
+
     /// <summary>The local forward port while the remote DSH is reachable through it.</summary>
     public int? LocalPort
     {
@@ -68,6 +95,10 @@ public sealed class RemoteSshSession : IDisposable
         }
     }
 
+    /// <summary>仅限本机回环的远程 DSH 转发基地址（N-08-06 / ADR-0033）。</summary>
+    public Uri? LoopbackBaseUri =>
+        LocalPort is { } port && IsConnected ? new Uri($"http://127.0.0.1:{port}/") : null;
+
     internal void SetConnected(string code, string? message) => Set("CONNECTED", code, message);
 
     /// <summary>
@@ -76,13 +107,19 @@ public sealed class RemoteSshSession : IDisposable
     /// </summary>
     public RemoteDshStatus Refresh()
     {
+        var tokenVoided = false;
         if (!IsConnected)
         {
             lock (_gate)
             {
                 if (_state is not "DISCONNECTED")
                 {
-                    _launchToken = null;
+                    if (_launchToken is not null)
+                    {
+                        _launchToken = null;
+                        _tokenRevision++;
+                        tokenVoided = true;
+                    }
                     _forward = null;
                     _dsh = null;
                     _dshRun = null;
@@ -96,10 +133,19 @@ public sealed class RemoteSshSession : IDisposable
             {
                 if (_state == "READY" && _dshRun is { IsCompleted: true })
                 {
-                    _launchToken = null;
+                    if (_launchToken is not null)
+                    {
+                        _launchToken = null;
+                        _tokenRevision++;
+                        tokenVoided = true;
+                    }
                     SetLocked("CONNECTED", RemoteCodes.DshStartFailed, RemoteDshRules.ExitedMessage);
                 }
             }
+        }
+        if (tokenVoided)
+        {
+            TokenChanged?.Invoke(this, EventArgs.Empty);
         }
         return Snapshot();
     }
@@ -152,7 +198,9 @@ public sealed class RemoteSshSession : IDisposable
             lock (_gate)
             {
                 _launchToken = found.Task.Result;
+                _tokenRevision++;
             }
+            TokenChanged?.Invoke(this, EventArgs.Empty);
 
             int port;
             try
@@ -289,12 +337,22 @@ public sealed class RemoteSshSession : IDisposable
     private void StopDshChannel()
     {
         SshCommand? cmd;
+        var tokenVoided = false;
         lock (_gate)
         {
             cmd = _dsh;
             _dsh = null;
             _dshRun = null;
-            _launchToken = null;
+            if (_launchToken is not null)
+            {
+                _launchToken = null;
+                _tokenRevision++;
+                tokenVoided = true;
+            }
+        }
+        if (tokenVoided)
+        {
+            TokenChanged?.Invoke(this, EventArgs.Empty);
         }
         if (cmd is null)
         {

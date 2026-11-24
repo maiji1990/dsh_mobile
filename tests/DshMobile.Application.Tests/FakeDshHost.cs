@@ -22,6 +22,8 @@ internal sealed class FakeDshHost(List<string> calls) : IDshHost
 
     public Func<DshHostResult>? OnStop { get; set; }
 
+    public Func<DshHealthProbeResult>? OnProbe { get; set; }
+
     public event EventHandler? StateChanged;
 
     public Task<DshHostResult> StartAsync(CancellationToken ct, StartupTrace? trace = null)
@@ -43,6 +45,21 @@ internal sealed class FakeDshHost(List<string> calls) : IDshHost
         Set(DshHostState.Stopped);
         return Task.FromResult(r);
     }
+
+    public Task<DshHealthProbeResult> ProbeHealthAsync(CancellationToken ct)
+    {
+        calls.Add("host.probe");
+        var r = OnProbe?.Invoke() ?? new DshHealthProbeResult(true, "OK", "ready");
+        if (!_orphans)
+        {
+            UiToolsAtStart = null;
+            Set(DshHostState.Stopped);
+        }
+        return Task.FromResult(r);
+    }
+
+    /// <summary>模拟健康探针收口时仍有残余进程未退出。</summary>
+    public void KeepOrphansAfterProbe() => _orphans = true;
 
     /// <summary>What the health loop does when it gives up: DSH stopped, sandbox kept.</summary>
     public void GiveUp()
