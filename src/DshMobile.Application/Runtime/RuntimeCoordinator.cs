@@ -609,26 +609,74 @@ public sealed class RuntimeCoordinator : IDisposable
         }
     }
 
-    /// <summary>Caller owns the operation lock. A held layer is restored on the next sync if the probe is interrupted.</summary>
+    /// <summary>
+    /// 使用 <see cref="IDshHost.ProbeHealthAsync"/> 执行在线更新或换层后的独立健康检查（N-08-05 / ADR-0029）。
+    /// 不要求用户已开启 Route B 会话；若探针后仍残留子进程，则保留前台服务以便后续手动停机回滚。
+    /// </summary>
+    public async Task<DshHealthProbeResult> ProbeHealthAsync(CancellationToken ct)
+    {
+        await _op.WaitAsync(ct).ConfigureAwait(false);
+        try
+        {
+            await SyncAsync(ct).ConfigureAwait(false);
+            return await ProbeHostInternalAsync(ct).ConfigureAwait(false);
+        }
+        finally
+        {
+            _op.Release();
+        }
+    }
+
+    /// <summary>调用方持有 <see cref="_op"/> 锁：运行 <see cref="IDshHost.ProbeHealthAsync"/> 并维护前台保活边界。</summary>
+    private async Task<DshHealthProbeResult> ProbeHostInternalAsync(CancellationToken ct)
+    {
+        if (_host is { OwnsProcesses: true })
+        {
+            return new DshHealthProbeResult(false, RuntimeErrorCodes.InvalidTransition, "stop DSH before running update health probe");
+        }
+        if (State.Current.State != RuntimeState.Ready)
+        {
+            return new DshHealthProbeResult(false, RuntimeErrorCodes.InvalidTransition, $"cannot probe while runtime is {State.Current.State}");
+        }
+
+        _host ??= CreateHost();
+        _foreground.Acquire();
+        try
+        {
+            await EnsureGuestAssetsAsync(ct).ConfigureAwait(false);
+            var probe = await _host.ProbeHealthAsync(ct).ConfigureAwait(false);
+            var resolvedVersion = probe.DshVersion ?? DshMobile.Runtime.Updates.InstalledVersionsReader.Read(_layout, "0.0.0").Dsh;
+            var resolved = probe with { DshVersion = resolvedVersion };
+            _log.Note(resolved.Ok
+                ? $"probe: ok (dsh={resolved.DshVersion ?? "-"})"
+                : $"probe FAILED {resolved.Code}: {resolved.Message}");
+            return resolved;
+        }
+        finally
+        {
+            if (_host is not { OwnsProcesses: true })
+            {
+                _foreground.Release();
+            }
+        }
+    }
+
+    /// <summary>Caller holds the operation lock. A held layer is restored on the next sync if the probe is interrupted.</summary>
     private async Task<DshLayerResult> CheckDshReplacementAsync(DshLayerInstaller installer, DshLayerResult installed)
     {
         _dshProbeHeld = true;
         try
         {
             await SyncAsync(CancellationToken.None).ConfigureAwait(false);
-            var start = await StartHostAsync(DshProfile.Web, CancellationToken.None).ConfigureAwait(false);
-            var problem = !start.Ok ? $"start: {start.Code} {start.Message}"
-                : start.Snapshot.DshVersion != installed.Version ? $"running version is {start.Snapshot.DshVersion ?? "unknown"}, expected {installed.Version}"
-                : null;
-            if (_host is { OwnsProcesses: true } host)
+            var probe = await ProbeHostInternalAsync(CancellationToken.None).ConfigureAwait(false);
+            if (_host is { OwnsProcesses: true })
             {
-                var stop = await StopHostAsync(host, CancellationToken.None).ConfigureAwait(false);
-                if (!stop.Ok)
-                {
-                    return installed with { Ok = false, Code = DshLayerErrorCodes.HealthFailed, Changed = false,
-                        Message = $"probe stop failed: {stop.Code} {stop.Message}; stop DSH to restore the previous layer" };
-                }
+                return installed with { Ok = false, Code = DshLayerErrorCodes.HealthFailed, Changed = false,
+                    Message = $"probe stop failed: {probe.Code} {probe.Message}; stop DSH to restore the previous layer" };
             }
+            var problem = !probe.Ok ? $"probe: {probe.Code} {probe.Message}"
+                : probe.DshVersion != installed.Version ? $"running version is {probe.DshVersion ?? "unknown"}, expected {installed.Version}"
+                : null;
             var finished = problem is null ? installer.CommitProbed() : installer.AbortProbed();
             if (problem is not null || !finished.Ok)
             {

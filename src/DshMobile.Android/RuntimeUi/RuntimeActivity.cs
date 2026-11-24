@@ -21,6 +21,7 @@ public sealed class RuntimeActivity : DshActivity
     private LinearLayout _content = null!;
     private LinearProgressIndicator _progress = null!;
     private RuntimeFacts? _facts;
+    private DshMobile.Runtime.Supervision.PhantomProcessReport? _phantomBudget;
     private int _renderPosted;
 
     protected override void OnCreate(Bundle? savedInstanceState)
@@ -72,6 +73,7 @@ public sealed class RuntimeActivity : DshActivity
     private async Task ReadFactsAsync()
     {
         _facts = await _bridge.Runtime.ReadFactsAsync(CancellationToken.None);
+        _phantomBudget = await Task.Run(Governance.SystemGovernanceMonitor.ObservePhantomProcessBudget);
         if (!IsDestroyed)
         {
             Render();
@@ -118,6 +120,66 @@ public sealed class RuntimeActivity : DshActivity
         Rows.Add(_content, 0, "", GetString(Resource.String.runtime_bundle_note)).Title.Visibility = ViewStates.Gone;
 
         RenderUpdates(busy);
+        RenderGovernance();
+    }
+
+    /// <summary>PR-08 系统治理面板：32 幻影进程预算与开发者选项引导、温控阶梯、活跃租约及上次退出分类。</summary>
+    private void RenderGovernance()
+    {
+        Rows.Header(_content, GetString(Resource.String.governance_section));
+
+        if (_phantomBudget is { Unsupported: false } budget)
+        {
+            if (budget.NearLimit)
+            {
+                var warnText = Rows.Fmt(this, Resource.String.governance_phantom_warn_fmt, budget.ChildProcessCount, budget.Limit);
+                Rows.Add(_content, Resource.Drawable.ic_error, GetString(Resource.String.governance_phantom_title), warnText,
+                    () => Governance.SystemGovernanceMonitor.OpenDeveloperOptionsForPhantomLimit(this));
+            }
+            else
+            {
+                var okText = Rows.Fmt(this, Resource.String.governance_phantom_fmt, budget.ChildProcessCount, budget.Limit);
+                Rows.Add(_content, Resource.Drawable.ic_info, GetString(Resource.String.governance_phantom_title), okText);
+            }
+        }
+        else
+        {
+            Rows.Add(_content, Resource.Drawable.ic_info, GetString(Resource.String.governance_phantom_title),
+                GetString(Resource.String.governance_phantom_unsupported));
+        }
+
+        if (OperatingSystem.IsAndroidVersionAtLeast(34))
+        {
+            Rows.Add(_content, Resource.Drawable.ic_tune, GetString(Resource.String.governance_phantom_dev_btn), null,
+                () => Governance.SystemGovernanceMonitor.OpenDeveloperOptionsForPhantomLimit(this));
+        }
+
+        var heat = _bridge.Governance.CurrentHeatGovernance();
+        var tierLabel = GetString(heat.Tier switch
+        {
+            DshMobile.Application.Runtime.HeatTier.Moderate => Resource.String.governance_heat_moderate,
+            DshMobile.Application.Runtime.HeatTier.Severe => Resource.String.governance_heat_severe,
+            DshMobile.Application.Runtime.HeatTier.Critical => Resource.String.governance_heat_critical,
+            _ => Resource.String.governance_heat_nominal,
+        });
+        var warmupLabel = GetString(heat.AllowBackgroundWarmup ? Resource.String.governance_heat_allow : Resource.String.governance_heat_suppress);
+        Rows.Add(_content, Resource.Drawable.ic_info, GetString(Resource.String.governance_heat_title),
+            Rows.Fmt(this, Resource.String.governance_heat_fmt, tierLabel, warmupLabel, heat.MaxBackgroundConcurrency));
+
+        var leases = _bridge.Governance.Leases.Snapshot();
+        var leaseDetail = leases.Count == 0
+            ? GetString(Resource.String.governance_leases_idle)
+            : Rows.Fmt(this, Resource.String.governance_leases_active_fmt, leases.Count,
+                string.Join(", ", leases.Select(l => l.Kind.ToString()).Distinct()));
+        Rows.Add(_content, Resource.Drawable.ic_refresh, GetString(Resource.String.governance_leases_title), leaseDetail);
+
+        var lastExit = _bridge.Governance.LastExitAssessment;
+        Rows.Add(_content,
+            lastExit.Kind == DshMobile.Application.Runtime.HistoricalExitKind.MemoryLimited ? Resource.Drawable.ic_error : Resource.Drawable.ic_info,
+            GetString(Resource.String.governance_exit_title),
+            GetString(lastExit.Kind == DshMobile.Application.Runtime.HistoricalExitKind.MemoryLimited
+                ? Resource.String.governance_exit_memory_limited
+                : Resource.String.governance_exit_none));
     }
 
     /// <summary>

@@ -295,26 +295,26 @@ PR-00 (基线 + 路线A/B PoC + ADR-0033 + DshMobile.Agent骨架 + 门禁)
 
 ### 任务项
 
-- [x] **N-08-01｜升级 `ProcessTable` 为 `NativeOrphanReaper` 多条件孤儿回收**（桌面假 `/proc` 单测与 `DshHost` 启停接线已绿；真机 T11 残留复测 **待真机验证**）
+- [x] **N-08-01｜升级 `ProcessTable` 为 `NativeOrphanReaper` 多条件孤儿回收**（桌面假 `/proc` 单测与 `DshHost` 启停接线已绿；2026-11-24 真机：`idle-stop` 优雅停机与 `am force-stop` 后 guest 进程均 0 残留；仅杀 App 进程的收养场景因非 root 无法制造，reaper 仍只有单测证据）
   - 修正 [ProcessTable.cs](../../src/DshMobile.Runtime/Supervision/ProcessTable.cs) 使用 `LastIndexOf(')')` 解析 `stat`，补齐 `uid`、`startTicks`、`TracerPid`、`/proc/<pid>/exe`（兼容 ` (deleted)`）；
   - 在 [NativeOrphanReaper.cs](../../src/DshMobile.Runtime/Supervision/NativeOrphanReaper.cs) 实现保守多条件交集孤儿识别（`uid == appUid && parent == 1 && tracer == 0 && exe matches libproot-loader*.so && !inLiveTrees`）与发信号前 `startTicks` 二次校验，并在 [DshHost.cs](../../src/DshMobile.Runtime/Hosting/DshHost.cs) 启动前与停止后执行安全清理 + [SupervisionTests.cs](../../tests/DshMobile.Runtime.Tests/SupervisionTests.cs) 完整离线 `/proc` 假树单测。
-- [ ] **N-08-02｜`WorkLeaseManager` 与 `IdleStopPolicy`**
-  - 实现带单租约上限与连续总上限的 `WorkLeaseManager`（覆盖 `Chat / Approval / Setup / Update / Reconcile`），单调时钟倒退/负值即清零；
-  - 实现 `IdleStopPolicy`（仅后台 + 无活跃租约 + 确认 Agent 全 Idle + 超过阈值才触发有序优雅停机），并与现有 `WarmupPolicy` 协同。
-- [ ] **N-08-03｜Android 12+ 32 Phantom Process 预算监控与引导**
-  - 基于 `ProcessTable` 统计当前 App UID 子进程数，≥28 在运行环境页告警并提供 API 34+ 一键跳开发者选项引导（只引导不篡改设置）；
-  - 捕获 guest `exit 137` 时归类为 `DshFailureCode.PhantomProcessLimit` 并给出清晰说明。
-- [ ] **N-08-04｜Android 17 Memory Limiter 死因分类与 `HeatTierPolicy` 温控阶梯**
-  - 启动恢复时读取 `ActivityManager.GetHistoricalProcessExitReasons()`，识别 `MemoryLimiter:AnonSwap` 映射为 `DshFailureCode.MemoryLimited`（不存原始系统描述）；
-  - 接入 `PowerManager.AddThermalStatusListener` / 限频 `GetThermalHeadroom(30)`（≥30s）与电量状态，扩展 `WarmupPolicy` 在中重度发热/低电时抑制后台预热与并发，不强杀活跃会话。
-- [ ] **N-08-05｜抽象并切换在线更新健康探针（ADR-0024 / ADR-0029）**
-  - 将 [RuntimeCoordinator.cs](../../src/DshMobile.Application/Runtime/RuntimeCoordinator.cs) 与 `UpdateCoordinator` 的 `probing` 阶段由 `StartHostAsync(DshProfile.Web)` + HTTP 401 抽象为 `IDshHost.ProbeHealthAsync(ct)`；
-  - 补齐 DSH 层与 Runtime 层换层探测成功提交、探测失败自动回滚、强杀恢复单测与真机验证。
-- [ ] **N-08-06｜远程主机 `RemoteSshSession` 原生会话接入**
-  - 按 ADR-0033 路线将 [RemoteSshSession.cs](../../src/DshMobile.Runtime/Remote/RemoteSshSession.cs) 接入 `IDshGateway`（保持 Keystore 不可导出私钥、主机指纹固定、`HOST_KEY_CHANGED` 拒绝、仅本地转发不变）；
-  - 真机验证远程主机连接→原生聊天→断线检测→重连恢复。
-- [ ] **N-08-07｜真机统一性能配对采集（`tooling/startup-perf.mjs`）**
-  - 在 Honor PTP-AN10 / Android 17 上按 [STARTUP_PERF.md](../STARTUP_PERF.md) 完成 A/B/C 各 10 次采集，输出原生 vs 旧 WebView 的冷启、热启、`native.cache_first_rendered`、`protocol.initialized`、RSS 与空闲 CPU 对照报告。
+- [x] **N-08-02｜`WorkLeaseManager` 与 `IdleStopPolicy`**（桌面实现、单测与 Release 裁剪构建已通过；2026-11-24 Android 17 真机：后台 3 min 阈值触发 `idle-stop: graceful ok (Ready)` 且 guest 进程 0 残留，Chat 租约活跃时后台 4 min 不误杀，运行环境页显示「活跃租约 1 项：Chat」）
+  - 已在 [WorkLeaseManager.cs](../../src/DshMobile.Application/Runtime/WorkLeaseManager.cs) 实现带单租约上限（默认 10m）与连续总上限（默认 30m）的 `WorkLeaseManager`（覆盖 `Chat / Approval / Setup / Update / Reconcile`），单调时钟倒退/负值即清空租约并归零计数；
+  - 已在 [IdleStopPolicy.cs](../../src/DshMobile.Application/Runtime/IdleStopPolicy.cs)、[SystemGovernanceMonitor.cs](../../src/DshMobile.Android/Governance/SystemGovernanceMonitor.cs) 与 [BridgeHost.cs](../../src/DshMobile.Android/Bridge/BridgeHost.cs) 实现并接线 `IdleStopPolicy`（仅后台 + 无活跃租约 + 确认 Agent 全 Idle + 超过阈值才触发有序优雅停机），并与 `WarmupPolicy` 协同 + [GovernancePolicyTests.cs](../../tests/DshMobile.Application.Tests/GovernancePolicyTests.cs) 单测覆盖。
+- [x] **N-08-03｜Android 12+ 32 Phantom Process 预算监控与引导**（桌面实现、单测与 Release 裁剪构建已通过；2026-11-24 真机：31/32 显示「已接近上限…可能触发 SIGKILL(137)」并成功跳转开发者选项。`exit 137` 的 UI 归因仍未复现——32 上限时系统即时回收新进程，登记 F25，映射仍仅单测）
+  - 已基于 [PhantomProcessMonitor.cs](../../src/DshMobile.Runtime/Supervision/PhantomProcessMonitor.cs) 统计同 UID 子进程数，≥28 在 [RuntimeActivity.cs](../../src/DshMobile.Android/RuntimeUi/RuntimeActivity.cs) 运行环境页告警并经 `SystemGovernanceMonitor` 提供 API 34+ 一键跳开发者选项引导（只引导不篡改设置）；
+  - 已在 [ProotGuestProcess.cs](../../src/DshMobile.Runtime/Guest/ProotGuestProcess.cs)、[DshHost.cs](../../src/DshMobile.Runtime/Hosting/DshHost.cs) 与 [Failures.cs](../../src/DshMobile.Agent/Domain/Failures.cs) 捕获 `exit 137` 归类为 `DshFailureCode.PhantomProcessLimit` + [GovernanceRuntimeTests.cs](../../tests/DshMobile.Runtime.Tests/GovernanceRuntimeTests.cs) / [RemoteGatewayAdapterTests.cs](../../tests/DshMobile.Agent.Tests/Transport/RemoteGatewayAdapterTests.cs) 覆盖。
+- [ ] **N-08-04｜Android 17 Memory Limiter 死因分类与 `HeatTierPolicy` 温控阶梯**（桌面实现、单测与 Release 裁剪构建已通过；**真机未验证**：2026-11-24 未能触发 MemoryLimiter，低电模拟不改变 `WarmupPower` 判断（F26）、中重度温控未制造；面板仅显示 Nominal / 未检测到异常终止）
+  - 已在 [HistoricalExitClassifier.cs](../../src/DshMobile.Application/Runtime/HistoricalExitClassifier.cs) 与 `SystemGovernanceMonitor` 接入启动读取 `ActivityManager.GetHistoricalProcessExitReasons()`，识别 `MemoryLimiter:AnonSwap` 映射为 `DshFailureCode.MemoryLimited`（仅存固定安全诊断键，不存原始系统描述）；
+  - 已在 [HeatTierPolicy.cs](../../src/DshMobile.Application/Runtime/HeatTierPolicy.cs)、[WarmupPolicy.cs](../../src/DshMobile.Application/Runtime/WarmupPolicy.cs) 与 `SystemGovernanceMonitor` 接入 `PowerManager.IOnThermalStatusChangedListener` / 限频 `GetThermalHeadroom(30)`（≥30s）与电量状态，在中重度发热/低电时抑制后台预热与并发、不强杀活跃会话。
+- [ ] **N-08-05｜抽象并切换在线更新健康探针（ADR-0024 / ADR-0029）**（桌面实现、单测与 Release 裁剪构建已通过；**真机未验证**：2026-11-24 检查更新因 GitHub 清单不可达返回 `MANIFEST_FETCH_FAILED`，无更新层可导入，探测提交/回滚/强杀均未覆盖）
+  - 已在 [DshHost.cs](../../src/DshMobile.Runtime/Hosting/DshHost.cs) 定义并实现 `IDshHost.ProbeHealthAsync(ct)`，并将 [RuntimeCoordinator.cs](../../src/DshMobile.Application/Runtime/RuntimeCoordinator.cs) 与 [UpdateCoordinator.cs](../../src/DshMobile.Application/Updates/UpdateCoordinator.cs) 的 `probing` 阶段由 `StartHostAsync` + `StopHostAsync` 抽象切换至 `ProbeHealthAsync`；
+  - 已更新并补充 [RuntimeCoordinatorTests.cs](../../tests/DshMobile.Application.Tests/RuntimeCoordinatorTests.cs)、[RuntimeCoordinatorIsolationTests.cs](../../tests/DshMobile.Application.Tests/RuntimeCoordinatorIsolationTests.cs) 与 [UpdateCoordinatorTests.cs](../../tests/DshMobile.Application.Tests/UpdateCoordinatorTests.cs) 覆盖 DSH/Runtime 换层探测成功提交、探测失败自动回滚与强杀恢复单测（真机待测）。
+- [x] **N-08-06｜远程主机 `RemoteSshSession` 原生会话接入**（桌面实现、单测与 Release 裁剪构建已通过；2026-11-24 真机：SSH 指纹核对固定 → 启动远端 DSH（HTTP 401 + token）→ 原生对话 `REMOTE_OK` → 杀会话后 `transport.timeout` 与未确认发送 → 重连 `RECOVERED_OK` → 更换主机密钥被拒绝。**远程端为本机 WSL sshd + `adb reverse` 隧道，非真实 LAN**）
+  - 已在 [RemoteSshSession.cs](../../src/DshMobile.Runtime/Remote/RemoteSshSession.cs) 实现 `IDshTokenSource` 与内存 `LoopbackBaseUri`，扩展 [RemoteConnectionOptions.cs](../../src/DshMobile.Agent/Transport/RemoteConnectionOptions.cs) / [DshRemoteConnection.cs](../../src/DshMobile.Agent/Transport/DshRemoteConnection.cs) 动态回环连接并在 [AgentConnectionScope.cs](../../src/DshMobile.Android/Bridge/AgentConnectionScope.cs)、[RemoteActivity.cs](../../src/DshMobile.Android/Remote/RemoteActivity.cs) 与 [ChatActivity.cs](../../src/DshMobile.Android/Chat/ChatActivity.cs) 接入原生会话入口（保持 Keystore 不可导出私钥、主机指纹固定、`HOST_KEY_CHANGED` 拒绝、仅本地 `127.0.0.1` 转发不变）+ `RemoteGatewayAdapterTests` 覆盖；
+  - 已于 2026-11-24 在本机 WSL sshd + `adb reverse` 测试隧道上完成真机连接 → 启动远端 DSH（HTTP 401 + token）→ 原生对话 `REMOTE_OK` → 杀会话 `transport.timeout` → 重连 `RECOVERED_OK` → `HOST_KEY_CHANGED` 拒绝；真实 LAN / 公网路径待补。
+- [x] **N-08-07｜真机统一性能配对采集（`tooling/startup-perf.mjs`）**（2026-11-24 完成：A/B/C 各 10 次，`bridge.complete` B P50 16.83 s / C 17.98 s，`node_init` 占 95.5% / 94.8%）
+  - 已在 Xiaomi M2007J1SC / Android 17 上按 [STARTUP_PERF.md](../STARTUP_PERF.md) 完成 A/B/C 各 10 次采集（PTP-AN10 的 2026-11-17 基线仍见 `migration/parity/`），报告见 [PERFORMANCE_BASELINE.md](../../docs/native/PERFORMANCE_BASELINE.md)；RSS 与空闲 CPU 对照尚未纳入本工具输出。
   - 产出：`docs/native/PERFORMANCE_BASELINE.md`。
 
 ---
@@ -352,9 +352,9 @@ PR-00 (基线 + 路线A/B PoC + ADR-0033 + DshMobile.Agent骨架 + 门禁)
 | **T06** | 运行中杀 DSH/断线 → 恢复校准无重复消息、不盲目重发 | PR-03 / PR-05（`N-03-06`） | `[ ]` 待测 |
 | **T07** | 6,000 词 + 400 行代码块流式不卡主线程，回看不被抢滚 | PR-03 / PR-04（`N-03-02`、`N-03-08`、`N-04-04`） | `[ ]` 待测 |
 | **T08** | Relay `ui_*` 双安全域隔离（`FLAG_SECURE`）+ 插件装卸边界 | PR-01 / PR-06 / PR-07（`N-01-01`、`N-07-01`） | `[ ]` 待测 |
-| **T09** | Android 17 loopback / LAN（ADR-0032）/ 公网 / SSH 远程原生对话 | PR-08（`N-08-06`） | `[ ]` 待测 |
+| **T09** | Android 17 loopback / LAN（ADR-0032）/ 公网 / SSH 远程原生对话 | PR-08（`N-08-06`） | `[~]` SSH 远程原生对话、断线、重连与 `HOST_KEY_CHANGED` 已于 2026-11-24 通过（测试隧道）；LAN / 公网路径待测 |
 | **T10** | 从旧 WebView 版本覆盖安装保留工作区、凭据与可恢复会话 | PR-05 / PR-09（`N-05-05`、`N-09-04`） | `[ ]` 待测 |
-| **T11** | 停机/强杀无孤儿进程；32 进程上限与 A17 内存限制清晰归因 | PR-08（`N-08-01`、`N-08-03`、`N-08-04`） | `[ ]` 待测 |
+| **T11** | 停机/强杀无孤儿进程；32 进程上限与 A17 内存限制清晰归因 | PR-08（`N-08-01`、`N-08-03`、`N-08-04`） | `[~]` 停机与 `force-stop` 零残留、31/32 预警已过；32 上限下 `exit 137` 归因与 A17 MemoryLimiter 归因待补 |
 | **T12** | DSH/Runtime 在线更新探针与回滚通过；全仓与 APK 零业务 WebView | PR-08 / PR-09（`N-08-05`、`N-09-02`、`N-09-03`） | `[ ]` 待测 |
 
 ---
@@ -384,5 +384,5 @@ PR-00 (基线 + 路线A/B PoC + ADR-0033 + DshMobile.Agent骨架 + 门禁)
 | PR-05 零凭据引导 & Cache-First | M2007J1SC / LineageOS / Android 17 (API 37) / CP2A.260605.016 | `CC7FD87E…3340EBF2` / PR-05 工作树 | DSH `0.2.2-rc.5` / Node 26.13.1 | 修复后复测通过：F15–F19 关闭；`native.cache_first_rendered`=96.2 ms；仅「全新零凭据安装」未重装验证 | `docs/native/ACCEPTANCE_PR05.md` |
 | PR-06 Git / Diff / 收件箱 / 通知 | M2007J1SC / LineageOS / Android 17 (API 37) / CP2A.260605.016 | `B6E7FD99…594686` / `pr06-device-test` | DSH `0.2.2-rc.5` / Node 26.13.1 | 部分通过：Git/Diff、收件箱与后台问答通知通过；审批动作（`approval/policy=never`）、超长/二进制 Diff 与工具卡点击未覆盖；登记 F22–F23 | `docs/native/ACCEPTANCE_PR06.md` |
 | PR-07 插件目录 L0 / 受控 L1 | M2007J1SC / LineageOS / Android 17 (API 37) / CP2A.260605.016 | `57F522B9…2A511D` / `pr07-device-test` | DSH `0.2.2-rc.5` / Node 26.13.1 | 部分通过：L0 清单、L1 启停与重启闭环通过；真实装卸与自定义 WebUI 未覆盖；登记 F20–F21 | `docs/native/ACCEPTANCE_PR07.md` |
-| PR-08 治理/更新/远程/性能配对 | 待真机验证 | — | — | 待测 | `docs/native/PERFORMANCE_BASELINE.md` |
+| PR-08 治理/更新/远程/性能配对 | M2007J1SC / LineageOS 24.0 / Android 17 (API 37) / 非 root | `C0A35590…B430E8` / `feat/native-pr08-governance-remote-probe` | DSH `0.2.2-rc.5` / Node 26.13.1 | 部分通过：`N-08-02`、`N-08-03` 31/32 预警、`N-08-06`（测试隧道）、`N-08-07`（A/B/C）通过；`N-08-04`/`N-08-05`/`exit 137`/LAN 待补；登记 F24–F26 | `docs/native/ACCEPTANCE_PR08.md`、`docs/native/PERFORMANCE_BASELINE.md` |
 | PR-09 覆盖安装 & 零 WebView 终验 | 待真机验证 | — | — | 待测 | `docs/native/ACCEPTANCE_MATRIX.md` |

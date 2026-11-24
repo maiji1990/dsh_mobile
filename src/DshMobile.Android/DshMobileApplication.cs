@@ -29,6 +29,7 @@ public sealed class DshMobileApplication : global::Android.App.Application, glob
         // ADR-0021: Material You colours from the wallpaper on Android 12+; elsewhere the brand scheme in colors.xml.
         Google.Android.Material.Color.DynamicColors.ApplyToActivitiesIfAvailable(this);
         _bridge = new BridgeHost(this);
+        _ = Task.Run(() => _bridge.Governance.InspectStartupExitReason());
         RegisterActivityLifecycleCallbacks(this);
     }
 
@@ -54,10 +55,10 @@ public sealed class DshMobileApplication : global::Android.App.Application, glob
 
     public void OnActivityStarted(Activity activity)
     {
-        // 记录可见 Activity 计数，精准驱动后台审批/问答系统通知通道（N-06-04）
+        // 记录可见 Activity 计数，精准驱动后台审批/问答系统通知通道与空闲停机检测（N-06-04 / N-08-02）
         if (Interlocked.Increment(ref _startedActivities) == 1)
         {
-            _bridge?.Agent.RequestNotifications.SetAppInBackground(false);
+            _bridge?.OnAppBackgroundChanged(false);
         }
     }
 
@@ -70,7 +71,7 @@ public sealed class DshMobileApplication : global::Android.App.Application, glob
         if (Interlocked.Decrement(ref _startedActivities) <= 0)
         {
             Volatile.Write(ref _startedActivities, 0);
-            _bridge?.Agent.RequestNotifications.SetAppInBackground(true);
+            _bridge?.OnAppBackgroundChanged(true);
         }
     }
 }

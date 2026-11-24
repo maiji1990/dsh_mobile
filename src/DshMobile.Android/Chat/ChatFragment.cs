@@ -71,6 +71,7 @@ public sealed class ChatFragment : Fragment
 
     private bool _followBottom = true;
     private bool _slashExpanded;
+    private bool _isRemote;
     private bool _connectInitiated;
     private bool _cacheLoadInitiated;
     private bool _onboardingPrompted;
@@ -85,7 +86,8 @@ public sealed class ChatFragment : Fragment
     {
         var view = inflater.Inflate(Resource.Layout.fragment_chat, container, false)!;
         _bridge = DshMobileApplication.Current.Bridge;
-        _vm = _bridge.Agent.Chat;
+        _isRemote = Arguments?.GetBoolean(ChatActivity.ExtraIsRemote, false) ?? false;
+        _vm = _isRemote ? (_bridge.Agent.RemoteChat ?? _bridge.Agent.Chat) : _bridge.Agent.Chat;
         _requestedSessionId = Arguments?.GetString(ChatActivity.ExtraSessionId);
         _pendingFocusEventId = Arguments?.GetString(ChatActivity.ExtraFocusEventId);
 
@@ -200,8 +202,8 @@ public sealed class ChatFragment : Fragment
 
         var sessionMismatch = !string.IsNullOrWhiteSpace(_requestedSessionId) &&
             !string.Equals(_vm.State.ActiveSession.SessionId, _requestedSessionId, StringComparison.Ordinal);
-        var shouldLoadCache = !_cacheLoadInitiated;
-        var shouldConnect = !_connectInitiated || sessionMismatch || (!_vm.State.IsConnected && !_vm.State.IsReconciling && _bridge.Runtime.Host?.State == DshHostState.Ready);
+        var shouldLoadCache = !_isRemote && !_cacheLoadInitiated;
+        var shouldConnect = !_connectInitiated || sessionMismatch || (!_vm.State.IsConnected && !_vm.State.IsReconciling && IsEndpointReady());
         if (shouldLoadCache)
         {
             _cacheLoadInitiated = true;
@@ -215,6 +217,9 @@ public sealed class ChatFragment : Fragment
             _ = StartupAttachSequenceAsync(shouldLoadCache, shouldConnect);
         }
     }
+
+    private bool IsEndpointReady() =>
+        _isRemote ? _bridge.Agent.IsRemoteEndpointReady : _bridge.Runtime.Host?.State == DshHostState.Ready;
 
     public override void OnStop()
     {
@@ -275,7 +280,7 @@ public sealed class ChatFragment : Fragment
         {
             _requestedSessionId = sessionId;
             _connectInitiated = true;
-            _ = StartupAttachSequenceAsync(loadCache: true, connect: _bridge.Runtime.Host?.State == DshHostState.Ready);
+            _ = StartupAttachSequenceAsync(loadCache: !_isRemote, connect: IsEndpointReady());
             return;
         }
         if (View is not null)
@@ -292,7 +297,7 @@ public sealed class ChatFragment : Fragment
     private void OnVmStateChanged(ChatUiState state) => ScheduleRender();
     private void OnBridgeChanged(object? sender, EventArgs e)
     {
-        if (_bridge.Runtime.Host?.State == DshHostState.Ready && !_vm.State.IsConnected && !_vm.State.IsReconciling)
+        if (IsEndpointReady() && !_vm.State.IsConnected && !_vm.State.IsReconciling)
         {
             _ = EnsureConnectedAsync();
         }
@@ -317,6 +322,9 @@ public sealed class ChatFragment : Fragment
     private void RenderState(ChatUiState s)
     {
         var ctx = RequireContext();
+        _toolbar.Title = _isRemote && _bridge.Agent.RemoteHostLabel is { Length: > 0 } remoteLabel
+            ? Rows.Fmt(ctx, Resource.String.remote_chat_title_fmt, remoteLabel)
+            : GetString(Resource.String.chat_title);
         _sessionTitle.Text = string.IsNullOrWhiteSpace(s.SessionTitle)
             ? GetString(Resource.String.chat_session_default_title)
             : s.SessionTitle;
@@ -389,8 +397,8 @@ public sealed class ChatFragment : Fragment
 
     private void RenderStatusBanner(Context ctx, ChatUiState s)
     {
-        var hostPhase = _bridge.HostPhase;
-        var hostReady = _bridge.Runtime.Host?.State == DshHostState.Ready;
+        var hostPhase = _isRemote ? null : _bridge.HostPhase;
+        var hostReady = IsEndpointReady();
         if (s.IsConnected && !s.IsReconciling && !s.Transcript.IsDetachedCache && !s.Transcript.IsPartialHistory && s.FailureCode is null)
         {
             _statusBanner.Visibility = ViewStates.Gone;
@@ -404,6 +412,12 @@ public sealed class ChatFragment : Fragment
 
         if (!hostReady && !s.IsConnected)
         {
+            if (_isRemote)
+            {
+                _statusText.SetText(Resource.String.remote_chat_disconnected);
+                _statusAction.Visibility = ViewStates.Gone;
+                return;
+            }
             _statusText.Text = hostPhase switch
             {
                 DshHostPhase.SandboxStarting => GetString(Resource.String.home_detail_phase_sandbox),
@@ -583,9 +597,12 @@ public sealed class ChatFragment : Fragment
             OpenCredentialsScreen();
             return;
         }
-        if (_bridge.Runtime.Host?.State != DshHostState.Ready)
+        if (!IsEndpointReady())
         {
-            _ = _bridge.RunStartAsync();
+            if (!_isRemote)
+            {
+                _ = _bridge.RunStartAsync();
+            }
         }
         else
         {
@@ -634,7 +651,7 @@ public sealed class ChatFragment : Fragment
     {
         try
         {
-            if (_bridge.Runtime.Host?.State == DshHostState.Ready)
+            if (IsEndpointReady())
             {
                 await _vm.ConnectAndAttachAsync(_requestedSessionId).ConfigureAwait(false);
                 _requestedSessionId = null;

@@ -135,7 +135,13 @@ public sealed class ProotGuestProcess(RuntimeLayout layout) : IGuestProcess
             }
             await Task.WhenAll(stdout, stderr).WaitAsync(TimeSpan.FromSeconds(2), CancellationToken.None).ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
             var code = process.ExitCode;
-            return new GuestProcessResult(code == 0, code, Snapshot(), code == 0 ? null : $"GUEST_CMD_FAILED: guest command exit={code}");
+            var error = code switch
+            {
+                0 => null,
+                137 => $"{RuntimeErrorCodes.PhantomProcessLimit}: guest command exited 137 (SIGKILL / possible Android 32 phantom process limit)",
+                _ => $"GUEST_CMD_FAILED: guest command exit={code}",
+            };
+            return new GuestProcessResult(code == 0, code, Snapshot(), error);
         }
 
         string Snapshot()

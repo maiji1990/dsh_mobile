@@ -203,4 +203,22 @@ public static class DshFailureMapper
         }
         return new DshFailure(DshFailureCode.Unavailable, "session_error.unknown", Retryable: true);
     }
+
+    /// <summary>将进程退出码映射为领域失败码（N-08-03：捕获 exit 137 归类为幻影进程限制）。</summary>
+    public static DshFailure FromProcessExitCode(int exitCode) => exitCode switch
+    {
+        137 => new DshFailure(DshFailureCode.PhantomProcessLimit, "process.exit_137", Retryable: false),
+        _ => new DshFailure(DshFailureCode.ProcessExited, "process.exited", Retryable: true),
+    };
+
+    /// <summary>将宿主/运行层错误码安全映射为领域失败码（N-08-03 / N-08-04）。</summary>
+    public static DshFailure FromRuntimeErrorCode(string? runtimeCode) => runtimeCode switch
+    {
+        "PHANTOM_PROCESS_LIMIT" => new DshFailure(DshFailureCode.PhantomProcessLimit, "runtime.phantom_process_limit", Retryable: false),
+        "MEMORY_LIMITED" => new DshFailure(DshFailureCode.MemoryLimited, "runtime.memory_limited", Retryable: false),
+        "DSH_EXITED" => new DshFailure(DshFailureCode.ProcessExited, "runtime.dsh_exited", Retryable: true),
+        "DSH_NOT_READY" => new DshFailure(DshFailureCode.Timeout, "runtime.dsh_not_ready", Retryable: true),
+        "RUNTIME_NOT_INSTALLED" or "NODE_LAYER_MISSING" => new DshFailure(DshFailureCode.StorageUnavailable, "runtime.not_installed", Retryable: false),
+        _ => new DshFailure(DshFailureCode.Unavailable, "runtime.unavailable", Retryable: true),
+    };
 }

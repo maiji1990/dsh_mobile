@@ -2,6 +2,7 @@ using Android.Content;
 using Android.Text;
 using Android.Views;
 using DshMobile.App.Bridge;
+using DshMobile.App.Chat;
 using DshMobile.App.LocalNetwork;
 using DshMobile.App.Ui;
 using DshMobile.Application.LocalNetwork;
@@ -32,7 +33,7 @@ public sealed class RemoteActivity : DshActivity
     private TextView _statusText = null!;
     private LinearProgressIndicator _progress = null!;
     private EditText _label = null!, _host = null!, _port = null!, _user = null!, _dshPort = null!;
-    private MaterialButton _connect = null!, _disconnect = null!, _start = null!, _stop = null!, _remove = null!;
+    private MaterialButton _connect = null!, _disconnect = null!, _start = null!, _stop = null!, _openChat = null!, _remove = null!;
     private Button[] _buttons = [];
     private RemoteHost? _selected;
 
@@ -58,14 +59,16 @@ public sealed class RemoteActivity : DshActivity
         _connect = Wire(Resource.Id.remote_connect, () => _ = ConnectAsync());
         _start = Wire(Resource.Id.remote_start, StartDsh);
         _stop = Wire(Resource.Id.remote_stop, StopDsh);
+        _openChat = Wire(Resource.Id.remote_open_chat, OpenRemoteNativeChat);
         _disconnect = Wire(Resource.Id.remote_disconnect, () =>
         {
+            _bridge.Agent.DetachRemoteHost();
             CsRemoteConnection.Clear();
             SetStatus(GetString(Resource.String.remote_cs_disconnected));
             _bridge.Note("remote disconnect");
         });
         _remove = Wire(Resource.Id.remote_remove, ConfirmRemove);
-        _buttons = [copy, save, _connect, _start, _stop, _disconnect, _remove];
+        _buttons = [copy, save, _connect, _start, _stop, _openChat, _disconnect, _remove];
         ShowConnection();
     }
 
@@ -79,7 +82,9 @@ public sealed class RemoteActivity : DshActivity
 
     private void ShowConnection()
     {
-        var connected = CsRemoteConnection.Session is not null;
+        var session = CsRemoteConnection.Session;
+        var connected = session is not null;
+        var ready = connected && session!.LoopbackBaseUri is not null && !string.IsNullOrEmpty(((DshMobile.Runtime.Hosting.IDshTokenSource)session).Token);
         _statusTitle.SetText(connected ? Resource.String.remote_connected_title : Resource.String.remote_not_connected_title);
         _statusIcon.ImageTintList = Android.Content.Res.ColorStateList.ValueOf(new Android.Graphics.Color(connected
             ? Rows.Color(_statusIcon, Resource.Attribute.colorPrimary)
@@ -88,7 +93,24 @@ public sealed class RemoteActivity : DshActivity
         _disconnect.Visibility = connected ? ViewStates.Visible : ViewStates.Gone;
         _start.Visibility = connected ? ViewStates.Visible : ViewStates.Gone;
         _stop.Visibility = connected ? ViewStates.Visible : ViewStates.Gone;
+        _openChat.Visibility = ready ? ViewStates.Visible : ViewStates.Gone;
         _remove.Visibility = _selected is null ? ViewStates.Gone : ViewStates.Visible;
+    }
+
+    private void OpenRemoteNativeChat()
+    {
+        if (CsRemoteConnection.Session is not { } session ||
+            session.LoopbackBaseUri is null ||
+            string.IsNullOrEmpty(((DshMobile.Runtime.Hosting.IDshTokenSource)session).Token))
+        {
+            SetStatus(GetString(Resource.String.remote_not_connected));
+            return;
+        }
+        var label = _selected?.Label is { Length: > 0 } l ? l : session.Profile.Label;
+        _bridge.Agent.AttachRemoteHost(label, session);
+        var intent = new Intent(this, typeof(ChatActivity));
+        intent.PutExtra(ChatActivity.ExtraIsRemote, true);
+        StartActivity(intent);
     }
 
     protected override void OnResume()
@@ -327,6 +349,7 @@ public sealed class RemoteActivity : DshActivity
             .SetTitle(Fmt(Resource.String.remote_remove_confirm, h.Label))!
             .SetPositiveButton(Resource.String.remote_remove, (_, _) =>
             {
+                _bridge.Agent.DetachRemoteHost();
                 CsRemoteConnection.Clear(); // removing a host also disconnects it
                 CsRemoteHosts.Remove(this, h.Id);
                 _bridge.Note("remote.hosts.remove");

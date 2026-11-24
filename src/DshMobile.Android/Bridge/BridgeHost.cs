@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using DshMobile.App.Files;
+using DshMobile.App.Governance;
 using DshMobile.App.Ui;
 using DshMobile.Application;
 using DshMobile.Application.Runtime;
@@ -49,7 +50,8 @@ public sealed class BridgeHost : IDisposable, IDiagnosticsLog
         Runtime = _services.GetRequiredService<RuntimeCoordinator>();
         Updates = _services.GetRequiredService<DshMobile.Application.Updates.UpdateChecker>();
         UpdateInstaller = _services.GetRequiredService<DshMobile.Application.Updates.UpdateCoordinator>();
-        Agent = new AgentConnectionScope(_context, Runtime, Layout, Append, RunRestartForPluginsAsync);
+        Governance = new SystemGovernanceMonitor(_context, Append);
+        Agent = new AgentConnectionScope(_context, Runtime, Layout, Append, RunRestartForPluginsAsync, Governance.Leases);
         runtimeOptions.HostOptions = new DshMobile.Runtime.Hosting.DshHostOptions(
             ProtocolHandshakeAsync: Agent.PerformStartupHandshakeAsync);
         // An update the previous process did not finish is reported once (its layer was already restored by recovery).
@@ -95,6 +97,9 @@ public sealed class BridgeHost : IDisposable, IDiagnosticsLog
 
     /// <summary>Application-scoped native agent connection &amp; ChatViewModel (PR-04, ADR-0033).</summary>
     public AgentConnectionScope Agent { get; }
+
+    /// <summary>Android 系统治理与进程预算桥接（PR-08: N-08-02 / N-08-03 / N-08-04）。</summary>
+    public SystemGovernanceMonitor Governance { get; }
 
     /// <summary>创建只读工作区 Git 与 Diff 服务（N-06-01），复用工作区安全路径校验并通过 PRoot guest 运行 git。</summary>
     public WorkspaceGitService? CreateWorkspaceGitService()
@@ -145,9 +150,72 @@ public sealed class BridgeHost : IDisposable, IDiagnosticsLog
 
     private int _warmup;
     private int _userStopped;
+    private CancellationTokenSource? _idleStopCts;
 
     /// <summary>True while the eager warmup is starting DSH without the user's tap.</summary>
     public bool IsWarmingUp => Volatile.Read(ref _warmup) != 0;
+
+    /// <summary>同步前后台状态到后台通知通道与 <see cref="SystemGovernanceMonitor"/> 空闲优雅停机循环（N-06-04 / N-08-02）。</summary>
+    public void OnAppBackgroundChanged(bool inBackground)
+    {
+        Agent.RequestNotifications.SetAppInBackground(inBackground);
+        Governance.SetAppInBackground(inBackground);
+        CancellationTokenSource? oldCts;
+        CancellationTokenSource? newCts = null;
+        lock (_logGate)
+        {
+            oldCts = _idleStopCts;
+            _idleStopCts = null;
+            if (inBackground)
+            {
+                newCts = new CancellationTokenSource();
+                _idleStopCts = newCts;
+            }
+        }
+        oldCts?.Cancel();
+        oldCts?.Dispose();
+        if (newCts is not null)
+        {
+            var token = newCts.Token;
+            _ = Task.Run(() => IdleStopMonitorLoopAsync(token), token);
+        }
+    }
+
+    private async Task IdleStopMonitorLoopAsync(CancellationToken ct)
+    {
+        try
+        {
+            using var timer = new PeriodicTimer(TimeSpan.FromSeconds(30));
+            while (await timer.WaitForNextTickAsync(ct).ConfigureAwait(false))
+            {
+                var hostRunning = Runtime.Host is { State: DshMobile.Runtime.Hosting.DshHostState.Ready } or { OwnsProcesses: true };
+                var decision = Governance.EvaluateIdleStop(hostRunning, Agent.IsAgentIdleForIdleStop);
+                if (decision == DshMobile.Application.Runtime.IdleStopDecision.Stop)
+                {
+                    await RunIdleStopAsync().ConfigureAwait(false);
+                    return;
+                }
+            }
+        }
+        catch (OperationCanceledException)
+        {
+        }
+    }
+
+    private Task RunIdleStopAsync() => RunExclusive("stop", async () =>
+    {
+        // 空闲自动停机不置位 _userStopped，以免用户下次回到前台时无法按 WarmupPolicy 自动恢复预热（N-08-02）。
+        var decision = Governance.EvaluateIdleStop(
+            Runtime.Host is { State: DshMobile.Runtime.Hosting.DshHostState.Ready } or { OwnsProcesses: true },
+            Agent.IsAgentIdleForIdleStop);
+        if (decision != DshMobile.Application.Runtime.IdleStopDecision.Stop)
+        {
+            Append($"idle-stop: skipped ({decision})");
+            return;
+        }
+        var r = await Runtime.StopAsync(CancellationToken.None).ConfigureAwait(false);
+        Append(r.Ok ? $"idle-stop: graceful ok ({r.Snapshot.State})" : $"idle-stop FAILED {r.Code}: {r.Message}");
+    });
 
     /// <summary>
     /// ADR-0031 eager warmup: start DSH in the background so a later tap lands on a READY host. Silent by design - a
@@ -157,11 +225,12 @@ public sealed class BridgeHost : IDisposable, IDiagnosticsLog
     {
         var journal = Runtime.State.Current;
         var idle = journal is { State: DshMobile.Runtime.RuntimeState.Ready, Harness: DshMobile.Runtime.HarnessState.Stopped };
+        var heat = Governance.CurrentHeatGovernance();
         var decision = DshMobile.Application.Runtime.WarmupPolicy.Decide(
-            enabled, Volatile.Read(ref _userStopped) != 0, IsBusy, idle, lowBattery, powerSave);
+            enabled, Volatile.Read(ref _userStopped) != 0, IsBusy, idle, lowBattery, powerSave, heat.Tier);
         if (decision != DshMobile.Application.Runtime.WarmupDecision.Start)
         {
-            Append($"warmup: skipped ({decision})");
+            Append($"warmup: skipped ({decision}, heat={heat.Tier})");
             return false;
         }
         if (Interlocked.CompareExchange(ref _warmup, 1, 0) != 0)
@@ -646,6 +715,7 @@ public sealed class BridgeHost : IDisposable, IDiagnosticsLog
         Volatile.Write(ref _operation, name);
         Volatile.Write(ref _progress, null);
         Changed?.Invoke(this, EventArgs.Empty);
+        using var lease = AcquireOperationLease(name);
         try
         {
             await body().ConfigureAwait(false);
@@ -693,8 +763,18 @@ public sealed class BridgeHost : IDisposable, IDiagnosticsLog
         Changed?.Invoke(this, EventArgs.Empty);
     }
 
+    private IDisposable? AcquireOperationLease(string operation) => operation switch
+    {
+        HomeStatus.UpdateInstallOperation => Governance.Leases.Acquire(DshMobile.Application.Runtime.WorkLeaseKind.Update, operation),
+        HomeStatus.ImportOperation or HomeStatus.ImportDshOperation or "runtime.rollback" or "runtime.prepare" =>
+            Governance.Leases.Acquire(DshMobile.Application.Runtime.WorkLeaseKind.Setup, operation),
+        _ => null,
+    };
+
     public void Dispose()
     {
+        OnAppBackgroundChanged(false);
+        Governance.Dispose();
         Agent.Dispose();
         _services.Dispose();
         _http.Dispose();

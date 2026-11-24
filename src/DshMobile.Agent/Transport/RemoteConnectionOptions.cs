@@ -28,6 +28,12 @@ public sealed record RemoteConnectionOptions
 
     public RemoteConnectionOptions(Uri baseUri)
     {
+        BaseUri = ValidateLoopbackBaseUri(baseUri);
+    }
+
+    /// <summary>校验并规范化仅限本机回环的 http/https 基地址（禁止 userinfo/query/fragment 或非回环地址）。</summary>
+    public static Uri ValidateLoopbackBaseUri(Uri baseUri)
+    {
         ArgumentNullException.ThrowIfNull(baseUri);
         if (!baseUri.IsAbsoluteUri || (baseUri.Scheme != Uri.UriSchemeHttp && baseUri.Scheme != Uri.UriSchemeHttps))
         {
@@ -44,7 +50,7 @@ public sealed record RemoteConnectionOptions
 
         // Normalize to scheme://host:port/
         var builder = new UriBuilder(baseUri.Scheme, baseUri.Host, baseUri.Port);
-        BaseUri = builder.Uri;
+        return builder.Uri;
     }
 
     public static bool IsLoopbackHost(string host)

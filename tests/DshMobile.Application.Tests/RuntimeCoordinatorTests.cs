@@ -546,11 +546,11 @@ public sealed class RuntimeCoordinatorTests : IDisposable
         var layout = InstalledLayout("1.2.0");
         var c = Coordinator(layout);
         var layer = new DshLayerInstaller(layout);
-        _host!.OnStart = () =>
+        _host!.OnProbe = () =>
         {
             Assert.True(layer.IsHeldForProbe);
             Assert.Equal("1.2.0", File.ReadAllText(Path.Combine(layer.AsideDir, DshLayerInstaller.VersionFile)));
-            return new DshHostResult(healthy, healthy ? RuntimeErrorCodes.Ok : "DSH_EXITED", null);
+            return new DshHealthProbeResult(healthy, healthy ? RuntimeErrorCodes.Ok : "DSH_EXITED", null);
         };
 
         var r = await c.InstallDshFromFileAsync(DshBundle("1.3.0.tar.zst"), CancellationToken.None);
@@ -560,7 +560,7 @@ public sealed class RuntimeCoordinatorTests : IDisposable
         Assert.Equal(healthy ? RuntimeErrorCodes.Ok : DshLayerErrorCodes.HealthFailed, r.Code);
         Assert.Equal(healthy ? "1.3.0" : "1.2.0", layer.InstalledVersion());
         Assert.Equal(layer.InstalledVersion(), c.State.Current.DshVersion);
-        Assert.Equal(healthy ? ["host.start", "host.stop"] : new[] { "host.start" }, _calls);
+        Assert.Equal(["host.probe"], _calls);
         Assert.False(File.Exists(layer.JournalFile));
         Assert.False(Directory.Exists(layer.AsideDir));
         Assert.False(_fg.Held);
@@ -572,7 +572,11 @@ public sealed class RuntimeCoordinatorTests : IDisposable
         var layout = InstalledLayout("1.2.0");
         var c = Coordinator(layout);
         var layer = new DshLayerInstaller(layout);
-        _host!.OnStop = () => new DshHostResult(false, "DSH_STOP_FAILED", "process still alive");
+        _host!.OnProbe = () =>
+        {
+            _host.KeepOrphansAfterProbe();
+            return new DshHealthProbeResult(false, "DSH_STOP_FAILED", "process still alive");
+        };
 
         var r = await c.InstallDshFromFileAsync(DshBundle("1.3.0.tar.zst"), CancellationToken.None);
         Assert.False(r.Ok);

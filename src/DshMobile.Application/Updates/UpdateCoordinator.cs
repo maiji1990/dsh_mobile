@@ -263,21 +263,19 @@ public sealed class UpdateCoordinator : IDisposable
         }
     }
 
-    /// <summary>READY through the host (port + WebUI + HTTP 401), the running version is the target, then stopped again.</summary>
+    /// <summary>经抽象健康探针 <see cref="IDshHost.ProbeHealthAsync"/> 验证端口、WebUI/401 及目标版本后安全收口（N-08-05）。</summary>
     private async Task<(bool Ok, string Why)> ProbeAsync(string version)
     {
-        var start = await _runtime.StartAsync(DshProfile.Web, CancellationToken.None).ConfigureAwait(false);
-        if (!start.Ok)
+        var probe = await _runtime.ProbeHealthAsync(CancellationToken.None).ConfigureAwait(false);
+        if (!probe.Ok)
         {
-            return (false, $"start: {start.Code} {start.Message}");
+            return (false, $"probe: {probe.Code} {probe.Message}");
         }
-        var running = start.Snapshot.DshVersion;
-        var stop = await _runtime.StopAsync(CancellationToken.None).ConfigureAwait(false);
-        if (!string.Equals(running, version, StringComparison.Ordinal))
+        if (!string.Equals(probe.DshVersion, version, StringComparison.Ordinal))
         {
-            return (false, $"running version {running ?? "?"} is not {version}");
+            return (false, $"running version {probe.DshVersion ?? "?"} is not {version}");
         }
-        return stop.Ok ? (true, "ready") : (false, $"stop: {stop.Code} {stop.Message}");
+        return (true, "ready");
     }
 
     private async Task<UpdateResult> RestartAsync(UpdateResult r)

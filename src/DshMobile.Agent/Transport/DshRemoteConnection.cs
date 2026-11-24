@@ -21,6 +21,7 @@ public sealed class DshRemoteConnection : IAsyncDisposable
 {
     private readonly RemoteConnectionOptions _options;
     private readonly Func<string?> _tokenProvider;
+    private readonly Func<Uri?>? _baseUriProvider;
     private readonly TimeProvider _time;
     private StartupTrace? _trace;
     private readonly Action<string> _log;
@@ -46,7 +47,8 @@ public sealed class DshRemoteConnection : IAsyncDisposable
         Func<string?> tokenProvider,
         TimeProvider? time = null,
         StartupTrace? trace = null,
-        Action<string>? log = null)
+        Action<string>? log = null,
+        Func<Uri?>? baseUriProvider = null)
     {
         ArgumentNullException.ThrowIfNull(options);
         ArgumentNullException.ThrowIfNull(tokenProvider);
@@ -61,6 +63,7 @@ public sealed class DshRemoteConnection : IAsyncDisposable
 
         _options = options;
         _tokenProvider = tokenProvider;
+        _baseUriProvider = baseUriProvider;
         _time = time ?? TimeProvider.System;
         _trace = trace;
         _log = log ?? (_ => { });
@@ -456,7 +459,8 @@ public sealed class DshRemoteConnection : IAsyncDisposable
             throw new RemoteAuthenticationException("DSH launch token is not available.");
         }
 
-        var connectUri = new Uri(_options.BaseUri, $"connect?token={Uri.EscapeDataString(token)}&interactions={_options.InteractionsMode}");
+        var baseUri = ResolveBaseUri();
+        var connectUri = new Uri(baseUri, $"connect?token={Uri.EscapeDataString(token)}&interactions={_options.InteractionsMode}");
         using var connectReq = new HttpRequestMessage(HttpMethod.Get, connectUri);
         using var connectRes = await _http.SendAsync(connectReq, HttpCompletionOption.ResponseHeadersRead, genCts.Token).ConfigureAwait(false);
         if (connectRes.StatusCode != HttpStatusCode.Found && !connectRes.IsSuccessStatusCode)
@@ -473,7 +477,7 @@ public sealed class DshRemoteConnection : IAsyncDisposable
         var ws = new ClientWebSocket();
         ws.Options.Proxy = null;
         ws.Options.SetRequestHeader("Cookie", cookie);
-        var wsUri = BuildMuxWebSocketUri(_options.BaseUri);
+        var wsUri = BuildMuxWebSocketUri(baseUri);
 
         var trace = Volatile.Read(ref _trace);
         var connectSpan = trace?.Measure("protocol.connected");
@@ -499,6 +503,7 @@ public sealed class DshRemoteConnection : IAsyncDisposable
         var eventsStreamId = $"ev-{genId}";
         var gen = new ActiveGeneration(
             genId,
+            baseUri,
             cookie,
             ws,
             _options.MaxInboundMessageBytes,
@@ -570,7 +575,7 @@ public sealed class DshRemoteConnection : IAsyncDisposable
         var rpcId = $"rpc-{Interlocked.Increment(ref _nextRpcSeq)}";
         var jsonBody = RemoteWireCodec.EncodeClientRequest(rpcId, endpoint, args);
 
-        var targetUri = new Uri(_options.BaseUri, $"api/{endpoint.TrimStart('/')}");
+        var targetUri = new Uri(gen.BaseUri, $"api/{endpoint.TrimStart('/')}");
         using var req = new HttpRequestMessage(HttpMethod.Post, targetUri)
         {
             Content = new StringContent(jsonBody, Encoding.UTF8, "application/json"),
@@ -794,6 +799,20 @@ public sealed class DshRemoteConnection : IAsyncDisposable
 
     // ------------------------------------------------------------------------------------------------
 
+    private Uri ResolveBaseUri()
+    {
+        if (_baseUriProvider is null)
+        {
+            return _options.BaseUri;
+        }
+        var raw = _baseUriProvider();
+        if (raw is null)
+        {
+            throw new RemoteConnectionException("DSH loopback endpoint is not available.");
+        }
+        return RemoteConnectionOptions.ValidateLoopbackBaseUri(raw);
+    }
+
     private sealed class ActiveGeneration
     {
         private readonly long _generationId;
@@ -813,6 +832,7 @@ public sealed class DshRemoteConnection : IAsyncDisposable
 
         public ActiveGeneration(
             long generationId,
+            Uri baseUri,
             string cookie,
             ClientWebSocket ws,
             int maxInboundMessageBytes,
@@ -820,6 +840,7 @@ public sealed class DshRemoteConnection : IAsyncDisposable
             Action<string> log)
         {
             _generationId = generationId;
+            BaseUri = baseUri;
             Cookie = cookie;
             _ws = ws;
             _maxInboundMessageBytes = maxInboundMessageBytes;
@@ -827,6 +848,7 @@ public sealed class DshRemoteConnection : IAsyncDisposable
             _log = log;
         }
 
+        public Uri BaseUri { get; }
         public string Cookie { get; }
         public ConnectionGeneration Public { get; private set; } = new(0, "", null);
 

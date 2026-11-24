@@ -27,6 +27,7 @@ public sealed class ChatActivity : AppCompatActivity
 {
     public const string ExtraSessionId = "chat.extra.session_id";
     public const string ExtraFocusEventId = "chat.extra.focus_event_id";
+    public const string ExtraIsRemote = "chat.extra.is_remote";
     private const string ChatFragmentTag = "native.chat.fragment";
 
     private StartupTrace? _launchTrace;
@@ -82,6 +83,10 @@ public sealed class ChatActivity : AppCompatActivity
             if (Intent?.GetStringExtra(ExtraFocusEventId) is { Length: > 0 } focusEventId)
             {
                 args.PutString(ExtraFocusEventId, focusEventId);
+            }
+            if (Intent?.GetBooleanExtra(ExtraIsRemote, false) == true)
+            {
+                args.PutBoolean(ExtraIsRemote, true);
             }
             if (!args.IsEmpty)
             {
