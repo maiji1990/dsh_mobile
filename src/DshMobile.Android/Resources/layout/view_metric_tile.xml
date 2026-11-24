@@ -27,7 +27,7 @@
             android:layout_marginStart="6dp"
             android:layout_weight="1"
             android:ellipsize="end"
-            android:maxLines="1"
+            android:maxLines="2"
             android:textAppearance="?attr/textAppearanceLabelMedium"
             android:textColor="?attr/colorOnSurfaceVariant" />
     </LinearLayout>
@@ -38,7 +38,7 @@
         android:layout_height="wrap_content"
         android:layout_marginTop="4dp"
         android:ellipsize="end"
-        android:maxLines="1"
+        android:maxLines="2"
         android:textAppearance="?attr/textAppearanceTitleSmall"
         android:textColor="?attr/colorOnSurface" />
 </LinearLayout>

@@ -43,7 +43,7 @@
     <string name="remote_host">主机地址</string>
     <string name="remote_port">SSH 端口</string>
     <string name="remote_user">用户名</string>
-    <string name="remote_dsh_port">远端 DSH 端口（1024–65535）</string>
+    <string name="remote_dsh_port">DSH 端口</string>
     <string name="remote_save">保存主机</string>
     <string name="remote_connect">连接</string>
     <string name="remote_disconnect">断开</string>

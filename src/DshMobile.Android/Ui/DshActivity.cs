@@ -1,4 +1,6 @@
+using Android.Views;
 using AndroidX.AppCompat.App;
+using AndroidX.Core.Widget;
 using Google.Android.Material.AppBar;
 
 namespace DshMobile.App.Ui;
@@ -26,6 +28,31 @@ public abstract class DshActivity : AppCompatActivity
         Toolbar.SetNavigationIcon(Resource.Drawable.ic_arrow_back);
         Toolbar.SetNavigationContentDescription(Resource.String.abc_action_bar_up_description);
         Toolbar.NavigationClick += (_, _) => OnBackPressedDispatcher.OnBackPressed();
-        Edges.Pad(FindViewById(Resource.Id.screen_root)!);
+        var root = FindViewById(Resource.Id.screen_root)!;
+        Edges.Pad(root);
+        // 所有标准二级页（NestedScrollView）在 w600dp+ 宽屏/横屏自动限制内容宽度至 720dp 并保持滚动条贴右侧边缘。
+        if (FindFirstScrollContent(root) is { } scrollContent)
+        {
+            Edges.ClampMaxWidth(scrollContent);
+        }
+    }
+
+    private static View? FindFirstScrollContent(View root)
+    {
+        if (root is NestedScrollView scroll)
+        {
+            return scroll.ChildCount > 0 ? scroll.GetChildAt(0) : null;
+        }
+        if (root is ViewGroup group)
+        {
+            for (var i = 0; i < group.ChildCount; i++)
+            {
+                if (group.GetChildAt(i) is { } child && FindFirstScrollContent(child) is { } found)
+                {
+                    return found;
+                }
+            }
+        }
+        return null;
     }
 }

@@ -178,15 +178,50 @@ public sealed class ChatFragment : Fragment
         _attachImageBtn.Click += (_, _) => OpenImagePicker();
         _sendBtn.Click += (_, _) => _ = SendOrCancelAsync();
 
-        // 横屏弹起软键盘时收起底部快捷操作行，保住输入框与对话可视区（F6）。
+        // 横屏弹起软键盘时收起底部快捷操作行并压缩输入胶囊内边距，配合 flagNoExtractUi 保住输入框完整可见（F6 / Slice 5）。
+        var composer = view.FindViewById(Resource.Id.chat_composer)!;
+        var composerCardBody = (view.FindViewById<ViewGroup>(Resource.Id.chat_composer_card))?.GetChildAt(0);
+        var dp = Resources.DisplayMetrics!.Density;
+        var normalComposerPadH = composer.PaddingLeft;
+        var normalComposerPadT = composer.PaddingTop;
+        var normalComposerPadB = composer.PaddingBottom;
+        var normalCardPadH = composerCardBody?.PaddingLeft ?? 0;
+        var normalCardPadT = composerCardBody?.PaddingTop ?? 0;
+        var normalCardPadB = composerCardBody?.PaddingBottom ?? 0;
+        var normalInputPadH = _input.PaddingLeft;
+        var normalInputPadT = _input.PaddingTop;
+        var normalInputPadB = _input.PaddingBottom;
+        var normalInputMinH = _input.MinimumHeight;
         ViewCompat.SetOnApplyWindowInsetsListener(view, new Edges.Listener((_, insets) =>
         {
             var isLandscape = Resources?.Configuration?.Orientation == global::Android.Content.Res.Orientation.Landscape;
             var imeVisible = insets.IsVisible(WindowInsetsCompat.Type.Ime());
             var compact = isLandscape && imeVisible;
             _composerActions.Visibility = compact ? ViewStates.Gone : ViewStates.Visible;
+            _input.SetMaxLines(compact ? 1 : 5);
+            _input.SetMinHeight(compact ? 0 : normalInputMinH);
+            if (compact)
+            {
+                var p2 = (int)Math.Round(2f * dp);
+                var p4 = (int)Math.Round(4f * dp);
+                composer.SetPadding(normalComposerPadH, p2, normalComposerPadH, p2);
+                composerCardBody?.SetPadding(normalCardPadH, 0, normalCardPadH, 0);
+                _input.SetPadding(normalInputPadH, p4, normalInputPadH, p4);
+            }
+            else
+            {
+                composer.SetPadding(normalComposerPadH, normalComposerPadT, normalComposerPadH, normalComposerPadB);
+                composerCardBody?.SetPadding(normalCardPadH, normalCardPadT, normalCardPadH, normalCardPadB);
+                _input.SetPadding(normalInputPadH, normalInputPadT, normalInputPadH, normalInputPadB);
+            }
             return insets;
         }));
+
+        Edges.ClampMaxWidth(
+            _list,
+            _attachmentsBar,
+            composer);
+        Edges.ClampMaxWidthByMargin(_unknownBanner, _slashPanel);
 
         RenderAttachments();
         return view;

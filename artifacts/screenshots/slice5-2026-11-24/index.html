@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>DSH Mobile UI Slice 5 真机验收截图（2026-11-24）</title>
+  <style>
+    body { font-family: system-ui, -apple-system, sans-serif; margin: 24px; background: #f6f7f9; color: #1b1c1e; }
+    h1 { font-size: 20px; margin-bottom: 6px; }
+    p.meta { color: #555; font-size: 13px; margin-bottom: 20px; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px; }
+    .card { background: #fff; border: 1px solid #e0e2e7; border-radius: 12px; padding: 12px; }
+    .card img { width: 100%; border-radius: 8px; border: 1px solid #eceef2; display: block; }
+    .card h3 { font-size: 14px; margin: 10px 0 4px; }
+    .card p { font-size: 12px; color: #555; margin: 0; line-height: 1.45; }
+  </style>
+</head>
+<body>
+  <h1>DSH Mobile · UI Slice 5 真机验收截图（暗色精修、1.3x 高字号、720dp 大屏限宽与真实横屏补验）</h1>
+  <p class="meta">设备：Xiaomi M2007J1SC（LineageOS 24.0 / Android 17 / API 37 / arm64）· Clean Release SHA-256: B7EC7272…7FA36 · 16 张</p>
+  <div class="grid">
+    <div class="card"><img src="01-chats-stopped-font130-light.png" alt="01" /><h3>01 · 1.3x 字号会话首页（未启动）</h3><p>DSH 引导卡与离线会话列表在 1.3x 字体缩放下换行对齐完整。</p></div>
+    <div class="card"><img src="02-chats-running-font130-light.png" alt="02" /><h3>02 · 1.3x 字号会话列表（运行中）</h3><p>运行中徽章、时间戳工作区行与 + 新建会话 FAB 无截断重叠。</p></div>
+    <div class="card"><img src="03-more-font130-light.png" alt="03" /><h3>03 · 1.3x 字号更多页</h3><p>概览卡与分组菜单项换行完整，右侧状态徽章不被挤压。</p></div>
+    <div class="card"><img src="04-credentials-font130-light.png" alt="04" /><h3>04 · 1.3x 字号凭据配置页</h3><p>安全提示横条放开 2 行截断完整呈现；Provider 长标题下右侧徽标与配置钮稳固对齐。</p></div>
+    <div class="card"><img src="05-remote-font130-light.png" alt="05" /><h3>05 · 1.3x 字号远程主机（定稿）</h3><p>「DSH 端口」与「SSH 端口」对称精简，1.3x 字号零省略号截断。</p></div>
+    <div class="card"><img src="06-runtime-font130-light.png" alt="06" /><h3>06 · 1.3x 字号运行环境仪表盘</h3><p>2×2 指标磁贴允许 2 行显示，标签与数值完整不裁切。</p></div>
+    <div class="card"><img src="07-chats-landscape-rail-light.png" alt="07" /><h3>07 · 真机横屏（2340×1080）会话页</h3><p>触发左侧 NavigationRailView 三栏与 720dp 内容限宽居中。</p></div>
+    <div class="card"><img src="08-files-landscape-rail-light.png" alt="08" /><h3>08 · 真机横屏工作区</h3><p>NavigationRail + 720dp 限宽文件/Git 切换条、搜索胶囊与列表。</p></div>
+    <div class="card"><img src="09-more-landscape-rail-light.png" alt="09" /><h3>09 · 真机横屏更多页</h3><p>NavigationRail + 顶栏 liftOnScroll 抬升效果 + 720dp 限宽设置卡片组。</p></div>
+    <div class="card"><img src="10-runtime-landscape-light.png" alt="10" /><h3>10 · 真机横屏运行环境（DshActivity）</h3><p>851dp 横屏下全宽顶栏 + 720dp 自动限宽居中 2×2 状态卡片。</p></div>
+    <div class="card"><img src="11-chat-landscape-light.png" alt="11" /><h3>11 · 真机横屏原生聊天</h3><p>全宽单层顶栏 + 720dp 对称居中结构化工具卡片与底部融合胶囊。</p></div>
+    <div class="card"><img src="12-chat-landscape-ime-light.png" alt="12" /><h3>12 · 真机横屏聊天软键盘（flagNoExtractUi）</h3><p>不弹全屏 ExtractUI 白框且自动隐藏快捷栏；若伴随缓存提示条会受限于 392dp 物理高度。</p></div>
+    <div class="card"><img src="13-editor-landscape-ime-light.png" alt="13" /><h3>13 · 真机横屏代码编辑器软键盘</h3><p>flagNoExtractUi 保留顶部「退出编辑 | 保存」与状态栏直接可见。</p></div>
+    <div class="card"><img src="14-chats-landscape-rail-dark.png" alt="14" /><h3>14 · 真机横屏暗色会话页</h3><p>NavigationRail + OLED 1dp 卡片描边 + 720dp 居中高对比展示。</p></div>
+    <div class="card"><img src="15-files-landscape-rail-dark.png" alt="15" /><h3>15 · 真机横屏暗色工作区</h3><p>深色模式下分段开关、受保护锁标与卡片边界清晰锐利。</p></div>
+    <div class="card"><img src="16-chat-landscape-dark.png" alt="16" /><h3>16 · 真机横屏暗色原生聊天</h3><p>深色工具卡片、胶囊底栏与 720dp 居中对称排布对比明确。</p></div>
+  </div>
+</body>
+</html>

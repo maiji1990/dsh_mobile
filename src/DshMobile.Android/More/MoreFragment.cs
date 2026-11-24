@@ -106,6 +106,11 @@ public sealed class MoreFragment : Fragment, ITabRoot
         Rows.BindNavRow(_rowDeveloper, Resource.Drawable.ic_code, GetString(Resource.String.developer_title),
             GetString(Resource.String.more_developer_sub), () => Open(typeof(DeveloperActivity)));
 
+        if (view.FindViewById<ViewGroup>(Resource.Id.more_scroll) is { ChildCount: > 0 } scroll)
+        {
+            Edges.ClampMaxWidth(scroll.GetChildAt(0));
+        }
+
         return view;
     }
 

@@ -203,6 +203,9 @@ public sealed class ChatsFragment : Fragment, ITabRoot
         _newFab.Click += (_, _) => _ = CreateAndOpenSessionAsync();
         _list.AddOnScrollListener(new FabScrollListener(_newFab));
 
+        Edges.ClampMaxWidth(_list, _filterBar, _cachedSubheader);
+        Edges.ClampMaxWidthByMargin(_hostBanner, _failureCard, _updateBanner, _webInvCard, _searchLayout);
+
         return view;
     }
 

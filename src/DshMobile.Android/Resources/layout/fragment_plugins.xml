@@ -129,6 +129,7 @@
             android:layout_marginEnd="@dimen/dshm_page_padding_horizontal" />
 
         <HorizontalScrollView
+            android:id="@+id/plugins_filter_scroll"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:clipToPadding="false"

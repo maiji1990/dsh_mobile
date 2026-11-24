@@ -4,4 +4,6 @@
     <dimen name="dshm_card_corner_radius">16dp</dimen>
     <dimen name="dshm_search_corner_radius">24dp</dimen>
     <dimen name="dshm_card_stroke_width">0dp</dimen>
+    <!-- 窄屏不限内容最大宽度；w600dp+（平板与横屏）收窄至 720dp 居中 -->
+    <dimen name="dshm_content_max_width">0dp</dimen>
 </resources>

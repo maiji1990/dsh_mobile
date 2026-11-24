@@ -65,6 +65,9 @@ public sealed class CredentialsFragment : Fragment
             entry => ConfirmClearCredential(entry));
         list.SetAdapter(_adapter);
 
+        Edges.ClampMaxWidth(list);
+        Edges.ClampMaxWidthByMargin(view.FindViewById(Resource.Id.credentials_intro_card));
+
         return view;
     }
 
