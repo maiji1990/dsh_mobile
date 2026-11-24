@@ -1,9 +1,9 @@
 # PR-07 原生插件目录与受控管理（L0 / L1）验收报告
 
 - **任务范围**：`N-07-01` ～ `N-07-03`（`docs/plan/DSH_Mobile_原生Android重构任务清单.md`）
-- **分支**：`feat/native-pr07-plugins-l0-l1`（基于 `main` / PR-05 `e9c07de`）
+- **分支**：`feat/native-pr07-plugins-l0-l1`（基于 `main` / PR-05 `e9c07de`，已于 PR #81 合入 `main` `467a5f7`）
 - **架构依据**：[ADR-0033](../ADR/0033-native-agent-client.md)、[ADR-0028](../ADR/0028-remove-native-terminal-and-plugin-pages.md)（修订边界：原生侧仅负责 L0 状态清单与 L1 受控装卸/开关，不做 L2 动态 Schema 表单，不内嵌 WebView）
-- **真机验收状态**：**待真机验证**（本分支已完成全量代码实现、全 XML Material 3 界面、`Release` 裁剪构建及桌面单元测试，尚未在 Android 17 真机运行现场 DSH 联调与交互回归）。
+- **真机验收状态**：**已真机验证（2026-11-23，Android 17）**——L0 清单、L1 受控启停与重启生效闭环通过；真实安装/卸载与自定义 WebUI 提示未覆盖（见第 5 节）。
 
 ---
 
@@ -71,12 +71,38 @@
 
 ---
 
-## 4. 真机验收矩阵（待真机验证）
+## 4. 真机验收矩阵
 
 | 编号 | 验收场景 | 状态 | 备注 |
 |---|---|---|---|
-| `PR07-D01` | 「更多 → 插件管理」入口及未启动 DSH 提示 | **待真机验证** | 需 Android 17 Release 包实测冷启动/未启动分支 |
-| `PR07-D02` | L0 清单合并展示（`pluginInventory/list` + 受控 `dsh plugin list --json`）与状态标签 | **待真机验证** | 需真实 `@deepseek-ai/dsh@0.2.2-rc.5` 运行态联调 |
-| `PR07-D03` | L1 受控安装 / 卸载 / 启停二次确认弹窗与非法包名报错提示 | **待真机验证** | 需验证真实 PRoot 内 pnpm 执行与回写 `cordis.patch.yml` |
-| `PR07-D04` | 变更成功后置顶「需要重启 DSH 生效」横幅与点击「立即重启 DSH」后横幅自动清除 | **待真机验证** | 需真机观察 `RestartWebHostAsync` 与握手清除闭环 |
-| `PR07-D05` | 携带自定义 WebUI 插件展示「此插件后端正常运行，但暂无原生管理界面」（无 WebView） | **待真机验证** | 需真机装入带 `web` 清单入口插件验证文案与零 WebView |
+| `PR07-D01` | 「更多 → 插件管理」入口及未启动 DSH 提示 | **通过（2026-11-23）** | 另登记 F21：宿主就绪后首次进页需点「刷新清单」才加载列表 |
+| `PR07-D02` | L0 清单合并展示（`pluginInventory/list` + 受控 `dsh plugin list --json`）与状态标签 | **通过（2026-11-23）** | 真机展示 `cordis:include`、`@deepseek-ai/dsh-plugin-manager/tools`、`@deepseek-ai/cordis-plugin-timer`、`@deepseek-ai/dsh-hmr` 等及核心保护徽标 |
+| `PR07-D03` | L1 受控安装 / 卸载 / 启停二次确认弹窗与非法包名报错提示 | **部分通过（2026-11-23）** | 启停确认与生效闭环通过（另登记 F20 标题拼接描述）；非法包名未发起安装（Snackbar 提示窗口未抓到）；真实第三方 npm 安装/卸载因改写系统层**未验证** |
+| `PR07-D04` | 变更成功后置顶「需要重启 DSH 生效」横幅与点击「立即重启 DSH」后横幅自动清除 | **通过（2026-11-23）** | `restart: ok … gen=30`，横幅自动消失并恢复启用 |
+| `PR07-D05` | 携带自定义 WebUI 插件展示「此插件后端正常运行，但暂无原生管理界面」（无 WebView） | **未验证（待测）** | 当前真机环境无携带自定义 WebUI 的第三方插件；代码边界已通过单测门禁 |
+
+---
+
+## 5. Android 17 真机验收（2026-11-23 18:15–18:25）
+
+- 设备：Xiaomi M2007J1SC（LineageOS，Android 17 / API 37，arm64）；APK：Release `57F522B9…2A511D`（`dotnet build src/DshMobile.Android -c Release`，0 错误 / 111 警告）；DSH `0.2.2-rc.5`，Wi‑Fi 在线。
+- 桌面门禁（本分支）：Core / Runtime / Application / Agent 与 guest 测试均通过（见第 3 节既有记录），Release 构建通过。
+
+| 场景 | 结果 | 证据 |
+|---|---|---|
+| 入口与宿主未启动提示 | **通过**：更多 → 插件目录；未启动 DSH 时显示「需先启动 DSH 后才能读取运行中插件清单」与启动按钮 | `pr07-plugins-hostdown.png` |
+| L0 清单 | **通过**：启动 DSH 后列出 `cordis:include`、`@deepseek-ai/dsh-plugin-manager/tools`、`@deepseek-ai/cordis-plugin-timer`、`@deepseek-ai/dsh-hmr` 等，含 运行中 / 已禁用 状态、核心保护徽标与描述；搜索框、刷新清单、安装插件可用 | `pr07-plugins-list.png` / `pr07-plugins-refreshed.png` |
+| L1 启停（受控确认） | **通过**：点击开关弹出确认框「将更新该插件在 web profile 中的启用配置，变更需重启 DSH 后生效」；确认后日志 `plugins toggle include:timer -> False: ok (restart required)`，页面出现「插件变更已保存，需要重启 DSH 生效」+「重启 DSH」横幅 | `pr07-plugin-toggle.png` / `pr07-plugin-disabled.png` |
+| 重启生效 | **通过**：点「重启 DSH」后宿主重启（`restart: ok … gen=30`），横幅消失、清单恢复；随后把该插件重新启用并再次重启，设备恢复原始配置 | `pr07-restarted.png` |
+| 安装弹窗与白名单 | **部分通过**：弹窗存在并说明「仅允许合法的 npm 包名及可选精确版本号（@scope/plugin 或 pkg@1.2.3）」，提交非法包名后关闭且**未发起安装**（日志无 install 记录）；但未捕获到校验失败提示文案（Snackbar 时间窗错过） | `pr07-install-dialog.png` |
+| 真实安装/卸载第三方插件 | 未验证：会改写 DSH 层与 `profiles/web/cordis.patch.yml`，需负责人决定是否在测试机执行 | — |
+| 自定义 WebUI 提示 / L2 边界 | 未验证：当前环境无携带自定义 WebUI 的第三方插件；代码层面零 L2 Schema、零 WebView 由门禁覆盖 | — |
+
+### 5.1 真机发现
+
+- **F20（低，文案）**：启停确认框标题把插件描述拼进标题（如「禁用插件 为其他插件提供延时和周期执行能力。？」），语句重复且以「？」结尾，建议改为「禁用插件 @deepseek-ai/cordis-plugin-timer？」并把描述放正文。
+- **F21（低，提示）**：宿主已就绪后首次进入插件页仍显示「需先启动 DSH」，需手动「刷新清单」才出现列表；建议进入页面时自动刷新一次或在宿主就绪回调后自动加载。
+
+### 5.2 结论
+
+PR-07 的 L0 状态清单、L1 受控启停与「需要重启生效」闭环已在 Android 17 真机通过；安装/卸载的真实执行与自定义 WebUI 提示因环境与风险未覆盖，`N-07-01`／`N-07-02` 可视为真机验证（安装路径除外），`N-07-03` 为桌面回归。

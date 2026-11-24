@@ -250,15 +250,19 @@ PR-00 (基线 + 路线A/B PoC + ADR-0033 + DshMobile.Agent骨架 + 门禁)
 
 ### 任务项
 
-- [ ] **N-06-01｜工作区 Git 状态与 Diff 服务**（桌面单测与构建已通过，**待真机验证**）
+- [ ] **N-06-01｜工作区 Git 状态与 Diff 服务**（桌面单测通过；**2026-11-23 真机部分通过**，见 `docs/native/ACCEPTANCE_PR06.md` §4）
   - 复用现有 [WorkspaceProvider.cs](../../src/DshMobile.Core/Files/WorkspaceProvider.cs) 与 [WorkspaceFileSystem.cs](../../src/DshMobile.Core/Files/WorkspaceFileSystem.cs)（保持 `.dsh/` 双向不可触与 symlink 拒绝策略），新增只读 [WorkspaceGitService.cs](../../src/DshMobile.Core/Files/WorkspaceGitService.cs) 与 [ProotGitCommandExecutor.cs](../../src/DshMobile.Runtime/Guest/ProotGitCommandExecutor.cs)（分支、变更文件列表、单文件 Unified Diff，严格校验仓库根/相对路径越界并强制输出大小与行数上限标注截断）。
-- [ ] **N-06-02｜`FilesFragment` 增量接入 Git 页签与原生 Diff 查看器**（桌面单测与构建已通过，**待真机验证**）
+  - **真机（2026-11-23）**：真实仓库工作区分支、`M`/`?` 变更与 Unified Diff 行号/增删高亮通过；**未覆盖**：超长 Diff 截断、二进制 Diff。
+- [ ] **N-06-02｜`FilesFragment` 增量接入 Git 页签与原生 Diff 查看器**（桌面单测通过；**2026-11-23 真机部分通过**，见 `docs/native/ACCEPTANCE_PR06.md` §4）
   - 在 [fragment_files.xml](../../src/DshMobile.Android/Resources/layout/fragment_files.xml)、[item_git_change.xml](../../src/DshMobile.Android/Resources/layout/item_git_change.xml)、[item_git_diff_line.xml](../../src/DshMobile.Android/Resources/layout/item_git_diff_line.xml) 与 [DiffLineView.cs](../../src/DshMobile.Android/Files/DiffLineView.cs) 增加 Git 状态视图与原生 Diff 查看器（行号、增删高亮、超长截断提示、主线程零解析），并通过 [WorkspacePathExtractor.cs](../../src/DshMobile.Agent/Presentation/WorkspacePathExtractor.cs) 支持从聊天工具卡点击安全工作区路径直达预览/Diff。
-- [ ] **N-06-03｜跨会话待办收件箱（`InboxSheet/Fragment`）与导航角标**（桌面单测与构建已通过，**待真机验证**）
+  - **真机（2026-11-23）**：Git 页签切换、变更列表与 Diff 查看器通过；登记 **F23（低）**（行点击区域偏小）；**未覆盖**：聊天工具卡点击路径直达预览/Diff。
+- [x] **N-06-03｜跨会话待办收件箱（`InboxSheet/Fragment`）与导航角标**（**2026-11-23 真机通过**，见 `docs/native/ACCEPTANCE_PR06.md` §4）
   - 新增纯托管 [InboxViewModel.cs](../../src/DshMobile.Agent/Presentation/InboxViewModel.cs) 聚合 `RequestsEngine` 全局待审批与待问答请求，落地 XML 布局 [sheet_inbox.xml](../../src/DshMobile.Android/Resources/layout/sheet_inbox.xml) 与 [InboxBottomSheet.cs](../../src/DshMobile.Android/Inbox/InboxBottomSheet.cs)，在 [MainActivity.cs](../../src/DshMobile.Android/MainActivity.cs) 顶部横幅与 `nav_chats` 角标实时提示；点击条目直达 `ChatActivity` 对应会话并定位卡片。
-- [ ] **N-06-04｜后台审批 / 问答系统通知通道**（桌面单测与构建已通过，**待真机验证**）
+  - **真机（2026-11-23）**：`ask_user_question` 触发后，首页顶部横幅「共有 1 项待处理（审批 0 · 问答 1）」、会话角标「待确认 1」、收件箱列表与「跳转会话」直达卡片均实测通过。
+- [ ] **N-06-04｜后台审批 / 问答系统通知通道**（桌面单测通过；**2026-11-23 真机仅问答通过，审批未验证**，见 `docs/native/ACCEPTANCE_PR06.md` §4）
   - 新增 [BackgroundRequestNotificationCoordinator.cs](../../src/DshMobile.Agent/Presentation/BackgroundRequestNotificationCoordinator.cs) 与 [AgentRequestNotifications.cs](../../src/DshMobile.Android/Notifications/AgentRequestNotifications.cs)：App 处于后台收到 `approval/request` 或 `user-questions/request` 时向独立通道 `dshmobile_agent_requests` 发高优先级脱敏通知（绝不含敏感参数全文与密钥）；
   - 快捷操作使用 `Exported = false` 的 `AgentRequestNotificationReceiver` + `PendingIntentFlags.Immutable` + 一次性随机数并经 `RequestsEngine` 原子认领（与页内卡片防双发，拒绝后零工具执行）；与 Relay `ui_*` 审批通知通道隔离，绝不跨域放行。见 [ACCEPTANCE_PR06.md](../native/ACCEPTANCE_PR06.md)。
+  - **真机（2026-11-23）**：后台问答通知（渠道 `dshmobile_agent_requests`、`vis=PRIVATE`）通过；**未验证**：因 `approval/policy=never` 无法构造 `approval/request`，通知「允许一次/拒绝」快捷按钮与「拒绝后零执行」待补样本。
 
 ---
 
@@ -270,12 +274,14 @@ PR-00 (基线 + 路线A/B PoC + ADR-0033 + DshMobile.Agent骨架 + 门禁)
 
 ### 任务项
 
-- [ ] **N-07-01｜`PluginInventoryService` 与受控变更服务（L0 / L1）**
+- [ ] **N-07-01｜`PluginInventoryService` 与受控变更服务（L0 / L1）**（桌面单测通过；**2026-11-23 真机 L0/启停闭环通过，真实安装/卸载未覆盖**，见 `docs/native/ACCEPTANCE_PR07.md` §5）
   - 仅经官方 `dsh-host-plugin-inventory` / `plugin_manager` 或受控 argv CLI（沿用 `GuestCommandLine` 逐 token 单引号转义）读取插件名称、版本、启用态、错误摘要及技能目录；
-  - 安装/卸载/开关操作严格白名单校验 + 用户显式确认，不在 Android 侧重写 npm 安装逻辑。（**桌面实现与单测已完成；待真机验证**，见 `docs/native/ACCEPTANCE_PR07.md`）
-- [ ] **N-07-02｜`PluginsFragment`（Material 3）**
+  - 安装/卸载/开关操作严格白名单校验 + 用户显式确认，不在 Android 侧重写 npm 安装逻辑。
+  - **真机（2026-11-23）**：L0 清单合并、L1 受控启停切换、`RestartWebHostAsync` 重启恢复闭环通过，提交非法包名零安装触发；**未覆盖**：真实第三方 npm 安装/卸载（需改写 `profiles/web/cordis.patch.yml`）与 Snackbar 校验失败提示窗口捕获。
+- [ ] **N-07-02｜`PluginsFragment`（Material 3）**（桌面与 Release 构建通过；**2026-11-23 真机 L0/启停通过，自定义 WebUI 未覆盖**，见 `docs/native/ACCEPTANCE_PR07.md` §5）
   - 展示已装插件清单、状态标签、报错摘要、启停/装卸入口，以及明确的「需要重启 DSH 生效」横幅；
-  - 对携带自定义 WebUI 的第三方插件如实显示“此插件后端正常运行，但暂无原生管理界面”，不伪装兼容、不内嵌 WebView。（**全 XML 布局、`PluginsActivity`/`PluginsFragment`/`PluginsAdapter` 与 `MoreFragment` 入口已完成并通过 `Release` 构建；待真机验证**，见 `docs/native/ACCEPTANCE_PR07.md`）
+  - 对携带自定义 WebUI 的第三方插件如实显示“此插件后端正常运行，但暂无原生管理界面”，不伪装兼容、不内嵌 WebView。
+  - **真机（2026-11-23）**：「更多 → 插件目录」、未启动提示、清单/保护徽标、启停确认框、重启横幅触发与清除通过；登记 **F20（低，文案）**、**F21（低，提示）**；**未覆盖**：携带自定义 WebUI 的第三方插件提示文案（环境无此类插件）。
 - [x] **N-07-03｜回归测试与边界核对**
   - 单测覆盖：非法包名拒绝（零进程启动）、安装/卸载失败后状态恢复、重启提示触发与宿主重启清除、错误日志经 `SecretRedactor` 脱敏（不含插件配置密钥），以及零 L2 动态表单 / 零 WebView 边界校验（`Runtime`/`Application`/`Agent` 单测及 5 组 `Quality` 门禁已通过；真机交互待测）。
 
@@ -376,6 +382,7 @@ PR-00 (基线 + 路线A/B PoC + ADR-0033 + DshMobile.Agent骨架 + 门禁)
 | PR-02 Gateway 契约 & 无 UI 端到端 | 同上 | 同上 | 同上 | 基本通过（联网）：文本/图片/审批三态真机跑通；F9 审批参数、F10 芯片斜杠命令待修 | `docs/native/ACCEPTANCE_PR00_PR04_DEVICE.md` |
 | PR-04 原生聊天切片 | 同上 | 同上 | 同上 | 修复后真机复测：**PASS 18 / FAIL 0 / INFO 2**；F1/F2/F4/F5/F9/F10/F11/F12/F13/F14 通过，**F6（横屏 + 输入法）仍未修复**、中文 IME 未验证 | `docs/native/ACCEPTANCE_PR04.md` |
 | PR-05 零凭据引导 & Cache-First | M2007J1SC / LineageOS / Android 17 (API 37) / CP2A.260605.016 | `CC7FD87E…3340EBF2` / PR-05 工作树 | DSH `0.2.2-rc.5` / Node 26.13.1 | 修复后复测通过：F15–F19 关闭；`native.cache_first_rendered`=96.2 ms；仅「全新零凭据安装」未重装验证 | `docs/native/ACCEPTANCE_PR05.md` |
-| PR-07 插件目录 L0 / 受控 L1 | 待真机验证 | — | — | 桌面全套单测与 Release 裁剪构建已通过；真机待测 | `docs/native/ACCEPTANCE_PR07.md` |
+| PR-06 Git / Diff / 收件箱 / 通知 | M2007J1SC / LineageOS / Android 17 (API 37) / CP2A.260605.016 | `B6E7FD99…594686` / `pr06-device-test` | DSH `0.2.2-rc.5` / Node 26.13.1 | 部分通过：Git/Diff、收件箱与后台问答通知通过；审批动作（`approval/policy=never`）、超长/二进制 Diff 与工具卡点击未覆盖；登记 F22–F23 | `docs/native/ACCEPTANCE_PR06.md` |
+| PR-07 插件目录 L0 / 受控 L1 | M2007J1SC / LineageOS / Android 17 (API 37) / CP2A.260605.016 | `57F522B9…2A511D` / `pr07-device-test` | DSH `0.2.2-rc.5` / Node 26.13.1 | 部分通过：L0 清单、L1 启停与重启闭环通过；真实装卸与自定义 WebUI 未覆盖；登记 F20–F21 | `docs/native/ACCEPTANCE_PR07.md` |
 | PR-08 治理/更新/远程/性能配对 | 待真机验证 | — | — | 待测 | `docs/native/PERFORMANCE_BASELINE.md` |
 | PR-09 覆盖安装 & 零 WebView 终验 | 待真机验证 | — | — | 待测 | `docs/native/ACCEPTANCE_MATRIX.md` |
