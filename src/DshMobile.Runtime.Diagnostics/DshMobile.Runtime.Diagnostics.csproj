@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    仅诊断构建（-p:DshDiagnostics=true）引用本程序集；普通 Release 的 Android 项目既不引用它，也不会把任何诊断类型打进 APK。
+    诊断代码依赖 Runtime 的公开布局 / PRoot 命令构造，但生产启动链路从不反向依赖本程序集。
+  -->
+  <PropertyGroup>
+    <TargetFramework>net11.0</TargetFramework>
+    <IsTrimmable>true</IsTrimmable>
+    <IsAotCompatible>true</IsAotCompatible>
+    <RootNamespace>DshMobile.Runtime.Diagnostics</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="DshMobile.Runtime.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\DshMobile.Core\DshMobile.Core.csproj" />
+    <ProjectReference Include="..\DshMobile.Runtime\DshMobile.Runtime.csproj" />
+  </ItemGroup>
+</Project>

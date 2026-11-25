@@ -33,7 +33,9 @@ public sealed class AgentConnectionScope : IDisposable
     private readonly IDisposable _stoppingHook;
     private readonly Lock _leaseSyncGate = new();
     private readonly Lock _remoteGate = new();
+    private readonly Lock _tokenGate = new();
     private IDshTokenSource? _activeTokenSource;
+    private IDshTokenSource? _tokenSubscription;
     private IDisposable? _chatLease;
     private IDisposable? _reconcileLease;
     private IDisposable? _approvalLease;
@@ -244,6 +246,9 @@ public sealed class AgentConnectionScope : IDisposable
         }
 
         Volatile.Write(ref _activeTokenSource, tokenSource);
+        // 客户端双保险：订阅启动令牌更新。若握手时令牌尚未就绪（HTTP 先于 stdout 就绪），
+        // token 到达即主动 RequestReconnect，立即打断连接退避，而不是睡满 BackoffBase。
+        BindTokenSource(tokenSource);
         _connection.PrepareForHostStart(trace);
         setPhase(DshHostPhase.ProtocolConnecting);
 
@@ -269,6 +274,55 @@ public sealed class AgentConnectionScope : IDisposable
         {
             _connection.SetTrace(null);
         }
+    }
+
+    /// <summary>绑定当前启动令牌源；切换宿主时先解绑旧源，避免同一作用域重复订阅或泄漏事件处理器。</summary>
+    private void BindTokenSource(IDshTokenSource tokenSource)
+    {
+        lock (_tokenGate)
+        {
+            if (ReferenceEquals(_tokenSubscription, tokenSource))
+            {
+                return;
+            }
+            if (_tokenSubscription is not null)
+            {
+                _tokenSubscription.TokenChanged -= OnTokenSourceChanged;
+            }
+            _tokenSubscription = tokenSource;
+            tokenSource.TokenChanged += OnTokenSourceChanged;
+        }
+    }
+
+    /// <summary>解绑启动令牌源（停机 / 释放时调用）。可重复调用。</summary>
+    private void UnbindTokenSource()
+    {
+        lock (_tokenGate)
+        {
+            if (_tokenSubscription is not null)
+            {
+                _tokenSubscription.TokenChanged -= OnTokenSourceChanged;
+                _tokenSubscription = null;
+            }
+        }
+    }
+
+    private void OnTokenSourceChanged(object? sender, EventArgs e)
+    {
+        if (Volatile.Read(ref _disposed) != 0)
+        {
+            return;
+        }
+        if (string.IsNullOrEmpty((sender as IDshTokenSource)?.Token))
+        {
+            // 令牌被清空属于停机 / 排空路径，由 NotifyHostStoppingAsync 处理，不触发重连。
+            return;
+        }
+        if (_connection.State is RemoteConnectionState.Connected or RemoteConnectionState.Draining or RemoteConnectionState.Disposed)
+        {
+            return;
+        }
+        _connection.RequestReconnect();
     }
 
     private string? ResolveSessionTitle(string sessionId)
@@ -353,6 +407,7 @@ public sealed class AgentConnectionScope : IDisposable
         {
             return;
         }
+        UnbindTokenSource();
         Sessions.NotifyHostStopping();
         Plugins.NotifyHostStopping();
         await Chat.NotifyHostStoppingAsync(ct).ConfigureAwait(false);
@@ -372,6 +427,7 @@ public sealed class AgentConnectionScope : IDisposable
         {
             return;
         }
+        UnbindTokenSource();
         Chat.StateChanged -= OnChatStateChanged;
         Sessions.StateChanged -= OnSessionsStateChanged;
         _requests.RequestsChanged -= OnRequestsChanged;

@@ -291,8 +291,22 @@ public sealed class DshHost : IDshTokenSource, IDshHost
             }
             if (_options.ProtocolHandshakeAsync is { } handshakeAsync)
             {
-                SetPhase(DshHostPhase.ProtocolConnecting);
-                var handshake = await handshakeAsync(this, SetPhase, trace, ct).ConfigureAwait(false);
+                // 宿主侧双保险：HTTP 可能先于 stdout 启动令牌就绪（PR-08 真机日志 83–114 ms），
+                // 此时直接握手会拿到 null token。这里按 TokenChanged 事件唤醒等待，不轮询、不固定 sleep；
+                // 仍受原 DshReadyTimeout 剩余预算、ct 取消与 DSH 进程提前退出（含 exit 137）约束。
+                var elapsedMs = NowMs() - _window.StartedAtMs;
+                var tokenBudget = RuntimeConstants.DshReadyTimeout - TimeSpan.FromMilliseconds(Math.Max(0, elapsedMs));
+                var handshake = await AwaitProtocolHandshakeAsync(
+                    this,
+                    _dsh,
+                    tokenBudget,
+                    _time,
+                    (source, innerCt) =>
+                    {
+                        SetPhase(DshHostPhase.ProtocolConnecting);
+                        return handshakeAsync(source, SetPhase, trace, innerCt);
+                    },
+                    ct).ConfigureAwait(false);
                 if (!handshake.Ok)
                 {
                     await KillEverythingAsync().ConfigureAwait(false);
@@ -508,7 +522,7 @@ public sealed class DshHost : IDshTokenSource, IDshHost
     {
         _window = DshWindowState.Fresh(NowMs());
         UiToolsAtStart = DshMobile.Runtime.Automation.UiToolsRegistration.IsRegistered(_layout.UserDataDir);
-        var argv = _builder.DshCommand(inPlaceRestart: true, trimmedWeb: _options.TrimmedWeb);
+        var argv = BuildDshArgv(_builder, _options, inPlaceRestart: true);
         var env = _builder.Environment("dsh");
         return SpawnDshProcess(argv, env, trace: null, onHintReady: null);
     }
@@ -519,10 +533,22 @@ public sealed class DshHost : IDshTokenSource, IDshHost
         // DSH reads its --patch layers once at start: this is what "loaded by DSH" means for the ui_* tools.
         UiToolsAtStart = DshMobile.Runtime.Automation.UiToolsRegistration.IsRegistered(_layout.UserDataDir);
         var commandEnv = trace?.Measure("dsh.command_env");
-        var argv = _builder.DshCommand(inPlaceRestart: false, trimmedWeb: _options.TrimmedWeb);
+        var argv = BuildDshArgv(_builder, _options, inPlaceRestart: false);
         var env = _builder.Environment("dsh");
         commandEnv?.End();
         return SpawnDshProcess(argv, env, trace, onHintReady);
+    }
+
+    /// <summary>
+    /// 统一的 DSH argv 构建入口：首次启动与健康循环的原地重启都必须使用同一个
+    /// <see cref="DshHostOptions.TrimmedWeb"/>，避免只裁剪首启、重启后又把浏览器前端插件加载回来。
+    /// 内部静态方法便于单测直接锁定两条路径，无需真的拉起 PRoot/DSH 进程。
+    /// </summary>
+    internal static IReadOnlyList<string> BuildDshArgv(ProotCommandBuilder builder, DshHostOptions options, bool inPlaceRestart)
+    {
+        ArgumentNullException.ThrowIfNull(builder);
+        ArgumentNullException.ThrowIfNull(options);
+        return builder.DshCommand(inPlaceRestart: inPlaceRestart, trimmedWeb: options.TrimmedWeb);
     }
 
     private Process SpawnDshProcess(IReadOnlyList<string> argv, IReadOnlyDictionary<string, string> env, StartupTrace? trace, Action? onHintReady)
@@ -629,6 +655,110 @@ public sealed class DshHost : IDshTokenSource, IDshHost
         }
     }
 
+    /// <summary>
+    /// 宿主侧握手闸门：在 HTTP 已就绪、但 stdout 尚未打印启动令牌时，先通过 <see cref="IDshTokenSource.TokenChanged"/>
+    /// 事件驱动等待非空 token，再调用协议握手。零轮询、零固定 sleep；进程提前退出、ct 取消或预算耗尽都会返回失败，
+    /// 绝不伪造成功。令牌在订阅事件之前就已可用时直接放行，避免丢失唤醒。
+    /// </summary>
+    internal static async Task<DshHostResult> AwaitProtocolHandshakeAsync(
+        IDshTokenSource tokenSource,
+        Process? dsh,
+        TimeSpan budget,
+        TimeProvider time,
+        Func<IDshTokenSource, CancellationToken, Task<DshHostResult>> handshakeAsync,
+        CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(tokenSource);
+        ArgumentNullException.ThrowIfNull(time);
+        ArgumentNullException.ThrowIfNull(handshakeAsync);
+
+        var startedAt = time.GetTimestamp();
+        var frequency = time.TimestampFrequency;
+        while (true)
+        {
+            ct.ThrowIfCancellationRequested();
+            if (tokenSource.Token is { Length: > 0 })
+            {
+                return await handshakeAsync(tokenSource, ct).ConfigureAwait(false);
+            }
+            if (dsh is { HasExited: true })
+            {
+                return DshExitedDuringHandshake(dsh.ExitCode);
+            }
+
+            var elapsed = TimeSpan.FromSeconds((time.GetTimestamp() - startedAt) / (double)frequency);
+            var remaining = budget - elapsed;
+            if (remaining <= TimeSpan.Zero)
+            {
+                return new DshHostResult(
+                    false,
+                    NotReady,
+                    $"DSH HTTP is ready but no launch token appeared within {budget.TotalSeconds:F0} s");
+            }
+
+            // 先订阅、再复查 Token：关闭“检查为空 → 事件在订阅前触发 → 漏掉唤醒”的竞态窗口。
+            var wake = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            EventHandler handler = (_, _) => wake.TrySetResult();
+            tokenSource.TokenChanged += handler;
+            // 每轮独立的取消源：唤醒/失败时取消残余 Task.Delay 计时器，并撤掉 WaitForExitAsync 的 Exited 订阅，
+            // 避免令牌多次刷新后计时器与退出订阅累积。
+            using var waitCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            try
+            {
+                if (tokenSource.Token is { Length: > 0 })
+                {
+                    // 令牌恰好在“上面检查为空”与“订阅事件”之间就绪。
+                    continue;
+                }
+
+                var exitTask = dsh?.WaitForExitAsync(waitCts.Token);
+                var timeoutTask = Task.Delay(remaining, time, waitCts.Token);
+                var completed = exitTask is null
+                    ? await Task.WhenAny(wake.Task, timeoutTask).ConfigureAwait(false)
+                    : await Task.WhenAny(wake.Task, exitTask, timeoutTask).ConfigureAwait(false);
+                if (ReferenceEquals(completed, wake.Task))
+                {
+                    continue;
+                }
+                if (exitTask is not null && ReferenceEquals(completed, exitTask))
+                {
+                    // ct 取消会同时取消 WaitForExitAsync 与 Task.Delay，WhenAny 可能先返回已取消的退出任务；
+                    // 此时进程并未退出，不能读取 ExitCode，必须先按取消语义处理。
+                    ct.ThrowIfCancellationRequested();
+                    // 退出前可能已解析到最后一行 token，优先按成功处理。
+                    if (tokenSource.Token is { Length: > 0 })
+                    {
+                        return await handshakeAsync(tokenSource, ct).ConfigureAwait(false);
+                    }
+                    if (dsh!.HasExited)
+                    {
+                        return DshExitedDuringHandshake(dsh.ExitCode);
+                    }
+                    continue;
+                }
+                ct.ThrowIfCancellationRequested();
+                if (tokenSource.Token is { Length: > 0 })
+                {
+                    // 预算到期与令牌就绪可能同时发生，仍以令牌为准，避免误报 NotReady。
+                    continue;
+                }
+                return new DshHostResult(
+                    false,
+                    NotReady,
+                    $"DSH HTTP is ready but no launch token appeared within {budget.TotalSeconds:F0} s");
+            }
+            finally
+            {
+                tokenSource.TokenChanged -= handler;
+                waitCts.Cancel();
+            }
+        }
+    }
+
+    private static DshHostResult DshExitedDuringHandshake(int exitCode) => exitCode == 137
+        ? new DshHostResult(false, RuntimeErrorCodes.PhantomProcessLimit, "DSH exited before the protocol handshake with 137 (SIGKILL / possible Android 32 phantom process limit)")
+        : new DshHostResult(false, Exited, $"DSH exited before the protocol handshake (exit {exitCode})");
+
     private async Task HealthLoopAsync(CancellationToken ct)
     {
         long last = NowMs();
@@ -676,8 +806,10 @@ public sealed class DshHost : IDshTokenSource, IDshHost
     }
 
     /// <summary>
-    /// ADR-0031: give DSH up to <see cref="_gracefulStopTimeout"/> to leave on SIGTERM (Node flushes its compile cache and
-    /// removes the writer lock) before <see cref="KillEverythingAsync"/> escalates to SIGKILL.
+    /// ADR-0031：在 <see cref="KillEverythingAsync"/> 升级到 SIGKILL 之前，给 DSH 最多 <see cref="_gracefulStopTimeout"/>
+    /// 的 SIGTERM 退出时间。目标优先选择 <c>_dsh.Id</c>（外层 <c>libproot.so</c>）下属的 Node tracee，
+    /// 而不是外层 PRoot 加载器本身；这样 Node 才能执行 compile cache 落盘与 writer lock 清理。
+    /// /proc 不可用或找不到内部 Node 时回退到原 <c>dsh.Id</c>，保持 Windows / 测试 Fake 进程的兼容行为。
     /// </summary>
     private async Task StopDshGracefullyAsync()
     {
@@ -688,12 +820,50 @@ public sealed class DshHost : IDshTokenSource, IDshHost
         }
         try
         {
-            await GracefulStop.RunAsync(dsh.Id, _terminator, () => dsh.HasExited, _gracefulStopTimeout, _log).ConfigureAwait(false);
+            var target = ResolveGracefulStopPid(dsh.Id);
+            if (target is { } inner)
+            {
+                _log($"host: graceful stop targets inner node pid {inner} (dsh PRoot pid {dsh.Id})");
+            }
+            else
+            {
+                _log($"host: graceful stop falls back to dsh PRoot pid {dsh.Id} (no inner node found in /proc)");
+            }
+            // 1800 ms 只用于覆盖 Node 收到 SIGTERM 后的同步落盘与退出；本机实测 flush 为毫秒级，
+            // 信号目标正确时通常远早于预算返回，预算只是防止外层 PRoot 卡死时无限等待。
+            await GracefulStop.RunAsync(target ?? dsh.Id, _terminator, () => dsh.HasExited, _gracefulStopTimeout, _log).ConfigureAwait(false);
         }
         catch (Exception e) when (e is InvalidOperationException or System.ComponentModel.Win32Exception or NotSupportedException)
         {
             _log($"host: graceful stop skipped ({e.GetType().Name}); falling back to SIGKILL");
         }
+    }
+
+    /// <summary>读取当前 /proc 并选出应接收 SIGTERM 的内部 Node PID；不可用时返回 null 以回退到外层 PRoot。</summary>
+    private int? ResolveGracefulStopPid(int dshPid)
+    {
+        try
+        {
+            return SelectGracefulStopPid(ProcessTable.Read(), dshPid);
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or NotSupportedException)
+        {
+            _log($"host: graceful stop target lookup failed ({e.GetType().Name}); falling back to dsh PRoot pid {dshPid}");
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// 从 <paramref name="table"/> 中 <paramref name="dshPid"/> 的后代里按子进程优先顺序选出 Node tracee；
+    /// 表为空、PID 非法或没有 Node 后代时返回 null，调用方回退到 <paramref name="dshPid"/>。
+    /// </summary>
+    internal static int? SelectGracefulStopPid(ProcessTable? table, int dshPid)
+    {
+        if (table is null || dshPid <= 1)
+        {
+            return null;
+        }
+        return table.FindNodeDescendant(dshPid);
     }
 
     /// <summary>Kills DSH, then the sandbox, children first; returns how many marker processes remain.</summary>

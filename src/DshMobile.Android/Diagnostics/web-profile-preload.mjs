@@ -5,10 +5,12 @@
 import { existsSync, mkdirSync, renameSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { Session } from 'node:inspector';
+import * as nodeModule from 'node:module';
 import { performance } from 'node:perf_hooks';
 
 const dir = process.env.DSHM_PROFILE_DIR;
 const mode = process.env.DSHM_PROFILE_MODE === 'profile' ? 'profile' : 'off';
+const shouldFlushCompileCacheOnStop = process.env.DSHM_COMPILE_CACHE_FLUSH_ON_STOP === '1';
 if (!dir) {
   // No diagnostic directory: stay completely passive.
 } else {
@@ -63,6 +65,37 @@ if (dir && mode === 'profile') {
   }
 }
 
+/**
+ * 冷启动轮在 HTTP 就绪后由 Host 写 stop.request；这里在 stop 阶段主动把 V8 compile cache 同步落盘。
+ * 只写固定布尔与错误码 token，绝不写缓存路径、模块名或用户数据。
+ */
+function flushCompileCacheOnStop() {
+  if (!dir || !shouldFlushCompileCacheOnStop) return null;
+  const result = {
+    schema: 1,
+    supported: typeof nodeModule.flushCompileCache === 'function',
+    flushed: false,
+    error: null,
+  };
+  try {
+    if (!result.supported) {
+      result.error = 'COMPILE_CACHE_FLUSH_UNSUPPORTED';
+    } else {
+      nodeModule.flushCompileCache();
+      result.flushed = true;
+    }
+  } catch (err) {
+    const code = err && typeof err.code === 'string' ? err.code : '';
+    result.error = /^[A-Za-z0-9._-]{1,64}$/.test(code) ? code : 'COMPILE_CACHE_FLUSH_FAILED';
+  }
+  try {
+    writeAtomic('compile-cache.flush.json', JSON.stringify(result));
+  } catch {
+    // 落盘摘要写不出去时 Host 会按缺失处理，不会把本次冷启动算作成功。
+  }
+  return result;
+}
+
 let stopping = false;
 async function stop() {
   if (stopping) {
@@ -97,6 +130,8 @@ async function stop() {
       error = 'PROFILE_WRITE_FAILED';
     }
   }
+  // 冷启动轮：在采样停止后、写 done 之前主动 flush，确保 Host 看到 done 时缓存文件已经落盘。
+  flushCompileCacheOnStop();
   const summary = {
     schema: 1,
     mode,

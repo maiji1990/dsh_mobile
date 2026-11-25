@@ -3,6 +3,7 @@
     <Project Path="src/DshMobile.Core/DshMobile.Core.csproj" />
     <Project Path="src/DshMobile.Native/DshMobile.Native.csproj" />
     <Project Path="src/DshMobile.Runtime/DshMobile.Runtime.csproj" />
+    <Project Path="src/DshMobile.Runtime.Diagnostics/DshMobile.Runtime.Diagnostics.csproj" />
     <Project Path="src/DshMobile.Application/DshMobile.Application.csproj" />
     <Project Path="src/DshMobile.Agent/DshMobile.Agent.csproj" />
     <Project Path="src/DshMobile.Android/DshMobile.Android.csproj" />

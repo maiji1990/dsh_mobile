@@ -23,6 +23,13 @@ public sealed class ProotCommandBuilder(RuntimeLayout layout)
     /// </summary>
     public const string ReadonlyPrefixCachePaths = "/opt/dshapp/runtime:/usr/local";
 
+    /// <summary>
+    /// ADR-0030：只有严格不可写的运行层才允许 PRoot 记录 ENOENT 负缓存
+    /// （<c>PROOT_RO_CACHE_NONEXIST_PREFIXES</c>）。DSH 层只在宿主停机时整体替换，guest 的插件安装与写入都落在
+    /// 工作区和仍可写的 <c>/usr/local</c>，因此这里只列 <c>/opt/dshapp/runtime</c>，绝不包含 <c>/usr/local</c>。
+    /// </summary>
+    public const string ReadonlyNonexistCachePaths = "/opt/dshapp/runtime";
+
     private string Current => layout.RuntimeCurrentDir;
 
     private string BaseRootfs => Path.Combine(Current, "base");
@@ -137,6 +144,10 @@ public sealed class ProotCommandBuilder(RuntimeLayout layout)
         argv.Add("--kill-on-exit");
         argv.Add("/usr/local/bin/node");
         argv.Add("--expose-internals");
+        // E6-1 真机配对实测：PRoot 下 Node 的 realpathSync 被放大，--preserve-symlinks 让模块解析保留符号链接路径，
+        // 隔离最小配置 web 首次 HTTP 就绪均值快约 2.7 s。语义影响必须先真机回归：Cordis 插件扫描、ui_* 工具可用，
+        // 以及 pnpm 符号链接下不得出现重复单例包实例；回归未通过前不得移除本标志或放宽该约束。
+        argv.Add("--preserve-symlinks");
         if (shim is not null)
         {
             argv.Add("--import");
@@ -350,11 +361,16 @@ public sealed class ProotCommandBuilder(RuntimeLayout layout)
             env["PATH"] = string.Join(':', new[] { RuntimeConstants.LinkShimGuestDir, RuntimeConstants.AssetsGuestDir + "/bin" }
                 .Concat(ambient.Split(':')).Where(s => !string.IsNullOrWhiteSpace(s)).Distinct(StringComparer.Ordinal));
             env["SHELL"] = "/bin/bash";
-            // ADR-0030 P1: skip the repeated host lstat on the read-only runtime layers. Production never records
-            // ENOENT: /usr/local is still writable from the guest (npm -g, corepack), so a stale "does not exist"
-            // would turn a later create into a spurious failure. PROOT_RO_CACHE_NONEXIST=0 keeps only DIR/NONDIR.
+            // ADR-0030 P1：只读层 DIR/NONDIR 缓存。PROOT_RO_CACHE_NONEXIST 仍设 0：/usr/local 在 guest 内可写
+            // （npm -g、corepack），缓存 ENOENT 会把“先探测后创建”变成假失败。
             env["PROOT_RO_CACHE_PREFIXES"] = ReadonlyPrefixCachePaths;
             env["PROOT_RO_CACHE_NONEXIST"] = "0";
+            // 仅严格只读的 DSH 层允许负缓存：该层只在宿主停机时整体替换，guest 运行期不会写入。
+            env["PROOT_RO_CACHE_NONEXIST_PREFIXES"] = ReadonlyNonexistCachePaths;
+            // Node 26 compile cache 落在 guest 可写缓存目录，供后续启动复用；仅 dsh 角色设置，guest/终端不需要。
+            env["NODE_COMPILE_CACHE"] = $"{RuntimeConstants.GuestCacheDir}/node-compile-cache";
+            // PROOT_NO_CLOSE_INTERCEPT 保持诊断 opt-in、不进生产：跳过 close 拦截会同时放过 shadow_pipe_read_end
+            // 与 netlink 清理路径（ADR-0030 决策 4）。
         }
         return env.ToDictionary();
     }

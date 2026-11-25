@@ -91,6 +91,20 @@ public sealed class SupervisionTests : IDisposable
         Assert.Equal("libproot.so --rootfs=/x/base /usr/local/bin/node /opt/dshapp/runtime/node_modules/@deepseek-ai/dsh/lib/bin.js --profile web ", t.Cmdline(300));
     }
 
+    [Fact]
+    public void ChildrenFirstTraversalAndNodeLookup_SkipTheOuterProotLoader()
+    {
+        DeviceLikeTree();
+        var t = ProcessTable.Read(_dir)!;
+        // 后序：最深的后代排在最前，父进程排在其子进程之后。
+        Assert.Equal([202, 201, 200, 301, 300], t.DescendantPidsChildrenFirst(100));
+        Assert.Equal([202, 201], t.DescendantPidsChildrenFirst(200));
+        // 外层 300 的 argv[0] 是 libproot.so（虽然参数里含 node 路径），只能选中内部 tracee 301。
+        Assert.Equal(301, t.FindNodeDescendant(300));
+        Assert.Equal(301, t.FindNodeDescendant(100));
+        Assert.Null(t.FindNodeDescendant(200));
+    }
+
     /// <summary>
     /// Legacy reverses a post-order (children-first) list, so it actually kills PARENTS first, contrary to its own
     /// comment. Traced by hand from killAll(): allDesc = [201, 202, 200], post-order = [202, 201, 200], reversed.

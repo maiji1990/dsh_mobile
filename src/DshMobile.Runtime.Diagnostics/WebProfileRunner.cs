@@ -9,10 +9,11 @@ using DshMobile.Runtime.Supervision;
 namespace DshMobile.Runtime.Diagnostics;
 
 /// <summary>
-/// P0 Web-profile diagnostic (docs/WEB_STARTUP_DIAGNOSIS.md): starts the fixed, isolated DSH Web argv with a fixed Node
-/// preload that captures a V8 CPU profile in-process, waits for HTTP readiness, then asks the preload to stop through a
-/// file in the isolated cache directory and only then tears the process tree down. Diagnostics only: no production code
-/// path calls it, no inspector port is opened, and the raw profile is copied to a caller-owned private directory.
+/// P0 Web-profile diagnostic (docs/WEB_STARTUP_DIAGNOSIS.md). E5 now runs the exact production argv/env inside one isolated
+/// cache root: a cold start flushes the Node compile cache after HTTP readiness, a dedicated warm round samples the
+/// COMPILE_CACHE debug counters, and only then do the E5-OFF / E5-PROFILE timing rounds run (without the debug flag, so
+/// timings are not polluted). Diagnostics only: no production code path calls it, no inspector port is opened, and the raw
+/// profile is copied to a caller-owned private directory.
 /// </summary>
 public sealed class WebProfileRunner
 {
@@ -62,17 +63,39 @@ public sealed class WebProfileRunner
         return hostDir;
     }
 
-    /// <summary>Alternating OFF, PROFILE, PROFILE, OFF... so both ends share the same device state.</summary>
+    /// <summary>
+    /// 能力 A：只读盘点生产 <c>_layout.GuestCacheDir/node-compile-cache</c>，返回只含计数、版本/架构前缀与固定错误码的
+    /// 结构化记录。调用方只把 <see cref="CompileCacheRecord.Summary"/> 写日志、把 JSONL 写入 App 私有目录。
+    /// </summary>
+    public static CompileCacheRecord InspectProductionCompileCache(RuntimeLayout layout, DateTimeOffset? startedAt = null)
+    {
+        ArgumentNullException.ThrowIfNull(layout);
+        var inventory = CompileCacheInventory.Inspect(Path.Combine(layout.GuestCacheDir, "node-compile-cache"));
+        return CompileCacheRecord.ForInventory(inventory, startedAt ?? DateTimeOffset.UtcNow);
+    }
+
+    /// <summary>
+    /// 运行一轮与生产同口径的 E5 套件。<paramref name="reps"/> 是热轮 E5-OFF / E5-PROFILE 的配对数；
+    /// 先执行 <paramref name="coldRounds"/> 轮独立冷启动（每轮前清空 node-compile-cache），再执行一次命中率采样，
+    /// 最后一轮冷启动落盘的缓存由 probe 与所有 warm 轮复用。
+    /// </summary>
     public async Task<ExperimentSuiteResult> RunAsync(
         int reps,
         byte[] preload,
         string profilesDir,
         Action<WebProfileRecord> sink,
-        CancellationToken ct)
+        CancellationToken ct,
+        Action<CompileCacheRecord>? cacheSink = null,
+        int coldRounds = 1)
     {
         ArgumentNullException.ThrowIfNull(preload);
         ArgumentNullException.ThrowIfNull(profilesDir);
         ArgumentNullException.ThrowIfNull(sink);
+        if (coldRounds < 1 || coldRounds > 50)
+        {
+            throw new ArgumentOutOfRangeException(nameof(coldRounds));
+        }
+        cacheSink ??= static _ => { };
         if (reps is < 1 or > 50)
         {
             return new ExperimentSuiteResult(false, BadReps, "reps must be 1..50", 0, 0);
@@ -97,7 +120,7 @@ public sealed class WebProfileRunner
             }
             Directory.CreateDirectory(profilesDir);
             var root = Path.Combine(_layout.FilesDir, "startup-experiments", DateTime.UtcNow.ToString("yyyyMMdd-HHmmss", CultureInfo.InvariantCulture) + "-E5");
-            Directory.CreateDirectory(root);
+            var isolated = IsolatedGuestLayout.Create(_layout, Path.Combine(root, "e5"));
             var runs = 0;
             var failures = 0;
             void Emit(WebProfileRecord record)
@@ -109,8 +132,50 @@ public sealed class WebProfileRunner
                 }
                 sink(record);
             }
+            void EmitCache(CompileCacheRecord record)
+            {
+                if (!string.Equals(record.Result, ExperimentRecord.Ok, StringComparison.Ordinal))
+                {
+                    failures++;
+                }
+                cacheSink(record);
+                _log("web-profile cache: " + record.Summary);
+            }
             try
             {
+                var stateDir = StagePreload(isolated, preload);
+                // 能力 A：先对生产缓存做只读盘点；目录不存在也如实记录为 absent，不伪造“已落盘”。
+                EmitCache(InspectProductionCompileCache(_layout));
+
+                // 多轮独立冷启动：每轮都面对空的 node-compile-cache；最后一轮 flush 后保留给 probe 与 warm 复用。
+                Directory.CreateDirectory(isolated.NodeCompileCacheDir);
+                for (var c = 1; c <= coldRounds; c++)
+                {
+                    if (c > 1)
+                    {
+                        // 不留上一轮的缓存文件，否则本轮就不是冷启动。
+                        if (Directory.Exists(isolated.NodeCompileCacheDir))
+                        {
+                            Directory.Delete(isolated.NodeCompileCacheDir, recursive: true);
+                        }
+                        Directory.CreateDirectory(isolated.NodeCompileCacheDir);
+                    }
+                    var cold = await RunOneAsync(
+                        WebProfileExperiments.All[0], c, isolated, stateDir, preload, profilesDir,
+                        cacheMode: "cold", debugCompileCache: false, flushOnStop: true, ct).ConfigureAwait(false);
+                    var coldInventory = CompileCacheInventory.Inspect(isolated.NodeCompileCacheDir);
+                    EmitCache(CompileCacheRecord.ForCold(cold.Record, coldInventory, cold.Flush, cold.Record.StartedAt, c));
+                }
+
+                // 单独的命中率采样轮：开启 NODE_DEBUG_NATIVE，但不进入 E5 计时样本，避免 stderr 输出污染 httpReadyMs / CPU。
+                var probe = await RunOneAsync(
+                    WebProfileExperiments.All[0], 1, isolated, stateDir, preload, profilesDir,
+                    cacheMode: "probe", debugCompileCache: true, flushOnStop: false, ct).ConfigureAwait(false);
+                var probeInventory = CompileCacheInventory.Inspect(isolated.NodeCompileCacheDir);
+                var debugCounts = probe.Debug?.Counts() ?? new CompileCacheDebugCounts(0, 0, 0, 0, 0, 0, null);
+                EmitCache(CompileCacheRecord.ForProbe(probe.Record, probeInventory, debugCounts, probe.Record.StartedAt, 1));
+
+                // 热缓存计时轮：不开启 NODE_DEBUG_NATIVE；OFF/PROFILE 按参数交错。
                 for (var i = 1; i <= reps; i++)
                 {
                     ct.ThrowIfCancellationRequested();
@@ -124,13 +189,17 @@ public sealed class WebProfileRunner
                         {
                             continue;
                         }
-                        Emit(await RunOneAsync(variant, i, root, preload, profilesDir, ct).ConfigureAwait(false));
+                        var run = await RunOneAsync(
+                            variant, i, isolated, stateDir, preload, profilesDir,
+                            cacheMode: "warm", debugCompileCache: false, flushOnStop: false, ct).ConfigureAwait(false);
+                        Emit(run.Record);
                     }
                 }
-                return new ExperimentSuiteResult(true, "ok", $"{runs} record(s), {failures} not ok", runs, failures);
+                return new ExperimentSuiteResult(true, "ok", $"{runs} E5 record(s), {failures} not ok", runs, failures);
             }
             finally
             {
+                isolated.Dispose();
                 TryDeleteTree(root);
             }
         }
@@ -140,32 +209,110 @@ public sealed class WebProfileRunner
         }
     }
 
-    private async Task<WebProfileRecord> RunOneAsync(
-        WebProfileVariant variant,
-        int iteration,
-        string root,
-        byte[] preload,
-        string profilesDir,
-        CancellationToken ct)
+    /// <summary>
+    /// 构造与当前生产 <see cref="ProotCommandBuilder.DshCommand"/> 一致的 E5 argv：生产完整前缀 + --preserve-symlinks +
+    /// preload/link/startup-fs-cache 三个 import + bin.js --profile web --patch ... --no-open。仅固定诊断代码调用。
+    /// </summary>
+    internal IReadOnlyList<string> BuildArgv(IsolatedGuestLayout isolated)
     {
-        var runId = StartupTrace.NewRunId();
-        var startedAt = DateTimeOffset.UtcNow;
-        using var isolated = IsolatedGuestLayout.Create(_layout, Path.Combine(root, $"iter-{iteration}-{variant.Id}"));
-        var stateDir = StagePreload(isolated, preload);
-        foreach (var name in new[] { WebProfileExperiments.StopRequest, WebProfileExperiments.Done, WebProfileExperiments.Summary, WebProfileExperiments.ProfileFile })
+        ArgumentNullException.ThrowIfNull(isolated);
+        var argv = new List<string>(_builder.DiagnosticPrefix(isolated.WorkspaceDir, isolated.CacheDir))
         {
-            TryDelete(Path.Combine(stateDir, name));
+            "--cwd=/root/projects",
+            "--kill-on-exit",
+            StartupExperiments.Node,
+            "--expose-internals",
+            "--preserve-symlinks",
+            "--import",
+            WebProfileExperiments.GuestDir + "/" + WebProfileExperiments.PreloadName,
+        };
+        if (File.Exists(_layout.ShimFile))
+        {
+            argv.Add("--import");
+            argv.Add(RuntimeConstants.LinkShimGuestPath);
         }
+        argv.Add("--import");
+        argv.Add(GuestAssetProvisioner.GuestStartupFsCacheShim);
+        argv.Add(RuntimeConstants.GuestDshBin);
+        argv.Add("--profile");
+        argv.Add(RuntimeConstants.DshWebProfile);
+        argv.Add("--patch");
+        argv.Add(GuestAssetProvisioner.GuestWebTrimPatch);
+        argv.Add("--no-open");
+        return argv;
+    }
 
+    /// <summary>
+    /// 生产同口径 env：隔离 <c>NODE_COMPILE_CACHE</c>、ADR-0030 的只读前缀缓存三个键；只有命中率采样轮才加
+    /// <c>NODE_DEBUG_NATIVE=COMPILE_CACHE</c>，只有冷启动轮才要求 preload 在 stop 时主动 flush。
+    /// </summary>
+    internal IReadOnlyDictionary<string, string> BuildEnv(
+        IsolatedGuestLayout isolated,
+        WebProfileVariant variant,
+        bool debugCompileCache,
+        bool flushOnStop)
+    {
+        ArgumentNullException.ThrowIfNull(isolated);
+        ArgumentNullException.ThrowIfNull(variant);
         var env = new Dictionary<string, string>(_builder.Environment("dsh"), StringComparer.Ordinal)
         {
             ["DSHM_PROFILE_DIR"] = WebProfileExperiments.GuestDir,
             ["DSHM_PROFILE_MODE"] = variant.Mode,
+            ["NODE_COMPILE_CACHE"] = WebProfileExperiments.NodeCompileCacheGuest,
+            ["PROOT_RO_CACHE_PREFIXES"] = ProotCommandBuilder.ReadonlyPrefixCachePaths,
+            ["PROOT_RO_CACHE_NONEXIST"] = "0",
+            ["PROOT_RO_CACHE_NONEXIST_PREFIXES"] = ProotCommandBuilder.ReadonlyNonexistCachePaths,
         };
+        if (flushOnStop)
+        {
+            env["DSHM_COMPILE_CACHE_FLUSH_ON_STOP"] = "1";
+        }
+        else
+        {
+            env.Remove("DSHM_COMPILE_CACHE_FLUSH_ON_STOP");
+        }
+        if (debugCompileCache)
+        {
+            env["NODE_DEBUG_NATIVE"] = CompileCacheDebugAggregator.DebugFlag;
+        }
+        else
+        {
+            env.Remove("NODE_DEBUG_NATIVE");
+        }
+        return env;
+    }
+
+    private async Task<RunOneResult> RunOneAsync(
+        WebProfileVariant variant,
+        int iteration,
+        IsolatedGuestLayout isolated,
+        string stateDir,
+        byte[] preload,
+        string profilesDir,
+        string cacheMode,
+        bool debugCompileCache,
+        bool flushOnStop,
+        CancellationToken ct)
+    {
+        _ = preload;
+        var runId = StartupTrace.NewRunId();
+        var startedAt = DateTimeOffset.UtcNow;
+        foreach (var name in new[]
+                 {
+                     WebProfileExperiments.StopRequest,
+                     WebProfileExperiments.Done,
+                     WebProfileExperiments.Summary,
+                     WebProfileExperiments.ProfileFile,
+                     WebProfileExperiments.CompileCacheFlush,
+                 })
+        {
+            TryDelete(Path.Combine(stateDir, name));
+        }
+
+        var env = BuildEnv(isolated, variant, debugCompileCache, flushOnStop);
         var argv = BuildArgv(isolated);
         var psi = StartInfo(argv, env);
         Process process;
-        var spawnClock = Stopwatch.GetTimestamp();
         try
         {
             process = Process.Start(psi) ?? throw new InvalidOperationException("Process.Start returned null");
@@ -173,23 +320,31 @@ public sealed class WebProfileRunner
         catch (Exception e) when (e is Win32Exception or InvalidOperationException or IOException)
         {
             _log($"web-profile {variant.Id}: spawn failed: {e.GetType().Name}");
-            return Record(variant, runId, iteration, startedAt, null, null, null, null, null, null, null, null,
-                ExperimentRecord.Failed, null, false);
+            var failed = Record(variant, runId, iteration, startedAt, null, null, null, null, null, null, null, null,
+                ExperimentRecord.Failed, null, false) with
+            {
+                CacheMode = cacheMode,
+                CompileCacheFileCount = 0,
+                CompileCacheBytes = 0,
+            };
+            return new RunOneResult(failed, null, null);
         }
-        var spawnMs = Stopwatch.GetElapsedTime(spawnClock).TotalMilliseconds;
-        _ = spawnMs;
         var runClock = Stopwatch.GetTimestamp();
         double? httpReadyMs = null;
         var timedOut = false;
         double? captureMs = null;
         WebProfileSummary? summary = null;
+        CompileCacheFlushSummary? flush = null;
+        var aggregator = debugCompileCache ? new CompileCacheDebugAggregator() : null;
         var doneSeen = false;
         var profileCopied = false;
         using (process)
         {
             process.StandardInput.Close();
-            var stdout = PumpAsync(process.StandardOutput);
-            var stderr = PumpAsync(process.StandardError);
+            var stdout = PumpAsync(process.StandardOutput, _ => { });
+            var stderr = aggregator is null
+                ? PumpAsync(process.StandardError, _ => { })
+                : PumpAsync(process.StandardError, aggregator.Observe);
             try
             {
                 var deadline = TimeSpan.FromSeconds(120);
@@ -232,6 +387,7 @@ public sealed class WebProfileRunner
                     if (doneSeen)
                     {
                         summary = ReadSummary(Path.Combine(stateDir, WebProfileExperiments.Summary));
+                        flush = ReadFlush(Path.Combine(stateDir, WebProfileExperiments.CompileCacheFlush));
                         if (variant.Mode == "profile" && TryCopyProfile(stateDir, profilesDir, runId))
                         {
                             profileCopied = true;
@@ -255,10 +411,17 @@ public sealed class WebProfileRunner
             {
                 result = ExperimentRecord.Failed;
             }
-            return Record(variant, runId, iteration, startedAt, httpReadyMs, captureMs,
+            var cache = CompileCacheInventory.Count(isolated.NodeCompileCacheDir);
+            var record = Record(variant, runId, iteration, startedAt, httpReadyMs, captureMs,
                 summary?.ProfileSampleCount, summary?.NodeUserCpuMs, summary?.NodeSystemCpuMs,
                 summary?.EventLoopActiveMs, summary?.EventLoopIdleMs, summary?.StopLatencyMs,
-                result, error, profileCopied);
+                result, error, profileCopied) with
+            {
+                CacheMode = cacheMode,
+                CompileCacheFileCount = cache.Files,
+                CompileCacheBytes = cache.Bytes,
+            };
+            return new RunOneResult(record, flush, aggregator);
         }
     }
 
@@ -291,28 +454,6 @@ public sealed class WebProfileRunner
             return (ExperimentRecord.Failed, WebProfileExperiments.ProfileEmpty);
         }
         return (ExperimentRecord.Ok, null);
-    }
-
-    private IReadOnlyList<string> BuildArgv(IsolatedGuestLayout isolated)
-    {
-        var argv = new List<string>(_builder.DiagnosticPrefix(isolated.WorkspaceDir, isolated.CacheDir))
-        {
-            "--cwd=/root/projects",
-            "--kill-on-exit",
-            StartupExperiments.Node,
-            "--expose-internals",
-            "--import",
-            WebProfileExperiments.GuestDir + "/" + WebProfileExperiments.PreloadName,
-        };
-        if (File.Exists(_layout.ShimFile))
-        {
-            argv.Add("--import");
-            argv.Add(RuntimeConstants.LinkShimGuestPath);
-        }
-        argv.Add(RuntimeConstants.GuestDshBin);
-        argv.Add("--profile");
-        argv.Add(RuntimeConstants.DshWebProfile);
-        return argv;
     }
 
     private static bool TryCopyProfile(string stateDir, string profilesDir, string runId)
@@ -359,6 +500,18 @@ public sealed class WebProfileRunner
         try
         {
             return File.Exists(path) ? WebProfileSummary.TryParse(File.ReadAllText(path)) : null;
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            return null;
+        }
+    }
+
+    private static CompileCacheFlushSummary? ReadFlush(string path)
+    {
+        try
+        {
+            return File.Exists(path) ? CompileCacheFlushSummary.TryParse(File.ReadAllText(path)) : null;
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         {
@@ -421,12 +574,13 @@ public sealed class WebProfileRunner
         return psi;
     }
 
-    private static async Task PumpAsync(StreamReader reader)
+    private static async Task PumpAsync(StreamReader reader, Action<string> onLine)
     {
         try
         {
-            while (await reader.ReadLineAsync().ConfigureAwait(false) is not null)
+            while (await reader.ReadLineAsync().ConfigureAwait(false) is { } line)
             {
+                onLine(line);
             }
         }
         catch (Exception e) when (e is IOException or ObjectDisposedException or InvalidOperationException)
@@ -515,4 +669,9 @@ public sealed class WebProfileRunner
         {
         }
     }
+
+    private sealed record RunOneResult(
+        WebProfileRecord Record,
+        CompileCacheFlushSummary? Flush,
+        CompileCacheDebugAggregator? Debug);
 }

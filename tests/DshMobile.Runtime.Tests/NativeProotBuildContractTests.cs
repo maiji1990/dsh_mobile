@@ -111,4 +111,18 @@ public partial class NativeProotBuildContractTests
             Assert.Contains("diff --git ", text, StringComparison.Ordinal);
         }
     }
+
+    /// <summary>ADR-0030：03 补丁的负缓存默认保持全局语义，并提供仅限严格只读前缀的白名单入口。</summary>
+    [Fact]
+    public void RoPrefixCachePatch_AllowsNegativeCachingOnlyForStrictReadonlyPrefixes()
+    {
+        var text = File.ReadAllText(Path.Combine(ProotDir, "patches", "03-canon-ro-prefix-cache.patch"));
+
+        Assert.Contains("PROOT_RO_CACHE_NONEXIST_PREFIXES", text, StringComparison.Ordinal);
+        Assert.Contains("ro_cache_nonexist_matches(", text, StringComparison.Ordinal);
+        Assert.Contains("ro_cache_caches_nonexist(guest_path, guest_len)", text, StringComparison.Ordinal);
+        // 向后兼容：PROOT_RO_CACHE_NONEXIST 未设/非 "0" 时仍对全部前缀生效；"0" 时才查询按前缀白名单。
+        Assert.Contains("getenv(\"PROOT_RO_CACHE_NONEXIST\")", text, StringComparison.Ordinal);
+        Assert.Contains("ro_cache_nonexist_state > 0", text, StringComparison.Ordinal);
+    }
 }

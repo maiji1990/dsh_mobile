@@ -91,7 +91,7 @@ DSH Web Profile 自身初始化，下一步应做 CPU profile（§7.1），在�
 
 入口是**编译期**条件，不是运行期隐藏：
 
-- `src/DshMobile.Android/DshMobile.Android.csproj` 在 `-p:DshDiagnostics=true` 时把 `DSH_DIAGNOSTICS` 加入 `DefineConstants`。
+- `src/DshMobile.Android/DshMobile.Android.csproj` 在 `-p:DshDiagnostics=true` 时把 `DSH_DIAGNOSTICS` 加入 `DefineConstants`，并只在该条件下引用 `src/DshMobile.Runtime.Diagnostics`；普通 Release APK 不含该程序集。
 - `DeveloperActivity` 的「启动实验」行包在 `#if DSH_DIAGNOSTICS` 里；`StartupExperimentActivity` 整个文件也在该条件内编译。
 - 普通 Debug / Release 构建没有这个类、没有这个入口，也不接受任何「打开实验」的 intent。
 
@@ -115,13 +115,13 @@ DSH Web Profile 自身初始化，下一步应做 CPU profile（§7.1），在�
 
 | 控制 | 实现 | 说明 |
 |---|---|---|
-| 固定枚举 | [StartupExperiment.cs](../src/DshMobile.Runtime/Diagnostics/StartupExperiment.cs) 的 `StartupExperiments.All` | 只有 E1-0…E1-3、E2-0…E2-3、E3-P/E3-0/E3-1、E4-A/E4-B/E4-C；runner 只接受套件名（`E1E2`/`E3`/`E4`），不接受 argv、命令、可执行文件路径或超时参数 |
+| 固定枚举 | [StartupExperiment.cs](../src/DshMobile.Runtime.Diagnostics/StartupExperiment.cs) 的 `StartupExperiments.All` | 只有 E1-0…E1-3、E2-0…E2-3、E3-P/E3-0/E3-1、E4-A/E4-B/E4-C；runner 只接受套件名（`E1E2`/`E3`/`E4`），不接受 argv、命令、可执行文件路径或超时参数 |
 | 一次一个任务 | `StartupExperimentRunner` 的 `SemaphoreSlim(1,1)` + `EXPERIMENT_BUSY` | 第二个请求直接拒绝，不排队、不并发；UI 同时禁用其他行 |
 | DSH 在跑则拒绝 | `_productionRunning()`（`HostOwnsProcesses`）→ `EXPERIMENT_DSH_RUNNING` | 不碰正在运行的生产进程和端口 |
 | 3080 被占用则拒绝 | 连接 `127.0.0.1:3080` → `EXPERIMENT_PORT_BUSY` | 其他 App、残留进程或手工服务占用时拒绝启动，避免误连/误杀 |
 | App UID | PRoot 和 guest 进程继承 App 的 Linux UID | 不 `su`、不提权；受 Android 沙箱和 SELinux 约束，guest 看不到其他 App 的数据 |
 | nativeLibraryDir 内 PRoot | `ProotBinary` 优先 `nativeLibraryDir/libproot.so`；loader / shmem 同样优先 APK 内副本 | 不从用户可写目录执行任意 ELF；运行时层只提供只读回退 |
-| 隔离目录 | [IsolatedGuestLayout.cs](../src/DshMobile.Runtime/Diagnostics/IsolatedGuestLayout.cs) | E3-0/E3-1/E4 的 workspace、guest-cache、compile-cache 都在本次实验根下；只从生产目录复制已登记的**非秘密**覆盖层 YAML，不复制会话、凭据、MCP 配置或工作区 |
+| 隔离目录 | [IsolatedGuestLayout.cs](../src/DshMobile.Runtime.Diagnostics/IsolatedGuestLayout.cs) | E3-0/E3-1/E4 的 workspace、guest-cache、compile-cache 都在本次实验根下；只从生产目录复制已登记的**非秘密**覆盖层 YAML，不复制会话、凭据、MCP 配置或工作区 |
 | 超时 / 取消 / 清理 | 每变体 30–180 s；`CancellationToken`；`Process.Kill(entireProcessTree: true)`；等待退出并等待 3080 释放；`finally` 删除实验根 | 取消会结束子进程树并删除本次隔离目录；残留的临时树不影响生产 |
 | 不调用 KillTreesByMarker | runner 只结束自己 `Process` 启动的进程树 | 生产启动里的 marker 扫描可能误杀其他进程；实验路径明确不使用它 |
 | 输出最小化 | 只写固定字段 JSONL；UI 只显示套件结果和文件路径 | 不把环境变量、token、URL、prompt、用户路径写进记录 |
@@ -427,9 +427,9 @@ E3/E4 的终点是**首次 HTTP 状态**，不是 `onPageFinished`，更不是�
 - 工具：[tooling/startup-experiment-report.mjs](../tooling/startup-experiment-report.mjs)
 - 测试：[tests/tooling/startup-experiment-report.test.mjs](../tests/tooling/startup-experiment-report.test.mjs)
 - 记录模型：[src/DshMobile.Core/Diagnostics/ExperimentRecord.cs](../src/DshMobile.Core/Diagnostics/ExperimentRecord.cs)
-- 固定变体目录：[src/DshMobile.Runtime/Diagnostics/StartupExperiment.cs](../src/DshMobile.Runtime/Diagnostics/StartupExperiment.cs)
-- runner（安全门/超时/清理）：[src/DshMobile.Runtime/Diagnostics/StartupExperimentRunner.cs](../src/DshMobile.Runtime/Diagnostics/StartupExperimentRunner.cs)
-- 隔离布局：[src/DshMobile.Runtime/Diagnostics/IsolatedGuestLayout.cs](../src/DshMobile.Runtime/Diagnostics/IsolatedGuestLayout.cs)
+- 固定变体目录：[src/DshMobile.Runtime.Diagnostics/StartupExperiment.cs](../src/DshMobile.Runtime.Diagnostics/StartupExperiment.cs)
+- runner（安全门/超时/清理）：[src/DshMobile.Runtime.Diagnostics/StartupExperimentRunner.cs](../src/DshMobile.Runtime.Diagnostics/StartupExperimentRunner.cs)
+- 隔离布局：[src/DshMobile.Runtime.Diagnostics/IsolatedGuestLayout.cs](../src/DshMobile.Runtime.Diagnostics/IsolatedGuestLayout.cs)
 - 诊断界面：[src/DshMobile.Android/Developer/StartupExperimentActivity.cs](../src/DshMobile.Android/Developer/StartupExperimentActivity.cs)
 - 开发者选项入口：[src/DshMobile.Android/Developer/DeveloperActivity.cs](../src/DshMobile.Android/Developer/DeveloperActivity.cs)
 - 诊断构建开关：[src/DshMobile.Android/DshMobile.Android.csproj](../src/DshMobile.Android/DshMobile.Android.csproj)

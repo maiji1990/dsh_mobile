@@ -21,6 +21,8 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\DshMobile.Runtime\DshMobile.Runtime.csproj" />
+    <!-- 诊断程序集只在测试和 -p:DshDiagnostics=true 构建中引用；普通 Release APK 不包含它。 -->
+    <ProjectReference Include="..\..\src\DshMobile.Runtime.Diagnostics\DshMobile.Runtime.Diagnostics.csproj" />
   </ItemGroup>
 
 </Project>
