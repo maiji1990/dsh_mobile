@@ -178,6 +178,18 @@ public sealed class StartupExperimentTests : IDisposable
         Assert.Contains("--preserve-symlinks", bothArgv);
         Assert.Contains(DshMobile.Runtime.Guest.GuestAssetProvisioner.GuestStartupFsCacheShim, bothArgv);
         Assert.Contains(RuntimeConstants.LinkShimGuestPath, bothArgv);
+
+        // 配对有效性：E6-0 是隔离基线，即使生产 DshCommand 已启用 --preserve-symlinks 也不得被污染；
+        // E6-1 / E6-3 的标志必须紧跟 --expose-internals、仅一次，且与对应无标志变体只差这一个 token。
+        var preserveIndex = preserveArgv.ToList().IndexOf("--preserve-symlinks");
+        Assert.Equal(preserveArgv.ToList().IndexOf("--expose-internals") + 1, preserveIndex);
+        Assert.Single(preserveArgv, a => a == "--preserve-symlinks");
+        Assert.Equal(baseArgv.ToList(), preserveArgv.Where((_, i) => i != preserveIndex).ToList());
+
+        var bothPreserveIndex = bothArgv.ToList().IndexOf("--preserve-symlinks");
+        Assert.Equal(bothArgv.ToList().IndexOf("--expose-internals") + 1, bothPreserveIndex);
+        Assert.Single(bothArgv, a => a == "--preserve-symlinks");
+        Assert.Equal(cacheArgv.ToList(), bothArgv.Where((_, i) => i != bothPreserveIndex).ToList());
     }
 
     [Fact]

@@ -27,9 +27,12 @@ P0/P1 把生产冷启动从约 17.7 s 压到 5.8 s（ADR-0030 报告）。但用
 
 ### 2. 优雅停机（默认生效）
 
-- `DshHost.StopAsync` 在 SIGKILL 之前先向 DSH 的 PRoot 进程发 **SIGTERM**（`PosixGuestTerminator` → `kill(pid, 15)`），
+- `DshHost.StopAsync` 在 SIGKILL 之前先通过 `ProcessTable` 找到 DSH PRoot（`libproot.so`）下的内部 Node tracee
+  （子进程优先；找不到或 `/proc` 不可用时回退到原 PRoot PID），向它发 **SIGTERM**（`PosixGuestTerminator` → `kill(pid, 15)`），
   最多等 **1.8 s**（`GracefulStop`，50 ms 轮询），仍未退出才走原有的 `KillEverythingAsync`（SIGKILL + marker 清扫）。
 - 目的：让 Node 有机会 flush compile cache 并释放 DSH writer lock，减少下一次启动的冷缓存与陈旧锁。
+  只把 SIGTERM 发给外层 `libproot.so` 时 Node 不一定收到；M2007J1SC 真机曾出现 10/10 轮 1.8 s 后升级 SIGKILL、
+  `node-compile-cache` 目录为空。1.8 s 预算是给 Node 同步 flush 与退出的上限（本机实测 flush 为毫秒级），保留不变。
 - 平台差异如实处理：Windows 上 `TryTerminate` 返回 false → 直接走 SIGKILL，不额外等待（`GracefulStopTests` 覆盖）。
 - 健康循环里的自动重启仍用 SIGKILL：那是「已经判定不健康」的路径，多等 1.8 s 没有收益。
 

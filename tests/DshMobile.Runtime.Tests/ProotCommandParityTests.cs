@@ -49,6 +49,57 @@ public sealed partial class ProotCommandParityTests : IDisposable
         }
     }
 
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(false, true)]
+    [InlineData(true, false)]
+    [InlineData(true, true)]
+    public void DshCommand_AddsNodePreserveSymlinksOnce_RightAfterExposeInternals(bool inPlaceRestart, bool trimmedWeb)
+    {
+        var files = Path.Combine(_dir, $"files-preserve-{inPlaceRestart}-{trimmedWeb}");
+        var native = Path.Combine(_dir, $"native-preserve-{inPlaceRestart}-{trimmedWeb}");
+        Directory.CreateDirectory(native);
+        File.WriteAllText(Path.Combine(native, "libproot.so"), "");
+        var layout = new RuntimeLayout(files, Path.Combine(_dir, "cache"), native);
+        Directory.CreateDirectory(layout.LayerDir("node"));
+        Directory.CreateDirectory(layout.LayerDir("dsh"));
+        Directory.CreateDirectory(layout.ShimDir);
+        File.WriteAllText(layout.ShimFile, "// shim");
+        if (trimmedWeb)
+        {
+            var trimPatch = GuestAssetProvisioner.WebTrimPatchHostPath(layout);
+            Directory.CreateDirectory(Path.GetDirectoryName(trimPatch)!);
+            File.WriteAllText(trimPatch, "- id: modules\n  disabled: true\n");
+        }
+
+        var argv = new ProotCommandBuilder(layout).DshCommand(inPlaceRestart: inPlaceRestart, trimmedWeb: trimmedWeb).ToList();
+        var exposeIndex = argv.IndexOf("--expose-internals");
+        var preserveIndex = argv.IndexOf("--preserve-symlinks");
+        var firstImportIndex = argv.IndexOf("--import");
+        var entryIndex = argv.IndexOf(RuntimeConstants.GuestDshBin);
+
+        Assert.True(exposeIndex > 0);
+        Assert.Equal(exposeIndex + 1, preserveIndex);
+        Assert.Single(argv, a => a == "--preserve-symlinks");
+        Assert.True(firstImportIndex > preserveIndex);
+        Assert.True(preserveIndex < entryIndex);
+        // 裁剪只影响 --patch/--no-open，不得改变 Node 标志的有无或位置。
+        Assert.Equal(trimmedWeb, argv[^1] == "--no-open");
+    }
+
+    [Fact]
+    public void GuestAndSandboxCommands_DoNotGetPreserveSymlinks()
+    {
+        var native = Path.Combine(_dir, "native-nonode");
+        Directory.CreateDirectory(native);
+        var layout = new RuntimeLayout(Path.Combine(_dir, "files-nonode"), null, native);
+        Directory.CreateDirectory(layout.ShimDir);
+
+        // 一次性 guest 命令与沙箱 keepalive 都是 bash，不是 Node 进程，不得带 Node 专用标志。
+        Assert.DoesNotContain("--preserve-symlinks", new ProotCommandBuilder(layout).GuestCommand("uname -m"));
+        Assert.DoesNotContain("--preserve-symlinks", new ProotCommandBuilder(layout).SandboxCommand());
+    }
+
     [Fact]
     public void GuestCommand_HasTheLegacyArgvShape()
     {
@@ -96,9 +147,20 @@ public sealed partial class ProotCommandParityTests : IDisposable
         var dsh = builder.Environment("dsh");
         Assert.Equal("/opt/dshapp/runtime:/usr/local", dsh["PROOT_RO_CACHE_PREFIXES"]);
         Assert.Equal("0", dsh["PROOT_RO_CACHE_NONEXIST"]);
+        // 严格只读层负缓存：只允许 /opt/dshapp/runtime，绝不包含可写的 /usr/local 或用户路径。
+        Assert.Equal(ProotCommandBuilder.ReadonlyNonexistCachePaths, dsh["PROOT_RO_CACHE_NONEXIST_PREFIXES"]);
+        Assert.Equal("/opt/dshapp/runtime", dsh["PROOT_RO_CACHE_NONEXIST_PREFIXES"]);
+        Assert.DoesNotContain("/usr/local", dsh["PROOT_RO_CACHE_NONEXIST_PREFIXES"], StringComparison.Ordinal);
+        Assert.DoesNotContain("/root/projects", dsh["PROOT_RO_CACHE_NONEXIST_PREFIXES"], StringComparison.Ordinal);
+        Assert.DoesNotContain(RuntimeConstants.GuestCacheDir, dsh["PROOT_RO_CACHE_NONEXIST_PREFIXES"], StringComparison.Ordinal);
+        // Node compile cache 只在 dsh 角色、且落在 guest 缓存目录下。
+        Assert.Equal($"{RuntimeConstants.GuestCacheDir}/node-compile-cache", dsh["NODE_COMPILE_CACHE"]);
+        Assert.StartsWith(RuntimeConstants.GuestCacheDir + "/", dsh["NODE_COMPILE_CACHE"], StringComparison.Ordinal);
         // Sessions, sandbox keepalive and terminal children keep the uncached path resolution.
         Assert.DoesNotContain("PROOT_RO_CACHE_PREFIXES", builder.Environment("guest").Keys);
         Assert.DoesNotContain("PROOT_RO_CACHE_NONEXIST", builder.Environment("guest").Keys);
+        Assert.DoesNotContain("PROOT_RO_CACHE_NONEXIST_PREFIXES", builder.Environment("guest").Keys);
+        Assert.DoesNotContain("NODE_COMPILE_CACHE", builder.Environment("guest").Keys);
 
         // ADR-0030: the cached prefixes must be exactly the read-only layer binds, so a renamed layer cannot leave a
         // prefix pointing at the workspace or the guest cache.

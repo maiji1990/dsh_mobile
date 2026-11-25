@@ -43,6 +43,11 @@ public sealed class StartupExperimentActivity : DshActivity
             GetString(Resource.String.dev_experiments_e5_sub), RunWebProfile);
         _rows.Add(webRow);
 
+        var cacheRow = FindViewById(Resource.Id.exp_row_e5_cache)!;
+        Rows.BindActionRow(cacheRow, Resource.Drawable.ic_code, GetString(Resource.String.dev_experiments_e5_cache),
+            GetString(Resource.String.dev_experiments_e5_cache_sub), RunCompileCacheInventory);
+        _rows.Add(cacheRow);
+
         BindSuite(Resource.Id.exp_row_e6, Resource.String.dev_experiments_e6, Resource.String.dev_experiments_e6_sub, [StartupExperiments.SuiteE6]);
         BindSuite(Resource.Id.exp_row_e7, Resource.String.dev_experiments_e7, Resource.String.dev_experiments_e7_sub, [StartupExperiments.SuiteE7]);
         BindSuite(Resource.Id.exp_row_all, Resource.String.dev_experiments_all, Resource.String.dev_experiments_all_sub,
@@ -67,6 +72,33 @@ public sealed class StartupExperimentActivity : DshActivity
         _rows.Add(row);
     }
 
+    /// <summary>
+    /// 能力 A：诊断构建内只读盘点生产 node-compile-cache，只把计数、版本/架构前缀和固定错误码写入 App 私有 JSONL 与
+    /// DshMobile 日志；不读取任何用户文件、不输出路径、不要求 root。
+    /// </summary>
+    private void RunCompileCacheInventory()
+    {
+        if (_cts is not null)
+        {
+            return;
+        }
+        var experiments = GetExternalFilesDir("startup-experiments")?.AbsolutePath ?? FilesDir!.AbsolutePath;
+        Directory.CreateDirectory(experiments);
+        var path = Path.Combine(experiments, $"{DateTime.UtcNow:yyyyMMdd-HHmmss}-E5-CACHE.jsonl");
+        try
+        {
+            var record = WebProfileRunner.InspectProductionCompileCache(_bridge.Layout);
+            File.WriteAllText(path, record.ToJsonLine() + Environment.NewLine);
+            _bridge.Note("E5 cache inventory: " + record.Summary);
+            _status.Text = "E5 cache inventory: " + record.Summary + "\njsonl: " + path;
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            _status.Text = "E5 cache inventory failed: " + e.GetType().Name;
+        }
+    }
+
+    /// <summary>P0: alternating E5-OFF / E5-PROFILE Web runs with the in-process V8 CPU profile preload.</summary>
     private void RunWebProfile()
     {
         if (_cts is not null)
@@ -97,7 +129,9 @@ public sealed class StartupExperimentActivity : DshActivity
         Directory.CreateDirectory(experiments);
         Directory.CreateDirectory(profileDir);
         var path = Path.Combine(experiments, $"{DateTime.UtcNow:yyyyMMdd-HHmmss}-E5.jsonl");
+        var cachePath = Path.Combine(experiments, $"{DateTime.UtcNow:yyyyMMdd-HHmmss}-E5-CACHE.jsonl");
         var writer = new StreamWriter(path, append: false) { AutoFlush = true };
+        var cacheWriter = new StreamWriter(cachePath, append: false) { AutoFlush = true };
         var gate = new Lock();
         var runner = new WebProfileRunner(_bridge.Layout, _bridge.Note, () => _bridge.Runtime.HostOwnsProcesses);
         var cts = new CancellationTokenSource();
@@ -111,17 +145,26 @@ public sealed class StartupExperimentActivity : DshActivity
 
         _ = Task.Run(async () =>
         {
+            var cacheRuns = 0;
             var message = "E5: not run";
             try
             {
+                // 3 轮独立冷启动：每轮前清空 node-compile-cache，最后一轮 flush 后供 probe 与 10 对 warm 复用。
                 var result = await runner.RunAsync(Reps, preload, profileDir, record =>
                 {
                     lock (gate)
                     {
                         writer.WriteLine(record.ToJsonLine());
                     }
-                }, cts.Token).ConfigureAwait(false);
-                message = $"E5: {(result.Ran ? "ran" : result.Code)} runs={result.Runs} not-ok={result.Failures}";
+                }, cts.Token, record =>
+                {
+                    lock (gate)
+                    {
+                        cacheWriter.WriteLine(record.ToJsonLine());
+                        cacheRuns++;
+                    }
+                }, coldRounds: 3).ConfigureAwait(false);
+                message = $"E5: {(result.Ran ? "ran" : result.Code)} warm-records={result.Runs} cache-records={cacheRuns} not-ok={result.Failures}";
             }
             catch (OperationCanceledException)
             {
@@ -136,10 +179,11 @@ public sealed class StartupExperimentActivity : DshActivity
                 lock (gate)
                 {
                     writer.Dispose();
+                    cacheWriter.Dispose();
                 }
                 cts.Dispose();
                 _cts = null;
-                var snapshot = $"{message}\nprofiles: {profileDir}\njsonl: {path}";
+                var snapshot = $"{message}\nprofiles: {profileDir}\njsonl: {path}\ncache: {cachePath}";
                 RunOnUiThread(() =>
                 {
                     _progress.Visibility = ViewStates.Gone;

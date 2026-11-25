@@ -49,7 +49,9 @@
         "PORT": "3080",
         "SHELL": "/bin/bash",
         "PROOT_RO_CACHE_PREFIXES": "/opt/dshapp/runtime:/usr/local",
-        "PROOT_RO_CACHE_NONEXIST": "0"
+        "PROOT_RO_CACHE_NONEXIST": "0",
+        "PROOT_RO_CACHE_NONEXIST_PREFIXES": "/opt/dshapp/runtime",
+        "NODE_COMPILE_CACHE": "/opt/dshmobile-cache/node-compile-cache"
       }
     },
     {

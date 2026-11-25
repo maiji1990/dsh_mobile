@@ -89,6 +89,7 @@ public sealed class MoreFragment : Fragment, ITabRoot
             GetString(Resource.String.more_runtime_sub), () => Open(typeof(RuntimeActivity)));
 
         var rowWarmup = view.FindViewById(Resource.Id.more_row_warmup)!;
+        // 5A：默认开启的后台预热；行文案说明电量/省电/温控保护与可关闭，开关仍由用户控制。
         _warmupSwitch = Rows.BindSwitchRow(rowWarmup, Resource.Drawable.ic_refresh, GetString(Resource.String.more_warmup),
             GetString(Resource.String.more_warmup_short_sub), UiPrefs.EagerWarmupEnabled(ctx),
             enabled => UiPrefs.SetEagerWarmupEnabled(ctx, enabled));

@@ -115,6 +115,10 @@
     <!-- Pure managed native agent layer (ADR-0033). -->
     <ProjectReference Include="..\DshMobile.Agent\DshMobile.Agent.csproj" />
   </ItemGroup>
+  <ItemGroup Condition="'$(DshDiagnostics)' == 'true'">
+    <!-- 普通 Release 不引用诊断程序集：没有 DSH_DIAGNOSTICS 源码入口，也没有 E5 preload 资源。 -->
+    <ProjectReference Include="..\DshMobile.Runtime.Diagnostics\DshMobile.Runtime.Diagnostics.csproj" />
+  </ItemGroup>
 
   <ItemGroup>
     <!-- Concrete container for the composition root (the abstractions are in-box). Trim/AOT safe for ctor/factory registrations. -->

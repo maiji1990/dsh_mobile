@@ -470,6 +470,70 @@ public sealed class DshRemoteConnectionTests
     }
 
     [Fact]
+    public async Task RequestReconnect_InterruptsBackoffImmediately_WhenTokenBecomesAvailable()
+    {
+        await using var server = new FakeRemoteServer();
+        server.OnHttpRequest = req =>
+        {
+            if (req.Path == "/connect")
+            {
+                return Task.FromResult(new FakeRemoteServer.HttpResponseData(
+                    302, "Found",
+                    [("Location", "/"), ("Set-Cookie", $"dsh-auth-{server.Port}=c-token; HttpOnly")],
+                    []));
+            }
+            return Task.FromResult(FakeRemoteServer.HttpResponseData.Json(404, "{}"));
+        };
+        server.OnWebSocketConnected = async (_, ws, ct) =>
+        {
+            var openRaw = await FakeRemoteServer.ReceiveTextAsync(ws, ct);
+            var streamId = ParseStreamId(openRaw!);
+            await FakeRemoteServer.SendTextAsync(ws, ReadyFrameJson(streamId, "client-token"), ct);
+            await FakeRemoteServer.ReceiveTextAsync(ws, ct);
+        };
+
+        string? token = null;
+        var tokenQueried = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var time = new RecordingBackoffTimeProvider();
+        var options = new RemoteConnectionOptions(server.BaseUri)
+        {
+            // 故意把退避基数设得远大于断言阈值：若 RequestReconnect 不能打断 Task.Delay，本测试会超时失败。
+            BackoffBase = TimeSpan.FromSeconds(2),
+            BackoffFactor = 2.0,
+            BackoffMax = TimeSpan.FromSeconds(10),
+            ReadyTimeout = TimeSpan.FromSeconds(5),
+        };
+        await using var conn = new DshRemoteConnection(
+            options,
+            () =>
+            {
+                tokenQueried.TrySetResult();
+                return Volatile.Read(ref token);
+            },
+            time: time);
+
+        var connectTask = conn.ConnectAsync(CancellationToken.None);
+        await tokenQueried.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        // 首次 null token 尝试失败后必须真正进入 BackoffBase 退避：假时钟记录到 2 s 的 Task.Delay。
+        var backoff = await time.ReadNextDelayAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.Equal(TimeSpan.FromSeconds(2), backoff);
+        Assert.False(connectTask.IsCompleted);
+
+        var tokenAvailableAt = System.Diagnostics.Stopwatch.StartNew();
+        Volatile.Write(ref token, SecretToken);
+        conn.RequestReconnect();
+        // 不推进假时钟：只有 RequestReconnect 打断了退避，连接才可能在这种状态下完成。
+        var generation = await connectTask.WaitAsync(TimeSpan.FromSeconds(5));
+        tokenAvailableAt.Stop();
+
+        Assert.Equal("client-token", generation.ClientId);
+        Assert.Equal(RemoteConnectionState.Connected, conn.State);
+        Assert.True(
+            tokenAvailableAt.Elapsed < TimeSpan.FromMilliseconds(500),
+            $"token 更新后 RequestReconnect 应立即打断 2s 退避，实际耗时 {tokenAvailableAt.ElapsedMilliseconds} ms");
+    }
+
+    [Fact]
     public async Task InboundMessage_ExceedingMaxInboundMessageBytes_ClosesGenerationAndReconnects()
     {
         await using var server = new FakeRemoteServer();

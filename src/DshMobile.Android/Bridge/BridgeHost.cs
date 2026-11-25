@@ -52,7 +52,9 @@ public sealed class BridgeHost : IDisposable, IDiagnosticsLog
         UpdateInstaller = _services.GetRequiredService<DshMobile.Application.Updates.UpdateCoordinator>();
         Governance = new SystemGovernanceMonitor(_context, Append);
         Agent = new AgentConnectionScope(_context, Runtime, Layout, Append, RunRestartForPluginsAsync, Governance.Leases);
+        // 生产宿主启用受控裁剪：只禁用浏览器前端插件行，保留全部后端控制器与 ui_* 工具（ADR-0033）。
         runtimeOptions.HostOptions = new DshMobile.Runtime.Hosting.DshHostOptions(
+            TrimmedWeb: true,
             ProtocolHandshakeAsync: Agent.PerformStartupHandshakeAsync);
         // An update the previous process did not finish is reported once (its layer was already restored by recovery).
         if (UpdateInstaller.SettleInterrupted() is { } interrupted)
@@ -151,6 +153,8 @@ public sealed class BridgeHost : IDisposable, IDiagnosticsLog
     private int _warmup;
     private int _userStopped;
     private CancellationTokenSource? _idleStopCts;
+    /// <summary>5B：启动请求单飞汇流；后台预热进行中时，用户点击启动会附着复用同一次启动而不是被吞掉。</summary>
+    private readonly SingleFlightStartCoordinator<RuntimeStartResult> _startFlights = new();
 
     /// <summary>True while the eager warmup is starting DSH without the user's tap.</summary>
     public bool IsWarmingUp => Volatile.Read(ref _warmup) != 0;
@@ -192,8 +196,11 @@ public sealed class BridgeHost : IDisposable, IDiagnosticsLog
                 var decision = Governance.EvaluateIdleStop(hostRunning, Agent.IsAgentIdleForIdleStop);
                 if (decision == DshMobile.Application.Runtime.IdleStopDecision.Stop)
                 {
-                    await RunIdleStopAsync().ConfigureAwait(false);
-                    return;
+                    // 瞬态 busy 等失败不应让空闲回收永久退出：只有真正停机成功才结束循环，否则下一 tick 重试。
+                    if (await RunIdleStopAsync().ConfigureAwait(false))
+                    {
+                        return;
+                    }
                 }
             }
         }
@@ -202,20 +209,26 @@ public sealed class BridgeHost : IDisposable, IDiagnosticsLog
         }
     }
 
-    private Task RunIdleStopAsync() => RunExclusive("stop", async () =>
+    private async Task<bool> RunIdleStopAsync()
     {
-        // 空闲自动停机不置位 _userStopped，以免用户下次回到前台时无法按 WarmupPolicy 自动恢复预热（N-08-02）。
-        var decision = Governance.EvaluateIdleStop(
-            Runtime.Host is { State: DshMobile.Runtime.Hosting.DshHostState.Ready } or { OwnsProcesses: true },
-            Agent.IsAgentIdleForIdleStop);
-        if (decision != DshMobile.Application.Runtime.IdleStopDecision.Stop)
+        var stopped = false;
+        await RunExclusive("stop", async () =>
         {
-            Append($"idle-stop: skipped ({decision})");
-            return;
-        }
-        var r = await Runtime.StopAsync(CancellationToken.None).ConfigureAwait(false);
-        Append(r.Ok ? $"idle-stop: graceful ok ({r.Snapshot.State})" : $"idle-stop FAILED {r.Code}: {r.Message}");
-    });
+            // 空闲自动停机不置位 _userStopped，以便下次回到前台仍按 WarmupPolicy 自动预热（5C 闭环）。
+            var decision = Governance.EvaluateIdleStop(
+                Runtime.Host is { State: DshMobile.Runtime.Hosting.DshHostState.Ready } or { OwnsProcesses: true },
+                Agent.IsAgentIdleForIdleStop);
+            if (decision != DshMobile.Application.Runtime.IdleStopDecision.Stop)
+            {
+                Append($"idle-stop: skipped ({decision})");
+                return;
+            }
+            var r = await Runtime.StopAsync(CancellationToken.None).ConfigureAwait(false);
+            stopped = r.Ok;
+            Append(r.Ok ? $"idle-stop: graceful ok ({r.Snapshot.State})" : $"idle-stop FAILED {r.Code}: {r.Message}");
+        }).ConfigureAwait(false);
+        return stopped;
+    }
 
     /// <summary>
     /// ADR-0031 eager warmup: start DSH in the background so a later tap lands on a READY host. Silent by design - a
@@ -401,31 +414,85 @@ public sealed class BridgeHost : IDisposable, IDiagnosticsLog
     }
 
     /// <summary>
-    /// Foreground service, sandbox, then DSH, by the C# host and supervised by <see cref="RuntimeCoordinator"/>: a failed
-    /// start is cleaned up and releases the service; a failed stop keeps it (PR-00 defect 3).
+    /// 启动 DSH。5B：同一时刻只执行一次启动；后台预热进行中时用户点击启动会附着到同一次启动并等待结果
+    /// （不吞点击、不并发起第二个 DSH）。显式用户启动会在成功后清除“用户已停止”锁存；静默预热不触碰它。
     /// </summary>
-    public Task RunStartAsync(bool silent = false)
+    public async Task RunStartAsync(bool silent = false)
     {
-        Volatile.Write(ref _userStopped, 0);
-        // Observability only (docs/STARTUP_PERF.md): Logcat gets startup-perf records for this run while detailed
-        // diagnostics are on; the in-app operation log and every existing message stay exactly as they were.
+        var userInitiated = !silent;
+        // 仅用于观测（docs/STARTUP_PERF.md）：开启详细诊断时把启动性能记录写入 Logcat；
+        // 应用内操作日志与所有既有消息保持不变。
         var trace = UiPrefs.StartupTraceEnabled(_context) ? StartupTrace.Start(line => Log.Info(LogTag, line)) : StartupTrace.Disabled;
         var clicked = trace.Mark();
-        return RunExclusive("start", async () =>
+
+        var flight = _startFlights.Start(ct => StartExclusiveAsync(trace, clicked, ct));
+        RuntimeStartResult result;
+        try
+        {
+            result = await flight.Task.ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            result = new RuntimeStartResult(false, RuntimeErrorCodes.InvalidTransition, "start was canceled", Runtime.State.Current);
+        }
+        catch (Exception e)
+        {
+            result = new RuntimeStartResult(false, "EXCEPTION", $"{e.GetType().Name}: {e.Message}", Runtime.State.Current);
+        }
+
+        if (!userInitiated)
+        {
+            // 静默预热失败只写操作日志（由 StartExclusiveAsync 完成），不弹错误卡片、不写 LastOutcome。
+            return;
+        }
+
+        if (result.Ok)
+        {
+            Volatile.Write(ref _userStopped, 0);
+        }
+        // 用户显式等待的结果必须上报（包括“附着到预热后失败”的情况），不能静默丢弃。
+        Volatile.Write(ref _lastOutcome, new OperationOutcome("start", result.Ok, result.Code, result.Message, DateTimeOffset.Now));
+        Changed?.Invoke(this, EventArgs.Empty);
+    }
+
+    /// <summary>单飞启动的实际执行体：只有拿到单写者锁的那一次会真正启动 DSH。</summary>
+    private async Task<RuntimeStartResult> StartExclusiveAsync(StartupTrace trace, double clicked, CancellationToken ct)
+    {
+        if (Interlocked.CompareExchange(ref _busy, 1, 0) != 0)
+        {
+            Append("start: skipped, another operation is running");
+            return new RuntimeStartResult(false, RuntimeErrorCodes.InvalidTransition, "another operation is running", Runtime.State.Current);
+        }
+        Volatile.Write(ref _operation, "start");
+        Volatile.Write(ref _progress, null);
+        Changed?.Invoke(this, EventArgs.Empty);
+        using var lease = AcquireOperationLease("start");
+        try
         {
             trace.EmitSpan("ui.click_to_bridge", clicked);
-            var r = await Runtime.StartAsync(DshProfile.Web, CancellationToken.None, trace).ConfigureAwait(false);
-            if (!silent)
-            {
-                Report(r.Ok, r.Code, r.Message);
-            }
+            var r = await Runtime.StartAsync(DshProfile.Web, ct, trace).ConfigureAwait(false);
             var s = r.Snapshot;
             Append(r.Ok
                 ? $"start: ok sandbox={s.State} dsh={s.Harness} version={s.DshVersion ?? "-"} gen={s.Generation}"
                 : $"start FAILED {r.Code}{(r.UpstreamCode is null ? "" : "/" + r.UpstreamCode)}: {r.Message} (state={s.State} dsh={s.Harness})");
             trace.EmitSpan("bridge.complete", clicked, r.Ok ? StartupTrace.Ok : StartupTrace.Failed,
                 r.Ok ? null : new Dictionary<string, object?> { ["code"] = r.Code });
-        }, startupTrace: trace);
+            return r;
+        }
+        catch (Exception e)
+        {
+            Append($"start: EXCEPTION {e.GetType().Name}: {e.Message}");
+            Log.Error(LogTag, e.ToString());
+            trace.EmitSpan("bridge.complete", clicked, StartupTrace.Failed, new Dictionary<string, object?> { ["code"] = "EXCEPTION" });
+            return new RuntimeStartResult(false, "EXCEPTION", $"{e.GetType().Name}: {e.Message}", Runtime.State.Current);
+        }
+        finally
+        {
+            Volatile.Write(ref _operation, null);
+            Volatile.Write(ref _progress, null);
+            Volatile.Write(ref _busy, 0);
+            Changed?.Invoke(this, EventArgs.Empty);
+        }
     }
 
     public Task RunStopAsync() => RunExclusive("stop", async () =>
@@ -443,7 +510,6 @@ public sealed class BridgeHost : IDisposable, IDiagnosticsLog
     /// <summary>PR-07（N-07-02）：在操作互斥锁内重启 DSH 宿主，使已保存的插件安装/卸载/启停变更生效。</summary>
     public async Task<RuntimeStartResult> RunRestartForPluginsAsync(CancellationToken ct)
     {
-        Volatile.Write(ref _userStopped, 0);
         RuntimeStartResult? result = null;
         await RunExclusive("restart", async () =>
         {

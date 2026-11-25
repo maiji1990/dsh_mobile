@@ -113,6 +113,15 @@
                         android:layout_marginStart="56dp" />
 
                     <include
+                        android:id="@+id/exp_row_e5_cache"
+                        layout="@layout/view_setting_action_row" />
+
+                    <com.google.android.material.divider.MaterialDivider
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="56dp" />
+
+                    <include
                         android:id="@+id/exp_row_e6"
                         layout="@layout/view_setting_action_row" />
 

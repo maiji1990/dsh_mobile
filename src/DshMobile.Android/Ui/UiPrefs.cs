@@ -85,10 +85,11 @@ public static class UiPrefs
     private const string EagerWarmupKey = "eager_warmup";
 
     /// <summary>
-    /// ADR-0031: 回到 App 时是否在后台静默启动 DSH（默认关闭）。开关只在用户明确打开后生效，失败只写操作日志。
+    /// 5A：回到 App 时是否在后台静默启动 DSH（默认开启）。仍受低电量（≤15% 未充电）、省电模式、
+    /// 温控阶梯与“用户按过停止”约束；用户可随时在「更多 → 运行环境」关闭。失败只写操作日志。
     /// </summary>
     public static bool EagerWarmupEnabled(Context context) =>
-        context.GetSharedPreferences(File, FileCreationMode.Private)!.GetBoolean(EagerWarmupKey, false);
+        context.GetSharedPreferences(File, FileCreationMode.Private)!.GetBoolean(EagerWarmupKey, true);
 
     public static void SetEagerWarmupEnabled(Context context, bool enabled)
     {

@@ -9,10 +9,25 @@ public sealed class GracefulStopTests
     {
         public int Calls { get; private set; }
 
+        public int? LastPid { get; private set; }
+
         public bool TryTerminate(int pid)
         {
             Calls++;
+            LastPid = pid;
             return ok;
+        }
+    }
+
+    /// <summary>在收到 SIGTERM 时执行回调，用于模拟“外层 PRoot 随内部 node 退出”的联动。</summary>
+    private sealed class CallbackTerminator(Func<int, bool> terminate) : IGuestTerminator
+    {
+        public int? LastPid { get; private set; }
+
+        public bool TryTerminate(int pid)
+        {
+            LastPid = pid;
+            return terminate(pid);
         }
     }
 
@@ -55,6 +70,28 @@ public sealed class GracefulStopTests
         Assert.True(r.Graceful);
         Assert.True(r.Signalled);
         Assert.InRange(r.Elapsed.TotalMilliseconds, 100, 1500);
+        Assert.Contains("graceful stop", Assert.Single(log));
+    }
+
+    [Fact]
+    public async Task SignalsTheGivenInnerPid_AndWaitsForTheOuterProcessToLeave()
+    {
+        var outerExited = false;
+        var terminator = new CallbackTerminator(pid =>
+        {
+            // 只对内部 node PID 发信号；node 退出后外层 PRoot 随之退出。
+            if (pid != 301)
+            {
+                return false;
+            }
+            outerExited = true;
+            return true;
+        });
+        var log = new List<string>();
+        var r = await GracefulStop.RunAsync(301, terminator, () => outerExited, TimeSpan.FromSeconds(2), log.Add);
+        Assert.True(r.Graceful);
+        Assert.True(r.Signalled);
+        Assert.Equal(301, terminator.LastPid);
         Assert.Contains("graceful stop", Assert.Single(log));
     }
 

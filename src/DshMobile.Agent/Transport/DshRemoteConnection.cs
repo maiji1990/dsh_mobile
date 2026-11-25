@@ -41,6 +41,8 @@ public sealed class DshRemoteConnection : IAsyncDisposable
     private int _drainRequested;
     private int _disposed;
     private int _reconnectRequested;
+    /// <summary>当前退避等待的唤醒信号；<see cref="RequestReconnect"/> 完成它可立即打断 Task.Delay。</summary>
+    private TaskCompletionSource? _backoffWake;
 
     public DshRemoteConnection(
         RemoteConnectionOptions options,
@@ -160,6 +162,7 @@ public sealed class DshRemoteConnection : IAsyncDisposable
     {
         ActiveGeneration? prevGen = null;
         CancellationTokenSource? prevCts = null;
+        TaskCompletionSource? backoffWake = null;
         lock (_stateLock)
         {
             if (_state is RemoteConnectionState.Draining or RemoteConnectionState.Disposed)
@@ -169,11 +172,15 @@ public sealed class DshRemoteConnection : IAsyncDisposable
             Interlocked.Exchange(ref _reconnectRequested, 1);
             prevGen = _activeGen;
             prevCts = _activeGenCts;
+            backoffWake = _backoffWake;
             _activeGen = null;
             _activeGenCts = null;
+            _backoffWake = null;
             ResetReadyTcsLocked();
             SetStateLocked(RemoteConnectionState.Connecting);
         }
+        // 退避等待也属于“当前连接尝试”：唤醒它，避免新 token 到来后仍硬睡满 BackoffBase。
+        backoffWake?.TrySetResult();
         prevCts?.Cancel();
         if (prevGen is not null)
         {
@@ -369,13 +376,55 @@ public sealed class DshRemoteConnection : IAsyncDisposable
             else if (attempt > 0)
             {
                 var delay = ComputeBackoff(attempt);
-                try
+                var wake = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                var reconnectAlreadyRequested = false;
+                lock (_stateLock)
                 {
-                    await Task.Delay(delay, _time, ct).ConfigureAwait(false);
+                    reconnectAlreadyRequested = Volatile.Read(ref _reconnectRequested) != 0;
+                    if (!reconnectAlreadyRequested)
+                    {
+                        _backoffWake = wake;
+                    }
                 }
-                catch (OperationCanceledException)
+                if (reconnectAlreadyRequested)
                 {
-                    break;
+                    Interlocked.Exchange(ref _reconnectRequested, 0);
+                    attempt = 0;
+                }
+                else
+                {
+                    // 独立取消源：被 RequestReconnect 唤醒时取消残余 Task.Delay，避免退避计时器留到到期。
+                    using var backoffCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                    try
+                    {
+                        var delayTask = Task.Delay(delay, _time, backoffCts.Token);
+                        var completed = await Task.WhenAny(delayTask, wake.Task).ConfigureAwait(false);
+                        if (ReferenceEquals(completed, wake.Task))
+                        {
+                            // RequestReconnect 立即打断退避：清零失败计数，下一轮马上重试。
+                            Interlocked.Exchange(ref _reconnectRequested, 0);
+                            attempt = 0;
+                            backoffCts.Cancel();
+                        }
+                        else
+                        {
+                            ct.ThrowIfCancellationRequested();
+                        }
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        break;
+                    }
+                    finally
+                    {
+                        lock (_stateLock)
+                        {
+                            if (ReferenceEquals(_backoffWake, wake))
+                            {
+                                _backoffWake = null;
+                            }
+                        }
+                    }
                 }
             }
 

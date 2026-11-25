@@ -2,9 +2,10 @@
 # cache in canonicalize() for immutable read-only bind prefixes. Never caches
 # symlinks or paths outside the declared prefixes. PROOT_RO_CACHE_NONEXIST=0
 # keeps DIR/NONDIR caching but never records ENOENT, so a writable bind cannot
-# go stale; production enables that combination (docs/ADR/0029).
+# go stale; PROOT_RO_CACHE_NONEXIST_PREFIXES then re-enables ENOENT caching for
+# strictly read-only prefixes only (production: /opt/dshapp/runtime).
 diff --git a/src/path/canon.c b/src/path/canon.c
-index 09d0eed..51a9f39 100644
+index 09d0eed..b80ce60 100644
 --- a/src/path/canon.c
 +++ b/src/path/canon.c
 @@ -28,7 +28,9 @@
@@ -17,7 +18,7 @@ index 09d0eed..51a9f39 100644
  
  #include "path/canon.h"
  #include "path/path.h"
-@@ -126,6 +128,189 @@ static inline Finality next_component(char component[NAME_MAX], const char **cur
+@@ -126,6 +128,238 @@ static inline Finality next_component(char component[NAME_MAX], const char **cur
  	return NOT_FINAL;
  }
  
@@ -30,17 +31,66 @@ index 09d0eed..51a9f39 100644
 +#define RO_CACHE_MAX_ENTRIES 12288u
 +
 +/* ADR-0030: a cached "does not exist" is only safe while nothing can create the
-+ * path later. PROOT_RO_CACHE_NONEXIST=0 keeps DIR/NONDIR caching but never
-+ * records ENOENT, so a bind the guest can still write stays correct. */
++ * path later. PROOT_RO_CACHE_NONEXIST=0 keeps DIR/NONDIR caching and records
++ * ENOENT only for PROOT_RO_CACHE_NONEXIST_PREFIXES (strict read-only layers). */
 +static int ro_cache_nonexist_state = 0; /* 0=uninitialized, 1=enabled, -1=disabled */
++static int ro_cache_nonexist_prefix_state = 0; /* 0=uninitialized, 1=list present, -1=no list */
++static char ro_cache_nonexist_prefixes[RO_CACHE_MAX_PREFIXES][PATH_MAX];
++static size_t ro_cache_nonexist_prefix_lens[RO_CACHE_MAX_PREFIXES];
++static size_t ro_cache_nonexist_prefix_count = 0;
 +
-+static bool ro_cache_caches_nonexist(void)
++/* ADR-0030: negative caching is only safe on strictly read-only layers.
++ * With PROOT_RO_CACHE_NONEXIST=0 this optional allow-list re-enables ENOENT
++ * caching for the listed absolute prefixes only (default: none). */
++static bool ro_cache_nonexist_matches(const char *path, size_t len)
++{
++	size_t i;
++
++	if (ro_cache_nonexist_prefix_state == 0) {
++		const char *env = getenv("PROOT_RO_CACHE_NONEXIST_PREFIXES");
++		if (env != NULL && env[0] != '\0') {
++			const char *p = env;
++			while (*p != '\0' && ro_cache_nonexist_prefix_count < RO_CACHE_MAX_PREFIXES) {
++				const char *sep = strchr(p, ':');
++				size_t plen = (sep != NULL) ? (size_t) (sep - p) : strlen(p);
++				while (plen > 1 && p[plen - 1] == '/')
++					plen--;
++				if (plen >= 2 && plen < PATH_MAX && p[0] == '/') {
++					memcpy(ro_cache_nonexist_prefixes[ro_cache_nonexist_prefix_count], p, plen);
++					ro_cache_nonexist_prefixes[ro_cache_nonexist_prefix_count][plen] = '\0';
++					ro_cache_nonexist_prefix_lens[ro_cache_nonexist_prefix_count] = plen;
++					ro_cache_nonexist_prefix_count++;
++				}
++				if (sep == NULL)
++					break;
++				p = sep + 1;
++			}
++		}
++		ro_cache_nonexist_prefix_state = ro_cache_nonexist_prefix_count > 0 ? 1 : -1;
++	}
++
++	if (ro_cache_nonexist_prefix_state < 0)
++		return false;
++
++	for (i = 0; i < ro_cache_nonexist_prefix_count; i++) {
++		size_t plen = ro_cache_nonexist_prefix_lens[i];
++		if (len == plen && memcmp(path, ro_cache_nonexist_prefixes[i], plen) == 0)
++			return true;
++		if (len > plen && path[plen] == '/' && memcmp(path, ro_cache_nonexist_prefixes[i], plen) == 0)
++			return true;
++	}
++	return false;
++}
++
++static bool ro_cache_caches_nonexist(const char *path, size_t len)
 +{
 +	if (ro_cache_nonexist_state == 0) {
 +		const char *env = getenv("PROOT_RO_CACHE_NONEXIST");
 +		ro_cache_nonexist_state = (env != NULL && env[0] == '0') ? -1 : 1;
 +	}
-+	return ro_cache_nonexist_state > 0;
++	if (ro_cache_nonexist_state > 0)
++		return true;
++	return ro_cache_nonexist_matches(path, len);
 +}
 +
 +typedef enum {
@@ -207,7 +257,7 @@ index 09d0eed..51a9f39 100644
  /**
   * Resolve bindings (if any) in @guest_path and copy the translated
   * path into @host_path.  Also, this function checks that a non-final
-@@ -138,6 +323,22 @@ static inline int substitute_binding_stat(Tracee *tracee, Finality finality, uns
+@@ -138,6 +372,22 @@ static inline int substitute_binding_stat(Tracee *tracee, Finality finality, uns
  {
  	struct stat statl;
  	int status;
@@ -230,7 +280,7 @@ index 09d0eed..51a9f39 100644
  
  	strcpy(host_path, guest_path);
  	status = substitute_binding(tracee, GUEST, host_path);
-@@ -176,6 +377,15 @@ static inline int substitute_binding_stat(Tracee *tracee, Finality finality, uns
+@@ -176,6 +426,15 @@ static inline int substitute_binding_stat(Tracee *tracee, Finality finality, uns
  			status = -1;
  	}
  
@@ -239,14 +289,14 @@ index 09d0eed..51a9f39 100644
 +			ro_cache_insert(guest_path, guest_len, RO_ENTRY_DIR);
 +		else if (status == 0 && !S_ISLNK(statl.st_mode))
 +			ro_cache_insert(guest_path, guest_len, RO_ENTRY_NONDIR);
-+		else if (status < 0 && errno == ENOENT && ro_cache_caches_nonexist())
++		else if (status < 0 && errno == ENOENT && ro_cache_caches_nonexist(guest_path, guest_len))
 +			ro_cache_insert(guest_path, guest_len, RO_ENTRY_NONEXIST);
 +	}
 +
  	/* Return an error if a non-final component isn't a
  	 * directory nor a symlink.  The error is "No such
  	 * file or directory" if this component doesn't exist,
-@@ -229,6 +439,37 @@ int canonicalize(Tracee *tracee, const char *user_path, bool deref_final,
+@@ -229,6 +488,37 @@ int canonicalize(Tracee *tracee, const char *user_path, bool deref_final,
  	/* Canonicalize recursely 'user_path' into 'guest_path'.  */
  	cursor = user_path;
  	finality = NOT_FINAL;

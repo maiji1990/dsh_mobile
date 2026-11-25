@@ -216,7 +216,7 @@
     <string name="more_section_features">功能</string>
     <string name="more_section_runtime">运行环境</string>
     <string name="more_warmup">后台预热 DSH</string>
-    <string name="more_warmup_sub">回到 App 时静默启动 DSH（会显示常驻通知），点击后更快就绪；低电量、省电模式或你按下停止后不会预热</string>
+    <string name="more_warmup_sub">默认开启：回到 App 时在后台静默启动 DSH（会显示常驻通知），点击启动更快就绪；低电量（≤15% 未充电）、省电模式或设备温控升高时自动不预热，可随时在此关闭</string>
     <string name="more_section_app">应用</string>
     <string name="more_section_developer">开发者</string>
     <string name="more_automation">手机操控</string>
@@ -382,8 +382,10 @@
     <string name="dev_experiments_e23_sub">只重测配置加载这一项；需要先修参数时使用</string>
     <string name="dev_experiments_e3">E3（各 10 次）</string>
     <string name="dev_experiments_e3_sub">生产配置 / 隔离最小配置 / 隔离 + 覆盖层；记录首次 HTTP 就绪</string>
-    <string name="dev_experiments_e5">Web Profiler A/B（OFF + ON 各 10 次）</string>
-    <string name="dev_experiments_e5_sub">进程内 V8 CPU 采样 + CPU/ELU 统计；停止用私有目录文件握手，不开 inspector 端口</string>
+    <string name="dev_experiments_e5">Web Profiler A/B（生产全优化口径；冷/热 + OFF/ON 各 10 次）</string>
+    <string name="dev_experiments_e5_sub">生产 argv/env + compile cache 冷/热/命中率 + 进程内 V8 CPU 采样；不开 inspector 端口</string>
+    <string name="dev_experiments_e5_cache">Compile Cache 盘点（只读）</string>
+    <string name="dev_experiments_e5_cache_sub">统计生产 node-compile-cache 文件数/字节数/版本与架构前缀；不输出路径、不需要 root</string>
     <string name="dev_experiments_e4">E4（A 10 次 + B / C）</string>
     <string name="dev_experiments_e4_sub">Compile cache 关闭 / 冷 / 热；缓存未落盘时如实标记</string>
     <string name="dev_experiments_e6">E6（P0 优化对照，各 10 次）</string>
@@ -718,7 +720,7 @@
     <string name="more_badge_unconfigured">未配置</string>
     <string name="more_badge_connected">已连接</string>
     <string name="more_badge_disconnected">未连接</string>
-    <string name="more_warmup_short_sub">回到 App 时静默启动以加快就绪（低电量与手动停止时不触发）</string>
+    <string name="more_warmup_short_sub">默认开启：回到 App 时静默启动以加快就绪（低电量、省电、温控升高与手动停止时不触发，可在此关闭）</string>
     <string name="credentials_action_set_short">配置</string>
     <string name="plugins_filter_all">全部</string>
     <string name="plugins_filter_manageable">可管理</string>

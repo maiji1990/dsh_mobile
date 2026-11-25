@@ -14,14 +14,23 @@ public static class WebProfileExperiments
     public const string Off = "E5-OFF";
     public const string Profile = "E5-PROFILE";
 
+    /// <summary>编译缓存盘点 / 冷启动 / 命中率采样的独立 JSONL 组名。</summary>
+    public const string CacheExperiment = "E5-CACHE";
+
     /// <summary>Guest directory of the preload and the file handshake (bound from the isolated cache).</summary>
     public const string GuestDir = RuntimeConstants.GuestCacheDir + "/experiments/e5";
+
+    /// <summary>与生产完全一致的 Node compile cache guest 路径（isolated.CacheDir/node-compile-cache）。</summary>
+    public const string NodeCompileCacheGuest = RuntimeConstants.GuestCacheDir + "/node-compile-cache";
 
     public const string PreloadName = "web-profile-preload.mjs";
     public const string StopRequest = "stop.request";
     public const string Done = "profile.done";
     public const string Summary = "summary.json";
     public const string ProfileFile = "profile.cpuprofile";
+
+    /// <summary>preload 主动 flush compile cache 后写回的固定摘要文件。</summary>
+    public const string CompileCacheFlush = "compile-cache.flush.json";
 
     public const string ProfileTimeout = "PROFILE_TIMEOUT";
     public const string ProfileWriteFailed = "PROFILE_WRITE_FAILED";
@@ -76,9 +85,18 @@ public sealed record WebProfileRecord
     public bool ProfileStoredPrivately { get; init; }
     public required DateTimeOffset StartedAt { get; init; }
 
+    /// <summary>热缓存轮次标记：cold 只写独立 E5-CACHE 行，warm 才进入 OFF/PROFILE 配对样本。</summary>
+    public string? CacheMode { get; init; }
+
+    /// <summary>该轮结束时的隔离 compile cache 文件数（只读计数）。</summary>
+    public int? CompileCacheFileCount { get; init; }
+
+    /// <summary>该轮结束时的隔离 compile cache 总字节数。</summary>
+    public long? CompileCacheBytes { get; init; }
+
     public string ToJsonLine()
     {
-        using var buffer = new MemoryStream(384);
+        using var buffer = new MemoryStream(512);
         using (var w = new Utf8JsonWriter(buffer))
         {
             w.WriteStartObject();
@@ -105,6 +123,16 @@ public sealed record WebProfileRecord
                 WriteText(w, "errorCode", ErrorCode);
             }
             w.WriteBoolean("profileStoredPrivately", ProfileStoredPrivately);
+            if (CacheMode is null)
+            {
+                w.WriteNull("cacheMode");
+            }
+            else
+            {
+                WriteText(w, "cacheMode", CacheMode);
+            }
+            WriteInt(w, "compileCacheFileCount", CompileCacheFileCount);
+            WriteLong(w, "compileCacheBytes", CompileCacheBytes);
             w.WriteString("startedAt", StartedAt.ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ss.fffZ", System.Globalization.CultureInfo.InvariantCulture));
             w.WriteEndObject();
         }
@@ -127,6 +155,18 @@ public sealed record WebProfileRecord
     }
 
     private static void WriteInt(Utf8JsonWriter w, string name, int? value)
+    {
+        if (value is { } v)
+        {
+            w.WriteNumber(name, v);
+        }
+        else
+        {
+            w.WriteNull(name);
+        }
+    }
+
+    private static void WriteLong(Utf8JsonWriter w, string name, long? value)
     {
         if (value is { } v)
         {

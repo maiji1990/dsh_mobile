@@ -27,8 +27,11 @@ public sealed class IsolatedGuestLayout : IDisposable
     /// <summary>Bound to guest <c>/opt/dshmobile-cache</c>.</summary>
     public string CacheDir => Path.Combine(Root, "guest-cache");
 
-    /// <summary>Host side of the guest <c>NODE_COMPILE_CACHE</c> directory.</summary>
+    /// <summary>E4 使用的实验 compile cache 目录（保持既有 E4 变体口径）。</summary>
     public string CompileCacheDir => Path.Combine(CacheDir, "experiments", "node-cache");
+
+    /// <summary>E5 与生产一致：绑定到 guest <c>/opt/dshmobile-cache/node-compile-cache</c>。</summary>
+    public string NodeCompileCacheDir => Path.Combine(CacheDir, "node-compile-cache");
 
     public static IsolatedGuestLayout Create(RuntimeLayout production, string root)
     {
@@ -41,12 +44,16 @@ public sealed class IsolatedGuestLayout : IDisposable
         // Production wrapper text (dsh / pnpm / xdg-user-dir), written into the isolated home only.
         var isolatedRuntime = new RuntimeLayout(layout.Root, null, production.NativeLibraryDir);
         Guest.GuestToolchain.WriteShims(isolatedRuntime);
-        // 同时将启动期只读 FS 缓存垫片写入隔离缓存目录，供 E6 变体在不触碰生产缓存的情况下加载。
+        // 将生产同一份启动期只读 FS 缓存垫片与 Web 裁剪 patch 写入隔离缓存目录；
+        // E5 与生产同口径加载它们，同时 E6 变体仍只按自己的固定变体决定是否加载。
         var isolatedShimDir = Automation.UiFacadeAssets.HostDir(layout.CacheDir);
         Directory.CreateDirectory(isolatedShimDir);
         Guest.GuestAssetProvisioner.WriteIfDifferent(
             Path.Combine(isolatedShimDir, Guest.GuestAssetProvisioner.StartupFsCacheShimName),
             Guest.GuestAssetProvisioner.ReadStartupFsCacheShimScript());
+        Guest.GuestAssetProvisioner.WriteIfDifferent(
+            Path.Combine(isolatedShimDir, Guest.GuestAssetProvisioner.WebTrimPatchName),
+            Guest.GuestAssetProvisioner.ReadWebTrimPatch());
         return layout;
     }
 

@@ -311,6 +311,59 @@ public sealed class ProcessTable
     }
 
     /// <summary>
+    /// <paramref name="rootPid"/> 的全部后代，按“子进程优先”顺序返回：最深的后代排在最前，父进程排在其子进程之后。
+    /// 用于停机时先影响最内层进程，避免把信号只发给外层 PRoot 加载器。
+    /// </summary>
+    public IReadOnlyList<int> DescendantPidsChildrenFirst(int rootPid)
+    {
+        var result = new List<int>();
+        var visited = new HashSet<int>();
+        void Visit(int parent)
+        {
+            foreach (var child in ChildrenOf(parent))
+            {
+                if (!visited.Add(child))
+                {
+                    continue;
+                }
+                Visit(child);
+                result.Add(child);
+            }
+        }
+        Visit(rootPid);
+        return result;
+    }
+
+    /// <summary>
+    /// 在 <paramref name="rootPid"/> 的后代中按“子进程优先”顺序寻找第一个 Node 进程（argv[0] 的文件名为
+    /// <c>node</c> / <c>nodejs</c>）。外层 <c>libproot.so</c> 的 argv 虽然也含 node 路径，但它不是子孙，不会被选中。
+    /// </summary>
+    public int? FindNodeDescendant(int rootPid)
+    {
+        foreach (var pid in DescendantPidsChildrenFirst(rootPid))
+        {
+            if (IsNodeProcess(pid))
+            {
+                return pid;
+            }
+        }
+        return null;
+    }
+
+    /// <summary>按 argv[0] 的文件名判断是否为 Node 进程；cmdline 不可读时按非 Node 处理。</summary>
+    internal bool IsNodeProcess(int pid)
+    {
+        if (Argv(pid) is not { Count: > 0 } argv)
+        {
+            return false;
+        }
+        var name = Path.GetFileName(argv[0]);
+        return string.Equals(name, "node", StringComparison.Ordinal)
+            || string.Equals(name, "nodejs", StringComparison.Ordinal)
+            || string.Equals(name, "node.exe", StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
     /// The order legacy <c>killAll(prefix)</c> actually sends SIGKILL in: every process whose cmdline contains the
     /// prefix plus all descendants. Note: the legacy comment says "deepest children die before their parents", but it
     /// reverses a post-order, which yields PARENTS FIRST (root, then children). Kept as-is for parity (harmless in

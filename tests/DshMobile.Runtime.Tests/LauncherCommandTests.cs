@@ -1,5 +1,6 @@
 using System.Text.RegularExpressions;
 using DshMobile.Runtime.Guest;
+using DshMobile.Runtime.Hosting;
 using DshMobile.Runtime.Supervision;
 
 namespace DshMobile.Runtime.Tests;
@@ -36,6 +37,19 @@ public sealed partial class LauncherCommandTests : IDisposable
             .Select(a => OperatingSystem.IsWindows() ? a.Replace(files.Replace('\\', '/'), files, StringComparison.Ordinal) : a)
             .ToList();
 
+    /// <summary>
+    /// 真机向量是 legacy 抓包基线；生产按 E6-1 结论固定多一个 --preserve-symlinks。
+    /// 这里只把这一处已登记差异叠加到历史的 dshWeb 向量上，向量文件本身保持真机原样。
+    /// </summary>
+    private static List<string> ExpectedDshWebArgv(string files, string native)
+    {
+        var argv = Golden("dshWeb", files, native);
+        var exposeIndex = argv.IndexOf("--expose-internals");
+        Assert.True(exposeIndex >= 0, "dshWeb 向量必须包含 --expose-internals");
+        argv.Insert(exposeIndex + 1, "--preserve-symlinks");
+        return argv;
+    }
+
     /// <summary>On Windows, Path.Combine joins with '\'; normalize both sides to '/' for comparison only.</summary>
     private static List<string> Norm(IEnumerable<string> argv) => argv.Select(a => a.Replace('\\', '/')).ToList();
 
@@ -47,10 +61,22 @@ public sealed partial class LauncherCommandTests : IDisposable
     }
 
     [Fact]
-    public void DshCommand_FirstStart_EqualsDeviceArgv()
+    public void DshCommand_FirstStart_EqualsDeviceArgv_PlusPreserveSymlinks()
     {
         var (layout, files, native) = DeviceLikeLayout();
-        Assert.Equal(Norm(Golden("dshWeb", files, native)), Norm(new ProotCommandBuilder(layout).DshCommand()));
+        Assert.Equal(Norm(ExpectedDshWebArgv(files, native)), Norm(new ProotCommandBuilder(layout).DshCommand()));
+    }
+
+    /// <summary>防止把生产差异写回真机抓包：向量必须仍以 --expose-internals 紧接 --import。</summary>
+    [Fact]
+    public void DeviceArgvVector_RemainsLegacyCapture_WithoutPreserveSymlinks()
+    {
+        var raw = Golden("dshWeb", "files", "native");
+        var exposeIndex = raw.IndexOf("--expose-internals");
+
+        Assert.True(exposeIndex >= 0);
+        Assert.DoesNotContain("--preserve-symlinks", raw);
+        Assert.Equal("--import", raw[exposeIndex + 1]);
     }
 
     [Fact]
@@ -99,8 +125,10 @@ public sealed partial class LauncherCommandTests : IDisposable
         Assert.Contains(RuntimeConstants.LinkShimGuestPath, restart);
     }
 
-    [Fact]
-    public void DshCommand_TrimmedWeb_PassesTrimPatchBeforeOverlays_AndNoOpenAtEnd()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void DshCommand_TrimmedWeb_PassesTrimPatchBeforeOverlays_AndNoOpenAtEnd(bool inPlaceRestart)
     {
         var (layout, _, _) = DeviceLikeLayout();
         var trimHost = GuestAssetProvisioner.WebTrimPatchHostPath(layout);
@@ -111,12 +139,47 @@ public sealed partial class LauncherCommandTests : IDisposable
         Directory.CreateDirectory(Path.GetDirectoryName(uiOverlay)!);
         File.WriteAllText(uiOverlay, "- insert: []\n");
 
-        var argv = new ProotCommandBuilder(layout).DshCommand(trimmedWeb: true).ToList();
+        var argv = new ProotCommandBuilder(layout).DshCommand(inPlaceRestart: inPlaceRestart, trimmedWeb: true).ToList();
         var patches = argv.Select((a, i) => (a, i)).Where(t => t.a == "--patch").Select(t => argv[t.i + 1]).ToList();
         Assert.Equal(
             [GuestAssetProvisioner.GuestWebTrimPatch, "/root/projects/.dsh/dshmobile/dsh-official-plugin/dsh-official-plugin-overlay.yml"],
             patches);
         Assert.Equal("--no-open", argv[^1]);
+        // 原地重启也必须保留 guest-cache 挂载，否则重启后裁剪层与 ui_* 脚本都会读不到。
+        Assert.Contains(argv, a => a.EndsWith(":/opt/dshmobile-cache", StringComparison.Ordinal));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void DshHost_BuildDshArgv_KeepsTrimmedWeb_OnFirstStartAndInPlaceRestart(bool inPlaceRestart)
+    {
+        var (layout, _, _) = DeviceLikeLayout();
+        var trimHost = GuestAssetProvisioner.WebTrimPatchHostPath(layout);
+        Directory.CreateDirectory(Path.GetDirectoryName(trimHost)!);
+        File.WriteAllText(trimHost, "- id: modules\n  disabled: true\n");
+
+        var argv = DshHost.BuildDshArgv(
+            new ProotCommandBuilder(layout),
+            new DshHostOptions(TrimmedWeb: true),
+            inPlaceRestart).ToList();
+
+        var patchIndex = argv.IndexOf("--patch");
+        Assert.True(patchIndex > 0);
+        Assert.Equal(GuestAssetProvisioner.GuestWebTrimPatch, argv[patchIndex + 1]);
+        Assert.Equal("--no-open", argv[^1]);
+        Assert.Contains(argv, a => a.EndsWith(":/opt/dshmobile-cache", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void DshHost_BuildDshArgv_WithoutTrimmedWeb_HasNoTrimPatchOrNoOpen()
+    {
+        var (layout, _, _) = DeviceLikeLayout();
+
+        var argv = DshHost.BuildDshArgv(new ProotCommandBuilder(layout), new DshHostOptions(), inPlaceRestart: false);
+
+        Assert.DoesNotContain(GuestAssetProvisioner.GuestWebTrimPatch, argv);
+        Assert.DoesNotContain("--no-open", argv);
     }
 
     [Fact]

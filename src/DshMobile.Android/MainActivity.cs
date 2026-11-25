@@ -234,17 +234,21 @@ public sealed class MainActivity : AppCompatActivity
         }
     }
 
-    /// <summary>ADR-0031：预热只做一次决策（开关 / 用户已停止 / 忙 / 运行层未就绪 / 低电量 / 省电），失败只写操作日志。</summary>
+    /// <summary>
+    /// 5A：预热只做一次决策（开关 / 用户已停止 / 忙 / 运行层未就绪 / 低电量 / 省电 / 温控），失败只写操作日志。
+    /// 静默预热不经过局域网权限门禁（该门禁只在手动启动/远程页触发），因此不会弹出打断用户的系统对话框。
+    /// </summary>
     private async Task TryEagerWarmupAsync()
     {
-        if (!UiPrefs.EagerWarmupEnabled(this))
+        var enabled = UiPrefs.EagerWarmupEnabled(this);
+        if (!enabled)
         {
             return;
         }
         var (lowBattery, powerSave) = UiPrefs.WarmupPower(this);
         try
         {
-            await DshMobileApplication.Current.Bridge.TryWarmupAsync(true, lowBattery, powerSave).ConfigureAwait(false);
+            await DshMobileApplication.Current.Bridge.TryWarmupAsync(enabled, lowBattery, powerSave).ConfigureAwait(false);
         }
         catch (Exception e)
         {

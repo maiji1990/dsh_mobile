@@ -298,6 +298,9 @@ public sealed class StartupExperimentRunner
         var startedAt = DateTimeOffset.UtcNow;
         var argv = BuildExitArgv(variant, cacheHost);
         var env = new Dictionary<string, string>(_builder.Environment("dsh"), StringComparer.Ordinal);
+        // 诊断独立于生产：不继承新的 compile cache / 严格只读负缓存开关（保持 E1/E2 口径）。
+        env.Remove("NODE_COMPILE_CACHE");
+        env.Remove("PROOT_RO_CACHE_NONEXIST_PREFIXES");
         if (cacheHost is not null)
         {
             env["NODE_COMPILE_CACHE"] = CompileCacheGuest;
@@ -501,6 +504,9 @@ public sealed class StartupExperimentRunner
     internal Dictionary<string, string> BuildWebEnv(StartupExperimentVariant variant, string? cacheHost)
     {
         var env = new Dictionary<string, string>(_builder.Environment("dsh"), StringComparer.Ordinal);
+        // 生产 env 现在带 compile cache 与严格只读负缓存；诊断必须显式控制这两个键，保持既有 E3/E4/E6/E7 对照口径。
+        env.Remove("NODE_COMPILE_CACHE");
+        env.Remove("PROOT_RO_CACHE_NONEXIST_PREFIXES");
         if (cacheHost is not null)
         {
             env["NODE_COMPILE_CACHE"] = CompileCacheGuest;

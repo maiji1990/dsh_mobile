@@ -20,14 +20,14 @@ E5 **只做观测**：不改变生产启动顺序、不改变生产配置、不�
 
 入口是**编译期**条件，不是运行期隐藏：
 
-- [DshMobile.Android.csproj](../src/DshMobile.Android/DshMobile.Android.csproj) 在 **-p:DshDiagnostics=true** 时把 **DSH_DIAGNOSTICS** 加入 DefineConstants。
+- [DshMobile.Android.csproj](../src/DshMobile.Android/DshMobile.Android.csproj) 在 **-p:DshDiagnostics=true** 时把 **DSH_DIAGNOSTICS** 加入 DefineConstants，并只在该条件下引用独立的 **DshMobile.Runtime.Diagnostics** 项目。
 - [DeveloperActivity.cs](../src/DshMobile.Android/Developer/DeveloperActivity.cs) 的「启动实验」行、[StartupExperimentActivity.cs](../src/DshMobile.Android/Developer/StartupExperimentActivity.cs) 整个文件都在 **#if DSH_DIAGNOSTICS** 内。
-- 普通 Debug / Release 构建没有 E5 入口，也没有 E5 preload；不会因为环境变量或 intent 打开采样。
+- 普通 Debug / Release 构建没有 E5 入口，也没有 E5 preload，**不引用诊断程序集**；不会因为环境变量或 intent 打开采样。
 - 诊断构建只用于取证，不作为发布产物分发。
 
 构建与打开路径与 E1–E4 相同：安装 **-p:DshDiagnostics=true** 的 Release 诊断 APK，开启开发者选项，进入「启动实验（诊断）」，选择 E5。一次只运行一个套件；DSH 正在运行时拒绝启动。
 
-E5 的 Node preload 是**固定路径的仓库/APK 资产**，不接受调用方传入的脚本路径、argv、环境变量或超时参数。诊断器只接受固定套件名，与 E1–E4 的 runner 约束一致（[StartupExperimentRunner.cs](../src/DshMobile.Runtime/Diagnostics/StartupExperimentRunner.cs)）。
+E5 的 Node preload 是**固定路径的仓库/APK 资产**，不接受调用方传入的脚本路径、argv、环境变量或超时参数。诊断器只接受固定套件名，与 E1–E4 的 runner 约束一致（[StartupExperimentRunner.cs](../src/DshMobile.Runtime.Diagnostics/StartupExperimentRunner.cs)）。
 
 ## 3. 安全模型
 
@@ -288,9 +288,9 @@ CSV / 摘要 / matrix **绝不能**包含：
 - 诊断构建开关：[src/DshMobile.Android/DshMobile.Android.csproj](../src/DshMobile.Android/DshMobile.Android.csproj)
 - 开发者选项：[src/DshMobile.Android/Developer/DeveloperActivity.cs](../src/DshMobile.Android/Developer/DeveloperActivity.cs)
 - 实验界面：[src/DshMobile.Android/Developer/StartupExperimentActivity.cs](../src/DshMobile.Android/Developer/StartupExperimentActivity.cs)
-- 固定变体目录：[src/DshMobile.Runtime/Diagnostics/StartupExperiment.cs](../src/DshMobile.Runtime/Diagnostics/StartupExperiment.cs)
-- runner（安全门 / 超时 / 清理）：[src/DshMobile.Runtime/Diagnostics/StartupExperimentRunner.cs](../src/DshMobile.Runtime/Diagnostics/StartupExperimentRunner.cs)
-- 隔离布局：[src/DshMobile.Runtime/Diagnostics/IsolatedGuestLayout.cs](../src/DshMobile.Runtime/Diagnostics/IsolatedGuestLayout.cs)
+- 固定变体目录：[src/DshMobile.Runtime.Diagnostics/StartupExperiment.cs](../src/DshMobile.Runtime.Diagnostics/StartupExperiment.cs)
+- runner（安全门 / 超时 / 清理）：[src/DshMobile.Runtime.Diagnostics/StartupExperimentRunner.cs](../src/DshMobile.Runtime.Diagnostics/StartupExperimentRunner.cs)
+- 隔离布局：[src/DshMobile.Runtime.Diagnostics/IsolatedGuestLayout.cs](../src/DshMobile.Runtime.Diagnostics/IsolatedGuestLayout.cs)
 - 记录模型：[src/DshMobile.Core/Diagnostics/ExperimentRecord.cs](../src/DshMobile.Core/Diagnostics/ExperimentRecord.cs)
 - 仓库规则：[AGENTS.md](../AGENTS.md)（规则 5、9、11）
 
@@ -320,3 +320,35 @@ CSV / 摘要 / matrix **绝不能**包含：
 结论：Web 启动是 **CPU 忙型**（ELU 100%、CPU 约 2/3 wall），不是空闲等待；样本主要落在 `native-or-unknown`，
 JS 侧模块解析 + 求值约 27%。inspector 无法证明 native 部分里有多少是 PRoot 文件访问——需要单独的 P2 机制旁证，
 不能把该分类直接解释为 syscall 耗时。采样本身开销 9.6%，因此 PROFILE 行只用于归因，不能代表正式版耗时。
+
+## 15. 生产全优化口径 E5 与 compile cache 实测（2026-11-25 起）
+
+E5 现在复用同一隔离缓存根，按顺序执行 **生产全优化口径**：
+
+1. **能力 A（只读盘点）**：读取 `_layout.GuestCacheDir/node-compile-cache` 的文件数、总字节数、子目录数，并只输出
+   `v<version>` / `<arch>` 白名单前缀。完整目录名（可能含 uid）、缓存文件名和任何用户路径都不进入日志/JSONL。
+   JSONL 记录 `kind=inventory`，同时给 DshMobile 日志一行摘要；不要求 root，也不写缓存。
+2. **冷启动落盘**：默认跑 3 轮独立冷启动，每轮前清空隔离 `cache/node-compile-cache`；preload 在 HTTP 就绪、收到
+   stop 后主动调用 `module.flushCompileCache()`，写 `compile-cache.flush.json`，Host 在进程退出后统计落盘文件数/字节数。
+   最后一轮落盘的缓存供命中率采样与全部热缓存计时轮复用。
+3. **命中率采样**：单独一轮设置 `NODE_DEBUG_NATIVE=COMPILE_CACHE`，Host 的 stderr 聚合器逐行丢弃原文，只累计
+   `reading / hit / miss / write / reject / readFailure`；该轮不进入 E5 计时样本。
+4. **热缓存 OFF/PROFILE 计时**：不设置 `NODE_DEBUG_NATIVE`，复用同一 compile cache，交错跑 E5-OFF / E5-PROFILE，
+   记录 `.cpuprofile`、`nodeUserCpuMs` / `nodeSystemCpuMs` / `eventLoopActiveMs` / `eventLoopIdleMs` / `httpReadyMs`。
+
+E5 的 argv 与当前生产 `ProotCommandBuilder.DshCommand(trimmedWeb: true)` 对齐：生产 PRoot 前缀 +
+`--expose-internals --preserve-symlinks` + `--import web-profile-preload.mjs` + `--import link-shim.mjs` +
+`--import startup-fs-cache-shim.mjs` + `bin.js --profile web --patch <trim patch> --no-open`。env 显式设置隔离
+`NODE_COMPILE_CACHE`、`PROOT_RO_CACHE_PREFIXES=/opt/dshapp/runtime:/usr/local`、`PROOT_RO_CACHE_NONEXIST=0`、
+`PROOT_RO_CACHE_NONEXIST_PREFIXES=/opt/dshapp/runtime`；`startup-fs-cache-shim.mjs` 与 `dsh-web-trim-patch.yml`
+都 staging 到 `isolated.CacheDir/dshmobile/`。
+
+另有独立「Compile Cache 盘点（只读）」入口，不启动 DSH、不依赖 E5 套件，只看生产缓存。E5 的缓存证据写入独立
+`*-E5-CACHE.jsonl`（`experiment=E5-CACHE`），E5 计时仍是原来的 `*-E5.jsonl`（schema 1，新增可选
+`cacheMode` / `compileCacheFileCount` / `compileCacheBytes` 字段；旧报告工具忽略未知字段）。
+
+诊断代码位于独立项目 [DshMobile.Runtime.Diagnostics](../src/DshMobile.Runtime.Diagnostics/DshMobile.Runtime.Diagnostics.csproj)，
+Android 项目只在 `-p:DshDiagnostics=true` 时引用；普通 Release APK 不含该程序集，也不含 E5 preload 资源。
+
+**真机状态：not-tested**。截至本节，能力 A/B 只有单元测试与 Release 隔离构建验证；没有新的真机 JSONL / profile，
+因此不得把本节的代码落地写成 Android 17 真机通过（AGENTS.md 规则 9）。
