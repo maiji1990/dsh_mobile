@@ -28,19 +28,8 @@
                 android:gravity="center_vertical"
                 android:orientation="horizontal">
 
-                <TextView
-                    android:id="@+id/chats_remote_pill"
-                    style="@style/Widget.DshMobile.Badge.Primary"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginEnd="6dp"
-                    android:clickable="true"
-                    android:contentDescription="@string/chats_remote_pill_desc"
-                    android:focusable="true"
-                    android:foreground="?attr/selectableItemBackgroundBorderless"
-                    android:text="@string/chats_pill_remote"
-                    android:visibility="gone" />
-
+                <!-- UI-S4：仅保留单一连接胶囊；远程连接态由 host pill 显示「远程: label」。
+                     远程主机入口仍可通过该胶囊 → 宿主快速控制抽屉的「远程主机」行到达。 -->
                 <TextView
                     android:id="@+id/chats_host_pill"
                     style="@style/Widget.DshMobile.Badge.Neutral"
@@ -375,9 +364,7 @@
                 android:layout_width="match_parent"
                 android:layout_height="match_parent"
                 android:clipToPadding="false"
-                android:paddingStart="16dp"
                 android:paddingTop="4dp"
-                android:paddingEnd="16dp"
                 android:paddingBottom="96dp" />
 
             <include

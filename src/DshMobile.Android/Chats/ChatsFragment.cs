@@ -6,6 +6,7 @@ using DshMobile.Agent.Domain;
 using DshMobile.Agent.Presentation;
 using DshMobile.App.Bridge;
 using DshMobile.App.Chat;
+using DshMobile.App.Inbox;
 using DshMobile.App.LocalNetwork;
 using DshMobile.App.Remote;
 using DshMobile.App.RuntimeUi;
@@ -32,7 +33,7 @@ namespace DshMobile.App.Chats;
 /// 承载顶栏宿主状态药丸与远程快捷入口、胶囊搜索框与轻量筛选芯片、紧凑会话卡片与底部操作抽屉、
 /// 离线缓存会话回看、以及未安装/停止/启动/失败/更新的就地快速控制。
 /// </summary>
-public sealed class ChatsFragment : Fragment, ITabRoot
+public sealed class ChatsFragment : Fragment, ITabRoot, SessionActionsBottomSheet.IHost, HostQuickControlBottomSheet.IHost
 {
     private enum SessionFilterMode
     {
@@ -46,7 +47,6 @@ public sealed class ChatsFragment : Fragment, ITabRoot
     private ChatsAdapter _adapter = null!;
     private LinearProgressIndicator _progress = null!;
     private TextView _hostPill = null!;
-    private TextView _remotePill = null!;
     private View _hostBanner = null!;
     private TextView _hostTitle = null!;
     private TextView _hostText = null!;
@@ -63,6 +63,8 @@ public sealed class ChatsFragment : Fragment, ITabRoot
     private View _webInvCard = null!;
     private TextView _webInvSummary = null!;
     private View _searchLayout = null!;
+    private TextInputEditText _searchInput = null!;
+    private bool _searchExpanded;
     private View _filterBar = null!;
     private Chip _filterAll = null!;
     private Chip _filterRunning = null!;
@@ -92,7 +94,11 @@ public sealed class ChatsFragment : Fragment, ITabRoot
         toolbar.MenuItemClick += (_, e) =>
         {
             var id = e.Item?.ItemId ?? 0;
-            if (id == Resource.Id.chats_menu_refresh)
+            if (id == Resource.Id.chats_menu_search)
+            {
+                ToggleSearch();
+            }
+            else if (id == Resource.Id.chats_menu_refresh)
             {
                 _ = RefreshIfReadyAsync();
             }
@@ -116,8 +122,6 @@ public sealed class ChatsFragment : Fragment, ITabRoot
 
         _hostPill = view.FindViewById<TextView>(Resource.Id.chats_host_pill)!;
         _hostPill.Click += (_, _) => OpenHostQuickControl();
-        _remotePill = view.FindViewById<TextView>(Resource.Id.chats_remote_pill)!;
-        _remotePill.Click += (_, _) => OpenRemoteChatOrSettings();
 
         _progress = view.FindViewById<LinearProgressIndicator>(Resource.Id.chats_progress)!;
         _hostBanner = view.FindViewById(Resource.Id.chats_host_banner)!;
@@ -160,13 +164,25 @@ public sealed class ChatsFragment : Fragment, ITabRoot
         {
             UiPrefs.SetWebInventoryDismissed(RequireContext(), true);
             _webInvCard.Visibility = ViewStates.Gone;
+            // 关闭后立即重算优先级状态槽，让低优先级卡片或列表恢复首屏空间。
+            ScheduleRender();
         };
         view.FindViewById<MaterialButton>(Resource.Id.chats_web_inventory_details)!.Click += (_, _) => ShowWebInventoryDetails();
 
         _searchLayout = view.FindViewById(Resource.Id.chats_search_layout)!;
-        var search = _searchLayout.FindViewById<TextInputEditText>(Resource.Id.search_input)!;
-        search.Hint = GetString(Resource.String.chats_search_hint);
-        search.TextChanged += (_, e) => _vm.SetSearchQuery(e.Text?.ToString());
+        _searchLayout.Visibility = ViewStates.Gone;
+        _searchInput = _searchLayout.FindViewById<TextInputEditText>(Resource.Id.search_input)!;
+        _searchInput.Hint = GetString(Resource.String.chats_search_hint);
+        _searchInput.TextChanged += (_, e) => _vm.SetSearchQuery(e.Text?.ToString());
+        _searchInput.EditorAction += (_, e) =>
+        {
+            if (e.ActionId == Android.Views.InputMethods.ImeAction.Search)
+            {
+                _searchInput.ClearFocus();
+                HideKeyboard();
+                e.Handled = true;
+            }
+        };
 
         _filterBar = view.FindViewById(Resource.Id.chats_filter_bar)!;
         var filterChips = view.FindViewById<ChipGroup>(Resource.Id.chats_filter_chips)!;
@@ -189,10 +205,15 @@ public sealed class ChatsFragment : Fragment, ITabRoot
         _list = view.FindViewById<RecyclerView>(Resource.Id.chats_list)!;
         _list.SetLayoutManager(new LinearLayoutManager(RequireContext()));
         _adapter = new ChatsAdapter(
+            RequireContext(),
             item => OpenChatSession(item.SessionId),
             ShowSessionActionsSheet,
-            item => _ = CancelSessionAsync(item.SessionId));
+            item => _ = ApprovePendingAsync(item),
+            item => _ = RejectPendingAsync(item),
+            OpenPendingChat,
+            OpenInboxSheet);
         _list.SetAdapter(_adapter);
+        new ItemTouchHelper(new SwipeToActionsCallback(_adapter, ShowSessionActionsSheet)).AttachToRecyclerView(_list);
 
         _empty = view.FindViewById(Resource.Id.chats_empty)!;
         _empty.FindViewById<ImageView>(Resource.Id.empty_icon)!.SetImageResource(Resource.Drawable.ic_chat);
@@ -213,6 +234,7 @@ public sealed class ChatsFragment : Fragment, ITabRoot
     {
         base.OnStart();
         _vm.StateChanged += OnStateChanged;
+        _bridge.Agent.Inbox.StateChanged += OnInboxStateChanged;
         _bridge.Changed += OnBridgeChanged;
         Render(_vm.State);
         _ = RefreshIfReadyAsync();
@@ -221,6 +243,7 @@ public sealed class ChatsFragment : Fragment, ITabRoot
     public override void OnStop()
     {
         _vm.StateChanged -= OnStateChanged;
+        _bridge.Agent.Inbox.StateChanged -= OnInboxStateChanged;
         _bridge.Changed -= OnBridgeChanged;
         base.OnStop();
     }
@@ -242,6 +265,8 @@ public sealed class ChatsFragment : Fragment, ITabRoot
     }
 
     private void OnStateChanged(SessionsUiState _) => ScheduleRender();
+
+    private void OnInboxStateChanged(InboxUiState _) => ScheduleRender();
 
     private void OnBridgeChanged(object? sender, EventArgs e)
     {
@@ -274,8 +299,13 @@ public sealed class ChatsFragment : Fragment, ITabRoot
         var status = _bridge.Status;
         _shownStatus = status;
 
-        HostQuickControlBottomSheet.ApplyHostPillAppearance(ctx, _hostPill, status.Phase, appendCaret: true);
-        _remotePill.Visibility = _bridge.Agent.IsRemoteEndpointReady ? ViewStates.Visible : ViewStates.Gone;
+        var remoteLabel = _bridge.Agent.IsRemoteEndpointReady ? _bridge.Agent.RemoteHostLabel : null;
+        HostQuickControlBottomSheet.ApplyHostPillAppearance(
+            ctx,
+            _hostPill,
+            status.Phase,
+            appendCaret: true,
+            remoteLabel: remoteLabel);
 
         _progress.Visibility = state.IsLoading ? ViewStates.Visible : ViewStates.Gone;
         _stopMenuItem?.SetVisible(hostReady && !_bridge.IsBusy);
@@ -289,7 +319,7 @@ public sealed class ChatsFragment : Fragment, ITabRoot
             _newFab.Hide();
         }
 
-        RenderHostLifecycleCard(ctx, status, hostReady);
+        RenderStatusSlot(ctx, status, hostReady);
 
         var cachedItems = state.EffectiveCachedSessions;
         var liveSessions = state.Sessions;
@@ -339,11 +369,13 @@ public sealed class ChatsFragment : Fragment, ITabRoot
 
         var hasDisplayed = displayed.Count > 0;
         var hasQuery = !string.IsNullOrWhiteSpace(state.SearchQuery);
-        _searchLayout.Visibility = hostReady || hasDisplayed || hasQuery ? ViewStates.Visible : ViewStates.Gone;
+        _searchLayout.Visibility = _searchExpanded || hasQuery ? ViewStates.Visible : ViewStates.Gone;
         _cachedSubheader.Visibility = isCachedMode ? ViewStates.Visible : ViewStates.Gone;
 
-        _adapter.Submit(displayed, state.ActiveSessionId, state.CanCancelSession, isCachedOffline: isCachedMode);
-        if (!hasDisplayed && (hostReady || hasQuery))
+        IReadOnlyList<InboxItemView> pendingItems = hostReady ? _bridge.Agent.Inbox.State.Items : [];
+        _adapter.Submit(displayed, pendingItems, state.ActiveSessionId, isCachedOffline: isCachedMode);
+        var hasListContent = hasDisplayed || pendingItems.Count > 0;
+        if (!hasListContent && (hostReady || hasQuery))
         {
             _emptyText.SetText(hasQuery ? Resource.String.chats_empty_search : Resource.String.chats_empty);
             _empty.Visibility = ViewStates.Visible;
@@ -352,17 +384,19 @@ public sealed class ChatsFragment : Fragment, ITabRoot
         {
             _empty.Visibility = ViewStates.Gone;
         }
-
-        RenderWebInventoryCard();
     }
 
-    private void RenderHostLifecycleCard(Context ctx, HomeStatus status, bool hostReady)
+    /// <summary>
+    /// 唯一优先级状态槽（UI-S4）：失败 &gt; 宿主未就绪/启动中 &gt; 更新 &gt; Web 盘点。
+    /// 四张候选卡同一时刻最多只显示一张，避免多横幅同时挤占首屏。
+    /// </summary>
+    private void RenderStatusSlot(Context ctx, HomeStatus status, bool hostReady)
     {
         var busy = status.Phase is HomePhase.Starting or HomePhase.WaitingForDsh or HomePhase.Stopping or HomePhase.Busy;
-        _hostBanner.Visibility = hostReady && status.Phase == HomePhase.Ready ? ViewStates.Gone : ViewStates.Visible;
-        if (_hostBanner.Visibility == ViewStates.Visible)
+        var hostCandidate = !(hostReady && status.Phase == HomePhase.Ready);
+        if (hostCandidate)
         {
-            var (titleText, detailText) = DescribeHostStatus(ctx, status);
+            var (titleText, detailText) = HostQuickControlSupport.Describe(ctx, _bridge, status);
             _hostTitle.Text = titleText;
             _hostText.Text = detailText;
             _hostProgress.Visibility = busy ? ViewStates.Visible : ViewStates.Gone;
@@ -396,17 +430,16 @@ public sealed class ChatsFragment : Fragment, ITabRoot
             _secondaryCancelsDownload = false;
         }
 
-        if (status.FailedOperation is { } f)
+        var failureCandidate = false;
+        if (status.FailedOperation is { } failedOperation)
         {
-            _failureCard.Visibility = ViewStates.Visible;
-            _failureTitle.Text = Rows.Fmt(ctx, Resource.String.home_failed_operation, OperationNames.Label(ctx, f.Operation));
-            _failureDetail.Text = OperationNames.Error(f.Code, f.Message);
-        }
-        else
-        {
-            _failureCard.Visibility = ViewStates.Gone;
+            failureCandidate = true;
+            _failureTitle.Text = Rows.Fmt(ctx, Resource.String.home_failed_operation, OperationNames.Label(ctx, failedOperation.Operation));
+            _failureDetail.Text = OperationNames.Error(failedOperation.Code, failedOperation.Message);
         }
 
+        var updateCandidate = false;
+        _bannerPlan = null;
         var channel = UiPrefs.UpdateChannel(ctx);
         if (!busy
             && status.Phase is not HomePhase.NotInstalled
@@ -418,54 +451,43 @@ public sealed class ChatsFragment : Fragment, ITabRoot
             if (plan.HasWork)
             {
                 _bannerPlan = plan;
-                _updateBanner.Visibility = ViewStates.Visible;
+                updateCandidate = true;
                 _updateBannerTitle.Text = Rows.Fmt(ctx, Resource.String.home_update_banner_title, UpdateUi.DescribePlan(plan));
                 _updateBannerDetail.Text = Rows.Fmt(ctx, Resource.String.update_install_plan_sub, UpdateUi.DigestHint(plan), UpdateUi.TotalMiB(plan));
-                return;
             }
         }
-        _bannerPlan = null;
-        _updateBanner.Visibility = ViewStates.Gone;
-    }
 
-    private (string Title, string Detail) DescribeHostStatus(Context ctx, HomeStatus status)
-    {
-        var version = status.DshVersion;
-        return status.Phase switch
+        var inventoryCandidate = false;
+        var report = Volatile.Read(ref _lastWebInventory);
+        if (report is not null
+            && report.HasUserDshDirectory
+            && (report.DiscoveredSessions.Count > 0 || report.HasCredentialsFile)
+            && !UiPrefs.WebInventoryDismissed(ctx))
         {
-            HomePhase.NotInstalled => (GetString(Resource.String.home_title_not_installed), GetString(Resource.String.home_detail_not_installed)),
-            HomePhase.Stopped => (
-                GetString(Resource.String.home_title_stopped),
-                version is null ? GetString(Resource.String.home_detail_stopped) : GetString(Resource.String.chats_host_stopped)),
-            HomePhase.Starting or HomePhase.WaitingForDsh => (
-                GetString(Resource.String.home_title_starting),
-                StartingPhaseDetail()),
-            HomePhase.Stopping => (GetString(Resource.String.home_title_stopping), GetString(Resource.String.home_detail_stopping)),
-            HomePhase.Busy => (
-                Rows.Fmt(ctx, Resource.String.home_title_busy, OperationNames.Label(ctx, status.Operation ?? "")),
-                _bridge.Progress is { } p
-                    ? (p.Total > 0 ? Rows.Fmt(ctx, Resource.String.home_detail_progress, p.Step, (int)Math.Clamp(p.Done * 100 / p.Total, 0, 100)) : p.Step)
-                    : GetString(Resource.String.home_detail_busy)),
-            HomePhase.Ready => (
-                GetString(Resource.String.home_title_ready),
-                Rows.Fmt(ctx, Resource.String.home_detail_ready, version ?? "?")),
-            _ => (
-                GetString(Resource.String.home_title_failed),
-                OperationNames.Error(status.ErrorCode ?? "?", status.ErrorMessage)),
-        };
+            inventoryCandidate = true;
+            var resId = report.HasCredentialsFile ? Resource.String.web_inv_summary_creds : Resource.String.web_inv_summary;
+            _webInvSummary.Text = Rows.Fmt(ctx, resId, report.RecoverableCount, report.UnrecognizedOrLegacyCount);
+        }
+
+        var active = failureCandidate
+            ? _failureCard
+            : hostCandidate
+                ? _hostBanner
+                : updateCandidate
+                    ? _updateBanner
+                    : inventoryCandidate
+                        ? _webInvCard
+                        : null;
+        ApplyStatusSlotVisibility(active);
     }
 
-    private string StartingPhaseDetail() => _bridge.HostPhase switch
+    private void ApplyStatusSlotVisibility(View? active)
     {
-        DshHostPhase.SandboxStarting => GetString(Resource.String.home_detail_phase_sandbox),
-        DshHostPhase.SandboxReady => GetString(Resource.String.home_detail_phase_sandbox_ready),
-        DshHostPhase.DshStarting => GetString(Resource.String.home_detail_phase_dsh_spawned),
-        DshHostPhase.DshFirstOutput => GetString(Resource.String.home_detail_phase_first_output),
-        DshHostPhase.DshTokenAvailable => GetString(Resource.String.home_detail_phase_token),
-        DshHostPhase.ProtocolConnecting => GetString(Resource.String.home_detail_phase_protocol),
-        DshHostPhase.Initializing => GetString(Resource.String.home_detail_phase_initializing),
-        _ => GetString(Resource.String.home_detail_starting),
-    };
+        _failureCard.Visibility = ReferenceEquals(active, _failureCard) ? ViewStates.Visible : ViewStates.Gone;
+        _hostBanner.Visibility = ReferenceEquals(active, _hostBanner) ? ViewStates.Visible : ViewStates.Gone;
+        _updateBanner.Visibility = ReferenceEquals(active, _updateBanner) ? ViewStates.Visible : ViewStates.Gone;
+        _webInvCard.Visibility = ReferenceEquals(active, _webInvCard) ? ViewStates.Visible : ViewStates.Gone;
+    }
 
     private static void BindActionButton(MaterialButton button, HomeAction action, HomePhase phase)
     {
@@ -493,117 +515,50 @@ public sealed class ChatsFragment : Fragment, ITabRoot
         button.SetIconResource(iconRes);
     }
 
-    private void HandleHostAction(HomeAction action)
+    private void HandleHostAction(HomeAction action) => HostQuickControlSupport.Run(this, _bridge, action);
+
+    public void OnHostQuickAction(HomeAction action) => HandleHostAction(action);
+
+    public void OnHostQuickOpenRemote() => OpenRemoteChatOrSettings();
+
+    public void OnHostQuickOpenRuntime() =>
+        StartActivity(new Intent(RequireContext(), typeof(RuntimeActivity)));
+
+    public void OnHostQuickOpenCredentials() =>
+        StartActivity(new Intent(RequireContext(), typeof(Credentials.CredentialsActivity)));
+
+    public void OnHostQuickCancelUpdate() => _bridge.CancelUpdate();
+
+    public void OnSessionAction(SessionActionsBottomSheet.Action action, string sessionId)
     {
         switch (action)
         {
-            case HomeAction.OnlineInstall:
-                _ = StartOnlineInstallFlowAsync();
+            case SessionActionsBottomSheet.Action.Open:
+                OpenChatSession(sessionId);
                 break;
-            case HomeAction.ImportRuntime:
-                StartActivityForResult(RuntimeImportFlow.PickIntent(), RuntimeImportFlow.RequestCode);
+            case SessionActionsBottomSheet.Action.Rename:
+                ShowRenameDialog(sessionId, FindSession(sessionId)?.DisplayTitle);
                 break;
-            case HomeAction.ImportDsh:
-                StartActivityForResult(RuntimeImportFlow.PickDshIntent(), RuntimeImportFlow.DshRequestCode);
+            case SessionActionsBottomSheet.Action.Fork:
+                _ = ForkAndOpenAsync(sessionId);
                 break;
-            case HomeAction.Start:
-                _ = StartDshAsync();
-                break;
-            case HomeAction.OpenChat:
-                StartActivity(new Intent(RequireContext(), typeof(ChatActivity)));
-                break;
-            case HomeAction.Stop:
-                _ = _bridge.RunStopAsync();
+            case SessionActionsBottomSheet.Action.Cancel:
+                _ = CancelSessionAsync(sessionId);
                 break;
         }
     }
 
-    private async Task StartDshAsync()
-    {
-        var decision = LocalNetworkDecision.NotRequired;
-        if (Activity is { } activity && !UiPrefs.LanPermissionAsked(activity))
-        {
-            UiPrefs.SetLanPermissionAsked(activity, true);
-            try
-            {
-                decision = await LocalNetworkAccess.EnsureAsync(activity).ConfigureAwait(true);
-            }
-            catch (Exception e)
-            {
-                Android.Util.Log.Warn("DshMobile", "lan permission gate failed: " + e.GetType().Name);
-            }
-        }
-        if (decision == LocalNetworkDecision.NeedsPermission && Context is { } ctx)
-        {
-            Android.Widget.Toast.MakeText(ctx, GetString(Resource.String.lan_denied_toast), ToastLength.Long)?.Show();
-        }
-        await _bridge.RunStartAsync().ConfigureAwait(false);
-    }
+    private SessionListItemView? FindSession(string sessionId) =>
+        _vm.State.Sessions.FirstOrDefault(s => string.Equals(s.SessionId, sessionId, StringComparison.Ordinal))
+        ?? _vm.State.EffectiveCachedSessions.FirstOrDefault(s => string.Equals(s.SessionId, sessionId, StringComparison.Ordinal));
 
-    private async Task StartOnlineInstallFlowAsync()
-    {
-        var context = Context;
-        if (context is null)
-        {
-            return;
-        }
-        var channel = UiPrefs.UpdateChannel(context);
-        var check = await _bridge.RunUpdateCheckForResultAsync(channel).ConfigureAwait(false);
-        Activity?.RunOnUiThread(() =>
-        {
-            if (View is null || Context is not { } ctx || check is not { Ok: true })
-            {
-                return;
-            }
-            var plan = UpdatePlanner.Plan(check.Choices);
-            if (!plan.HasWork)
-            {
-                var detail = plan.Notes.Count > 0
-                    ? string.Join('\n', plan.Notes)
-                    : UpdateTransactionCodes.NothingToInstall;
-                new MaterialAlertDialogBuilder(ctx)
-                    .SetIcon(Resource.Drawable.ic_info)!
-                    .SetTitle(Resource.String.update_nothing_title)!
-                    .SetMessage(detail)!
-                    .SetPositiveButton(Android.Resource.String.Ok, (_, _) => { })!
-                    .Show();
-                return;
-            }
-            UpdateUi.ShowConfirmInstallDialog(ctx, _bridge, plan);
-        });
-    }
-
+    [Obsolete("Uses Fragment activity result for runtime import parity")]
     public override void OnActivityResult(int requestCode, int resultCode, Intent? data)
     {
+#pragma warning disable CS0618
         base.OnActivityResult(requestCode, resultCode, data);
-        if (resultCode != (int)Android.App.Result.Ok || data?.Data is not { } uri)
-        {
-            return;
-        }
-        if (requestCode == RuntimeImportFlow.RequestCode)
-        {
-            _ = RuntimeImportFlow.ImportAsync(uri);
-        }
-        else if (requestCode == RuntimeImportFlow.DshRequestCode)
-        {
-            _ = RuntimeImportFlow.ImportDshAsync(uri);
-        }
-    }
-
-    private void RenderWebInventoryCard()
-    {
-        var report = Volatile.Read(ref _lastWebInventory);
-        if (report is null ||
-            !report.HasUserDshDirectory ||
-            (report.DiscoveredSessions.Count == 0 && !report.HasCredentialsFile) ||
-            UiPrefs.WebInventoryDismissed(RequireContext()))
-        {
-            _webInvCard.Visibility = ViewStates.Gone;
-            return;
-        }
-        _webInvCard.Visibility = ViewStates.Visible;
-        var resId = report.HasCredentialsFile ? Resource.String.web_inv_summary_creds : Resource.String.web_inv_summary;
-        _webInvSummary.Text = Rows.Fmt(RequireContext(), resId, report.RecoverableCount, report.UnrecognizedOrLegacyCount);
+#pragma warning restore CS0618
+        HostQuickControlSupport.HandleActivityResult(_bridge, requestCode, (Android.App.Result)resultCode, data);
     }
 
     private async Task RefreshIfReadyAsync()
@@ -640,17 +595,84 @@ public sealed class ChatsFragment : Fragment, ITabRoot
     {
         var ctx = RequireContext();
         var status = _bridge.Status;
-        var (titleText, detailText) = DescribeHostStatus(ctx, status);
-        HostQuickControlBottomSheet.Show(
-            ctx,
-            _bridge,
-            status,
-            titleText,
-            detailText,
-            HandleHostAction,
-            OpenRemoteChatOrSettings,
-            () => StartActivity(new Intent(ctx, typeof(RuntimeActivity))),
-            () => StartActivity(new Intent(ctx, typeof(Credentials.CredentialsActivity))));
+        var (titleText, detailText) = HostQuickControlSupport.Describe(ctx, _bridge, status);
+        HostQuickControlBottomSheet.Show(ChildFragmentManager, titleText, detailText);
+    }
+
+    private void ToggleSearch()
+    {
+        _searchExpanded = !_searchExpanded;
+        if (_searchExpanded)
+        {
+            _searchLayout.Visibility = ViewStates.Visible;
+            _searchInput.RequestFocus();
+            _searchInput.Post(() => ShowKeyboard());
+        }
+        else
+        {
+            _searchInput.Text = string.Empty;
+            _vm.SetSearchQuery(null);
+            _searchInput.ClearFocus();
+            HideKeyboard();
+        }
+        Render(_vm.State);
+    }
+
+    private void ShowKeyboard()
+    {
+        if (RequireContext().GetSystemService(Context.InputMethodService) is Android.Views.InputMethods.InputMethodManager manager)
+        {
+            manager.ShowSoftInput(_searchInput, Android.Views.InputMethods.ShowFlags.Implicit);
+        }
+    }
+
+    private void HideKeyboard()
+    {
+        if (RequireContext().GetSystemService(Context.InputMethodService) is Android.Views.InputMethods.InputMethodManager manager)
+        {
+            manager.HideSoftInputFromWindow(_searchInput.WindowToken, Android.Views.InputMethods.HideSoftInputFlags.None);
+        }
+    }
+
+    private void OpenInboxSheet()
+    {
+        var manager = ParentFragmentManager;
+        if (manager.FindFragmentByTag(InboxBottomSheet.SheetTag) is null)
+        {
+            new InboxBottomSheet().Show(manager, InboxBottomSheet.SheetTag);
+        }
+    }
+
+    private void OpenPendingChat(InboxItemView item) => OpenChatSession(item.SessionId, item.EventId);
+
+    private async Task ApprovePendingAsync(InboxItemView item)
+    {
+        var outcome = await _bridge.Agent.Inbox.ApproveOnceAsync(item.EventId).ConfigureAwait(false);
+        ShowPendingDecisionResult(outcome);
+    }
+
+    private async Task RejectPendingAsync(InboxItemView item)
+    {
+        var outcome = await _bridge.Agent.Inbox.RejectApprovalAsync(item.EventId).ConfigureAwait(false);
+        ShowPendingDecisionResult(outcome);
+    }
+
+    private void ShowPendingDecisionResult(Outcome<Unit> outcome)
+    {
+        Activity?.RunOnUiThread(() =>
+        {
+            if (View is not { } root)
+            {
+                return;
+            }
+            var message = outcome.IsOk
+                ? GetString(Resource.String.chats_inline_done)
+                : Rows.Fmt(
+                    RequireContext(),
+                    Resource.String.chats_inline_action_failed,
+                    outcome.Error?.DiagnosticKey ?? outcome.Error?.Code.ToString() ?? "ERROR");
+            Snackbar.Make(root, message, outcome.IsOk ? Snackbar.LengthShort : Snackbar.LengthLong).Show();
+        });
     }
 
     private void OpenRemoteChatOrSettings()
@@ -668,23 +690,27 @@ public sealed class ChatsFragment : Fragment, ITabRoot
 
     private void ShowSessionActionsSheet(SessionListItemView item)
     {
-        var ctx = RequireContext();
         var hostReady = _bridge.Runtime.Host?.State == DshHostState.Ready;
         SessionActionsBottomSheet.Show(
-            ctx,
-            item,
+            ChildFragmentManager,
+            item.SessionId,
+            item.DisplayTitle,
+            item.Cwd,
             hostReady,
             _vm.State.CanCancelSession,
-            () => OpenChatSession(item.SessionId),
-            () => ShowRenameDialog(item),
-            () => _ = ForkAndOpenAsync(item.SessionId),
-            () => _ = CancelSessionAsync(item.SessionId));
+            item.Running);
     }
 
-    private void OpenChatSession(string sessionId)
+    private void OpenChatSession(string sessionId) => OpenChatSession(sessionId, focusEventId: null);
+
+    private void OpenChatSession(string sessionId, string? focusEventId)
     {
         var intent = new Intent(RequireContext(), typeof(ChatActivity));
         intent.PutExtra(ChatActivity.ExtraSessionId, sessionId);
+        if (!string.IsNullOrWhiteSpace(focusEventId))
+        {
+            intent.PutExtra(ChatActivity.ExtraFocusEventId, focusEventId);
+        }
         StartActivity(intent);
     }
 
@@ -708,7 +734,9 @@ public sealed class ChatsFragment : Fragment, ITabRoot
         });
     }
 
-    private void ShowRenameDialog(SessionListItemView item)
+    private void ShowRenameDialog(SessionListItemView item) => ShowRenameDialog(item.SessionId, item.DisplayTitle);
+
+    private void ShowRenameDialog(string sessionId, string? displayTitle)
     {
         var ctx = RequireContext();
         var content = LayoutInflater.From(ctx)!.Inflate(Resource.Layout.dialog_text_input, null)!;
@@ -716,8 +744,8 @@ public sealed class ChatsFragment : Fragment, ITabRoot
         layout.Hint = GetString(Resource.String.chats_rename_hint);
         var input = content.FindViewById<TextInputEditText>(Resource.Id.dialog_text_input)!;
         input.Text = ChatDisplayFormatter.FormatShortSessionTitle(
-            item.SessionId,
-            item.DisplayTitle,
+            sessionId,
+            displayTitle,
             ctx.GetString(Resource.String.chats_untitled_prefix));
         input.SetSelection(input.Text?.Length ?? 0);
 
@@ -730,7 +758,7 @@ public sealed class ChatsFragment : Fragment, ITabRoot
                 var nextTitle = input.Text?.Trim();
                 if (!string.IsNullOrWhiteSpace(nextTitle))
                 {
-                    _ = RenameSessionAndSyncAsync(item.SessionId, nextTitle);
+                    _ = RenameSessionAndSyncAsync(sessionId, nextTitle);
                 }
             })!
             .Show();
@@ -798,6 +826,31 @@ public sealed class ChatsFragment : Fragment, ITabRoot
             .SetMessage(string.Join('\n', lines))!
             .SetPositiveButton(Android.Resource.String.Ok, (_, _) => { })!
             .Show();
+    }
+
+    /// <summary>左滑快捷手势：仅真实会话行可滑动，滑出后立即恢复行并呼出操作抽屉。</summary>
+    private sealed class SwipeToActionsCallback(
+        ChatsAdapter adapter,
+        Action<SessionListItemView> onMore) : ItemTouchHelper.SimpleCallback(0, ItemTouchHelper.Left)
+    {
+        public override bool OnMove(RecyclerView recyclerView, RecyclerView.ViewHolder viewHolder, RecyclerView.ViewHolder target) =>
+            false;
+
+        public override int GetSwipeDirs(RecyclerView recyclerView, RecyclerView.ViewHolder viewHolder) =>
+            adapter.GetSessionAt(viewHolder.BindingAdapterPosition) is null
+                ? 0
+                : base.GetSwipeDirs(recyclerView, viewHolder);
+
+        public override void OnSwiped(RecyclerView.ViewHolder viewHolder, int direction)
+        {
+            var position = viewHolder.BindingAdapterPosition;
+            var item = adapter.GetSessionAt(position);
+            adapter.NotifyItemChanged(position);
+            if (item is not null)
+            {
+                onMore(item);
+            }
+        }
     }
 
     private sealed class FabScrollListener(ExtendedFloatingActionButton fab) : RecyclerView.OnScrollListener
