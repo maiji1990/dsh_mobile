@@ -27,6 +27,9 @@ public sealed class ChatActivity : AppCompatActivity
     public const string ExtraSessionId = "chat.extra.session_id";
     public const string ExtraFocusEventId = "chat.extra.focus_event_id";
     public const string ExtraIsRemote = "chat.extra.is_remote";
+
+    /// <summary>UI-S6：嵌入 MainActivity 宽屏右栏时置为 true，隐藏返回图标且不关闭宿主 Activity。</summary>
+    public const string ExtraEmbeddedInPane = "chat.extra.embedded_in_pane";
     private const string ChatFragmentTag = "native.chat.fragment";
 
     private StartupTrace? _launchTrace;

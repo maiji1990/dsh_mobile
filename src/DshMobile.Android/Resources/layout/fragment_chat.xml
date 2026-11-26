@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- UI Slice 2: 沉浸式单层顶栏 + 拇指热区融合输入面板（主标题=会话名，副标题=工作区/远程标识，模型胶囊与斜杠命令下沉底部） -->
+<!-- UI 切片 2（UI-S2）：沉浸式单层顶栏 + 拇指热区融合输入面板（主标题=会话名，副标题=工作区/远程标识，模型胶囊与斜杠命令下沉底部） -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
@@ -25,10 +25,6 @@
             app:title="@string/chat_session_default_title"
             app:titleTextAppearance="?attr/textAppearanceTitleMedium" />
     </com.google.android.material.appbar.AppBarLayout>
-
-    <com.google.android.material.divider.MaterialDivider
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content" />
 
     <!-- 运行时 / 连接 / Cache-First 状态横幅 -->
     <LinearLayout
@@ -83,7 +79,7 @@
         android:layout_marginTop="8dp"
         android:layout_marginEnd="16dp"
         android:visibility="gone"
-        app:cardCornerRadius="14dp"
+        app:cardCornerRadius="@dimen/dshm_radius_card"
         app:strokeColor="?attr/colorError">
 
         <LinearLayout
@@ -164,17 +160,38 @@
             layout="@layout/view_empty_state"
             android:visibility="gone" />
 
-        <com.google.android.material.floatingactionbutton.FloatingActionButton
+        <com.google.android.material.button.MaterialButton
             android:id="@+id/chat_scroll_to_bottom"
-            style="@style/Widget.Material3.FloatingActionButton.Small.Secondary"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_gravity="bottom|end"
-            android:layout_margin="16dp"
+            style="@style/Widget.Material3.Button.IconButton.Filled"
+            android:layout_width="44dp"
+            android:layout_height="44dp"
+            android:layout_gravity="bottom|center_horizontal"
+            android:layout_marginBottom="12dp"
+            android:alpha="0.95"
             android:contentDescription="@string/chat_scroll_bottom_desc"
+            android:elevation="3dp"
+            android:insetTop="0dp"
+            android:insetBottom="0dp"
+            android:minWidth="0dp"
+            android:minHeight="0dp"
+            android:padding="0dp"
             android:visibility="gone"
-            app:srcCompat="@drawable/ic_arrow_downward" />
+            app:backgroundTint="?attr/colorSurfaceContainerHigh"
+            app:cornerRadius="22dp"
+            app:icon="@drawable/ic_arrow_downward"
+            app:iconGravity="textStart"
+            app:iconPadding="0dp"
+            app:iconSize="20dp"
+            app:iconTint="?attr/colorOnSurface"
+            app:strokeColor="?attr/colorOutlineVariant"
+            app:strokeWidth="1dp" />
     </FrameLayout>
+
+    <!-- UI-S3：非模态固定审批 / 问答槽；有 PendingRequests 时显示，不弹窗、不抢输入焦点 -->
+    <include
+        android:id="@+id/chat_request_slot"
+        layout="@layout/view_chat_request_slot"
+        android:visibility="gone" />
 
     <!-- 升级后斜杠命令浮层（点击 / 按钮或键入 / 时展开，支持过滤与命令说明） -->
     <include
@@ -202,12 +219,7 @@
             android:paddingBottom="4dp" />
     </HorizontalScrollView>
 
-    <com.google.android.material.divider.MaterialDivider
-        android:id="@+id/chat_composer_divider"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content" />
-
-    <!-- 统一双层融合胶囊输入面板（全在拇指热区） -->
+    <!-- UI-S3 轻盈双层 Composer：上层控制条 + 快捷 Tray + 下层单行自适应高圆角输入胶囊 -->
     <LinearLayout
         android:id="@+id/chat_composer"
         android:layout_width="match_parent"
@@ -219,111 +231,202 @@
         android:paddingEnd="12dp"
         android:paddingBottom="8dp">
 
+        <!-- 上层悬浮轻量控制条：左侧模型 / 推理档位，右侧仅运行中显示停止 -->
+        <LinearLayout
+            android:id="@+id/chat_composer_top_controls"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="6dp"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/chat_model_pill"
+                style="@style/Widget.Material3.Button.TonalButton"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:ellipsize="end"
+                android:insetTop="0dp"
+                android:insetBottom="0dp"
+                android:maxWidth="200dp"
+                android:maxLines="1"
+                android:minWidth="0dp"
+                android:minHeight="34dp"
+                android:paddingStart="12dp"
+                android:paddingTop="5dp"
+                android:paddingEnd="8dp"
+                android:paddingBottom="5dp"
+                android:text="@string/chat_model_pill_fallback"
+                android:textAppearance="?attr/textAppearanceLabelMedium"
+                app:icon="@drawable/ic_expand_more"
+                app:iconGravity="end"
+                app:iconPadding="2dp"
+                app:iconSize="16dp" />
+
+            <View
+                android:layout_width="0dp"
+                android:layout_height="0dp"
+                android:layout_weight="1" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/chat_stop_pill"
+                style="@style/Widget.Material3.Button.TonalButton"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:contentDescription="@string/chat_stop_desc"
+                android:insetTop="0dp"
+                android:insetBottom="0dp"
+                android:maxLines="1"
+                android:minWidth="0dp"
+                android:minHeight="34dp"
+                android:paddingStart="12dp"
+                android:paddingTop="5dp"
+                android:paddingEnd="12dp"
+                android:paddingBottom="5dp"
+                android:text="@string/chat_stop_pill"
+                android:textAppearance="?attr/textAppearanceLabelMedium"
+                android:visibility="gone"
+                app:backgroundTint="?attr/colorErrorContainer"
+                app:cornerRadius="17dp" />
+        </LinearLayout>
+
+        <!-- 快捷展开 Tray：位于控制条与输入胶囊之间，默认收起 -->
+        <LinearLayout
+            android:id="@+id/chat_composer_tray"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="6dp"
+            android:background="@drawable/bg_composer_tray"
+            android:orientation="horizontal"
+            android:padding="4dp"
+            android:visibility="gone">
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/chat_composer_tray_images"
+                style="@style/Widget.Material3.Button.TextButton"
+                android:layout_width="0dp"
+                android:layout_height="48dp"
+                android:layout_weight="1"
+                android:gravity="center"
+                android:text="@string/chat_composer_tray_images"
+                android:textAppearance="?attr/textAppearanceLabelLarge"
+                app:icon="@drawable/ic_image"
+                app:iconGravity="textStart"
+                app:iconPadding="8dp"
+                app:iconSize="20dp" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/chat_composer_tray_slash"
+                style="@style/Widget.Material3.Button.TextButton"
+                android:layout_width="0dp"
+                android:layout_height="48dp"
+                android:layout_weight="1"
+                android:gravity="center"
+                android:text="@string/chat_composer_tray_slash"
+                android:textAppearance="?attr/textAppearanceLabelLarge"
+                app:icon="@drawable/ic_code"
+                app:iconGravity="textStart"
+                app:iconPadding="8dp"
+                app:iconSize="20dp" />
+        </LinearLayout>
+
+        <!-- 下层单行自适应高圆角输入胶囊 -->
         <com.google.android.material.card.MaterialCardView
             android:id="@+id/chat_composer_card"
             style="@style/Widget.Material3.CardView.Outlined"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            app:cardBackgroundColor="?attr/colorSurfaceContainerLow"
-            app:cardCornerRadius="22dp"
+            app:cardBackgroundColor="?attr/colorSurfaceContainerHigh"
+            app:cardCornerRadius="@dimen/dshm_radius_composer"
             app:strokeColor="?attr/colorOutlineVariant"
-            app:strokeWidth="1dp">
+            app:strokeWidth="@dimen/dshm_hairline">
 
             <LinearLayout
+                android:id="@+id/chat_composer_inner"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:orientation="vertical"
-                android:paddingStart="6dp"
-                android:paddingTop="4dp"
-                android:paddingEnd="6dp"
-                android:paddingBottom="6dp">
+                android:gravity="center_vertical"
+                android:orientation="horizontal"
+                android:paddingStart="4dp"
+                android:paddingTop="3dp"
+                android:paddingEnd="4dp"
+                android:paddingBottom="3dp">
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/chat_plus_btn"
+                    style="@style/Widget.Material3.Button.IconButton"
+                    android:layout_width="48dp"
+                    android:layout_height="48dp"
+                    android:contentDescription="@string/chat_composer_plus_desc"
+                    android:gravity="center"
+                    android:insetBottom="0dp"
+                    android:insetLeft="0dp"
+                    android:insetRight="0dp"
+                    android:insetTop="0dp"
+                    android:minHeight="0dp"
+                    android:minWidth="0dp"
+                    android:padding="0dp"
+                    android:paddingLeft="0dp"
+                    android:paddingTop="0dp"
+                    android:paddingRight="0dp"
+                    android:paddingBottom="0dp"
+                    android:paddingStart="0dp"
+                    android:paddingEnd="0dp"
+                    app:icon="@drawable/ic_add"
+                    app:iconGravity="textStart"
+                    app:iconPadding="0dp"
+                    app:iconSize="22dp"
+                    app:iconTint="?attr/colorOnSurfaceVariant" />
 
                 <EditText
                     android:id="@+id/chat_input"
-                    android:layout_width="match_parent"
+                    android:layout_width="0dp"
                     android:layout_height="wrap_content"
+                    android:layout_weight="1"
                     android:background="@android:color/transparent"
+                    android:gravity="start|center_vertical"
                     android:hint="@string/chat_composer_hint"
-                    android:imeOptions="actionSend|flagNoEnterAction|flagNoExtractUi"
+                    android:imeOptions="actionNone|flagNoEnterAction|flagNoExtractUi"
                     android:importantForAutofill="no"
                     android:inputType="textMultiLine|textCapSentences"
                     android:maxLines="5"
-                    android:minHeight="42dp"
-                    android:paddingStart="12dp"
+                    android:minHeight="40dp"
+                    android:minLines="1"
+                    android:paddingStart="4dp"
                     android:paddingTop="8dp"
-                    android:paddingEnd="12dp"
-                    android:paddingBottom="6dp"
+                    android:paddingEnd="8dp"
+                    android:paddingBottom="8dp"
                     android:textAppearance="?attr/textAppearanceBodyLarge"
                     android:textColor="?attr/colorOnSurface"
                     android:textColorHint="?attr/colorOnSurfaceVariant" />
 
-                <LinearLayout
-                    android:id="@+id/chat_composer_actions"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:gravity="center_vertical"
-                    android:orientation="horizontal"
-                    android:paddingStart="2dp"
-                    android:paddingEnd="2dp">
-
-                    <com.google.android.material.button.MaterialButton
-                        android:id="@+id/chat_attach_image_btn"
-                        style="@style/Widget.Material3.Button.IconButton"
-                        android:layout_width="38dp"
-                        android:layout_height="38dp"
-                        android:contentDescription="@string/chat_attach_image_desc"
-                        app:icon="@drawable/ic_image"
-                        app:iconSize="19dp"
-                        app:iconTint="?attr/colorOnSurfaceVariant" />
-
-                    <com.google.android.material.button.MaterialButton
-                        android:id="@+id/chat_slash_toggle_btn"
-                        style="@style/Widget.Material3.Button.IconButton"
-                        android:layout_width="38dp"
-                        android:layout_height="38dp"
-                        android:contentDescription="@string/chat_slash_toggle_desc"
-                        app:icon="@drawable/ic_code"
-                        app:iconSize="19dp"
-                        app:iconTint="?attr/colorOnSurfaceVariant" />
-
-                    <View
-                        android:layout_width="0dp"
-                        android:layout_height="0dp"
-                        android:layout_weight="1" />
-
-                    <com.google.android.material.button.MaterialButton
-                        android:id="@+id/chat_model_pill"
-                        style="@style/Widget.Material3.Button.TonalButton"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:layout_marginEnd="6dp"
-                        android:ellipsize="end"
-                        android:insetTop="0dp"
-                        android:insetBottom="0dp"
-                        android:maxWidth="176dp"
-                        android:maxLines="1"
-                        android:minWidth="0dp"
-                        android:minHeight="34dp"
-                        android:paddingStart="12dp"
-                        android:paddingTop="5dp"
-                        android:paddingEnd="8dp"
-                        android:paddingBottom="5dp"
-                        android:text="@string/chat_model_pill_fallback"
-                        android:textAppearance="?attr/textAppearanceLabelMedium"
-                        app:icon="@drawable/ic_expand_more"
-                        app:iconGravity="end"
-                        app:iconPadding="2dp"
-                        app:iconSize="16dp" />
-
-                    <com.google.android.material.button.MaterialButton
-                        android:id="@+id/chat_send_btn"
-                        style="@style/Widget.Material3.Button.IconButton.Filled"
-                        android:layout_width="40dp"
-                        android:layout_height="40dp"
-                        android:contentDescription="@string/chat_send_desc"
-                        app:icon="@drawable/ic_arrow_upward"
-                        app:iconSize="20dp" />
-                </LinearLayout>
+                <!-- Material3 IconButton 样式自带逐边 padding/inset；只写 android:padding 不足以覆盖，
+                     必须逐边清零并显式指定 iconGravity，20dp 箭头才能落在 40dp 圆形按钮正中央。 -->
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/chat_send_btn"
+                    style="@style/Widget.Material3.Button.IconButton.Filled"
+                    android:layout_width="40dp"
+                    android:layout_height="40dp"
+                    android:contentDescription="@string/chat_send_desc"
+                    android:gravity="center"
+                    android:insetBottom="0dp"
+                    android:insetLeft="0dp"
+                    android:insetRight="0dp"
+                    android:insetTop="0dp"
+                    android:minHeight="0dp"
+                    android:minWidth="0dp"
+                    android:padding="0dp"
+                    android:paddingLeft="0dp"
+                    android:paddingTop="0dp"
+                    android:paddingRight="0dp"
+                    android:paddingBottom="0dp"
+                    android:paddingStart="0dp"
+                    android:paddingEnd="0dp"
+                    app:cornerRadius="20dp"
+                    app:icon="@drawable/ic_arrow_upward"
+                    app:iconGravity="textStart"
+                    app:iconPadding="0dp"
+                    app:iconSize="20dp" />
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
     </LinearLayout>

@@ -1,12 +1,15 @@
 using Android.Content;
 using Android.Graphics;
+using Android.Graphics.Drawables;
 using Android.Text;
 using Android.Text.Method;
 using Android.Text.Style;
 using Android.Util;
 using Android.Views;
 using Android.Widget;
+using AndroidX.Core.Content;
 using DshMobile.Agent.Rendering;
+using DshMobile.App.Ui;
 using Google.Android.Material.Button;
 using Google.Android.Material.Dialog;
 using Google.Android.Material.Snackbar;
@@ -20,6 +23,12 @@ namespace DshMobile.App.Chat;
 /// </summary>
 internal static class ChatMarkdownBinder
 {
+    /// <summary>代码块默认折叠时展示的最大行数。</summary>
+    private const int CodeCollapsedLineCount = 12;
+
+    /// <summary>触发“自动换行”入口的长行阈值（字符数）。</summary>
+    private const int CodeLongLineThreshold = 48;
+
     public static void BindSegments(
         ViewGroup container,
         IReadOnlyList<MarkdownSegment> segments,
@@ -139,18 +148,151 @@ internal static class ChatMarkdownBinder
 
     private static void BindCodeBlock(Context ctx, View card, MarkdownCodeSegment seg)
     {
-        var langView = card.FindViewById<TextView>(Resource.Id.code_block_lang)!;
         var copyBtn = card.FindViewById<MaterialButton>(Resource.Id.code_block_copy)!;
+        var wrapBtn = card.FindViewById<MaterialButton>(Resource.Id.code_block_wrap)!;
+        var actions = card.FindViewById<View>(Resource.Id.code_block_actions)!;
+        var scrollView = card.FindViewById<HorizontalScrollView>(Resource.Id.code_block_scroll)!;
         var bodyView = card.FindViewById<TextView>(Resource.Id.code_block_body)!;
+        var wrappedBodyView = card.FindViewById<TextView>(Resource.Id.code_block_body_wrapped)!;
+        var foldDivider = card.FindViewById<View>(Resource.Id.code_block_fold_divider)!;
+        var foldToggle = card.FindViewById<MaterialButton>(Resource.Id.code_block_fold_toggle)!;
 
-        langView.Text = string.IsNullOrWhiteSpace(seg.Language) ? "text" : seg.Language;
-        bodyView.Text = seg.Code;
+        // 统一换行符后再按行折叠，避免 Windows / 旧式 Mac 换行造成行数误判。
+        var fullText = seg.Code
+            .Replace("\r\n", "\n", StringComparison.Ordinal)
+            .Replace('\r', '\n');
+        var lines = fullText.Split('\n');
+        // Markdown 围栏代码常以单个换行结尾；末尾空行不计入“总行数”，避免 12 行代码误显示为 13 行。
+        var totalLines = lines.Length > 1 && lines[^1].Length == 0
+            ? lines.Length - 1
+            : lines.Length;
+        var canFold = totalLines > CodeCollapsedLineCount;
+        var foldedText = canFold
+            ? string.Join("\n", lines, 0, CodeCollapsedLineCount)
+            : fullText;
+        var hasLongLine = HasLongCodeLine(lines);
+
+        var isExpanded = false;
+        var isWrapped = false;
+        RotateDrawable? rotatingFoldIcon = null;
+
+        // 两种正文视图共用同一份文本：切换换行只改可见性，不重设文本，避免 RecyclerView 内闪烁。
+        void ApplyBodyText()
+        {
+            var text = isExpanded ? fullText : foldedText;
+            bodyView.Text = text;
+            wrappedBodyView.Text = text;
+        }
+
+        void ApplyFoldState()
+        {
+            foldDivider.Visibility = canFold ? ViewStates.Visible : ViewStates.Gone;
+            foldToggle.Visibility = canFold ? ViewStates.Visible : ViewStates.Gone;
+            if (!canFold)
+            {
+                return;
+            }
+
+            foldToggle.Text = isExpanded
+                ? ctx.GetString(Resource.String.chat_code_collapse)
+                : ctx.GetString(Resource.String.chat_code_expand_all_fmt, totalLines);
+            if (rotatingFoldIcon is not null)
+            {
+                // 0..10000 对应 0°..180°：展开时箭头朝上，折叠时朝下。
+                rotatingFoldIcon.SetLevel(isExpanded ? 10000 : 0);
+            }
+        }
+
+        void ApplyWrapState()
+        {
+            scrollView.Visibility = isWrapped ? ViewStates.Gone : ViewStates.Visible;
+            wrappedBodyView.Visibility = isWrapped ? ViewStates.Visible : ViewStates.Gone;
+            wrapBtn.Selected = isWrapped;
+            wrapBtn.ContentDescription = ctx.GetString(
+                isWrapped ? Resource.String.chat_code_wrap_off : Resource.String.chat_code_wrap);
+        }
+
+        wrapBtn.Visibility = hasLongLine ? ViewStates.Visible : ViewStates.Gone;
+
+        // 悬浮操作按钮使用不透明圆角底板，正文顶部按按钮实际高度留出安全内边距，
+        // 即使首行代码很长或横向滚动，也绝不会被按钮压盖。
+        void ApplySafeBodyPadding()
+        {
+            // 安全顶部内边距 = 操作组实际高度 + 顶部外边距 + 4dp 余量；
+            // 取实际外边距而非固定值，后续调整按钮尺寸 / margin 时也不会重新压住首行代码。
+            var actionsMarginTop = (actions.LayoutParameters as ViewGroup.MarginLayoutParams)?.TopMargin ?? 0;
+            var safeTop = actions.Height > 0
+                ? actions.Height + actionsMarginTop + Rows.Dp(ctx, 4f)
+                : Rows.Dp(ctx, 44f);
+            var padH = Rows.Dp(ctx, 12f);
+            var padBottom = Rows.Dp(ctx, 12f);
+            if (bodyView.PaddingTop != safeTop)
+            {
+                bodyView.SetPadding(padH, safeTop, padH, padBottom);
+            }
+            if (wrappedBodyView.PaddingTop != safeTop)
+            {
+                wrappedBodyView.SetPadding(padH, safeTop, padH, padBottom);
+            }
+        }
+
+        actions.Post(ApplySafeBodyPadding);
+
+        var expandIcon = AndroidX.AppCompat.Content.Res.AppCompatResources.GetDrawable(ctx, Resource.Drawable.ic_expand_more);
+        if (expandIcon is not null)
+        {
+            rotatingFoldIcon = new RotateDrawable();
+            rotatingFoldIcon.Drawable = expandIcon;
+            rotatingFoldIcon.FromDegrees = 0f;
+            rotatingFoldIcon.ToDegrees = 180f;
+            rotatingFoldIcon.SetLevel(0);
+            foldToggle.Icon = rotatingFoldIcon;
+        }
+
+        ApplyBodyText();
+        ApplyFoldState();
+        ApplyWrapState();
+
         copyBtn.Click += (_, _) =>
         {
             var clipboard = (global::Android.Content.ClipboardManager?)ctx.GetSystemService(Context.ClipboardService);
             clipboard?.PrimaryClip = ClipData.NewPlainText("code", seg.Code);
             Snackbar.Make(card, Resource.String.chat_code_copied, Snackbar.LengthShort).Show();
         };
+
+        foldToggle.Click += (_, _) =>
+        {
+            if (!canFold)
+            {
+                return;
+            }
+            isExpanded = !isExpanded;
+            ApplyBodyText();
+            ApplyFoldState();
+        };
+
+        wrapBtn.Click += (_, _) =>
+        {
+            if (!hasLongLine)
+            {
+                return;
+            }
+            isWrapped = !isWrapped;
+            ApplyWrapState();
+        };
+    }
+
+    /// <summary>判断代码中是否存在需要自动换行入口的超长行。</summary>
+    private static bool HasLongCodeLine(string[] lines)
+    {
+        foreach (var line in lines)
+        {
+            if (line.Length > CodeLongLineThreshold)
+            {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static void BindDiffBlock(Context ctx, View card, MarkdownDiffSegment seg, LayoutInflater inflater)
@@ -187,6 +329,8 @@ internal static class ChatMarkdownBinder
     {
         var grid = card.FindViewById<TableLayout>(Resource.Id.table_block_grid)!;
         grid.RemoveAllViews();
+        // 让短表格（尤其 2 列）在 fillViewport 下均分铺满卡片宽度，避免右侧留白。
+        grid.StretchAllColumns = true;
 
         if (seg.Headers.Count > 0)
         {
@@ -195,6 +339,7 @@ internal static class ChatMarkdownBinder
             {
                 var cell = (TextView)inflater.Inflate(Resource.Layout.item_chat_table_cell, headerRow, false)!;
                 cell.Text = h;
+                AllowCellWrap(cell);
                 cell.SetTypeface(cell.Typeface, TypefaceStyle.Bold);
                 cell.SetBackgroundColor(ResolveAttrColor(ctx, Resource.Attribute.colorSurfaceContainerHigh));
                 headerRow.AddView(cell);
@@ -209,10 +354,18 @@ internal static class ChatMarkdownBinder
             {
                 var cell = (TextView)inflater.Inflate(Resource.Layout.item_chat_table_cell, tr, false)!;
                 cell.Text = cellText;
+                AllowCellWrap(cell);
                 tr.AddView(cell);
             }
             grid.AddView(tr);
         }
+    }
+
+    /// <summary>单元格内允许换行并取消省略号；超出屏幕宽度时由外层 HorizontalScrollView 横向滚动查看。</summary>
+    private static void AllowCellWrap(TextView cell)
+    {
+        cell.SetSingleLine(false);
+        cell.Ellipsize = null;
     }
 
     private static Color ResolveAttrColor(Context ctx, int attrId)

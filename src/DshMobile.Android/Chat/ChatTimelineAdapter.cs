@@ -1,3 +1,6 @@
+using System.Globalization;
+using Android.Animation;
+using Android.Content;
 using Android.Content.Res;
 using Android.Graphics;
 using Android.Util;
@@ -10,23 +13,21 @@ using DshMobile.Agent.Presentation;
 using DshMobile.Agent.Rendering;
 using DshMobile.App.Ui;
 using Google.Android.Material.Button;
-using Google.Android.Material.Chip;
-using Google.Android.Material.TextField;
+using Google.Android.Material.Dialog;
+using Google.Android.Material.Snackbar;
 
 namespace DshMobile.App.Chat;
 
-/// <summary>聊天时间线列表项统一封装（会话行 + 审批/问答卡片），含稳定 <see cref="ItemId"/>。</summary>
+/// <summary>聊天时间线列表项统一封装（会话行），含稳定 <see cref="ItemId"/>。</summary>
 internal abstract record ChatTimelineItem(string ItemId);
 
 internal sealed record ChatRowTimelineItem(ChatRow Row, long SnapshotRevision)
     : ChatTimelineItem(Row.ItemId);
 
-internal sealed record PendingRequestTimelineItem(PendingInteractionCard Card)
-    : ChatTimelineItem($"req:{Card.EventId}");
-
 /// <summary>
 /// 多 <c>ViewType</c> 原生聊天列表适配器（N-04-03）：
 /// 使用 XML 模板（<c>item_chat_*.xml</c>）与 <see cref="DiffUtil"/> 局部刷新，支持流式 Markdown 后台异步解析与版本守卫。
+/// 审批 / 问答卡由固定 RequestSlot 承载，本适配器不重复渲染待处理请求。
 /// </summary>
 internal sealed class ChatTimelineAdapter : RecyclerView.Adapter
 {
@@ -36,15 +37,12 @@ internal sealed class ChatTimelineAdapter : RecyclerView.Adapter
     private const int TypeToolCall = 4;
     private const int TypeCommand = 5;
     private const int TypeNotice = 6;
-    private const int TypeApproval = 7;
-    private const int TypeQuestion = 8;
+    private const int TypeToolGroup = 9;
+    private const int TypeReplyFooter = 10;
+    private const int TypeLiveStatus = 11;
 
     private readonly MarkdownRenderCache _mdCache;
     private readonly Action<Action> _postToUi;
-    private readonly Action<string, ApprovalDecision> _onApproval;
-    private readonly Action<string> _onUndoApproval;
-    private readonly Action<string, UserQuestionAnswerBatch> _onAnswerQuestion;
-    private readonly Action<string> _onCancelQuestion;
     private readonly Action<string, bool>? _onOpenWorkspaceFile;
     private readonly HashSet<string> _expandedItems = new(StringComparer.Ordinal);
     private List<ChatTimelineItem> _items = [];
@@ -52,24 +50,13 @@ internal sealed class ChatTimelineAdapter : RecyclerView.Adapter
     public ChatTimelineAdapter(
         MarkdownRenderCache mdCache,
         Action<Action> postToUi,
-        Action<string, ApprovalDecision> onApproval,
-        Action<string> onUndoApproval,
-        Action<string, UserQuestionAnswerBatch> onAnswerQuestion,
-        Action<string> onCancelQuestion,
         Action<string, bool>? onOpenWorkspaceFile = null)
     {
         _mdCache = mdCache;
         _postToUi = postToUi;
-        _onApproval = onApproval;
-        _onUndoApproval = onUndoApproval;
-        _onAnswerQuestion = onAnswerQuestion;
-        _onCancelQuestion = onCancelQuestion;
         _onOpenWorkspaceFile = onOpenWorkspaceFile;
         HasStableIds = true;
     }
-
-    public int FindPendingRequestPosition(string eventId) =>
-        _items.FindIndex(i => i is PendingRequestTimelineItem p && string.Equals(p.Card.EventId, eventId, StringComparison.Ordinal));
 
     public override int ItemCount => _items.Count;
 
@@ -83,8 +70,9 @@ internal sealed class ChatTimelineAdapter : RecyclerView.Adapter
         ChatRowTimelineItem { Row: ReasoningBlockRow } => TypeReasoning,
         ChatRowTimelineItem { Row: ToolCallRow } => TypeToolCall,
         ChatRowTimelineItem { Row: CommandRow } => TypeCommand,
-        PendingRequestTimelineItem { Card.Kind: PendingRequestKind.Approval } => TypeApproval,
-        PendingRequestTimelineItem { Card.Kind: PendingRequestKind.UserQuestion } => TypeQuestion,
+        ToolGroupTimelineItem => TypeToolGroup,
+        ReplyFooterTimelineItem => TypeReplyFooter,
+        LiveStatusTimelineItem => TypeLiveStatus,
         _ => TypeNotice,
     };
 
@@ -107,9 +95,13 @@ internal sealed class ChatTimelineAdapter : RecyclerView.Adapter
             TypeReasoning => new ReasoningHolder(inflater.Inflate(Resource.Layout.item_chat_reasoning, parent, false)!, _expandedItems),
             TypeToolCall => new ToolCallHolder(inflater.Inflate(Resource.Layout.item_chat_tool_call, parent, false)!, _expandedItems, _onOpenWorkspaceFile),
             TypeCommand => new CommandHolder(inflater.Inflate(Resource.Layout.item_chat_command, parent, false)!),
-            TypeApproval => new ApprovalHolder(inflater.Inflate(Resource.Layout.item_chat_approval, parent, false)!, _onApproval, _onUndoApproval),
-            TypeQuestion => new QuestionHolder(inflater.Inflate(Resource.Layout.item_chat_question, parent, false)!, _onAnswerQuestion, _onCancelQuestion),
-            _ => new NoticeHolder(inflater.Inflate(Resource.Layout.item_chat_notice, parent, false)!),
+            TypeToolGroup => new ToolGroupHolder(
+                inflater.Inflate(Resource.Layout.item_chat_tool_group, parent, false)!,
+                _expandedItems,
+                _onOpenWorkspaceFile),
+            TypeReplyFooter => new ReplyFooterHolder(inflater.Inflate(Resource.Layout.item_chat_reply_footer, parent, false)!),
+            TypeLiveStatus => new LiveStatusHolder(inflater.Inflate(Resource.Layout.item_chat_live_status, parent, false)!),
+            _ => new NoticeHolder(inflater.Inflate(Resource.Layout.item_chat_notice, parent, false)!, _expandedItems),
         };
     }
 
@@ -122,14 +114,22 @@ internal sealed class ChatTimelineAdapter : RecyclerView.Adapter
                 h.Bind(u);
                 break;
             case AssistantBlockHolder h when item is ChatRowTimelineItem { Row: MarkdownBlockRow m } r:
-                var showAvatar = position == 0 || _items[position - 1] is not ChatRowTimelineItem { Row: MarkdownBlockRow prev } || prev.MessageId != m.MessageId;
-                h.Bind(m, r.SnapshotRevision, showAvatar);
+                h.Bind(m, r.SnapshotRevision);
                 break;
             case ReasoningHolder h when item is ChatRowTimelineItem { Row: ReasoningBlockRow r }:
-                h.Bind(r);
+                h.Bind(r, r.DurationMs);
                 break;
             case ToolCallHolder h when item is ChatRowTimelineItem { Row: ToolCallRow t }:
                 h.Bind(t);
+                break;
+            case ToolGroupHolder h when item is ToolGroupTimelineItem g:
+                h.Bind(g);
+                break;
+            case ReplyFooterHolder h when item is ReplyFooterTimelineItem f:
+                h.Bind(f);
+                break;
+            case LiveStatusHolder h when item is LiveStatusTimelineItem l:
+                h.Bind(l);
                 break;
             case CommandHolder h when item is ChatRowTimelineItem { Row: CommandRow c }:
                 h.Bind(c);
@@ -139,12 +139,6 @@ internal sealed class ChatTimelineAdapter : RecyclerView.Adapter
                 break;
             case NoticeHolder h when item is ChatRowTimelineItem { Row: UnknownEventRow u }:
                 h.BindUnknown(u);
-                break;
-            case ApprovalHolder h when item is PendingRequestTimelineItem { Card: var card }:
-                h.Bind(card);
-                break;
-            case QuestionHolder h when item is PendingRequestTimelineItem { Card: var card }:
-                h.Bind(card);
                 break;
         }
     }
@@ -178,9 +172,23 @@ internal sealed class ChatTimelineAdapter : RecyclerView.Adapter
             {
                 return oRow.Row == nRow.Row;
             }
-            if (oldItem is PendingRequestTimelineItem oReq && newItem is PendingRequestTimelineItem nReq)
+            if (oldItem is ToolGroupTimelineItem oldGroup && newItem is ToolGroupTimelineItem newGroup)
             {
-                return oReq.Card == nReq.Card;
+                // 工具组内容必须逐项比较；集合引用在每次投影后都会变化，不能依赖引用相等。
+                return oldGroup.TurnSeq == newGroup.TurnSeq
+                    && oldGroup.HasActive == newGroup.HasActive
+                    && oldGroup.HasError == newGroup.HasError
+                    && oldGroup.HasEditOperation == newGroup.HasEditOperation
+                    && oldGroup.Tools.SequenceEqual(newGroup.Tools);
+            }
+            if (oldItem is ReplyFooterTimelineItem oldFooter && newItem is ReplyFooterTimelineItem newFooter)
+            {
+                return oldFooter.DurationMs == newFooter.DurationMs
+                    && string.Equals(oldFooter.CopyText, newFooter.CopyText, StringComparison.Ordinal);
+            }
+            if (oldItem is LiveStatusTimelineItem oldLive && newItem is LiveStatusTimelineItem newLive)
+            {
+                return oldLive.Kind == newLive.Kind;
             }
             return false;
         }
@@ -217,16 +225,14 @@ internal sealed class ChatTimelineAdapter : RecyclerView.Adapter
         MarkdownRenderCache mdCache,
         Action<Action> postToUi) : RecyclerView.ViewHolder(itemView)
     {
-        private readonly ImageView _avatar = itemView.FindViewById<ImageView>(Resource.Id.chat_assistant_avatar)!;
         private readonly LinearLayout _segments = itemView.FindViewById<LinearLayout>(Resource.Id.chat_assistant_segments)!;
         private string? _boundItemId;
         private long _boundRevision;
         private string? _boundFingerprint;
         private CancellationTokenSource? _parseCts;
 
-        public void Bind(MarkdownBlockRow row, long revision, bool showAvatar)
+        public void Bind(MarkdownBlockRow row, long revision)
         {
-            _avatar.Visibility = showAvatar ? ViewStates.Visible : ViewStates.Invisible;
             var fp = MarkdownRenderCache.ComputeFingerprint(row.Markdown);
             if (_boundItemId == row.ItemId && _boundFingerprint == fp)
             {
@@ -279,6 +285,8 @@ internal sealed class ChatTimelineAdapter : RecyclerView.Adapter
 
     private sealed class ReasoningHolder : RecyclerView.ViewHolder
     {
+        private readonly TextView _title;
+        private readonly View _bodyContainer;
         private readonly TextView _body;
         private readonly ImageView _chevron;
         private readonly HashSet<string> _expanded;
@@ -287,6 +295,8 @@ internal sealed class ChatTimelineAdapter : RecyclerView.Adapter
         public ReasoningHolder(View itemView, HashSet<string> expanded) : base(itemView)
         {
             _expanded = expanded;
+            _title = itemView.FindViewById<TextView>(Resource.Id.chat_reasoning_title)!;
+            _bodyContainer = itemView.FindViewById(Resource.Id.chat_reasoning_body_container)!;
             _body = itemView.FindViewById<TextView>(Resource.Id.chat_reasoning_body)!;
             _chevron = itemView.FindViewById<ImageView>(Resource.Id.chat_reasoning_chevron)!;
             itemView.FindViewById(Resource.Id.chat_reasoning_header)!.Click += (_, _) =>
@@ -303,16 +313,36 @@ internal sealed class ChatTimelineAdapter : RecyclerView.Adapter
             };
         }
 
-        public void Bind(ReasoningBlockRow row)
+        /// <summary>
+        /// 绑定思考块。UI-S1 阶段 <see cref="ReasoningBlockRow"/> 尚未透传真实耗时，
+        /// 因此这里只按 <see cref="ReasoningBlockRow.IsSettled"/> 显示“思考中…”或“思考过程”；
+        /// UI-S2 透传耗时后直接传入 <paramref name="elapsedMs"/> 即可展示真实秒数，不伪造任何数据。
+        /// </summary>
+        public void Bind(ReasoningBlockRow row, long? elapsedMs = null)
         {
             _itemId = row.ItemId;
+            _title.Text = FormatTitle(row.IsSettled, elapsedMs);
             _body.Text = row.Text;
             ApplyExpanded(_expanded.Contains(row.ItemId));
         }
 
+        private string FormatTitle(bool isSettled, long? elapsedMs)
+        {
+            var ctx = ItemView.Context!;
+            if (elapsedMs is > 0)
+            {
+                var seconds = Math.Max(1, elapsedMs.Value / 1000);
+                return Rows.Fmt(
+                    ctx,
+                    isSettled ? Resource.String.chat_reasoning_done_fmt : Resource.String.chat_reasoning_active_fmt,
+                    seconds);
+            }
+            return ctx.GetString(isSettled ? Resource.String.chat_reasoning_title : Resource.String.chat_reasoning_active);
+        }
+
         private void ApplyExpanded(bool isOpen)
         {
-            _body.Visibility = isOpen ? ViewStates.Visible : ViewStates.Gone;
+            _bodyContainer.Visibility = isOpen ? ViewStates.Visible : ViewStates.Gone;
             _chevron.Rotation = isOpen ? 180f : 0f;
         }
     }
@@ -471,6 +501,469 @@ internal sealed class ChatTimelineAdapter : RecyclerView.Adapter
         }
     }
 
+    /// <summary>
+    /// 工具分组：运行中 / 出错时展开最新 3 步，已完成时默认折叠为单行汇总；
+    /// 底部复用去重后的工作区文件胶囊与可选 Diff 入口。
+    /// </summary>
+    private sealed class ToolGroupHolder : RecyclerView.ViewHolder
+    {
+        private readonly ImageView _icon;
+        private readonly TextView _summary;
+        private readonly ImageView _chevron;
+        private readonly View _earlierRow;
+        private readonly LinearLayout _steps;
+        private readonly View _filesScroll;
+        private readonly LinearLayout _filesContainer;
+        private readonly HashSet<string> _expanded;
+        private readonly Action<string, bool>? _onOpenWorkspaceFile;
+        private readonly List<ToolStepView> _stepViews = [];
+        private ToolGroupTimelineItem? _group;
+        private string? _expandKey;
+        private string? _collapseKey;
+
+        public ToolGroupHolder(
+            View itemView,
+            HashSet<string> expanded,
+            Action<string, bool>? onOpenWorkspaceFile) : base(itemView)
+        {
+            _expanded = expanded;
+            _onOpenWorkspaceFile = onOpenWorkspaceFile;
+            _icon = itemView.FindViewById<ImageView>(Resource.Id.chat_tool_group_icon)!;
+            _summary = itemView.FindViewById<TextView>(Resource.Id.chat_tool_group_summary)!;
+            _chevron = itemView.FindViewById<ImageView>(Resource.Id.chat_tool_group_chevron)!;
+            _earlierRow = itemView.FindViewById(Resource.Id.chat_tool_group_earlier_row)!;
+            _steps = itemView.FindViewById<LinearLayout>(Resource.Id.chat_tool_group_steps)!;
+            _filesScroll = itemView.FindViewById<View>(Resource.Id.chat_tool_group_files_scroll)!;
+            _filesContainer = itemView.FindViewById<LinearLayout>(Resource.Id.chat_tool_group_files_container)!;
+
+            // 头部始终切换整个工具组的展开 / 折叠，成功组与含失败步骤的组行为一致。
+            itemView.FindViewById(Resource.Id.chat_tool_group_header)!.Click += (_, _) => ToggleGroup();
+        }
+
+        public void Bind(ToolGroupTimelineItem group)
+        {
+            _group = group;
+            _expandKey = $"group:{group.ItemId}";
+            _collapseKey = $"group-collapsed:{group.ItemId}";
+
+            var ctx = ItemView.Context!;
+            _summary.Text = ChatTimelineProjector.BuildGroupSummaryText(group.CategoryCounts);
+            _icon.SetImageResource(ResolveGroupIcon(group));
+            var tint = group.HasError
+                ? new Color(ctx.GetColor(Resource.Color.dshm_attention))
+                : group.HasActive
+                    ? ResolveAttrColor(ctx, Resource.Attribute.colorPrimary)
+                    : ResolveAttrColor(ctx, Resource.Attribute.colorOnSurfaceVariant);
+            _icon.ImageTintList = ColorStateList.ValueOf(tint);
+
+            RenderFiles(group, ctx);
+            ApplyGroupState();
+        }
+
+        private void ToggleGroup()
+        {
+            if (_group is null || _expandKey is null || _collapseKey is null)
+            {
+                return;
+            }
+
+            // 运行中 / 出错组默认展开，使用“折叠标记”反转默认值；已完成组默认折叠。
+            var defaultOpen = _group.HasActive || _group.HasError;
+            ToggleKey(defaultOpen ? _collapseKey : _expandKey);
+            ApplyGroupState();
+        }
+
+        private void ToggleKey(string key)
+        {
+            if (!_expanded.Add(key))
+            {
+                _expanded.Remove(key);
+            }
+        }
+
+        private void ApplyGroupState()
+        {
+            if (_group is null || _expandKey is null || _collapseKey is null)
+            {
+                return;
+            }
+
+            var total = _group.Tools.Count;
+            var defaultOpen = _group.HasActive || _group.HasError;
+            var isOpen = defaultOpen
+                ? !_expanded.Contains(_collapseKey)
+                : _expanded.Contains(_expandKey);
+
+            _steps.Visibility = isOpen ? ViewStates.Visible : ViewStates.Gone;
+            // 头部已统一为整组展开 / 折叠，旧的“更早步骤”分段入口不再需要。
+            _earlierRow.Visibility = ViewStates.Gone;
+            _chevron.Visibility = ViewStates.Visible;
+            _chevron.Rotation = isOpen ? 180f : 0f;
+            RenderSteps(isOpen ? total : 0);
+        }
+
+        private void RenderSteps(int count)
+        {
+            if (_group is null)
+            {
+                return;
+            }
+
+            var inflater = LayoutInflater.From(ItemView.Context)!;
+            while (_stepViews.Count < count)
+            {
+                var stepView = inflater.Inflate(Resource.Layout.item_chat_tool_step, _steps, false)!;
+                _stepViews.Add(new ToolStepView(stepView, _expanded));
+                _steps.AddView(stepView);
+            }
+
+            while (_stepViews.Count > count)
+            {
+                var last = _stepViews[^1];
+                _stepViews.RemoveAt(_stepViews.Count - 1);
+                _steps.RemoveView(last.Root);
+            }
+
+            for (var i = 0; i < count; i++)
+            {
+                _stepViews[i].Bind(_group.Tools[i]);
+            }
+        }
+
+        private void RenderFiles(ToolGroupTimelineItem group, Context ctx)
+        {
+            _filesContainer.RemoveAllViews();
+            if (group.WorkspaceFiles.Count == 0)
+            {
+                _filesScroll.Visibility = ViewStates.Gone;
+                return;
+            }
+
+            var inflater = LayoutInflater.From(ctx)!;
+            foreach (var path in group.WorkspaceFiles)
+            {
+                var capsule = inflater.Inflate(Resource.Layout.item_chat_tool_file_capsule, _filesContainer, false)!;
+                var nameButton = capsule.FindViewById<MaterialButton>(Resource.Id.chat_tool_file_capsule_name)!;
+                nameButton.Text = path;
+                nameButton.Click += (_, _) => _onOpenWorkspaceFile?.Invoke(path, false);
+
+                var diffButton = capsule.FindViewById<MaterialButton>(Resource.Id.chat_tool_file_capsule_diff)!;
+                if (group.HasEditOperation)
+                {
+                    diffButton.Visibility = ViewStates.Visible;
+                    diffButton.Click += (_, _) => _onOpenWorkspaceFile?.Invoke(path, true);
+                }
+                else
+                {
+                    diffButton.Visibility = ViewStates.Gone;
+                }
+
+                _filesContainer.AddView(capsule);
+            }
+            _filesScroll.Visibility = ViewStates.Visible;
+        }
+
+        private static int ResolveGroupIcon(ToolGroupTimelineItem group)
+        {
+            if (group.HasError)
+            {
+                return Resource.Drawable.ic_error;
+            }
+            if (group.HasActive)
+            {
+                return Resource.Drawable.ic_refresh;
+            }
+            if (group.CategoryCounts.TryGetValue(ToolCategory.Edit, out var edits) && edits > 0)
+            {
+                return Resource.Drawable.ic_code;
+            }
+            if (group.CategoryCounts.TryGetValue(ToolCategory.Command, out var commands) && commands > 0)
+            {
+                return Resource.Drawable.ic_terminal;
+            }
+            if (group.CategoryCounts.TryGetValue(ToolCategory.Search, out var searches) && searches > 0)
+            {
+                return Resource.Drawable.ic_search;
+            }
+            if (group.CategoryCounts.TryGetValue(ToolCategory.Read, out var reads) && reads > 0)
+            {
+                return Resource.Drawable.ic_article;
+            }
+            return Resource.Drawable.ic_build;
+        }
+    }
+
+    /// <summary>单个工具步骤：状态图标 + 人类可读摘要 + 真实耗时，点击展开美化参数与输出。</summary>
+    private sealed class ToolStepView
+    {
+        private const int VisibleOutputLines = 12;
+
+        private readonly View _root;
+        private readonly ImageView _statusIcon;
+        private readonly TextView _summary;
+        private readonly TextView _duration;
+        private readonly ImageView _chevron;
+        private readonly View _detail;
+        private readonly TextView _args;
+        private readonly TextView _output;
+        private readonly MaterialButton _fullOutputButton;
+        private readonly HashSet<string> _expanded;
+        private string? _stepKey;
+        private string _fullOutput = string.Empty;
+
+        public ToolStepView(View root, HashSet<string> expanded)
+        {
+            _root = root;
+            _expanded = expanded;
+            _statusIcon = root.FindViewById<ImageView>(Resource.Id.chat_tool_step_status_icon)!;
+            _summary = root.FindViewById<TextView>(Resource.Id.chat_tool_step_summary)!;
+            _duration = root.FindViewById<TextView>(Resource.Id.chat_tool_step_duration)!;
+            _chevron = root.FindViewById<ImageView>(Resource.Id.chat_tool_step_chevron)!;
+            _detail = root.FindViewById(Resource.Id.chat_tool_step_detail)!;
+            _args = root.FindViewById<TextView>(Resource.Id.chat_tool_step_args)!;
+            _output = root.FindViewById<TextView>(Resource.Id.chat_tool_step_output)!;
+            _fullOutputButton = root.FindViewById<MaterialButton>(Resource.Id.chat_tool_step_full_output_btn)!;
+
+            root.FindViewById(Resource.Id.chat_tool_step_header)!.Click += (_, _) => ToggleExpanded();
+            _fullOutputButton.Click += (_, _) => ShowFullOutput();
+        }
+
+        public View Root => _root;
+
+        public void Bind(ToolCallRow tool)
+        {
+            var callId = string.IsNullOrWhiteSpace(tool.CallId) ? tool.ItemId : tool.CallId;
+            _stepKey = $"step:{callId}";
+
+            var ctx = Root.Context!;
+            var (iconRes, tint) = ResolveStatus(tool, ctx);
+            _statusIcon.SetImageResource(iconRes);
+            _statusIcon.ImageTintList = ColorStateList.ValueOf(tint);
+            _summary.Text = ChatTimelineProjector.FormatHumanReadableToolStep(tool);
+
+            if (tool.DurationMs is { } durationMs && durationMs >= 100)
+            {
+                _duration.Visibility = ViewStates.Visible;
+                _duration.Text = FormatDurationText(durationMs);
+            }
+            else
+            {
+                _duration.Visibility = ViewStates.Gone;
+                _duration.Text = string.Empty;
+            }
+
+            var args = ChatTimelineProjector.FormatBeautifiedToolArguments(tool);
+            _args.Text = args;
+            _args.Visibility = string.IsNullOrWhiteSpace(args) ? ViewStates.Gone : ViewStates.Visible;
+
+            _fullOutput = tool.OutputSummary ?? string.Empty;
+            var normalizedOutput = NormalizeNewLines(_fullOutput);
+            if (string.IsNullOrWhiteSpace(normalizedOutput))
+            {
+                _output.Text = string.Empty;
+                _output.Visibility = ViewStates.Gone;
+                _fullOutputButton.Visibility = ViewStates.Gone;
+            }
+            else
+            {
+                var truncated = ChatTimelineProjector.TruncateLines(normalizedOutput, VisibleOutputLines);
+                _output.Text = truncated;
+                _output.Visibility = ViewStates.Visible;
+                _fullOutputButton.Visibility = string.Equals(truncated, normalizedOutput, StringComparison.Ordinal)
+                    ? ViewStates.Gone
+                    : ViewStates.Visible;
+            }
+
+            ApplyExpanded();
+        }
+
+        private void ToggleExpanded()
+        {
+            if (_stepKey is null)
+            {
+                return;
+            }
+
+            if (!_expanded.Add(_stepKey))
+            {
+                _expanded.Remove(_stepKey);
+            }
+            ApplyExpanded();
+        }
+
+        private void ApplyExpanded()
+        {
+            var isOpen = _stepKey is not null && _expanded.Contains(_stepKey);
+            _detail.Visibility = isOpen ? ViewStates.Visible : ViewStates.Gone;
+            _chevron.Rotation = isOpen ? 180f : 0f;
+        }
+
+        private void ShowFullOutput()
+        {
+            if (string.IsNullOrWhiteSpace(_fullOutput))
+            {
+                return;
+            }
+
+            var ctx = Root.Context!;
+            var content = LayoutInflater.From(ctx)!.Inflate(Resource.Layout.dialog_scrollable_text, null, false)!;
+            var textView = content.FindViewById<TextView>(Resource.Id.dialog_scrollable_text)!;
+            textView.Text = _fullOutput;
+            textView.Typeface = Typeface.Monospace;
+            textView.SetTextSize(ComplexUnitType.Sp, 12f);
+
+            new MaterialAlertDialogBuilder(ctx)
+                .SetTitle(Resource.String.chat_tool_full_output)!
+                .SetView(content)!
+                .SetPositiveButton(Android.Resource.String.Ok, (_, _) => { })!
+                .Show();
+        }
+
+        private static (int IconRes, Color Tint) ResolveStatus(ToolCallRow tool, Context ctx)
+        {
+            if (tool.Phase == ToolPhase.Error || tool.IsError)
+            {
+                return (Resource.Drawable.ic_error, new Color(ctx.GetColor(Resource.Color.dshm_attention)));
+            }
+            if (tool.Phase == ToolPhase.Completed)
+            {
+                return (Resource.Drawable.ic_check_circle, new Color(ctx.GetColor(Resource.Color.dshm_running)));
+            }
+            if (tool.Phase == ToolPhase.Running)
+            {
+                return (Resource.Drawable.ic_refresh, ResolveAttrColor(ctx, Resource.Attribute.colorPrimary));
+            }
+            if (tool.Phase == ToolPhase.Cancelled)
+            {
+                return (Resource.Drawable.ic_close, ResolveAttrColor(ctx, Resource.Attribute.colorOutline));
+            }
+            return (Resource.Drawable.ic_history, ResolveAttrColor(ctx, Resource.Attribute.colorOutline));
+        }
+    }
+
+    /// <summary>助手 Turn 末尾 Footer：真实耗时与复制回复，无有效数据时隐藏对应元素。</summary>
+    private sealed class ReplyFooterHolder : RecyclerView.ViewHolder
+    {
+        private readonly TextView _meta;
+        private readonly MaterialButton _copy;
+        private string _copyText = string.Empty;
+
+        public ReplyFooterHolder(View itemView) : base(itemView)
+        {
+            _meta = itemView.FindViewById<TextView>(Resource.Id.chat_reply_footer_meta)!;
+            _copy = itemView.FindViewById<MaterialButton>(Resource.Id.chat_reply_footer_copy)!;
+            _copy.Click += (_, _) => CopyReply();
+        }
+
+        public void Bind(ReplyFooterTimelineItem item)
+        {
+            var ctx = ItemView.Context!;
+            if (item.DurationMs is { } durationMs && durationMs > 0)
+            {
+                _meta.Visibility = ViewStates.Visible;
+                _meta.Text = Rows.Fmt(
+                    ctx,
+                    Resource.String.chat_tool_duration_fmt,
+                    FormatDurationText(durationMs));
+            }
+            else
+            {
+                _meta.Visibility = ViewStates.Gone;
+                _meta.Text = string.Empty;
+            }
+
+            _copyText = item.CopyText ?? string.Empty;
+            _copy.Visibility = string.IsNullOrWhiteSpace(_copyText) ? ViewStates.Gone : ViewStates.Visible;
+        }
+
+        private void CopyReply()
+        {
+            if (string.IsNullOrWhiteSpace(_copyText))
+            {
+                return;
+            }
+
+            var ctx = ItemView.Context!;
+            var clipboard = (ClipboardManager?)ctx.GetSystemService(Context.ClipboardService);
+            clipboard?.PrimaryClip = ClipData.NewPlainText("reply", _copyText);
+            Snackbar.Make(ItemView, Resource.String.chat_reply_copied, Snackbar.LengthShort).Show();
+        }
+    }
+
+    /// <summary>流式 Live 状态行：本地化文案 + 呼吸圆点，仅在附着时播放动画。</summary>
+    private sealed class LiveStatusHolder : RecyclerView.ViewHolder
+    {
+        private readonly View _dot;
+        private static readonly float[] BreathingAlphaRange = [0.35f, 1f];
+
+        private readonly TextView _text;
+        private ObjectAnimator? _breathingAnimator;
+        private bool _bound;
+        private bool _attached;
+
+        public LiveStatusHolder(View itemView) : base(itemView)
+        {
+            _dot = itemView.FindViewById(Resource.Id.chat_live_status_dot)!;
+            _text = itemView.FindViewById<TextView>(Resource.Id.chat_live_status_text)!;
+            _attached = itemView.IsAttachedToWindow;
+            itemView.ViewAttachedToWindow += (_, _) => Attach();
+            itemView.ViewDetachedFromWindow += (_, _) => Detach();
+        }
+
+        public void Bind(LiveStatusTimelineItem item)
+        {
+            _bound = true;
+            _text.SetText(item.Kind == LiveStatusKind.Thinking
+                ? Resource.String.chat_live_thinking
+                : Resource.String.chat_live_executing);
+            StartBreathing();
+        }
+
+        public void Attach()
+        {
+            _attached = true;
+            StartBreathing();
+        }
+
+        public void Detach()
+        {
+            _attached = false;
+            StopBreathing();
+        }
+
+        private void StartBreathing()
+        {
+            if (!_bound || !_attached || _breathingAnimator is not null)
+            {
+                return;
+            }
+
+            var animator = ObjectAnimator.OfFloat(_dot, "alpha", BreathingAlphaRange);
+            if (animator is null)
+            {
+                return;
+            }
+            animator.SetDuration(900);
+            animator.RepeatCount = ValueAnimator.Infinite;
+            animator.RepeatMode = ValueAnimatorRepeatMode.Reverse;
+            animator.Start();
+            _breathingAnimator = animator;
+        }
+
+        private void StopBreathing()
+        {
+            if (_breathingAnimator is null)
+            {
+                return;
+            }
+
+            _breathingAnimator.Cancel();
+            _breathingAnimator.Dispose();
+            _breathingAnimator = null;
+            _dot.Alpha = 1f;
+        }
+    }
+
     private sealed class CommandHolder(View itemView) : RecyclerView.ViewHolder(itemView)
     {
         private readonly TextView _title = itemView.FindViewById<TextView>(Resource.Id.chat_command_title)!;
@@ -491,198 +984,92 @@ internal sealed class ChatTimelineAdapter : RecyclerView.Adapter
         }
     }
 
-    private sealed class NoticeHolder(View itemView) : RecyclerView.ViewHolder(itemView)
+    private sealed class NoticeHolder : RecyclerView.ViewHolder
     {
-        private readonly ImageView _icon = itemView.FindViewById<ImageView>(Resource.Id.chat_notice_icon)!;
-        private readonly TextView _text = itemView.FindViewById<TextView>(Resource.Id.chat_notice_text)!;
+        private readonly ImageView _icon;
+        private readonly TextView _text;
+        private readonly ImageView _chevron;
+        private readonly TextView _detail;
+        private readonly HashSet<string> _expanded;
+        private string? _itemId;
+
+        public NoticeHolder(View itemView, HashSet<string> expanded) : base(itemView)
+        {
+            _expanded = expanded;
+            _icon = itemView.FindViewById<ImageView>(Resource.Id.chat_notice_icon)!;
+            _text = itemView.FindViewById<TextView>(Resource.Id.chat_notice_text)!;
+            _chevron = itemView.FindViewById<ImageView>(Resource.Id.chat_notice_chevron)!;
+            _detail = itemView.FindViewById<TextView>(Resource.Id.chat_notice_detail)!;
+            itemView.FindViewById(Resource.Id.chat_notice_header)!.Click += (_, _) =>
+            {
+                if (_itemId is null)
+                {
+                    return;
+                }
+                if (!_expanded.Add(_itemId))
+                {
+                    _expanded.Remove(_itemId);
+                }
+                ApplyExpanded(_expanded.Contains(_itemId));
+            };
+        }
 
         public void BindNotice(NoticeRow row)
         {
             var ctx = ItemView.Context!;
             _icon.SetImageResource(row.IsError ? Resource.Drawable.ic_error : Resource.Drawable.ic_info);
-            _icon.ImageTintList = ColorStateList.ValueOf(ResolveAttrColor(ctx, row.IsError ? Resource.Attribute.colorError : Resource.Attribute.colorPrimary));
-            _text.Text = $"{row.Code}: {row.DiagnosticKey}";
+            // 普通错误不再使用高饱和红色图标，统一用琥珀关注色 / 中性色降噪。
+            var tint = row.IsError
+                ? new Color(ctx.GetColor(Resource.Color.dshm_attention))
+                : ResolveAttrColor(ctx, Resource.Attribute.colorOnSurfaceVariant);
+            _icon.ImageTintList = ColorStateList.ValueOf(tint);
+            Bind(
+                row.ItemId,
+                ChatNoticeFormatter.Describe(ctx, row.Code, row.DiagnosticKey, row.IsError),
+                ChatNoticeFormatter.BuildTechnicalDetail(row.Code, row.DiagnosticKey));
         }
 
         public void BindUnknown(UnknownEventRow row)
         {
             var ctx = ItemView.Context!;
             _icon.SetImageResource(Resource.Drawable.ic_info);
-            _icon.ImageTintList = ColorStateList.ValueOf(ResolveAttrColor(ctx, Resource.Attribute.colorOutline));
-            _text.Text = $"[{row.EventType}]";
+            _icon.ImageTintList = ColorStateList.ValueOf(ResolveAttrColor(ctx, Resource.Attribute.colorOnSurfaceVariant));
+            Bind(
+                row.ItemId,
+                ctx.GetString(Resource.String.chat_notice_unknown_event),
+                $"[{row.EventType}]");
+        }
+
+        private void Bind(string itemId, string friendlyText, string technicalDetail)
+        {
+            _itemId = itemId;
+            _text.Text = friendlyText;
+            _detail.Text = technicalDetail;
+            ApplyExpanded(_expanded.Contains(itemId));
+        }
+
+        private void ApplyExpanded(bool isOpen)
+        {
+            _detail.Visibility = isOpen ? ViewStates.Visible : ViewStates.Gone;
+            _chevron.Rotation = isOpen ? 180f : 0f;
         }
     }
 
-    private sealed class ApprovalHolder : RecyclerView.ViewHolder
+    /// <summary>统一换行符，保证代码 / 输出行数与截断判断一致。</summary>
+    private static string NormalizeNewLines(string text) =>
+        text.Replace("\r\n", "\n", StringComparison.Ordinal).Replace('\r', '\n');
+
+    /// <summary>
+    /// 真实耗时的人类可读格式：不足 10 秒保留一位小数（0.3s / 1.5s），
+    /// 10 秒及以上显示整秒（12s）。调用方负责仅在真实数据有效时展示。
+    /// </summary>
+    private static string FormatDurationText(long elapsedMs)
     {
-        private readonly TextView _subtitle;
-        private readonly TextView _missingWarning;
-        private readonly TextView _args;
-        private readonly View _actions;
-        private readonly View _holdBar;
-        private readonly TextView _holdText;
-        private readonly TextView _status;
-        private string? _eventId;
-
-        public ApprovalHolder(
-            View itemView,
-            Action<string, ApprovalDecision> onApproval,
-            Action<string> onUndo) : base(itemView)
+        if (elapsedMs >= 10_000)
         {
-            _subtitle = itemView.FindViewById<TextView>(Resource.Id.chat_approval_subtitle)!;
-            _missingWarning = itemView.FindViewById<TextView>(Resource.Id.chat_approval_missing_warning)!;
-            _args = itemView.FindViewById<TextView>(Resource.Id.chat_approval_args)!;
-            _actions = itemView.FindViewById(Resource.Id.chat_approval_actions)!;
-            _holdBar = itemView.FindViewById(Resource.Id.chat_approval_hold_bar)!;
-            _holdText = itemView.FindViewById<TextView>(Resource.Id.chat_approval_hold_text)!;
-            _status = itemView.FindViewById<TextView>(Resource.Id.chat_approval_status)!;
-
-            itemView.FindViewById<MaterialButton>(Resource.Id.chat_approval_reject)!.Click += (_, _) =>
-            {
-                if (_eventId is not null)
-                {
-                    onApproval(_eventId, ApprovalDecision.Rejected);
-                }
-            };
-            itemView.FindViewById<MaterialButton>(Resource.Id.chat_approval_allow)!.Click += (_, _) =>
-            {
-                if (_eventId is not null)
-                {
-                    onApproval(_eventId, ApprovalDecision.AllowedOnce);
-                }
-            };
-            itemView.FindViewById<MaterialButton>(Resource.Id.chat_approval_undo)!.Click += (_, _) =>
-            {
-                if (_eventId is not null)
-                {
-                    onUndo(_eventId);
-                }
-            };
+            return (elapsedMs / 1000).ToString(CultureInfo.InvariantCulture) + "s";
         }
-
-        public void Bind(PendingInteractionCard card)
-        {
-            _eventId = card.EventId;
-            var ctx = ItemView.Context!;
-            _subtitle.Text = Rows.Fmt(ctx, Resource.String.chat_approval_subtitle, card.ToolName ?? "tool");
-            _missingWarning.Visibility = card.ArgumentsReady ? ViewStates.Gone : ViewStates.Visible;
-            if (!string.IsNullOrWhiteSpace(card.SanitizedArgumentsSummary))
-            {
-                _args.Visibility = ViewStates.Visible;
-                _args.Text = card.SanitizedArgumentsSummary;
-            }
-            else
-            {
-                _args.Visibility = ViewStates.Gone;
-            }
-
-            _actions.Visibility = card.State == PendingRequestState.Waiting ? ViewStates.Visible : ViewStates.Gone;
-            _holdBar.Visibility = card.State == PendingRequestState.Held ? ViewStates.Visible : ViewStates.Gone;
-            if (card.State == PendingRequestState.Held)
-            {
-                _holdText.SetText(card.HeldDecision == ApprovalDecision.AllowedOnce
-                    ? Resource.String.chat_approval_held_allow
-                    : Resource.String.chat_approval_held_reject);
-            }
-
-            if (card.State is PendingRequestState.Sending or PendingRequestState.TransportLost)
-            {
-                _status.Visibility = ViewStates.Visible;
-                _status.SetText(card.State == PendingRequestState.Sending
-                    ? Resource.String.chat_approval_sending
-                    : Resource.String.chat_approval_lost);
-            }
-            else
-            {
-                _status.Visibility = ViewStates.Gone;
-            }
-        }
-    }
-
-    private sealed class QuestionHolder : RecyclerView.ViewHolder
-    {
-        private readonly LinearLayout _itemsContainer;
-        private readonly View _actions;
-        private readonly List<(UserQuestionItemView Item, ChipGroup Options, TextInputEditText Custom)> _boundInputs = [];
-        private string? _eventId;
-
-        public QuestionHolder(
-            View itemView,
-            Action<string, UserQuestionAnswerBatch> onAnswer,
-            Action<string> onCancel) : base(itemView)
-        {
-            _itemsContainer = itemView.FindViewById<LinearLayout>(Resource.Id.chat_question_items)!;
-            _actions = itemView.FindViewById(Resource.Id.chat_question_actions)!;
-
-            itemView.FindViewById<MaterialButton>(Resource.Id.chat_question_cancel)!.Click += (_, _) =>
-            {
-                if (_eventId is not null)
-                {
-                    onCancel(_eventId);
-                }
-            };
-            itemView.FindViewById<MaterialButton>(Resource.Id.chat_question_submit)!.Click += (_, _) =>
-            {
-                if (_eventId is null)
-                {
-                    return;
-                }
-                var answers = new List<UserQuestionAnswerItemView>(_boundInputs.Count);
-                foreach (var (q, group, custom) in _boundInputs)
-                {
-                    var selected = new List<string>();
-                    for (var i = 0; i < group.ChildCount; i++)
-                    {
-                        if (group.GetChildAt(i) is Chip { Checked: true } chip && !string.IsNullOrEmpty(chip.Text))
-                        {
-                            selected.Add(chip.Text);
-                        }
-                    }
-                    var customText = string.IsNullOrWhiteSpace(custom.Text) ? null : custom.Text.Trim();
-                    answers.Add(new UserQuestionAnswerItemView(q.Id, selected, customText));
-                }
-                onAnswer(_eventId, new UserQuestionAnswerBatch(answers));
-            };
-        }
-
-        public void Bind(PendingInteractionCard card)
-        {
-            _eventId = card.EventId;
-            _itemsContainer.RemoveAllViews();
-            _boundInputs.Clear();
-
-            var inflater = LayoutInflater.From(ItemView.Context)!;
-            foreach (var q in card.Questions ?? [])
-            {
-                var row = inflater.Inflate(Resource.Layout.item_chat_question_item, _itemsContainer, false)!;
-                row.FindViewById<TextView>(Resource.Id.question_item_prompt)!.Text = q.Question;
-                var detail = row.FindViewById<TextView>(Resource.Id.question_item_detail)!;
-                if (string.IsNullOrWhiteSpace(q.Detail))
-                {
-                    detail.Visibility = ViewStates.Gone;
-                }
-                else
-                {
-                    detail.Visibility = ViewStates.Visible;
-                    detail.Text = q.Detail;
-                }
-
-                var chipGroup = row.FindViewById<ChipGroup>(Resource.Id.question_item_options)!;
-                chipGroup.SingleSelection = !q.MultiSelect;
-                foreach (var opt in q.Options)
-                {
-                    var chip = (Chip)inflater.Inflate(Resource.Layout.item_chat_question_option, chipGroup, false)!;
-                    chip.Text = opt.Label;
-                    chipGroup.AddView(chip);
-                }
-
-                var custom = row.FindViewById<TextInputEditText>(Resource.Id.question_item_custom)!;
-                _itemsContainer.AddView(row);
-                _boundInputs.Add((q, chipGroup, custom));
-            }
-
-            _actions.Visibility = card.State == PendingRequestState.Waiting ? ViewStates.Visible : ViewStates.Gone;
-        }
+        return (elapsedMs / 1000.0).ToString("0.0", CultureInfo.InvariantCulture) + "s";
     }
 
     private static Color ResolveAttrColor(Android.Content.Context ctx, int attrId)

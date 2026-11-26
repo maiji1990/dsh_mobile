@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 流式 Live 状态行（UI-S2 A2）：绿色运行圆点 + 本地化状态文本 -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:gravity="center_vertical"
+    android:orientation="horizontal"
+    android:paddingStart="@dimen/dshm_page_margin"
+    android:paddingTop="4dp"
+    android:paddingEnd="@dimen/dshm_page_margin"
+    android:paddingBottom="4dp">
+
+    <View
+        android:id="@+id/chat_live_status_dot"
+        android:layout_width="8dp"
+        android:layout_height="8dp"
+        android:background="@drawable/bg_live_status_dot"
+        android:importantForAccessibility="no" />
+
+    <TextView
+        android:id="@+id/chat_live_status_text"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="8dp"
+        android:text="@string/chat_live_thinking"
+        android:textAppearance="?attr/textAppearanceBodySmall"
+        android:textColor="?attr/colorOnSurfaceVariant" />
+</LinearLayout>

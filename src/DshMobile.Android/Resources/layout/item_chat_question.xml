@@ -5,9 +5,9 @@
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:orientation="vertical"
-    android:paddingStart="48dp"
+    android:paddingStart="@dimen/dshm_page_margin"
     android:paddingTop="6dp"
-    android:paddingEnd="16dp"
+    android:paddingEnd="@dimen/dshm_page_margin"
     android:paddingBottom="6dp">
 
     <com.google.android.material.card.MaterialCardView
@@ -15,7 +15,7 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         app:cardBackgroundColor="?attr/colorSurface"
-        app:cardCornerRadius="14dp"
+        app:cardCornerRadius="@dimen/dshm_radius_card"
         app:strokeColor="?attr/colorOutlineVariant">
 
         <LinearLayout
@@ -68,7 +68,7 @@
                     android:layout_marginEnd="6dp"
                     android:layout_weight="1"
                     android:text="@string/chat_question_cancel"
-                    app:cornerRadius="12dp" />
+                    app:cornerRadius="@dimen/dshm_radius_block" />
 
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/chat_question_submit"
@@ -78,7 +78,7 @@
                     android:layout_marginStart="6dp"
                     android:layout_weight="1"
                     android:text="@string/chat_question_submit"
-                    app:cornerRadius="12dp" />
+                    app:cornerRadius="@dimen/dshm_radius_block" />
             </LinearLayout>
         </LinearLayout>
     </com.google.android.material.card.MaterialCardView>

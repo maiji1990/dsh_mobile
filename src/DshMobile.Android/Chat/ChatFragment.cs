@@ -1,8 +1,9 @@
 using Android.Content;
 using Android.Content.Res;
+using Android.Graphics;
 using Android.Views;
-using Android.Views.InputMethods;
 using Android.Widget;
+using AndroidX.Activity;
 using AndroidX.Core.View;
 using AndroidX.RecyclerView.Widget;
 using DshMobile.Agent.Domain;
@@ -11,13 +12,13 @@ using DshMobile.Agent.Presentation;
 using DshMobile.Agent.Rendering;
 using DshMobile.App.Bridge;
 using DshMobile.App.Credentials;
+using DshMobile.App.Files;
+using DshMobile.App.Inbox;
 using DshMobile.App.Ui;
 using DshMobile.Runtime.Hosting;
 using Google.Android.Material.AppBar;
 using Google.Android.Material.Button;
-using Google.Android.Material.Chip;
 using Google.Android.Material.Dialog;
-using Google.Android.Material.FloatingActionButton;
 using Google.Android.Material.ProgressIndicator;
 using Google.Android.Material.Snackbar;
 using Fragment = AndroidX.Fragment.App.Fragment;
@@ -44,7 +45,7 @@ public sealed class ChatFragment : Fragment
 
     private MaterialToolbar _toolbar = null!;
     private IMenuItem? _cancelMenuItem;
-    private View _composerActions = null!;
+    private IMenuItem? _inboxMenuItem;
     private View _statusBanner = null!;
     private LinearProgressIndicator _statusProgress = null!;
     private TextView _statusText = null!;
@@ -55,7 +56,7 @@ public sealed class ChatFragment : Fragment
     private MaterialButton _loadOlderBtn = null!;
     private RecyclerView _list = null!;
     private View _empty = null!;
-    private FloatingActionButton _scrollToBottom = null!;
+    private MaterialButton _scrollToBottom = null!;
     private View _slashPanel = null!;
     private RecyclerView _slashList = null!;
     private View _slashEmpty = null!;
@@ -65,19 +66,29 @@ public sealed class ChatFragment : Fragment
     private EditText _input = null!;
     private MaterialButton _modelPill = null!;
     private MaterialButton _sendBtn = null!;
-    private MaterialButton _attachImageBtn = null!;
-    private MaterialButton _slashToggleBtn = null!;
+    private MaterialButton _stopPill = null!;
+    private MaterialButton _plusBtn = null!;
+    private MaterialButton _trayImagesBtn = null!;
+    private MaterialButton _traySlashBtn = null!;
+    private View _composerTopControls = null!;
+    private View _composerTray = null!;
+    private ChatRequestSlotController _requestSlot = null!;
+    private OnBackPressedCallback? _panelBackCallback;
 
     private bool _followBottom = true;
     private bool _slashExpanded;
     private bool _slashAutoFromInput;
+    private bool _trayExpanded;
     private string _slashFilterQuery = string.Empty;
     private bool _isRemote;
+    private bool _embeddedInPane;
     private bool _connectInitiated;
     private bool _cacheLoadInitiated;
     private bool _onboardingPrompted;
     private bool _openedCredentials;
     private string? _requestedSessionId;
+    private long _sendGuardUntilMs;
+    private bool _lastImeVisible;
     private string? _pendingFocusEventId;
     private int _renderPosted;
     private PromptSendRequest? _lastSubmittedRequest;
@@ -87,14 +98,28 @@ public sealed class ChatFragment : Fragment
         var view = inflater.Inflate(Resource.Layout.fragment_chat, container, false)!;
         _bridge = DshMobileApplication.Current.Bridge;
         _isRemote = Arguments?.GetBoolean(ChatActivity.ExtraIsRemote, false) ?? false;
+        _embeddedInPane = Arguments?.GetBoolean(ChatActivity.ExtraEmbeddedInPane, false) ?? false;
         _vm = _isRemote ? (_bridge.Agent.RemoteChat ?? _bridge.Agent.Chat) : _bridge.Agent.Chat;
         _requestedSessionId = Arguments?.GetString(ChatActivity.ExtraSessionId);
         _pendingFocusEventId = Arguments?.GetString(ChatActivity.ExtraFocusEventId);
 
         _toolbar = view.FindViewById<MaterialToolbar>(Resource.Id.chat_toolbar)!;
-        _toolbar.NavigationClick += (_, _) => Activity?.Finish();
+        _toolbar.NavigationClick += (_, _) =>
+        {
+            // 嵌入宽屏右栏时绝不调用 Activity.Finish()，否则会把整个 MainActivity 关掉。
+            if (!_embeddedInPane)
+            {
+                Activity?.Finish();
+            }
+        };
+        if (_embeddedInPane)
+        {
+            _toolbar.NavigationIcon = null;
+        }
         _cancelMenuItem = _toolbar.Menu?.FindItem(Resource.Id.chat_menu_cancel);
         _cancelMenuItem?.SetVisible(false);
+        _inboxMenuItem = _toolbar.Menu?.FindItem(Resource.Id.chat_menu_inbox);
+        _inboxMenuItem?.SetVisible(false);
         _toolbar.MenuItemClick += (_, e) => OnMenuClicked(e.Item?.ItemId ?? 0);
         _toolbar.Click += (_, _) => OnSessionHeaderClicked();
 
@@ -117,22 +142,27 @@ public sealed class ChatFragment : Fragment
         _layoutManager = new LinearLayoutManager(RequireContext()) { StackFromEnd = false };
         _list.SetLayoutManager(_layoutManager);
         _list.SetItemAnimator(null);
+        // 审批 / 问答卡已迁入固定 RequestSlot，时间线适配器只负责会话行。
         _adapter = new ChatTimelineAdapter(
             _mdCache,
             action => Activity?.RunOnUiThread(action),
-            (eventId, decision) => _ = _vm.AnswerApprovalAsync(eventId, decision),
-            eventId => _ = _vm.UndoApprovalAsync(eventId),
-            (eventId, batch) => _ = _vm.AnswerQuestionAsync(eventId, batch),
-            eventId => _ = _vm.CancelQuestionAsync(eventId),
             OpenWorkspaceFile);
         _list.SetAdapter(_adapter);
         _list.AddOnScrollListener(new ChatScrollListener(this));
 
+        _requestSlot = new ChatRequestSlotController(
+            view.FindViewById(Resource.Id.chat_request_slot)!,
+            (eventId, decision) => _ = _vm.AnswerApprovalAsync(eventId, decision),
+            eventId => _ = _vm.UndoApprovalAsync(eventId),
+            (eventId, batch) => _ = _vm.AnswerQuestionAsync(eventId, batch),
+            eventId => _ = _vm.CancelQuestionAsync(eventId));
+
         _empty = view.FindViewById(Resource.Id.chat_empty)!;
         _empty.FindViewById<ImageView>(Resource.Id.empty_icon)!.SetImageResource(Resource.Drawable.ic_chat);
-        _empty.FindViewById<TextView>(Resource.Id.empty_text)!.SetText(Resource.String.chat_empty_subtitle);
+        _empty.FindViewById<TextView>(Resource.Id.empty_text)!.SetText(
+            _embeddedInPane ? Resource.String.chat_pane_empty_hint : Resource.String.chat_empty_subtitle);
 
-        _scrollToBottom = view.FindViewById<FloatingActionButton>(Resource.Id.chat_scroll_to_bottom)!;
+        _scrollToBottom = view.FindViewById<MaterialButton>(Resource.Id.chat_scroll_to_bottom)!;
         _scrollToBottom.Click += (_, _) => ScrollToBottomAndFollow();
 
         _slashPanel = view.FindViewById(Resource.Id.chat_slash_panel)!;
@@ -152,35 +182,42 @@ public sealed class ChatFragment : Fragment
         _attachmentsList = view.FindViewById<LinearLayout>(Resource.Id.chat_attachments_list)!;
 
         _input = view.FindViewById<EditText>(Resource.Id.chat_input)!;
-        _composerActions = view.FindViewById(Resource.Id.chat_composer_actions)!;
         if (savedInstanceState?.GetString(DraftInputKey) is { } restoredDraft)
         {
             _input.Text = restoredDraft;
         }
         _slashExpanded = savedInstanceState?.GetBoolean(SlashExpandedKey, false) ?? false;
         _input.TextChanged += (_, e) => OnInputTextChanged(e.Text?.ToString());
-        _input.EditorAction += (_, e) =>
-        {
-            if (e.ActionId == ImeAction.Send)
-            {
-                e.Handled = true;
-                _ = SendOrCancelAsync();
-            }
-        };
+        // 软键盘 Enter 由 multiLine + flagNoEnterAction 保持换行；物理键盘 Enter 在 KeyPress 中发送。
+        _input.KeyPress += OnInputKeyPress;
 
         _modelPill = view.FindViewById<MaterialButton>(Resource.Id.chat_model_pill)!;
         _sendBtn = view.FindViewById<MaterialButton>(Resource.Id.chat_send_btn)!;
-        _attachImageBtn = view.FindViewById<MaterialButton>(Resource.Id.chat_attach_image_btn)!;
-        _slashToggleBtn = view.FindViewById<MaterialButton>(Resource.Id.chat_slash_toggle_btn)!;
+        _stopPill = view.FindViewById<MaterialButton>(Resource.Id.chat_stop_pill)!;
+        _plusBtn = view.FindViewById<MaterialButton>(Resource.Id.chat_plus_btn)!;
+        _trayImagesBtn = view.FindViewById<MaterialButton>(Resource.Id.chat_composer_tray_images)!;
+        _traySlashBtn = view.FindViewById<MaterialButton>(Resource.Id.chat_composer_tray_slash)!;
+        _composerTopControls = view.FindViewById(Resource.Id.chat_composer_top_controls)!;
+        _composerTray = view.FindViewById(Resource.Id.chat_composer_tray)!;
 
         _modelPill.Click += (_, _) => OpenModelPicker();
-        _slashToggleBtn.Click += (_, _) => ToggleSlashBar();
-        _attachImageBtn.Click += (_, _) => OpenImagePicker();
+        _plusBtn.Click += (_, _) => ToggleComposerTray();
+        _trayImagesBtn.Click += (_, _) =>
+        {
+            CollapseComposerTray();
+            OpenImagePicker();
+        };
+        _traySlashBtn.Click += (_, _) =>
+        {
+            CollapseComposerTray();
+            ShowSlashBar();
+        };
         _sendBtn.Click += (_, _) => _ = SendOrCancelAsync();
+        _stopPill.Click += (_, _) => _ = SendOrCancelAsync();
 
-        // 横屏弹起软键盘时收起底部快捷操作行并压缩输入胶囊内边距，配合 flagNoExtractUi 保住输入框完整可见（F6 / Slice 5）。
+        // 横屏弹出软键盘时隐藏上层控制条与 Tray、压缩输入胶囊为单行，配合 flagNoExtractUi 保住输入框完整可见（F6 / Slice 5）。
         var composer = view.FindViewById(Resource.Id.chat_composer)!;
-        var composerCardBody = (view.FindViewById<ViewGroup>(Resource.Id.chat_composer_card))?.GetChildAt(0);
+        var composerCardBody = view.FindViewById<ViewGroup>(Resource.Id.chat_composer_inner);
         var dp = Resources.DisplayMetrics!.Density;
         var normalComposerPadH = composer.PaddingLeft;
         var normalComposerPadT = composer.PaddingTop;
@@ -197,7 +234,8 @@ public sealed class ChatFragment : Fragment
             var isLandscape = Resources?.Configuration?.Orientation == global::Android.Content.Res.Orientation.Landscape;
             var imeVisible = insets.IsVisible(WindowInsetsCompat.Type.Ime());
             var compact = isLandscape && imeVisible;
-            _composerActions.Visibility = compact ? ViewStates.Gone : ViewStates.Visible;
+            _composerTopControls.Visibility = compact ? ViewStates.Gone : ViewStates.Visible;
+            _composerTray.Visibility = compact || !_trayExpanded ? ViewStates.Gone : ViewStates.Visible;
             _input.SetMaxLines(compact ? 1 : 5);
             _input.SetMinHeight(compact ? 0 : normalInputMinH);
             if (compact)
@@ -214,18 +252,63 @@ public sealed class ChatFragment : Fragment
                 composerCardBody?.SetPadding(normalCardPadH, normalCardPadT, normalCardPadH, normalCardPadB);
                 _input.SetPadding(normalInputPadH, normalInputPadT, normalInputPadH, normalInputPadB);
             }
+
+            // IME 收起后部分 ROM 会残留底部白边：400ms 后再兜底刷新一次 inset。
+            if (_lastImeVisible != imeVisible)
+            {
+                _lastImeVisible = imeVisible;
+                view.PostDelayed(() => ViewCompat.RequestApplyInsets(view), 400);
+            }
             return insets;
         }));
 
-        Edges.ClampMaxWidth(
+        var requestSlotRoot = view.FindViewById(Resource.Id.chat_request_slot)!;
+        Edges.ClampMaxWidthTo(
+            Resource.Dimension.dshm_chat_max_width,
             _list,
             _attachmentsBar,
+            requestSlotRoot,
             composer);
-        Edges.ClampMaxWidthByMargin(_unknownBanner, _slashPanel);
+        Edges.ClampMaxWidthByMarginTo(
+            Resource.Dimension.dshm_chat_max_width,
+            _unknownBanner,
+            _slashPanel);
 
         RenderAttachments();
         return view;
     }
+
+    public override void OnViewCreated(View view, Bundle? savedInstanceState)
+    {
+        base.OnViewCreated(view, savedInstanceState);
+        // 系统返回键优先收起斜杠面板 / 快捷 Tray，而不是直接退出对话页；
+        // 注册在 ViewLifecycleOwner 上，视图销毁时自动移除，避免持有已释放的视图。
+        _panelBackCallback = new PanelBackCallback(this);
+        RequireActivity().OnBackPressedDispatcher.AddCallback(ViewLifecycleOwner, _panelBackCallback);
+        SyncPanelBackCallback();
+    }
+
+    /// <summary>
+    /// 仅在斜杠面板实际可见或快捷 Tray 展开时启用返回键拦截；收起后立即禁用，
+    /// 同时排除已隐藏的 Fragment，避免吞掉其他标签页的系统返回与预测性返回手势。
+    /// </summary>
+    private void SyncPanelBackCallback()
+    {
+        if (_panelBackCallback is not null)
+        {
+            var slashVisible = _slashExpanded && _slashPanel is { Visibility: ViewStates.Visible };
+            _panelBackCallback.Enabled = !IsHidden && (slashVisible || _trayExpanded);
+        }
+    }
+
+    public override void OnHiddenChanged(bool hidden)
+    {
+        base.OnHiddenChanged(hidden);
+        SyncPanelBackCallback();
+    }
+
+    /// <summary>UI-S6：是否以远程主机会话运行（MainActivity 右栏据此判断能否复用现有实例）。</summary>
+    public bool IsRemote => _isRemote;
 
     public override void OnStart()
     {
@@ -238,6 +321,7 @@ public sealed class ChatFragment : Fragment
         }
         _vm.StateChanged += OnVmStateChanged;
         _bridge.Changed += OnBridgeChanged;
+        _bridge.Agent.Inbox.StateChanged += OnInboxStateChanged;
         _vm.SetUiVisible(true);
         RenderState(_vm.State);
 
@@ -267,6 +351,7 @@ public sealed class ChatFragment : Fragment
         _vm.SetUiVisible(false);
         _vm.StateChanged -= OnVmStateChanged;
         _bridge.Changed -= OnBridgeChanged;
+        _bridge.Agent.Inbox.StateChanged -= OnInboxStateChanged;
         _ = _vm.FlushPendingHoldsAsync();
         base.OnStop();
     }
@@ -330,12 +415,57 @@ public sealed class ChatFragment : Fragment
         }
     }
 
+    /// <summary>
+    /// UI-S5：聊天工具卡的文件胶囊不再通过 <c>ClearTop</c> 跳回 <see cref="MainActivity"/>（那会摧毁
+    /// <see cref="ChatActivity"/> 返回栈与对话滚动位置）。Diff 直接打开独立全屏审查页，普通文件直接打开
+    /// 全屏编辑器；两者都在目标页内复用工作区安全路径校验（含 .dsh/ 保护）。系统返回即回到对话原位。
+    /// </summary>
     private void OpenWorkspaceFile(string relativePath, bool openGitDiff)
     {
-        StartActivity(MainActivity.CreateWorkspaceIntent(RequireContext(), relativePath, openGitDiff));
+        StartActivity(openGitDiff
+            ? DiffReviewActivity.CreateWorkspaceIntent(RequireContext(), relativePath)
+            : WorkspaceEditorActivity.CreateIntent(RequireContext(), relativePath, startEditing: false));
     }
 
     private void OnVmStateChanged(ChatUiState state) => ScheduleRender();
+
+    private void OnInboxStateChanged(InboxUiState state)
+    {
+        // 跨会话收件箱状态可能来自后台线程，统一切回 UI 线程更新顶栏入口。
+        Activity?.RunOnUiThread(() =>
+        {
+            if (View is not null)
+            {
+                RenderInboxEntry(state);
+            }
+        });
+    }
+
+    private void RenderInboxEntry() => RenderInboxEntry(_bridge.Agent.Inbox.State);
+
+    private void RenderInboxEntry(InboxUiState inbox)
+    {
+        if (_inboxMenuItem is null)
+        {
+            return;
+        }
+
+        var total = inbox.TotalCount;
+        _inboxMenuItem.SetVisible(total > 0);
+        _inboxMenuItem.SetTitle(total > 0
+            ? Rows.Fmt(RequireContext(), Resource.String.chat_menu_inbox_fmt, total)
+            : GetString(Resource.String.chat_menu_inbox));
+    }
+
+    private void ShowInbox()
+    {
+        var manager = ParentFragmentManager;
+        if (manager.FindFragmentByTag(InboxBottomSheet.SheetTag) is null)
+        {
+            new InboxBottomSheet().Show(manager, InboxBottomSheet.SheetTag);
+        }
+    }
+
     private void OnBridgeChanged(object? sender, EventArgs e)
     {
         if (IsEndpointReady() && !_vm.State.IsConnected && !_vm.State.IsReconciling)
@@ -368,10 +498,10 @@ public sealed class ChatFragment : Fragment
             ? GetString(Resource.String.chat_session_default_title)
             : ChatDisplayFormatter.FormatShortSessionTitle(s.ActiveSession.SessionId, s.SessionTitle, untitledPrefix);
 
-        var workspaceSubtitle = GetString(Resource.String.chat_session_subtitle_default);
+        var workspaceName = ResolveWorkspaceName(ctx);
         _toolbar.Subtitle = _isRemote && _bridge.Agent.RemoteHostLabel is { Length: > 0 } remoteLabel
             ? Rows.Fmt(ctx, Resource.String.remote_chat_title_fmt, remoteLabel)
-            : workspaceSubtitle;
+            : Rows.Fmt(ctx, Resource.String.chat_session_subtitle_local_fmt, workspaceName);
 
         _modelPill.Text = ChatDisplayFormatter.FormatCompactModelBadge(
             s.ModelLabel,
@@ -393,37 +523,29 @@ public sealed class ChatFragment : Fragment
             ShowCredentialOnboardingDialog();
         }
 
-        var items = new List<ChatTimelineItem>(s.Transcript.Rows.Count + s.PendingRequests.Count);
-        foreach (var row in s.Transcript.Rows)
-        {
-            items.Add(new ChatRowTimelineItem(row, s.Transcript.Revision));
-        }
-        foreach (var req in s.PendingRequests)
-        {
-            items.Add(new PendingRequestTimelineItem(req));
-        }
-
+        // 工具分组、Turn Footer 与流式 Live 行由投影器生成；审批 / 问答卡固定在 RequestSlot，不进入列表。
+        var items = ChatTimelineProjector.Project(s.Transcript);
         _adapter.Submit(items);
-        _empty.Visibility = items.Count == 0 ? ViewStates.Visible : ViewStates.Gone;
-        if (_pendingFocusEventId is { } focusId)
+        // 内容高度变化后重新评估回底按钮，避免用户停留在上方时新消息到达却看不到入口。
+        _list.Post(() => UpdateScrollToBottomVisibility(_list));
+        _empty.Visibility = items.Count == 0 && s.PendingRequests.Count == 0 ? ViewStates.Visible : ViewStates.Gone;
+
+        _requestSlot.Bind(s.PendingRequests, _pendingFocusEventId);
+        if (_pendingFocusEventId is { } focusId && s.PendingRequests.Any(c => c.EventId == focusId))
         {
-            var focusIndex = _adapter.FindPendingRequestPosition(focusId);
-            if (focusIndex >= 0)
-            {
-                _pendingFocusEventId = null;
-                _followBottom = false;
-                _list.ScrollToPosition(focusIndex);
-                _scrollToBottom.Visibility = focusIndex < items.Count - 1 ? ViewStates.Visible : ViewStates.Gone;
-            }
+            _pendingFocusEventId = null;
         }
+        RenderInboxEntry();
+
         if (_followBottom && items.Count > 0)
         {
-            _list.ScrollToPosition(items.Count - 1);
+            ScrollToLatestItem();
             _scrollToBottom.Visibility = ViewStates.Gone;
         }
 
         var isRunningTurn = s.Transcript.Phase is RunPhase.Starting or RunPhase.Streaming;
         _cancelMenuItem?.SetVisible(isRunningTurn && s.Capabilities.CancelSession);
+        _stopPill.Visibility = isRunningTurn && s.Capabilities.CancelSession ? ViewStates.Visible : ViewStates.Gone;
         if (isRunningTurn && s.Capabilities.CancelSession)
         {
             _sendBtn.SetIconResource(Resource.Drawable.ic_stop);
@@ -437,9 +559,28 @@ public sealed class ChatFragment : Fragment
             _sendBtn.Enabled = s.CanSend;
         }
 
-        _attachImageBtn.Visibility = s.Capabilities.PromptImages ? ViewStates.Visible : ViewStates.Gone;
-        _slashToggleBtn.Visibility = s.Capabilities.SlashCommands ? ViewStates.Visible : ViewStates.Gone;
+        _trayImagesBtn.Visibility = s.Capabilities.PromptImages ? ViewStates.Visible : ViewStates.Gone;
+        _traySlashBtn.Visibility = s.Capabilities.SlashCommands ? ViewStates.Visible : ViewStates.Gone;
+        _plusBtn.Visibility = s.Capabilities.PromptImages || s.Capabilities.SlashCommands
+            ? ViewStates.Visible
+            : ViewStates.Gone;
+        if (!s.Capabilities.PromptImages && !s.Capabilities.SlashCommands && _trayExpanded)
+        {
+            CollapseComposerTray();
+        }
         RenderSlashBar(s);
+    }
+
+    /// <summary>本地副标题使用真实工作区名（/root/projects → projects），不再固定写死“工作区”。</summary>
+    private static string ResolveWorkspaceName(Context ctx)
+    {
+        var raw = ctx.GetString(Resource.String.chat_session_subtitle_default)?.Trim() ?? string.Empty;
+        var normalized = raw.TrimEnd('/');
+        var slash = normalized.LastIndexOf('/');
+        var name = slash >= 0 && slash + 1 < normalized.Length ? normalized[(slash + 1)..] : normalized;
+        return string.IsNullOrWhiteSpace(name)
+            ? ctx.GetString(Resource.String.chat_session_subtitle_workspace_fallback) ?? "工作区"
+            : name;
     }
 
     private void RenderStatusBanner(Context ctx, ChatUiState s)
@@ -555,6 +696,7 @@ public sealed class ChatFragment : Fragment
         if (!s.Capabilities.SlashCommands || !_slashExpanded || s.SlashCommands.Count == 0)
         {
             _slashPanel.Visibility = ViewStates.Gone;
+            SyncPanelBackCallback();
             return;
         }
         _slashPanel.Visibility = ViewStates.Visible;
@@ -573,6 +715,7 @@ public sealed class ChatFragment : Fragment
                 _slashList.LayoutParameters = lp;
             }
         }
+        SyncPanelBackCallback();
     }
 
     private void RenderAttachments()
@@ -584,31 +727,180 @@ public sealed class ChatFragment : Fragment
         }
         _attachmentsBar.Visibility = ViewStates.Visible;
         _attachmentsList.RemoveAllViews();
-        var inflater = LayoutInflater.From(RequireContext())!;
+        var ctx = RequireContext();
+        var inflater = LayoutInflater.From(ctx)!;
+        var targetPx = Rows.Dp(ctx, 56f);
         for (var i = 0; i < _attachments.Count; i++)
         {
             var index = i;
             var img = _attachments[i];
-            var chip = (Chip)inflater.Inflate(Resource.Layout.item_chat_attachment, _attachmentsList, false)!;
-            chip.Text = string.IsNullOrWhiteSpace(img.Name) ? $"image-{index + 1}" : img.Name;
-            chip.SetOnCloseIconClickListener(new ActionClickListener(() =>
+            var name = string.IsNullOrWhiteSpace(img.Name)
+                ? Rows.Fmt(ctx, Resource.String.chat_attachment_default_name_fmt, index + 1)
+                : img.Name!;
+
+            var item = inflater.Inflate(Resource.Layout.item_chat_attachment, _attachmentsList, false)!;
+            var thumb = item.FindViewById<ImageView>(Resource.Id.chat_attachment_thumb)!;
+            var fallback = item.FindViewById<LinearLayout>(Resource.Id.chat_attachment_fallback)!;
+            var fallbackName = item.FindViewById<TextView>(Resource.Id.chat_attachment_fallback_name)!;
+            var remove = item.FindViewById<MaterialButton>(Resource.Id.chat_attachment_remove)!;
+
+            var bitmap = TryDecodeAttachmentThumbnail(img.Base64Data, targetPx);
+            if (bitmap is not null)
+            {
+                thumb.SetImageBitmap(bitmap);
+                thumb.Visibility = ViewStates.Visible;
+                fallback.Visibility = ViewStates.Gone;
+            }
+            else
+            {
+                thumb.Visibility = ViewStates.Gone;
+                fallback.Visibility = ViewStates.Visible;
+                fallbackName.Text = name;
+            }
+
+            remove.ContentDescription = Rows.Fmt(ctx, Resource.String.chat_attachment_remove_fmt, name);
+            remove.Click += (_, _) =>
             {
                 if (index < _attachments.Count)
                 {
                     _attachments.RemoveAt(index);
                     RenderAttachments();
                 }
-            }));
-            _attachmentsList.AddView(chip);
+            };
+            _attachmentsList.AddView(item);
         }
     }
 
-    private void ToggleSlashBar()
+    /// <summary>按目标缩略图尺寸做 2 的幂采样解码，避免 5 MiB 大图以原图位图占用内存。</summary>
+    private static Bitmap? TryDecodeAttachmentThumbnail(string? base64, int targetPx)
+    {
+        if (string.IsNullOrWhiteSpace(base64) || targetPx <= 0)
+        {
+            return null;
+        }
+
+        byte[] bytes;
+        try
+        {
+            bytes = Convert.FromBase64String(base64);
+        }
+        catch (FormatException)
+        {
+            return null;
+        }
+
+        var bounds = new BitmapFactory.Options { InJustDecodeBounds = true };
+        BitmapFactory.DecodeByteArray(bytes, 0, bytes.Length, bounds);
+        if (bounds.OutWidth <= 0 || bounds.OutHeight <= 0)
+        {
+            return null;
+        }
+
+        var sampleSize = 1;
+        var maxEdge = targetPx * 2;
+        while (bounds.OutWidth / sampleSize > maxEdge || bounds.OutHeight / sampleSize > maxEdge)
+        {
+            sampleSize *= 2;
+        }
+
+        var options = new BitmapFactory.Options
+        {
+            InSampleSize = sampleSize,
+            InPreferredConfig = Bitmap.Config.Argb8888,
+        };
+        return BitmapFactory.DecodeByteArray(bytes, 0, bytes.Length, options);
+    }
+
+    private void ShowSlashBar()
     {
         _slashAutoFromInput = false;
         _slashFilterQuery = string.Empty;
-        _slashExpanded = !_slashExpanded;
+        _slashExpanded = true;
         RenderSlashBar(_vm.State);
+    }
+
+    /// <summary>展开 / 收起输入胶囊上方的快捷 Tray，并让 + 图标旋转 45° 变为 ×。</summary>
+    private void ToggleComposerTray() => SetComposerTrayExpanded(!_trayExpanded);
+
+    private void CollapseComposerTray()
+    {
+        if (_trayExpanded)
+        {
+            SetComposerTrayExpanded(false);
+        }
+    }
+
+    private void SetComposerTrayExpanded(bool expanded)
+    {
+        _trayExpanded = expanded;
+        if (expanded)
+        {
+            _composerTray.Alpha = 0f;
+            _composerTray.Visibility = ViewStates.Visible;
+            _composerTray.Animate()?.Alpha(1f).SetDuration(160).Start();
+        }
+        else
+        {
+            _composerTray.Animate()?.Alpha(0f).SetDuration(120).Start();
+            _composerTray.PostDelayed(() =>
+            {
+                if (!_trayExpanded)
+                {
+                    _composerTray.Visibility = ViewStates.Gone;
+                    _composerTray.Alpha = 1f;
+                }
+            }, 130);
+        }
+
+        var animator = _plusBtn.Animate();
+        if (animator is not null)
+        {
+            animator.Rotation(expanded ? 45f : 0f).SetDuration(180).Start();
+        }
+        else
+        {
+            _plusBtn.Rotation = expanded ? 45f : 0f;
+        }
+        SyncPanelBackCallback();
+    }
+
+    /// <summary>
+    /// 区分软硬键盘：软键盘 Enter 保持换行；物理键盘 Enter 发送，Shift+Enter 继续换行。
+    /// </summary>
+    private void OnInputKeyPress(object? sender, View.KeyEventArgs e)
+    {
+        if (e.Event is not KeyEvent key
+            || key.Action != KeyEventActions.Down
+            || key.KeyCode != Keycode.Enter)
+        {
+            return;
+        }
+
+        // FLAG_SOFT_KEYBOARD = 0x2：来自软键盘的按键继续交给 EditText 插入换行。
+        if ((((int)key.Flags) & 0x2) != 0 || key.IsShiftPressed)
+        {
+            return;
+        }
+
+        e.Handled = true;
+        if (_vm.State.Transcript.Phase is RunPhase.Starting or RunPhase.Streaming)
+        {
+            return;
+        }
+        _ = SendOrCancelAsync();
+    }
+
+    private bool IsStopGuardActive()
+    {
+        if (Android.OS.SystemClock.ElapsedRealtime() >= _sendGuardUntilMs)
+        {
+            return false;
+        }
+        if (View is { } root)
+        {
+            Snackbar.Make(root, Resource.String.chat_stop_guard_hint, Snackbar.LengthShort).Show();
+        }
+        return true;
     }
 
     private void OnSlashChipClicked(SlashCommandDescriptorView cmd)
@@ -658,6 +950,10 @@ public sealed class ChatFragment : Fragment
         else if (itemId == Resource.Id.chat_menu_cancel)
         {
             _ = _vm.CancelSessionAsync();
+        }
+        else if (itemId == Resource.Id.chat_menu_inbox)
+        {
+            ShowInbox();
         }
     }
 
@@ -783,24 +1079,7 @@ public sealed class ChatFragment : Fragment
             {
                 return;
             }
-            ModelPickerDialog.Show(
-                RequireContext(),
-                _vm.State.ModelGroups,
-                _vm.State.CurrentModel,
-                spec => _ = SelectModelAndNotifyAsync(spec),
-                OpenCredentialsScreen);
-        });
-    }
-
-    private async Task SelectModelAndNotifyAsync(ModelSelectionSpec spec)
-    {
-        await _vm.SelectModelAsync(spec).ConfigureAwait(false);
-        Activity?.RunOnUiThread(() =>
-        {
-            if (View is { } root && _vm.State.ModelLabel is { } label && _vm.State.FailureCode is null)
-            {
-                Snackbar.Make(root, Rows.Fmt(RequireContext(), Resource.String.chat_model_switched, label), Snackbar.LengthShort).Show();
-            }
+            ModelPickerDialog.Show(ParentFragmentManager);
         });
     }
 
@@ -832,6 +1111,11 @@ public sealed class ChatFragment : Fragment
         var state = _vm.State;
         if (state.Transcript.Phase is RunPhase.Starting or RunPhase.Streaming && state.Capabilities.CancelSession)
         {
+            if (IsStopGuardActive())
+            {
+                return;
+            }
+            _sendGuardUntilMs = Android.OS.SystemClock.ElapsedRealtime() + 800;
             await _vm.CancelSessionAsync().ConfigureAwait(false);
             return;
         }
@@ -844,6 +1128,7 @@ public sealed class ChatFragment : Fragment
 
         if (text.StartsWith('/') && _attachments.Count == 0 && state.Capabilities.SlashCommands)
         {
+            _sendGuardUntilMs = Android.OS.SystemClock.ElapsedRealtime() + 800;
             _input.Text = string.Empty;
             _followBottom = true;
             await _vm.RunSlashCommandAsync(text).ConfigureAwait(false);
@@ -857,6 +1142,8 @@ public sealed class ChatFragment : Fragment
             Text: text,
             Images: images.Length > 0 ? images : null);
 
+        // 发送后 800ms 内忽略停止 / 发送按钮的二次误触，给流式界面一个稳定窗口。
+        _sendGuardUntilMs = Android.OS.SystemClock.ElapsedRealtime() + 800;
         _input.Text = string.Empty;
         _attachments.Clear();
         RenderAttachments();
@@ -951,9 +1238,76 @@ public sealed class ChatFragment : Fragment
     {
         _followBottom = true;
         _scrollToBottom.Visibility = ViewStates.Gone;
-        if (_adapter.ItemCount > 0)
+        ScrollToLatestItem();
+    }
+
+    /// <summary>
+    /// 回到列表最后一项并强制贴到底部：最后一项（例如超长 Turn Footer / 工具组）可能高于视口，
+    /// 仅调用 ScrollToPosition 会停在项顶部；布局完成后用超大负偏移把该项底部对齐到列表底部。
+    /// </summary>
+    private void ScrollToLatestItem()
+    {
+        if (_adapter.ItemCount <= 0)
         {
-            _list.SmoothScrollToPosition(_adapter.ItemCount - 1);
+            return;
+        }
+
+        _list.ScrollToPosition(_adapter.ItemCount - 1);
+        _list.Post(() =>
+        {
+            if (_adapter.ItemCount <= 0 || _list.LayoutParameters is null)
+            {
+                return;
+            }
+            var last = _adapter.ItemCount - 1;
+            _layoutManager.ScrollToPositionWithOffset(last, -100000);
+        });
+    }
+
+    /// <summary>距底部超过 480dp 且用户已脱离贴底状态时才显示回底按钮，避免轻滑两行就挡住内容。</summary>
+    private void UpdateScrollToBottomVisibility(RecyclerView recyclerView)
+    {
+        if (_scrollToBottom is null)
+        {
+            return;
+        }
+        if (_followBottom)
+        {
+            // 贴底跟随时无需计算距离，直接隐藏按钮，避免流式输出期间每帧做滚动范围测量。
+            _scrollToBottom.Visibility = ViewStates.Gone;
+            return;
+        }
+        var show = DistanceFromBottom(recyclerView) >= DpToPx(recyclerView, 480f);
+        _scrollToBottom.Visibility = show ? ViewStates.Visible : ViewStates.Gone;
+    }
+
+    private static int DistanceFromBottom(RecyclerView recyclerView) =>
+        Math.Max(
+            0,
+            recyclerView.ComputeVerticalScrollRange()
+            - recyclerView.ComputeVerticalScrollExtent()
+            - recyclerView.ComputeVerticalScrollOffset());
+
+    private static int DpToPx(RecyclerView recyclerView, float dp) =>
+        (int)Math.Round(dp * recyclerView.Context!.Resources!.DisplayMetrics!.Density);
+
+    /// <summary>系统返回键优先收起斜杠面板 / 快捷 Tray，而不是直接离开对话页。</summary>
+    private sealed class PanelBackCallback(ChatFragment owner) : OnBackPressedCallback(false)
+    {
+        public override void HandleOnBackPressed()
+        {
+            if (owner._slashExpanded)
+            {
+                owner._slashExpanded = false;
+                owner._slashAutoFromInput = false;
+                owner._slashFilterQuery = string.Empty;
+                owner.RenderSlashBar(owner._vm.State);
+                return;
+            }
+            if (owner._trayExpanded)
+            {
+                owner.SetComposerTrayExpanded(false);
+            }
         }
     }
 
@@ -962,21 +1316,24 @@ public sealed class ChatFragment : Fragment
         public override void OnScrollStateChanged(RecyclerView recyclerView, int newState)
         {
             base.OnScrollStateChanged(recyclerView, newState);
-            if (!recyclerView.CanScrollVertically(1))
+            if (newState == RecyclerView.ScrollStateDragging)
             {
-                owner._followBottom = true;
-                owner._scrollToBottom.Visibility = ViewStates.Gone;
-            }
-            else if (newState == RecyclerView.ScrollStateDragging)
-            {
+                // 用户一开始拖拽就立刻暂停自动贴底，把滚动控制权交还给手指。
                 owner._followBottom = false;
-                owner._scrollToBottom.Visibility = ViewStates.Visible;
             }
+            else if (newState == RecyclerView.ScrollStateIdle
+                && DistanceFromBottom(recyclerView) <= DpToPx(recyclerView, 48f))
+            {
+                // 停止滚动且已回到距底部 48dp 以内时恢复贴底。
+                owner._followBottom = true;
+            }
+            owner.UpdateScrollToBottomVisibility(recyclerView);
         }
-    }
 
-    private sealed class ActionClickListener(Action onClick) : Java.Lang.Object, View.IOnClickListener
-    {
-        public void OnClick(View? v) => onClick();
+        public override void OnScrolled(RecyclerView recyclerView, int dx, int dy)
+        {
+            base.OnScrolled(recyclerView, dx, dy);
+            owner.UpdateScrollToBottomVisibility(recyclerView);
+        }
     }
 }
