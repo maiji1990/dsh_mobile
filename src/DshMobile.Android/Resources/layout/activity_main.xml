@@ -83,11 +83,76 @@
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
 
-            <FrameLayout
-                android:id="@+id/tab_content"
+            <!-- UI-S6：宽屏且处于 nav_chats 时启用「约 340dp 会话列表 + 1dp 分割线 + 右栏 ChatFragment」双栏；
+                 窄屏或切换到文件/更多页时右栏隐藏，tab_content 恢复单栏铺满。 -->
+            <LinearLayout
+                android:id="@+id/main_content_row"
                 android:layout_width="match_parent"
                 android:layout_height="0dp"
-                android:layout_weight="1" />
+                android:layout_weight="1"
+                android:orientation="horizontal">
+
+                <FrameLayout
+                    android:id="@+id/tab_content"
+                    android:layout_width="0dp"
+                    android:layout_height="match_parent"
+                    android:layout_weight="1" />
+
+                <View
+                    android:id="@+id/main_detail_divider"
+                    android:layout_width="1dp"
+                    android:layout_height="match_parent"
+                    android:background="?attr/colorOutlineVariant"
+                    android:visibility="gone" />
+
+                <FrameLayout
+                    android:id="@+id/main_detail_pane"
+                    android:layout_width="0dp"
+                    android:layout_height="match_parent"
+                    android:layout_weight="1"
+                    android:visibility="gone">
+
+                    <androidx.fragment.app.FragmentContainerView
+                        android:id="@+id/main_detail_container"
+                        android:layout_width="match_parent"
+                        android:layout_height="match_parent" />
+
+                    <LinearLayout
+                        android:id="@+id/main_detail_empty"
+                        android:layout_width="match_parent"
+                        android:layout_height="match_parent"
+                        android:gravity="center"
+                        android:orientation="vertical"
+                        android:padding="32dp">
+
+                        <ImageView
+                            android:layout_width="40dp"
+                            android:layout_height="40dp"
+                            android:importantForAccessibility="no"
+                            android:src="@drawable/ic_chat"
+                            app:tint="?attr/colorOnSurfaceVariant" />
+
+                        <TextView
+                            android:id="@+id/main_detail_empty_title"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="16dp"
+                            android:text="@string/chats_detail_empty_title"
+                            android:textAppearance="?attr/textAppearanceTitleMedium"
+                            android:textColor="?attr/colorOnSurface" />
+
+                        <TextView
+                            android:id="@+id/main_detail_empty_hint"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="8dp"
+                            android:gravity="center"
+                            android:text="@string/chats_detail_empty_hint"
+                            android:textAppearance="?attr/textAppearanceBodyMedium"
+                            android:textColor="?attr/colorOnSurfaceVariant" />
+                    </LinearLayout>
+                </FrameLayout>
+            </LinearLayout>
         </LinearLayout>
     </LinearLayout>
 

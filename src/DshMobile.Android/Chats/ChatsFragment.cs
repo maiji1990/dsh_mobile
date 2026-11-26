@@ -705,6 +705,13 @@ public sealed class ChatsFragment : Fragment, ITabRoot, SessionActionsBottomShee
 
     private void OpenChatSession(string sessionId, string? focusEventId)
     {
+        // UI-S6：宽屏且停留在会话页签时，右栏内联加载 ChatFragment；窄屏保持沉浸式单栏体验。
+        if (Activity is MainActivity main && main.IsWideChatsDualPane)
+        {
+            main.OpenChatInDetailPane(sessionId, isRemote: false, focusEventId);
+            return;
+        }
+
         var intent = new Intent(RequireContext(), typeof(ChatActivity));
         intent.PutExtra(ChatActivity.ExtraSessionId, sessionId);
         if (!string.IsNullOrWhiteSpace(focusEventId))

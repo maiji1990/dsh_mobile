@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<menu xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto">
+    <!-- UI-S6：与会话列表 / 聊天页一致的跨会话待办收件箱入口，有待办时才显示。 -->
+    <item
+        android:id="@+id/more_menu_inbox"
+        android:icon="@drawable/ic_inbox"
+        android:title="@string/chat_menu_inbox"
+        android:visible="false"
+        app:showAsAction="ifRoom" />
+</menu>

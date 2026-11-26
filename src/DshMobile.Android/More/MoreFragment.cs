@@ -1,16 +1,22 @@
 using Android.Content;
+using Android.Content.Res;
 using Android.Views;
+using AndroidX.Core.Widget;
 using DshMobile.App.Automation;
 using DshMobile.App.Bridge;
+using DshMobile.App.Chats;
 using DshMobile.App.Credentials;
 using DshMobile.App.Developer;
+using DshMobile.App.Inbox;
 using DshMobile.App.Plugins;
 using DshMobile.App.Remote;
 using DshMobile.App.RuntimeUi;
 using DshMobile.App.Ui;
+using DshMobile.Agent.Presentation;
 using DshMobile.Application.Ui;
 using DshMobile.Runtime.Automation;
 using DshMobile.Runtime.Automation.Relay;
+using Google.Android.Material.AppBar;
 using Google.Android.Material.Button;
 using Google.Android.Material.MaterialSwitch;
 using Google.Android.Material.ProgressIndicator;
@@ -19,18 +25,22 @@ using Fragment = AndroidX.Fragment.App.Fragment;
 namespace DshMobile.App.More;
 
 /// <summary>
-/// More 标签页（ADR-0021 / UI Slice 4）：
-/// 全 XML 化声明（<c>fragment_more.xml</c> + <c>view_setting_*_row</c>），顶部集成运行与远程概览卡与快捷启停，
-/// 彻底移除动态 Add/RemoveAllViews 构建方式。
+/// More 标签页（ADR-0021 / UI Slice 4 / UI-S6）：
+/// 全 XML 化声明（<c>fragment_more.xml</c> + <c>view_setting_*_row</c>），顶部由大块概览卡压缩为
+/// 单行运行摘要条（状态圆点 + 本机/远程摘要 + 紧凑控制按钮），点击直接拉起宿主快速控制抽屉；
+/// 顶栏按待办数量显示跨会话收件箱入口，并将其余设置行副标题收敛到 1~2 行。
 /// </summary>
-public sealed class MoreFragment : Fragment, ITabRoot
+public sealed class MoreFragment : Fragment, ITabRoot, HostQuickControlBottomSheet.IHost
 {
     private BridgeHost _bridge = null!;
+    private MaterialToolbar _toolbar = null!;
+    private IMenuItem? _inboxMenuItem;
     private LinearProgressIndicator _progress = null!;
-    private TextView _dshBadge = null!;
-    private TextView _dshVersion = null!;
-    private TextView _remoteOverview = null!;
-    private MaterialButton _dshToggleBtn = null!;
+    private View _summaryStrip = null!;
+    private ImageView _statusDot = null!;
+    private TextView _statusTitle = null!;
+    private TextView _statusDetail = null!;
+    private NestedScrollView _scroll = null!;
 
     private View _rowCredentials = null!;
     private View _rowAutomation = null!;
@@ -49,23 +59,24 @@ public sealed class MoreFragment : Fragment, ITabRoot
         var view = inflater.Inflate(Resource.Layout.fragment_more, container, false)!;
         _bridge = DshMobileApplication.Current.Bridge;
 
-        _progress = view.FindViewById<LinearProgressIndicator>(Resource.Id.more_progress)!;
-        _dshBadge = view.FindViewById<TextView>(Resource.Id.more_dsh_badge)!;
-        _dshVersion = view.FindViewById<TextView>(Resource.Id.more_dsh_version)!;
-        _remoteOverview = view.FindViewById<TextView>(Resource.Id.more_overview_remote)!;
-        _dshToggleBtn = view.FindViewById<MaterialButton>(Resource.Id.more_dsh_toggle_btn)!;
-        _dshToggleBtn.Click += (_, _) =>
+        _toolbar = view.FindViewById<MaterialToolbar>(Resource.Id.more_toolbar)!;
+        _inboxMenuItem = _toolbar.Menu?.FindItem(Resource.Id.more_menu_inbox);
+        _inboxMenuItem?.SetVisible(false);
+        _toolbar.MenuItemClick += (_, e) =>
         {
-            var status = _bridge.Status;
-            if (status.Primary == HomeAction.Start)
+            if (e.Item?.ItemId == Resource.Id.more_menu_inbox)
             {
-                _ = _bridge.RunStartAsync();
-            }
-            else if (status.Secondary == HomeAction.Stop)
-            {
-                _ = _bridge.RunStopAsync();
+                OpenInboxSheet();
             }
         };
+
+        _progress = view.FindViewById<LinearProgressIndicator>(Resource.Id.more_progress)!;
+        _summaryStrip = view.FindViewById(Resource.Id.more_summary_strip)!;
+        _summaryStrip.Click += (_, _) => OpenHostQuickControl();
+        _statusDot = view.FindViewById<ImageView>(Resource.Id.more_status_dot)!;
+        _statusTitle = view.FindViewById<TextView>(Resource.Id.more_status_title)!;
+        _statusDetail = view.FindViewById<TextView>(Resource.Id.more_status_detail)!;
+        view.FindViewById<MaterialButton>(Resource.Id.more_summary_action)!.Click += (_, _) => OpenHostQuickControl();
 
         var ctx = RequireContext();
         _rowCredentials = view.FindViewById(Resource.Id.more_row_credentials)!;
@@ -107,9 +118,10 @@ public sealed class MoreFragment : Fragment, ITabRoot
         Rows.BindNavRow(_rowDeveloper, Resource.Drawable.ic_code, GetString(Resource.String.developer_title),
             GetString(Resource.String.more_developer_sub), () => Open(typeof(DeveloperActivity)));
 
-        if (view.FindViewById<ViewGroup>(Resource.Id.more_scroll) is { ChildCount: > 0 } scroll)
+        _scroll = view.FindViewById<NestedScrollView>(Resource.Id.more_scroll)!;
+        if (_scroll.ChildCount > 0)
         {
-            Edges.ClampMaxWidth(scroll.GetChildAt(0));
+            Edges.ClampMaxWidth(_scroll.GetChildAt(0));
         }
 
         return view;
@@ -120,6 +132,7 @@ public sealed class MoreFragment : Fragment, ITabRoot
         base.OnStart();
         _bridge.Changed += OnStateChanged;
         _bridge.Agent.Credentials.StateChanged += OnCredentialsChanged;
+        _bridge.Agent.Inbox.StateChanged += OnInboxStateChanged;
         Render();
     }
 
@@ -127,6 +140,7 @@ public sealed class MoreFragment : Fragment, ITabRoot
     {
         _bridge.Changed -= OnStateChanged;
         _bridge.Agent.Credentials.StateChanged -= OnCredentialsChanged;
+        _bridge.Agent.Inbox.StateChanged -= OnInboxStateChanged;
         base.OnStop();
     }
 
@@ -140,9 +154,20 @@ public sealed class MoreFragment : Fragment, ITabRoot
         }
     }
 
+    /// <summary>UI-S6：再次点击「更多」页签时平滑回到顶部。</summary>
+    public void OnReselected()
+    {
+        if (View is not null)
+        {
+            _scroll.SmoothScrollTo(0, 0);
+        }
+    }
+
     private void OnStateChanged(object? sender, EventArgs e) => ScheduleRender();
 
     private void OnCredentialsChanged(Agent.Presentation.CredentialsUiState _) => ScheduleRender();
+
+    private void OnInboxStateChanged(InboxUiState _) => ScheduleRender();
 
     private void ScheduleRender()
     {
@@ -166,51 +191,35 @@ public sealed class MoreFragment : Fragment, ITabRoot
         var busy = _bridge.IsBusy;
         _progress.Visibility = busy ? ViewStates.Visible : ViewStates.Gone;
 
-        var (phaseRes, tone) = status.Phase switch
+        var phaseRes = status.Phase switch
         {
-            HomePhase.NotInstalled => (Resource.String.home_label_not_installed, Rows.BadgeTone.Neutral),
-            HomePhase.Starting or HomePhase.WaitingForDsh => (Resource.String.home_label_starting, Rows.BadgeTone.Warning),
-            HomePhase.Ready => (Resource.String.home_label_ready, Rows.BadgeTone.Success),
-            HomePhase.Stopping => (Resource.String.home_label_stopping, Rows.BadgeTone.Warning),
-            HomePhase.Busy => (Resource.String.home_label_busy, Rows.BadgeTone.Warning),
-            HomePhase.Failed => (Resource.String.home_label_failed, Rows.BadgeTone.Error),
-            _ => (Resource.String.home_label_stopped, Rows.BadgeTone.Neutral),
+            HomePhase.NotInstalled => Resource.String.home_label_not_installed,
+            HomePhase.Starting or HomePhase.WaitingForDsh => Resource.String.home_label_starting,
+            HomePhase.Ready => Resource.String.home_label_ready,
+            HomePhase.Stopping => Resource.String.home_label_stopping,
+            HomePhase.Busy => Resource.String.home_label_busy,
+            HomePhase.Failed => Resource.String.home_label_failed,
+            _ => Resource.String.home_label_stopped,
         };
-        Rows.SetBadge(_dshBadge, GetString(phaseRes), tone);
+        _statusTitle.Text = Rows.Fmt(ctx, Resource.String.more_summary_local_fmt, GetString(phaseRes));
 
         var version = status.DshVersion;
-        _dshVersion.Text = string.IsNullOrWhiteSpace(version) ? "" : $"DSH {version}";
-        _dshVersion.Visibility = string.IsNullOrWhiteSpace(version) ? ViewStates.Gone : ViewStates.Visible;
-
         var remoteSession = CsRemoteConnection.Session;
-        if (remoteSession is not null)
-        {
-            var label = string.IsNullOrWhiteSpace(remoteSession.Profile.Label)
-                ? remoteSession.Profile.Host
-                : remoteSession.Profile.Label;
-            _remoteOverview.Text = Rows.Fmt(ctx, Resource.String.more_overview_remote_connected, label);
-        }
-        else
-        {
-            _remoteOverview.Text = GetString(Resource.String.more_overview_remote_disconnected);
-        }
+        var remoteText = remoteSession is null
+            ? GetString(Resource.String.more_overview_remote_disconnected)
+            : Rows.Fmt(
+                ctx,
+                Resource.String.more_overview_remote_connected,
+                string.IsNullOrWhiteSpace(remoteSession.Profile.Label) ? remoteSession.Profile.Host : remoteSession.Profile.Label);
+        _statusDetail.Text = string.IsNullOrWhiteSpace(version)
+            ? remoteText
+            : Rows.Fmt(ctx, Resource.String.more_summary_detail_fmt, remoteText, version);
 
-        if (status.Primary == HomeAction.Start)
-        {
-            _dshToggleBtn.Visibility = ViewStates.Visible;
-            _dshToggleBtn.SetText(Resource.String.home_action_start);
-            _dshToggleBtn.Enabled = !busy;
-        }
-        else if (status.Secondary == HomeAction.Stop)
-        {
-            _dshToggleBtn.Visibility = ViewStates.Visible;
-            _dshToggleBtn.SetText(Resource.String.home_action_stop);
-            _dshToggleBtn.Enabled = !busy;
-        }
-        else
-        {
-            _dshToggleBtn.Visibility = ViewStates.Gone;
-        }
+        _statusDot.ImageTintList = ColorStateList.ValueOf(status.Phase == HomePhase.Ready
+            ? new Android.Graphics.Color(AndroidX.Core.Content.ContextCompat.GetColor(ctx, Resource.Color.dshm_running))
+            : new Android.Graphics.Color(Rows.Color(_statusDot, Resource.Attribute.colorOnSurfaceVariant)));
+
+        RenderInboxEntry(_bridge.Agent.Inbox.State);
 
         // 各分组右侧状态胶囊
         var creds = _bridge.Agent.Credentials.State.Entries;
@@ -247,6 +256,56 @@ public sealed class MoreFragment : Fragment, ITabRoot
         var devVisible = UiPrefs.DeveloperEnabled(ctx) ? ViewStates.Visible : ViewStates.Gone;
         _developerDivider.Visibility = devVisible;
         _rowDeveloper.Visibility = devVisible;
+    }
+
+    private void RenderInboxEntry(InboxUiState inbox)
+    {
+        if (_inboxMenuItem is null)
+        {
+            return;
+        }
+
+        var total = inbox.TotalCount;
+        _inboxMenuItem.SetVisible(total > 0);
+        _inboxMenuItem.SetTitle(total > 0
+            ? Rows.Fmt(RequireContext(), Resource.String.chat_menu_inbox_fmt, total)
+            : GetString(Resource.String.chat_menu_inbox));
+    }
+
+    private void OpenInboxSheet()
+    {
+        var manager = ParentFragmentManager;
+        if (manager.FindFragmentByTag(InboxBottomSheet.SheetTag) is null)
+        {
+            new InboxBottomSheet().Show(manager, InboxBottomSheet.SheetTag);
+        }
+    }
+
+    private void OpenHostQuickControl()
+    {
+        var ctx = RequireContext();
+        var status = _bridge.Status;
+        var (titleText, detailText) = HostQuickControlSupport.Describe(ctx, _bridge, status);
+        HostQuickControlBottomSheet.Show(ChildFragmentManager, titleText, detailText);
+    }
+
+    public void OnHostQuickAction(HomeAction action) => HostQuickControlSupport.Run(this, _bridge, action);
+
+    public void OnHostQuickOpenRemote() => Open(typeof(RemoteActivity));
+
+    public void OnHostQuickOpenRuntime() => Open(typeof(RuntimeActivity));
+
+    public void OnHostQuickOpenCredentials() => Open(typeof(CredentialsActivity));
+
+    public void OnHostQuickCancelUpdate() => _bridge.CancelUpdate();
+
+    [Obsolete("Uses Fragment activity result for runtime import parity")]
+    public override void OnActivityResult(int requestCode, int resultCode, Intent? data)
+    {
+#pragma warning disable CS0618
+        base.OnActivityResult(requestCode, resultCode, data);
+#pragma warning restore CS0618
+        HostQuickControlSupport.HandleActivityResult(_bridge, requestCode, (Android.App.Result)resultCode, data);
     }
 
     private void Open(Type activity) => StartActivity(new Intent(RequireContext(), activity));

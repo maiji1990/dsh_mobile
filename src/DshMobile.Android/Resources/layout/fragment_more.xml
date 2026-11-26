@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <androidx.coordinatorlayout.widget.CoordinatorLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
-    android:id="@+id/screen_root"
+    android:id="@+id/more_root"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="?attr/colorSurface">
@@ -14,10 +14,11 @@
         app:liftOnScrollTargetViewId="@id/more_scroll">
 
         <com.google.android.material.appbar.MaterialToolbar
-            android:id="@+id/toolbar"
+            android:id="@+id/more_toolbar"
             style="@style/Widget.DshMobile.Toolbar.InAppBar"
             android:layout_width="match_parent"
             android:layout_height="?attr/actionBarSize"
+            app:menu="@menu/more_toolbar"
             app:title="@string/more_title" />
 
         <com.google.android.material.progressindicator.LinearProgressIndicator
@@ -44,70 +45,69 @@
             android:paddingEnd="@dimen/dshm_page_padding_horizontal"
             android:paddingBottom="24dp">
 
-            <!-- 顶部运行与连接概览卡：本机 DSH 状态/版本 + 远程状态 + 快捷启停 -->
+            <!-- UI-S6：顶部压缩为单行运行摘要条（状态圆点 + 本机/远程摘要 + 紧凑控制按钮），
+                 点击任意位置打开宿主快速控制抽屉，不再占用首屏大块空间。 -->
             <com.google.android.material.card.MaterialCardView
-                android:id="@+id/more_overview_card"
+                android:id="@+id/more_summary_strip"
                 style="@style/Widget.DshMobile.Card.Group"
                 android:layout_width="match_parent"
-                android:layout_height="wrap_content">
+                android:layout_height="wrap_content"
+                android:clickable="true"
+                android:focusable="true"
+                android:foreground="?attr/selectableItemBackground">
 
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:gravity="center_vertical"
                     android:orientation="horizontal"
-                    android:padding="16dp">
+                    android:paddingStart="16dp"
+                    android:paddingTop="10dp"
+                    android:paddingEnd="8dp"
+                    android:paddingBottom="10dp">
+
+                    <ImageView
+                        android:id="@+id/more_status_dot"
+                        android:layout_width="10dp"
+                        android:layout_height="10dp"
+                        android:importantForAccessibility="no"
+                        android:src="@drawable/bg_live_status_dot" />
 
                     <LinearLayout
                         android:layout_width="0dp"
                         android:layout_height="wrap_content"
+                        android:layout_marginStart="10dp"
                         android:layout_weight="1"
                         android:orientation="vertical">
 
-                        <LinearLayout
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:gravity="center_vertical"
-                            android:orientation="horizontal">
-
-                            <TextView
-                                android:id="@+id/more_dsh_badge"
-                                style="@style/Widget.DshMobile.Badge.Neutral"
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
-                                android:text="@string/home_label_stopped" />
-
-                            <TextView
-                                android:id="@+id/more_dsh_version"
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
-                                android:layout_marginStart="8dp"
-                                android:ellipsize="end"
-                                android:fontFamily="monospace"
-                                android:maxLines="1"
-                                android:textAppearance="?attr/textAppearanceLabelMedium"
-                                android:textColor="?attr/colorOnSurfaceVariant" />
-                        </LinearLayout>
-
                         <TextView
-                            android:id="@+id/more_overview_remote"
+                            android:id="@+id/more_status_title"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:layout_marginTop="6dp"
                             android:ellipsize="end"
                             android:maxLines="1"
-                            android:text="@string/more_overview_remote_disconnected"
+                            android:textAppearance="?attr/textAppearanceTitleSmall"
+                            android:textColor="?attr/colorOnSurface" />
+
+                        <TextView
+                            android:id="@+id/more_status_detail"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="2dp"
+                            android:ellipsize="end"
+                            android:maxLines="1"
                             android:textAppearance="?attr/textAppearanceBodySmall"
                             android:textColor="?attr/colorOnSurfaceVariant" />
                     </LinearLayout>
 
                     <com.google.android.material.button.MaterialButton
-                        android:id="@+id/more_dsh_toggle_btn"
-                        style="@style/Widget.Material3.Button.TonalButton"
+                        android:id="@+id/more_summary_action"
+                        style="@style/Widget.Material3.Button.IconButton"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:layout_marginStart="12dp"
-                        android:text="@string/home_action_start" />
+                        android:layout_marginStart="8dp"
+                        android:contentDescription="@string/more_summary_control_desc"
+                        app:icon="@drawable/ic_tune" />
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
 
