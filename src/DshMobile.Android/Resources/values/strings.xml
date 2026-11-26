@@ -840,7 +840,6 @@
     <string name="chat_request_slot_switch_desc">切换到下一项待处理请求</string>
 
     <!-- UI-S3：一体化 Composer -->
-    <string name="chat_stop_pill">⏹ 停止</string>
     <string name="chat_composer_plus_desc">更多输入操作</string>
     <string name="chat_composer_tray_images">相册图片</string>
     <string name="chat_composer_tray_slash">斜杠命令</string>

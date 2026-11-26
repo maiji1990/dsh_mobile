@@ -243,6 +243,27 @@ internal static class ChatTimelineProjector
     }
 
     /// <summary>
+    /// 汇总工具组内所有真实耗时的毫秒数；没有任何有效耗时时返回 <c>null</c>，
+    /// 由界面决定隐藏耗时文本，绝不合成估算值。
+    /// </summary>
+    public static long? SumToolDurationsMs(IReadOnlyList<ToolCallRow> tools)
+    {
+        ArgumentNullException.ThrowIfNull(tools);
+
+        var total = 0L;
+        var hasDuration = false;
+        foreach (var tool in tools)
+        {
+            if (tool.DurationMs is { } duration && duration > 0)
+            {
+                total += duration;
+                hasDuration = true;
+            }
+        }
+        return hasDuration ? total : null;
+    }
+
+    /// <summary>
     /// 生成工具调用的单行人类可读摘要。参数无法解析或本身是裸 JSON 时，
     /// 退化为“运行命令 / 读取文件 / 搜索内容 / 编辑文件 / 工具名”，绝不把 <c>{...}</c> 直接展示给用户。
     /// </summary>
@@ -379,7 +400,7 @@ internal static class ChatTimelineProjector
         return builder.ToString();
     }
 
-    private static ToolGroupTimelineItem BuildToolGroup(long turnSeq, IReadOnlyList<ToolCallRow> tools)
+    private static ToolGroupTimelineItem BuildToolGroup(long turnSeq, List<ToolCallRow> tools)
     {
         var counts = new Dictionary<ToolCategory, int>
         {

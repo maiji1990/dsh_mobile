@@ -71,9 +71,10 @@
         </HorizontalScrollView>
     </LinearLayout>
 
-    <com.google.android.material.divider.MaterialDivider
+    <!-- Polish-P2：不再使用贯穿全宽的 MaterialDivider，改为 12dp 垂直留白分隔。 -->
+    <Space
         android:layout_width="match_parent"
-        android:layout_height="wrap_content" />
+        android:layout_height="12dp" />
 
     <TextView
         android:id="@+id/model_picker_empty"

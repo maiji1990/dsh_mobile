@@ -9,6 +9,7 @@ using DshMobile.Agent.Presentation;
 using DshMobile.App.Ui;
 using Google.Android.Material.BottomSheet;
 using Google.Android.Material.Button;
+using Google.Android.Material.Card;
 using Google.Android.Material.Chip;
 using Google.Android.Material.Snackbar;
 using FragmentManager = AndroidX.Fragment.App.FragmentManager;
@@ -296,6 +297,7 @@ internal sealed class ModelPickerDialog : BottomSheetDialogFragment
 
         private sealed class ModelHolder : RecyclerView.ViewHolder
         {
+            private readonly MaterialCardView _row;
             private readonly TextView _name;
             private readonly View _check;
             private readonly Action<ModelSelectionSpec> _onSelected;
@@ -304,6 +306,7 @@ internal sealed class ModelPickerDialog : BottomSheetDialogFragment
             public ModelHolder(View itemView, Action<ModelSelectionSpec> onSelected) : base(itemView)
             {
                 _onSelected = onSelected;
+                _row = (MaterialCardView)itemView;
                 _name = itemView.FindViewById<TextView>(Resource.Id.model_row_name)!;
                 _check = itemView.FindViewById(Resource.Id.model_row_check)!;
                 itemView.Click += (_, _) =>
@@ -321,6 +324,10 @@ internal sealed class ModelPickerDialog : BottomSheetDialogFragment
                 _name.SetTextColor(new Android.Graphics.Color(Rows.Color(
                     _name,
                     row.IsCurrent ? Resource.Attribute.colorPrimary : Resource.Attribute.colorOnSurface)));
+                _row.SetCardBackgroundColor(new Android.Graphics.Color(
+                    row.IsCurrent
+                        ? _row.Context!.GetColor(Resource.Color.dshm_selected_tint)
+                        : Android.Graphics.Color.Transparent));
                 _check.Visibility = row.IsCurrent ? ViewStates.Visible : ViewStates.Gone;
                 _spec = new ModelSelectionSpec(row.Group.Id, row.Model.Id, row.ReasoningEffort);
             }

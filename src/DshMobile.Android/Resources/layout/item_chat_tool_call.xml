@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- UI Slice 2: 结构化工具调用卡片（收窄左缩进至 16dp，静态摘要避免 textIsSelectable 裁切，展开展示美化 JSON 与输出） -->
+<!-- 历史兼容布局：Polish-P2 起工具调用一律聚合进 item_chat_tool_group，投影器不再单独产出该行；
+     仅保留给旧数据 / 回放兜底，视觉已统一为 18dp 单色细线图标，不再使用彩色状态圆点。 -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
@@ -68,8 +69,8 @@
 
                 <ImageView
                     android:id="@+id/chat_tool_status_icon"
-                    android:layout_width="16dp"
-                    android:layout_height="16dp"
+                    android:layout_width="18dp"
+                    android:layout_height="18dp"
                     android:importantForAccessibility="no"
                     android:src="@drawable/ic_check_circle" />
 

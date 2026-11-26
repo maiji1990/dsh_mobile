@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 助手 Turn 末尾 Footer（UI-S2 A2）：左侧真实耗时 / 元信息，右侧复制回复 -->
+<!-- 助手 Turn 末尾 Footer（Polish-P2）：左侧 13sp tnum 淡灰耗时，右侧仅一颗低调线性复制图标。 -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
@@ -18,18 +18,26 @@
         android:layout_height="wrap_content"
         android:layout_weight="1"
         android:fontFeatureSettings="tnum"
-        android:textAppearance="?attr/textAppearanceLabelSmall"
-        android:textColor="?attr/colorOnSurfaceVariant" />
+        android:textAppearance="@style/TextAppearance.DshMobile.Secondary"
+        android:textColor="@color/dshm_text_tertiary" />
 
     <com.google.android.material.button.MaterialButton
         android:id="@+id/chat_reply_footer_copy"
-        style="@style/Widget.Material3.Button.TextButton"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:minHeight="@dimen/dshm_touch_min"
-        android:minWidth="@dimen/dshm_touch_min"
-        android:text="@string/chat_reply_copy"
-        android:textAppearance="?attr/textAppearanceLabelSmall"
+        style="@style/Widget.Material3.Button.IconButton"
+        android:layout_width="44dp"
+        android:layout_height="44dp"
+        android:contentDescription="@string/chat_reply_copy"
+        android:gravity="center"
+        android:insetBottom="0dp"
+        android:insetLeft="0dp"
+        android:insetRight="0dp"
+        android:insetTop="0dp"
+        android:minHeight="0dp"
+        android:minWidth="0dp"
+        android:padding="0dp"
         app:icon="@drawable/ic_copy"
-        app:iconSize="16dp" />
+        app:iconGravity="textStart"
+        app:iconPadding="0dp"
+        app:iconSize="18dp"
+        app:iconTint="@color/dshm_text_tertiary" />
 </LinearLayout>

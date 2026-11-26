@@ -107,7 +107,8 @@ internal static class ChatMarkdownBinder
             builder.SetSpan(new ForegroundColorSpan(ResolveAttrColor(ctx, Resource.Attribute.colorOnSurfaceVariant)), 0, fullText.Length, SpanTypes.ExclusiveExclusive);
         }
 
-        var codeBg = ResolveAttrColor(ctx, Resource.Attribute.colorSurfaceContainerHigh);
+        // Polish-P4：行内代码只保留等宽字体与略小字号，彻底移除 BackgroundColorSpan，
+        // 不再产生跨行灰底矩形补丁；底色由正文纸面自然承载。
         var linkColor = ResolveAttrColor(ctx, Resource.Attribute.colorPrimary);
 
         foreach (var span in seg.Spans)
@@ -130,8 +131,8 @@ internal static class ChatMarkdownBinder
                     builder.SetSpan(new StrikethroughSpan(), start, end, SpanTypes.ExclusiveExclusive);
                     break;
                 case MarkdownSpanKind.InlineCode:
+                    builder.SetSpan(new RelativeSizeSpan(0.92f), start, end, SpanTypes.ExclusiveExclusive);
                     builder.SetSpan(new TypefaceSpan("monospace"), start, end, SpanTypes.ExclusiveExclusive);
-                    builder.SetSpan(new BackgroundColorSpan(codeBg), start, end, SpanTypes.ExclusiveExclusive);
                     break;
                 case MarkdownSpanKind.Link when !string.IsNullOrWhiteSpace(span.Url):
                     builder.SetSpan(new ExternalUrlSpan(ctx, span.Url!, linkColor), start, end, SpanTypes.ExclusiveExclusive);
@@ -150,17 +151,37 @@ internal static class ChatMarkdownBinder
     {
         var copyBtn = card.FindViewById<MaterialButton>(Resource.Id.code_block_copy)!;
         var wrapBtn = card.FindViewById<MaterialButton>(Resource.Id.code_block_wrap)!;
-        var actions = card.FindViewById<View>(Resource.Id.code_block_actions)!;
+        var languageView = card.FindViewById<TextView>(Resource.Id.code_block_language)!;
         var scrollView = card.FindViewById<HorizontalScrollView>(Resource.Id.code_block_scroll)!;
         var bodyView = card.FindViewById<TextView>(Resource.Id.code_block_body)!;
         var wrappedBodyView = card.FindViewById<TextView>(Resource.Id.code_block_body_wrapped)!;
         var foldDivider = card.FindViewById<View>(Resource.Id.code_block_fold_divider)!;
         var foldToggle = card.FindViewById<MaterialButton>(Resource.Id.code_block_fold_toggle)!;
 
-        // 统一换行符后再按行折叠，避免 Windows / 旧式 Mac 换行造成行数误判。
-        var fullText = seg.Code
+        var language = string.IsNullOrWhiteSpace(seg.Language)
+            ? ctx.GetString(Resource.String.chat_code_language_fallback)
+            : seg.Language.Trim();
+        languageView.Text = language;
+
+        // 统一换行符后去掉首尾空行（含只由空格 / Tab 组成的空白行），再按行折叠，
+        // 避免 Header 与首行代码之间、或代码末尾与 14dp 底距之间多出空行。
+        var normalizedCode = seg.Code
             .Replace("\r\n", "\n", StringComparison.Ordinal)
             .Replace('\r', '\n');
+        var normalizedLines = normalizedCode.Split('\n');
+        var firstCodeLine = 0;
+        var lastCodeLine = normalizedLines.Length - 1;
+        while (firstCodeLine <= lastCodeLine && string.IsNullOrWhiteSpace(normalizedLines[firstCodeLine]))
+        {
+            firstCodeLine++;
+        }
+        while (lastCodeLine >= firstCodeLine && string.IsNullOrWhiteSpace(normalizedLines[lastCodeLine]))
+        {
+            lastCodeLine--;
+        }
+        var fullText = firstCodeLine > lastCodeLine
+            ? string.Empty
+            : string.Join("\n", normalizedLines, firstCodeLine, lastCodeLine - firstCodeLine + 1);
         var lines = fullText.Split('\n');
         // Markdown 围栏代码常以单个换行结尾；末尾空行不计入“总行数”，避免 12 行代码误显示为 13 行。
         var totalLines = lines.Length > 1 && lines[^1].Length == 0
@@ -176,12 +197,12 @@ internal static class ChatMarkdownBinder
         var isWrapped = false;
         RotateDrawable? rotatingFoldIcon = null;
 
-        // 两种正文视图共用同一份文本：切换换行只改可见性，不重设文本，避免 RecyclerView 内闪烁。
+        // 两种正文视图共用同一份文本与语法着色：切换换行只改可见性，避免 RecyclerView 内闪烁。
         void ApplyBodyText()
         {
             var text = isExpanded ? fullText : foldedText;
-            bodyView.Text = text;
-            wrappedBodyView.Text = text;
+            ApplyCodeSyntax(ctx, bodyView, text, seg.Language);
+            ApplyCodeSyntax(ctx, wrappedBodyView, text, seg.Language);
         }
 
         void ApplyFoldState()
@@ -213,30 +234,6 @@ internal static class ChatMarkdownBinder
         }
 
         wrapBtn.Visibility = hasLongLine ? ViewStates.Visible : ViewStates.Gone;
-
-        // 悬浮操作按钮使用不透明圆角底板，正文顶部按按钮实际高度留出安全内边距，
-        // 即使首行代码很长或横向滚动，也绝不会被按钮压盖。
-        void ApplySafeBodyPadding()
-        {
-            // 安全顶部内边距 = 操作组实际高度 + 顶部外边距 + 4dp 余量；
-            // 取实际外边距而非固定值，后续调整按钮尺寸 / margin 时也不会重新压住首行代码。
-            var actionsMarginTop = (actions.LayoutParameters as ViewGroup.MarginLayoutParams)?.TopMargin ?? 0;
-            var safeTop = actions.Height > 0
-                ? actions.Height + actionsMarginTop + Rows.Dp(ctx, 4f)
-                : Rows.Dp(ctx, 44f);
-            var padH = Rows.Dp(ctx, 12f);
-            var padBottom = Rows.Dp(ctx, 12f);
-            if (bodyView.PaddingTop != safeTop)
-            {
-                bodyView.SetPadding(padH, safeTop, padH, padBottom);
-            }
-            if (wrappedBodyView.PaddingTop != safeTop)
-            {
-                wrappedBodyView.SetPadding(padH, safeTop, padH, padBottom);
-            }
-        }
-
-        actions.Post(ApplySafeBodyPadding);
 
         var expandIcon = AndroidX.AppCompat.Content.Res.AppCompatResources.GetDrawable(ctx, Resource.Drawable.ic_expand_more);
         if (expandIcon is not null)
@@ -341,7 +338,8 @@ internal static class ChatMarkdownBinder
                 cell.Text = h;
                 AllowCellWrap(cell);
                 cell.SetTypeface(cell.Typeface, TypefaceStyle.Bold);
-                cell.SetBackgroundColor(ResolveAttrColor(ctx, Resource.Attribute.colorSurfaceContainerHigh));
+                // 表头使用 4–5% 中性微底（与行内代码同一层雾），保持极淡且不抢正文。
+                cell.SetBackgroundColor(new Color(ctx.GetColor(Resource.Color.dshm_inline_code_bg)));
                 headerRow.AddView(cell);
             }
             grid.AddView(headerRow);
@@ -367,6 +365,48 @@ internal static class ChatMarkdownBinder
         cell.SetSingleLine(false);
         cell.Ellipsize = null;
     }
+
+    /// <summary>
+    /// 把纯托管语法扫描结果映射为 Android 文本 Span；着色只覆盖 token 本身，不改变字号与行高。
+    /// </summary>
+    internal static void ApplyCodeSyntax(Context ctx, TextView view, string text, string? language) =>
+        ApplyTokens(ctx, view, text, CodeSyntaxHighlighter.Highlight(text, language));
+
+    /// <summary>
+    /// 终端卡片专用着色：仅对 <c>$ </c> 命令行着色，stdout / stderr 保持中性正文色，
+    /// 防止普通英文错误消息被误识别成关键字。
+    /// </summary>
+    internal static void ApplyTerminalSyntax(Context ctx, TextView view, string text) =>
+        ApplyTokens(ctx, view, text, CodeSyntaxHighlighter.HighlightTerminal(text));
+
+    private static void ApplyTokens(
+        Context ctx,
+        TextView view,
+        string text,
+        IReadOnlyList<CodeSyntaxToken> tokens)
+    {
+        var builder = new SpannableStringBuilder(text);
+        foreach (var token in tokens)
+        {
+            var color = new Color(ctx.GetColor(ResolveSyntaxColor(token.Kind)));
+            builder.SetSpan(
+                new ForegroundColorSpan(color),
+                token.Start,
+                token.Start + token.Length,
+                SpanTypes.ExclusiveExclusive);
+        }
+        view.SetText(builder, TextView.BufferType.Spannable);
+    }
+
+    private static int ResolveSyntaxColor(CodeSyntaxTokenKind kind) => kind switch
+    {
+        CodeSyntaxTokenKind.Comment => Resource.Color.dshm_syntax_comment,
+        CodeSyntaxTokenKind.String => Resource.Color.dshm_syntax_string,
+        CodeSyntaxTokenKind.Keyword => Resource.Color.dshm_syntax_keyword,
+        CodeSyntaxTokenKind.Number => Resource.Color.dshm_syntax_number,
+        CodeSyntaxTokenKind.Prompt => Resource.Color.dshm_syntax_prompt,
+        _ => Resource.Color.dshm_syntax_path,
+    };
 
     private static Color ResolveAttrColor(Context ctx, int attrId)
     {

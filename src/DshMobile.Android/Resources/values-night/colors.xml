@@ -56,8 +56,6 @@
   <color name="dshm_text_tertiary">#8C8F96</color>
   <color name="dshm_bubble_bg">#1B1C20</color>
   <color name="dshm_code_bg">#141518</color>
-  <!-- 过渡兼容：随 Polish-P2 移除 bg_code_block_actions.xml 一并删除 -->
-  <color name="dshm_code_actions_bg">#EB292A2D</color>
   <!-- 深色代码块零描边，依靠纸面明度差区分 -->
   <color name="dshm_code_stroke">#00000000</color>
   <!-- 8% 极淡品牌绿雾：选中态只做轻微染色 -->

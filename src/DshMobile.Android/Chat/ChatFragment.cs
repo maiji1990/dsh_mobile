@@ -66,11 +66,10 @@ public sealed class ChatFragment : Fragment
     private EditText _input = null!;
     private MaterialButton _modelPill = null!;
     private MaterialButton _sendBtn = null!;
-    private MaterialButton _stopPill = null!;
     private MaterialButton _plusBtn = null!;
     private MaterialButton _trayImagesBtn = null!;
     private MaterialButton _traySlashBtn = null!;
-    private View _composerTopControls = null!;
+    private View _composerControls = null!;
     private View _composerTray = null!;
     private ChatRequestSlotController _requestSlot = null!;
     private OnBackPressedCallback? _panelBackCallback;
@@ -91,6 +90,7 @@ public sealed class ChatFragment : Fragment
     private bool _lastImeVisible;
     private string? _pendingFocusEventId;
     private int _renderPosted;
+    private int _listBaseTopPadding;
     private PromptSendRequest? _lastSubmittedRequest;
 
     public override View OnCreateView(LayoutInflater inflater, ViewGroup? container, Bundle? savedInstanceState)
@@ -193,11 +193,10 @@ public sealed class ChatFragment : Fragment
 
         _modelPill = view.FindViewById<MaterialButton>(Resource.Id.chat_model_pill)!;
         _sendBtn = view.FindViewById<MaterialButton>(Resource.Id.chat_send_btn)!;
-        _stopPill = view.FindViewById<MaterialButton>(Resource.Id.chat_stop_pill)!;
         _plusBtn = view.FindViewById<MaterialButton>(Resource.Id.chat_plus_btn)!;
         _trayImagesBtn = view.FindViewById<MaterialButton>(Resource.Id.chat_composer_tray_images)!;
         _traySlashBtn = view.FindViewById<MaterialButton>(Resource.Id.chat_composer_tray_slash)!;
-        _composerTopControls = view.FindViewById(Resource.Id.chat_composer_top_controls)!;
+        _composerControls = view.FindViewById(Resource.Id.chat_composer_controls)!;
         _composerTray = view.FindViewById(Resource.Id.chat_composer_tray)!;
 
         _modelPill.Click += (_, _) => OpenModelPicker();
@@ -213,18 +212,13 @@ public sealed class ChatFragment : Fragment
             ShowSlashBar();
         };
         _sendBtn.Click += (_, _) => _ = SendOrCancelAsync();
-        _stopPill.Click += (_, _) => _ = SendOrCancelAsync();
 
-        // 横屏弹出软键盘时隐藏上层控制条与 Tray、压缩输入胶囊为单行，配合 flagNoExtractUi 保住输入框完整可见（F6 / Slice 5）。
+        // 横屏弹出软键盘时收起内嵌控制行与 Tray、压缩输入区为单行，配合 flagNoExtractUi 保住输入框完整可见。
         var composer = view.FindViewById(Resource.Id.chat_composer)!;
-        var composerCardBody = view.FindViewById<ViewGroup>(Resource.Id.chat_composer_inner);
         var dp = Resources.DisplayMetrics!.Density;
         var normalComposerPadH = composer.PaddingLeft;
         var normalComposerPadT = composer.PaddingTop;
         var normalComposerPadB = composer.PaddingBottom;
-        var normalCardPadH = composerCardBody?.PaddingLeft ?? 0;
-        var normalCardPadT = composerCardBody?.PaddingTop ?? 0;
-        var normalCardPadB = composerCardBody?.PaddingBottom ?? 0;
         var normalInputPadH = _input.PaddingLeft;
         var normalInputPadT = _input.PaddingTop;
         var normalInputPadB = _input.PaddingBottom;
@@ -234,7 +228,7 @@ public sealed class ChatFragment : Fragment
             var isLandscape = Resources?.Configuration?.Orientation == global::Android.Content.Res.Orientation.Landscape;
             var imeVisible = insets.IsVisible(WindowInsetsCompat.Type.Ime());
             var compact = isLandscape && imeVisible;
-            _composerTopControls.Visibility = compact ? ViewStates.Gone : ViewStates.Visible;
+            _composerControls.Visibility = compact ? ViewStates.Gone : ViewStates.Visible;
             _composerTray.Visibility = compact || !_trayExpanded ? ViewStates.Gone : ViewStates.Visible;
             _input.SetMaxLines(compact ? 1 : 5);
             _input.SetMinHeight(compact ? 0 : normalInputMinH);
@@ -243,13 +237,11 @@ public sealed class ChatFragment : Fragment
                 var p2 = (int)Math.Round(2f * dp);
                 var p4 = (int)Math.Round(4f * dp);
                 composer.SetPadding(normalComposerPadH, p2, normalComposerPadH, p2);
-                composerCardBody?.SetPadding(normalCardPadH, 0, normalCardPadH, 0);
                 _input.SetPadding(normalInputPadH, p4, normalInputPadH, p4);
             }
             else
             {
                 composer.SetPadding(normalComposerPadH, normalComposerPadT, normalComposerPadH, normalComposerPadB);
-                composerCardBody?.SetPadding(normalCardPadH, normalCardPadT, normalCardPadH, normalCardPadB);
                 _input.SetPadding(normalInputPadH, normalInputPadT, normalInputPadH, normalInputPadB);
             }
 
@@ -263,16 +255,63 @@ public sealed class ChatFragment : Fragment
         }));
 
         var requestSlotRoot = view.FindViewById(Resource.Id.chat_request_slot)!;
-        Edges.ClampMaxWidthTo(
+        var headerPill = view.FindViewById(Resource.Id.chat_header_pill)!;
+        var topBanners = view.FindViewById<View>(Resource.Id.chat_top_banners)!;
+        // 用外边距限宽，避免 Edges.ClampMaxWidthTo 修改 RecyclerView 的 paddingTop，
+        // 从而保留“消息流从悬浮顶栏背后滚过”的固定顶部内边距。
+        Edges.ClampMaxWidthByMarginTo(
             Resource.Dimension.dshm_chat_max_width,
             _list,
             _attachmentsBar,
             requestSlotRoot,
-            composer);
-        Edges.ClampMaxWidthByMarginTo(
-            Resource.Dimension.dshm_chat_max_width,
+            composer,
+            headerPill,
+            topBanners,
             _unknownBanner,
             _slashPanel);
+
+        // 状态横幅 / UnknownSend / 加载更早是悬浮层：按实际高度给列表补足首屏避让，
+        // 但滚动后消息仍可进入 68dp 顶栏区，形成通透的悬浮胶囊效果。
+        _listBaseTopPadding = _list.PaddingTop;
+        void ApplyTopBannerInset()
+        {
+            var extra = topBanners.Visibility == ViewStates.Visible ? Math.Max(0, topBanners.Height) : 0;
+            var targetTop = _listBaseTopPadding + extra;
+            if (_list.PaddingTop != targetTop)
+            {
+                _list.SetPadding(_list.PaddingLeft, targetTop, _list.PaddingRight, _list.PaddingBottom);
+                // 横幅显隐改变首屏避让后，跟底状态下重新贴底，避免最后一条被新内边距顶出视口。
+                if (_followBottom)
+                {
+                    ScrollToLatestItem();
+                }
+            }
+        }
+        topBanners.LayoutChange += (_, _) => ApplyTopBannerInset();
+        topBanners.Post(ApplyTopBannerInset);
+
+        // 回底悬浮钮始终贴着 Composer 上沿 10dp；Composer 高度会随 Tray / 多行输入变化。
+        void AnchorScrollButton()
+        {
+            if (_scrollToBottom.LayoutParameters is not FrameLayout.LayoutParams lp)
+            {
+                return;
+            }
+            var rootLocation = new int[2];
+            var composerLocation = new int[2];
+            view.GetLocationInWindow(rootLocation);
+            composer.GetLocationInWindow(composerLocation);
+            var composerTop = composerLocation[1] - rootLocation[1];
+            var targetBottomMargin = Math.Max(0, view.Height - composerTop + (int)Math.Round(10f * dp));
+            if (lp.BottomMargin != targetBottomMargin)
+            {
+                lp.BottomMargin = targetBottomMargin;
+                _scrollToBottom.LayoutParameters = lp;
+            }
+        }
+        composer.LayoutChange += (_, _) => AnchorScrollButton();
+        view.LayoutChange += (_, _) => AnchorScrollButton();
+        view.Post(AnchorScrollButton);
 
         RenderAttachments();
         return view;
@@ -545,7 +584,6 @@ public sealed class ChatFragment : Fragment
 
         var isRunningTurn = s.Transcript.Phase is RunPhase.Starting or RunPhase.Streaming;
         _cancelMenuItem?.SetVisible(isRunningTurn && s.Capabilities.CancelSession);
-        _stopPill.Visibility = isRunningTurn && s.Capabilities.CancelSession ? ViewStates.Visible : ViewStates.Gone;
         if (isRunningTurn && s.Capabilities.CancelSession)
         {
             _sendBtn.SetIconResource(Resource.Drawable.ic_stop);
@@ -835,6 +873,14 @@ public sealed class ChatFragment : Fragment
         _trayExpanded = expanded;
         if (expanded)
         {
+            // Tray 与斜杠面板互斥：同一张 Composer 卡片上方只允许一个浮层，避免两层叠压。
+            if (_slashExpanded)
+            {
+                _slashExpanded = false;
+                _slashAutoFromInput = false;
+                _slashFilterQuery = string.Empty;
+                RenderSlashBar(_vm.State);
+            }
             _composerTray.Alpha = 0f;
             _composerTray.Visibility = ViewStates.Visible;
             _composerTray.Animate()?.Alpha(1f).SetDuration(160).Start();
@@ -957,14 +1003,13 @@ public sealed class ChatFragment : Fragment
         }
     }
 
+    /// <summary>
+    /// Polish-P2：点击顶栏标题 / 副标题直达当前工作区浏览，不再误弹模型选择器。
+    /// 模型切换统一由底部内嵌胶囊承担；宽屏嵌入时同样复用 MainActivity 的工作区页签。
+    /// </summary>
     private void OnSessionHeaderClicked()
     {
-        if (_vm.State.IsConnected && _vm.State.Capabilities.SwitchModelInSession)
-        {
-            OpenModelPicker();
-            return;
-        }
-        _ = EnsureConnectedAsync();
+        StartActivity(MainActivity.CreateWorkspaceIntent(RequireContext(), string.Empty, openGitDiff: false));
     }
 
     private void OnStatusActionClicked()

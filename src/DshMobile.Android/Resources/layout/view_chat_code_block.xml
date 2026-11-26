@@ -1,116 +1,119 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 代码块（UI-S2 A2）：移除独立语言顶栏，正文右上角悬浮换行 / 复制；底部折叠分割线与展开按钮 -->
+<!-- 代码块（Polish-P2）：14dp 圆角纸面容器；极轻 34dp Header（语言标签 + 换行 / 复制）与代码正文上下两段。 -->
 <com.google.android.material.card.MaterialCardView xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
-    style="@style/Widget.Material3.CardView.Outlined"
+    style="@style/Widget.Material3.CardView.Filled"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:layout_marginTop="4dp"
     android:layout_marginBottom="8dp"
-    app:cardBackgroundColor="?attr/colorSurfaceContainerLow"
-    app:cardCornerRadius="@dimen/dshm_radius_block"
-    app:strokeColor="?attr/colorOutlineVariant">
+    app:cardBackgroundColor="@color/dshm_code_bg"
+    app:cardCornerRadius="@dimen/dshm_code_radius"
+    app:cardElevation="0dp"
+    app:strokeColor="@color/dshm_code_stroke"
+    app:strokeWidth="@dimen/dshm_hairline">
 
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="vertical">
 
-        <!-- 代码正文与右上角悬浮操作组叠放，避免为语言标签占用独立顶栏高度 -->
-        <FrameLayout
+        <!-- 单行 Header：低对比语言标签 + 两颗无底板透明小图标钮。 -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="34dp"
+            android:gravity="center_vertical"
+            android:orientation="horizontal"
+            android:paddingStart="14dp"
+            android:paddingEnd="14dp">
+
+            <TextView
+                android:id="@+id/code_block_language"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:ellipsize="end"
+                android:maxLines="1"
+                android:text="@string/chat_code_language_fallback"
+                android:textColor="@color/dshm_text_tertiary"
+                android:textSize="12sp" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/code_block_wrap"
+                style="@style/Widget.Material3.Button.IconButton"
+                android:layout_width="32dp"
+                android:layout_height="32dp"
+                android:contentDescription="@string/chat_code_wrap"
+                android:gravity="center"
+                android:insetBottom="0dp"
+                android:insetLeft="0dp"
+                android:insetRight="0dp"
+                android:insetTop="0dp"
+                android:minHeight="0dp"
+                android:minWidth="0dp"
+                android:padding="0dp"
+                android:visibility="gone"
+                app:icon="@drawable/ic_wrap_text"
+                app:iconGravity="textStart"
+                app:iconPadding="0dp"
+                app:iconSize="18dp"
+                app:iconTint="@color/dshm_text_tertiary" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/code_block_copy"
+                style="@style/Widget.Material3.Button.IconButton"
+                android:layout_width="32dp"
+                android:layout_height="32dp"
+                android:contentDescription="@string/chat_code_copy"
+                android:gravity="center"
+                android:insetBottom="0dp"
+                android:insetLeft="0dp"
+                android:insetRight="0dp"
+                android:insetTop="0dp"
+                android:minHeight="0dp"
+                android:minWidth="0dp"
+                android:padding="0dp"
+                app:icon="@drawable/ic_copy"
+                app:iconGravity="textStart"
+                app:iconPadding="0dp"
+                app:iconSize="18dp"
+                app:iconTint="@color/dshm_text_tertiary" />
+        </LinearLayout>
+
+        <!-- 代码正文：横向滚动与自动换行两种模式互斥显示，共用同一份高亮文本。 -->
+        <!-- 隐藏粗黑横向滚动条，避免贴死 14dp 圆角底边；首行与 Header 之间只留 6dp 呼吸距。 -->
+        <HorizontalScrollView
+            android:id="@+id/code_block_scroll"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:clipChildren="false">
+            android:scrollbars="none">
 
-            <HorizontalScrollView
-                android:id="@+id/code_block_scroll"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:scrollbars="horizontal">
-
-                <TextView
-                    android:id="@+id/code_block_body"
-                    style="@style/Widget.DshMobile.Mono"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:paddingStart="12dp"
-                    android:paddingTop="44dp"
-                    android:paddingEnd="12dp"
-                    android:paddingBottom="12dp"
-                    android:textColor="?attr/colorOnSurface" />
-            </HorizontalScrollView>
-
-            <!-- 自动换行模式：与横向滚动正文互斥显示，切换时只改可见性，避免重新测量文本造成闪烁 -->
             <TextView
-                android:id="@+id/code_block_body_wrapped"
+                android:id="@+id/code_block_body"
                 style="@style/Widget.DshMobile.Mono"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:breakStrategy="simple"
-                android:hyphenationFrequency="none"
-                android:paddingStart="12dp"
-                android:paddingTop="44dp"
-                android:paddingEnd="12dp"
-                android:paddingBottom="12dp"
-                android:textColor="?attr/colorOnSurface"
-                android:visibility="gone" />
-
-            <LinearLayout
-                android:id="@+id/code_block_actions"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_gravity="top|end"
-                android:layout_marginTop="4dp"
-                android:layout_marginEnd="4dp"
-                android:background="@drawable/bg_code_block_actions"
-                android:gravity="center_vertical"
-                android:orientation="horizontal"
-                android:paddingStart="2dp"
-                android:paddingTop="2dp"
-                android:paddingEnd="2dp"
-                android:paddingBottom="2dp">
+                android:paddingStart="14dp"
+                android:paddingTop="6dp"
+                android:paddingEnd="14dp"
+                android:paddingBottom="14dp"
+                android:textColor="?attr/colorOnSurface" />
+        </HorizontalScrollView>
 
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/code_block_wrap"
-                    style="@style/Widget.Material3.Button.IconButton"
-                    android:layout_width="32dp"
-                    android:layout_height="32dp"
-                    android:contentDescription="@string/chat_code_wrap"
-                    android:insetBottom="0dp"
-                    android:insetLeft="0dp"
-                    android:insetRight="0dp"
-                    android:insetTop="0dp"
-                    android:minHeight="0dp"
-                    android:minWidth="0dp"
-                    android:padding="0dp"
-                    android:visibility="gone"
-                    app:icon="@drawable/ic_wrap_text"
-                    app:iconPadding="0dp"
-                    app:iconSize="18dp"
-                    app:iconTint="?attr/colorOnSurfaceVariant" />
+        <TextView
+            android:id="@+id/code_block_body_wrapped"
+            style="@style/Widget.DshMobile.Mono"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:breakStrategy="simple"
+            android:hyphenationFrequency="none"
+            android:paddingStart="14dp"
+            android:paddingTop="6dp"
+            android:paddingEnd="14dp"
+            android:paddingBottom="14dp"
+            android:textColor="?attr/colorOnSurface"
+            android:visibility="gone" />
 
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/code_block_copy"
-                    style="@style/Widget.Material3.Button.IconButton"
-                    android:layout_width="32dp"
-                    android:layout_height="32dp"
-                    android:layout_marginStart="2dp"
-                    android:contentDescription="@string/chat_code_copy"
-                    android:insetBottom="0dp"
-                    android:insetLeft="0dp"
-                    android:insetRight="0dp"
-                    android:insetTop="0dp"
-                    android:minHeight="0dp"
-                    android:minWidth="0dp"
-                    android:padding="0dp"
-                    app:icon="@drawable/ic_copy"
-                    app:iconPadding="0dp"
-                    app:iconSize="18dp"
-                    app:iconTint="?attr/colorOnSurfaceVariant" />
-            </LinearLayout>
-        </FrameLayout>
-
-        <!-- 代码块折叠时的底部分割线（默认隐藏，仅折叠时由 Adapter 显示） -->
         <com.google.android.material.divider.MaterialDivider
             android:id="@+id/code_block_fold_divider"
             android:layout_width="match_parent"
@@ -118,7 +121,6 @@
             android:visibility="gone"
             app:dividerColor="?attr/colorOutlineVariant" />
 
-        <!-- 折叠切换按钮：文案中的总行数由 Adapter 在绑定或展开时设置 -->
         <com.google.android.material.button.MaterialButton
             android:id="@+id/code_block_fold_toggle"
             style="@style/Widget.Material3.Button.TextButton"
