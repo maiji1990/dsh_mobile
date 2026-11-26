@@ -1,9 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
   <!--
-    App-wide Material 3 theme (AGENTS.md rule 12, ADR-0021): light / dark follows the system (DayNight), brand colour
-    roles from colors.xml, replaced by wallpaper-based dynamic colour on Android 12+ (DshMobileApplication). Windows are
-    edge-to-edge; every screen pads itself with the system-bar and keyboard insets (Ui/EdgeToEdge).
+    Polish-P1 外观底座（AGENTS.md 规则 12、ADR-0021）：Material 3 DayNight 主题。
+    浅 / 深色跟随系统或用户偏好（UiPrefs.ApplyThemeMode），品牌色盘来自 colors.xml；
+    壁纸动态取色默认关闭，仅在用户显式开启时由 DshMobileApplication 应用。
+    窗口保持 edge-to-edge，各页面自行用系统栏与键盘 insets 留白（Ui/EdgeToEdge）。
   -->
   <style name="Theme.DshMobile" parent="Theme.Material3.DayNight.NoActionBar">
     <item name="colorPrimary">@color/dshm_primary</item>
@@ -40,12 +41,79 @@
     <item name="colorSurfaceContainer">@color/dshm_surface_container</item>
     <item name="colorSurfaceContainerHigh">@color/dshm_surface_container_high</item>
     <item name="colorSurfaceContainerHighest">@color/dshm_surface_container_highest</item>
+    <!-- 紧致字阶：把常用 M3 文本角色收敛到 DshMobile 的 7 级字阶，去掉默认正字距 -->
+    <item name="textAppearanceBodyLarge">@style/TextAppearance.DshMobile.Body</item>
+    <item name="textAppearanceBodyMedium">@style/TextAppearance.DshMobile.Body</item>
+    <item name="textAppearanceBodySmall">@style/TextAppearance.DshMobile.Secondary</item>
+    <item name="textAppearanceTitleMedium">@style/TextAppearance.DshMobile.RowTitle</item>
+    <item name="textAppearanceLabelMedium">@style/TextAppearance.DshMobile.Label</item>
     <item name="android:statusBarColor">@android:color/transparent</item>
     <item name="android:navigationBarColor">@android:color/transparent</item>
     <item name="android:windowLightStatusBar">@bool/dshm_light_bars</item>
     <item name="android:windowLightNavigationBar">@bool/dshm_light_bars</item>
     <item name="android:enforceNavigationBarContrast">false</item>
     <item name="android:enforceStatusBarContrast">false</item>
+  </style>
+
+  <!--
+    Polish-P1 七级字阶：全部使用负 / 零字距，告别 Material 3 默认的正字距。
+    android:textFontWeight 在 API 28+ 生效（本应用 minSdk 29）。
+  -->
+  <style name="TextAppearance.DshMobile.LargeTitle" parent="TextAppearance.Material3.HeadlineMedium">
+    <item name="android:textSize">28sp</item>
+    <item name="lineHeight">34sp</item>
+    <item name="android:lineHeight">34sp</item>
+    <!-- Polish-P3 首页 / 工作区 / 设置大标题：28sp Bold，与紧凑 16sp 栏标题拉开层级。 -->
+    <item name="android:textFontWeight">700</item>
+    <item name="android:letterSpacing">-0.01</item>
+  </style>
+
+  <style name="TextAppearance.DshMobile.BarTitle" parent="TextAppearance.Material3.TitleMedium">
+    <item name="android:textSize">16sp</item>
+    <item name="lineHeight">22sp</item>
+    <item name="android:lineHeight">22sp</item>
+    <item name="android:textFontWeight">500</item>
+    <item name="android:letterSpacing">-0.01</item>
+  </style>
+
+  <style name="TextAppearance.DshMobile.RowTitle" parent="TextAppearance.Material3.TitleMedium">
+    <item name="android:textSize">16sp</item>
+    <item name="lineHeight">22sp</item>
+    <item name="android:lineHeight">22sp</item>
+    <item name="android:textFontWeight">500</item>
+    <item name="android:letterSpacing">0</item>
+  </style>
+
+  <style name="TextAppearance.DshMobile.Body" parent="TextAppearance.Material3.BodyLarge">
+    <item name="android:textSize">16sp</item>
+    <item name="lineHeight">24sp</item>
+    <item name="android:lineHeight">24sp</item>
+    <item name="android:textFontWeight">400</item>
+    <item name="android:letterSpacing">0</item>
+  </style>
+
+  <style name="TextAppearance.DshMobile.Secondary" parent="TextAppearance.Material3.BodySmall">
+    <item name="android:textSize">13sp</item>
+    <item name="lineHeight">18sp</item>
+    <item name="android:lineHeight">18sp</item>
+    <item name="android:textFontWeight">400</item>
+    <item name="android:letterSpacing">0</item>
+  </style>
+
+  <style name="TextAppearance.DshMobile.Label" parent="TextAppearance.Material3.LabelMedium">
+    <item name="android:textSize">13sp</item>
+    <item name="lineHeight">18sp</item>
+    <item name="android:lineHeight">18sp</item>
+    <item name="android:textFontWeight">500</item>
+    <item name="android:letterSpacing">0</item>
+  </style>
+
+  <style name="TextAppearance.DshMobile.Mono" parent="TextAppearance.Material3.BodySmall">
+    <item name="android:fontFamily">monospace</item>
+    <item name="android:textSize">13sp</item>
+    <item name="lineHeight">19sp</item>
+    <item name="android:lineHeight">19sp</item>
+    <item name="android:letterSpacing">0</item>
   </style>
 
   <!-- UI-S4 模型选择器等 BottomSheetDialogFragment 的统一 28dp 顶部圆角 -->
@@ -75,82 +143,105 @@
     <item name="cornerSizeBottomRight">6dp</item>
   </style>
 
-  <!-- Section heading above a group of rows or cards. -->
+  <!-- Polish-P3 首页 56dp 纯圆 + FAB：M3 默认 16dp 圆角在此覆盖为 50%（正圆）。 -->
+  <style name="ShapeAppearanceOverlay.DshMobile.Fab" parent="">
+    <item name="cornerFamily">rounded</item>
+    <item name="cornerSize">50%</item>
+  </style>
+
+  <!-- Polish-P4 工作区「文件 / Git」滑块：显式 14dp 圆角，覆盖 M3 按钮默认的全圆胶囊，
+       保证选中滑块四边完整、不被父样式或相邻按钮切平内侧圆角。 -->
+  <style name="ShapeAppearanceOverlay.DshMobile.Segment" parent="ShapeAppearance.Material3.Corner.Full">
+    <item name="cornerFamily">rounded</item>
+    <item name="cornerSize">14dp</item>
+  </style>
+
+  <!-- 分组标题：中性次级文本，不再用品牌色抢主按钮视线；16 / 20 / 16 / 8 的 4dp 标尺留白 -->
   <style name="Widget.DshMobile.SectionHeader" parent="">
     <item name="android:layout_width">match_parent</item>
     <item name="android:layout_height">wrap_content</item>
     <item name="android:paddingStart">16dp</item>
     <item name="android:paddingEnd">16dp</item>
-    <item name="android:paddingTop">24dp</item>
+    <item name="android:paddingTop">20dp</item>
     <item name="android:paddingBottom">8dp</item>
-    <item name="android:textAppearance">?attr/textAppearanceTitleSmall</item>
-    <item name="android:textColor">?attr/colorPrimary</item>
+    <item name="android:textAppearance">@style/TextAppearance.DshMobile.Label</item>
+    <item name="android:textColor">?attr/colorOnSurfaceVariant</item>
     <item name="android:accessibilityHeading">true</item>
   </style>
 
-  <!-- Top app bar of every screen. -->
+  <!-- 独立工具栏（非 AppBarLayout 内） -->
   <style name="Widget.DshMobile.Toolbar" parent="Widget.Material3.Toolbar.Surface">
     <item name="navigationIconTint">?attr/colorOnSurface</item>
   </style>
 
-  <!-- AppBarLayout with M3 tonal lift-on-scroll to separate scrolled content cleanly. -->
+  <!-- 全透明、零抬升顶栏：彻底去掉滚动时的泛灰染色横带 -->
   <style name="Widget.DshMobile.AppBar" parent="Widget.Material3.AppBarLayout">
-    <item name="android:background">?attr/colorSurface</item>
-    <item name="liftOnScroll">true</item>
+    <item name="android:background">@android:color/transparent</item>
+    <item name="liftOnScroll">false</item>
+    <item name="elevation">0dp</item>
+    <item name="android:stateListAnimator">@null</item>
   </style>
 
-  <!-- Toolbar nested inside AppBarLayout (transparent so AppBarLayout liftOnScroll tint shows through). -->
+  <!-- AppBarLayout 内嵌工具栏：标题 / 副标题使用紧致字阶 -->
   <style name="Widget.DshMobile.Toolbar.InAppBar" parent="Widget.Material3.Toolbar">
     <item name="android:background">@android:color/transparent</item>
     <item name="navigationIconTint">?attr/colorOnSurface</item>
-    <item name="titleTextAppearance">?attr/textAppearanceTitleLarge</item>
+    <item name="titleTextAppearance">@style/TextAppearance.DshMobile.BarTitle</item>
+    <item name="subtitleTextAppearance">@style/TextAppearance.DshMobile.Secondary</item>
   </style>
 
-  <!-- Monospace output (command results, keys, logs), selectable. -->
+  <!-- 等宽输出（命令结果、密钥、日志），可选中 -->
   <style name="Widget.DshMobile.Mono" parent="">
     <item name="android:fontFamily">monospace</item>
-    <item name="android:textSize">12sp</item>
+    <item name="android:textSize">13sp</item>
+    <item name="lineHeight">19sp</item>
+    <item name="android:lineHeight">19sp</item>
+    <item name="android:letterSpacing">0</item>
     <item name="android:textIsSelectable">true</item>
     <item name="android:textColor">?attr/colorOnSurfaceVariant</item>
   </style>
 
-  <!-- Non-selectable monospace summary inside RecyclerView items (avoids clipped lines with maxLines). -->
+  <!-- RecyclerView 内不可选中的等宽摘要（避免 maxLines 截断行被整体选中） -->
   <style name="Widget.DshMobile.Mono.Static" parent="">
     <item name="android:fontFamily">monospace</item>
-    <item name="android:textSize">12sp</item>
+    <item name="android:textSize">13sp</item>
+    <item name="lineHeight">19sp</item>
+    <item name="android:lineHeight">19sp</item>
+    <item name="android:letterSpacing">0</item>
     <item name="android:textIsSelectable">false</item>
     <item name="android:textColor">?attr/colorOnSurfaceVariant</item>
   </style>
 
-  <!-- Unified pill search / filter field across Chats, Workspace and Plugins. -->
+  <!-- 统一胶囊搜索 / 筛选框：柔和填充，默认零描边，聚焦仅保留 1dp 品牌色轮廓 -->
   <style name="Widget.DshMobile.SearchField" parent="Widget.Material3.TextInputLayout.OutlinedBox.Dense">
     <item name="boxBackgroundColor">?attr/colorSurfaceContainerLow</item>
     <item name="boxCornerRadiusTopStart">@dimen/dshm_search_corner_radius</item>
     <item name="boxCornerRadiusTopEnd">@dimen/dshm_search_corner_radius</item>
     <item name="boxCornerRadiusBottomStart">@dimen/dshm_search_corner_radius</item>
     <item name="boxCornerRadiusBottomEnd">@dimen/dshm_search_corner_radius</item>
-    <item name="boxStrokeColor">?attr/colorOutlineVariant</item>
-    <item name="boxStrokeWidth">0.5dp</item>
-    <item name="boxStrokeWidthFocused">1.5dp</item>
+    <item name="boxStrokeColor">?attr/colorPrimary</item>
+    <item name="boxStrokeWidth">0dp</item>
+    <item name="boxStrokeWidthFocused">1dp</item>
     <item name="startIconDrawable">@drawable/ic_search</item>
     <item name="startIconTint">?attr/colorOnSurfaceVariant</item>
     <item name="endIconMode">clear_text</item>
   </style>
 
-  <!-- Card that groups a screen's content (status, settings group, form). -->
+  <!-- 基础卡片：只把底色换成一级纸面（surfaceContainerLow），圆角 / 描边 / 抬升沿用
+       Widget.Material3.CardView.Filled 的默认值；需要 18dp 语义圆角与零描边零抬升时用 Card.Group。 -->
   <style name="Widget.DshMobile.Card" parent="Widget.Material3.CardView.Filled">
     <item name="cardBackgroundColor">?attr/colorSurfaceContainerLow</item>
   </style>
 
-  <!-- Grouped settings / feature card with subtle dark-mode stroke separation. -->
   <style name="Widget.DshMobile.Card.Group" parent="Widget.Material3.CardView.Filled">
     <item name="cardBackgroundColor">?attr/colorSurfaceContainerLow</item>
-    <item name="cardCornerRadius">@dimen/dshm_card_corner_radius</item>
-    <item name="strokeColor">?attr/colorOutlineVariant</item>
+    <item name="cardCornerRadius">@dimen/dshm_panel_radius</item>
+    <!-- 浅 / 深色均归零（values-night/dimens.xml 同样为 0dp），彻底去掉卡片硬描边 -->
     <item name="strokeWidth">@dimen/dshm_card_stroke_width</item>
+    <item name="cardElevation">0dp</item>
   </style>
 
-  <!-- Compact pill badges for status indicators. -->
+  <!-- 紧凑状态胶囊 -->
   <style name="Widget.DshMobile.Badge" parent="">
     <item name="android:background">@drawable/bg_status_pill</item>
     <item name="android:paddingStart">8dp</item>
@@ -184,5 +275,47 @@
   <style name="Widget.DshMobile.Badge.Error" parent="Widget.DshMobile.Badge">
     <item name="android:backgroundTint">?attr/colorErrorContainer</item>
     <item name="android:textColor">?attr/colorOnErrorContainer</item>
+  </style>
+
+  <!--
+    Polish-P3 首页宿主状态胶囊：下沉到筛选行后统一为 36dp 高、18dp 圆角、
+    surfaceContainerHighest 填充且零描边；具体文案与语义色仍由 HostQuickControlBottomSheet 注入。
+  -->
+  <style name="Widget.DshMobile.HostPill" parent="">
+    <item name="android:background">@drawable/bg_host_pill</item>
+    <item name="android:backgroundTint">?attr/colorSurfaceContainerHighest</item>
+    <item name="android:gravity">center</item>
+    <item name="android:minHeight">36dp</item>
+    <item name="android:paddingStart">14dp</item>
+    <item name="android:paddingEnd">14dp</item>
+    <item name="android:textAppearance">@style/TextAppearance.DshMobile.Label</item>
+    <item name="android:textColor">?attr/colorOnSurface</item>
+    <item name="android:maxLines">1</item>
+  </style>
+
+  <!-- Polish-P3 无描边柔和筛选胶囊：去掉 Material 默认描边与选中对勾，只靠底色/文字区分。 -->
+  <style name="Widget.DshMobile.Chip.Filter" parent="Widget.Material3.Chip.Filter">
+    <item name="chipStrokeWidth">0dp</item>
+    <item name="chipBackgroundColor">@color/dshm_filter_chip_bg</item>
+    <item name="android:textColor">@color/dshm_filter_chip_text</item>
+    <item name="android:textAppearance">@style/TextAppearance.DshMobile.Label</item>
+    <item name="chipMinHeight">36dp</item>
+    <item name="checkedIconVisible">false</item>
+    <item name="chipIconVisible">false</item>
+  </style>
+
+  <!-- Polish-P4 工作区「文件 / Git」槽式滑块：两颗独立按钮，选中四边完整 14dp 圆角，
+       未选中透明，零描边；底槽与选中色由 values / values-night 语义色明确区分。 -->
+  <style name="Widget.DshMobile.SegmentButton" parent="Widget.Material3.Button.TextButton">
+    <item name="android:insetTop">0dp</item>
+    <item name="android:insetBottom">0dp</item>
+    <item name="android:minWidth">0dp</item>
+    <item name="android:minHeight">36dp</item>
+    <item name="android:textAppearance">@style/TextAppearance.DshMobile.Label</item>
+    <item name="android:textColor">@color/dshm_segment_text</item>
+    <item name="backgroundTint">@color/dshm_segment_bg</item>
+    <item name="strokeWidth">0dp</item>
+    <item name="cornerRadius">14dp</item>
+    <item name="shapeAppearanceOverlay">@style/ShapeAppearanceOverlay.DshMobile.Segment</item>
   </style>
 </resources>

@@ -123,7 +123,7 @@
 
     <!-- ADR-0021 / PR-09: product UI (Sessions | Workspace | More) -->
     <string name="nav_files">工作区</string>
-    <string name="nav_more">更多</string>
+    <string name="nav_more">设置</string>
 
     <string name="home_label_not_installed">未安装</string>
     <string name="home_label_stopped">已停止</string>
@@ -151,7 +151,7 @@
     <string name="home_detail_phase_token">已取得启动令牌，正在等待本地服务就绪…</string>
     <string name="home_detail_phase_protocol">正在建立本地协议通道（/api/remote.mux）…</string>
     <string name="home_detail_phase_initializing">正在完成协议握手校验…</string>
-    <string name="home_detail_ready">DSH %1$s · 只在本机访问；在后台运行时通知栏常驻</string>
+    <string name="home_detail_ready">DSH %1$s · 只在本机访问；后台运行时通知栏保持常驻</string>
     <string name="home_detail_stopping">正在结束 DSH 与 Linux 沙箱。</string>
     <string name="home_detail_busy">请稍候，完成后这里会显示结果。</string>
     <string name="home_detail_progress">%1$s · %2$d%%</string>
@@ -212,7 +212,17 @@
     <string name="update_last">上次更新：%1$s %2$s · %3$s</string>
     <string name="update_copy">复制更新诊断</string>
 
-    <string name="more_title">更多</string>
+    <string name="more_title">设置</string>
+    <string name="more_appearance">外观</string>
+    <string name="appearance_system">跟随系统</string>
+    <string name="appearance_light">浅色</string>
+    <string name="appearance_dark">深色</string>
+    <string name="appearance_apply">应用</string>
+    <string name="appearance_dynamic_color">壁纸动态取色</string>
+    <string name="appearance_dynamic_color_sub">跟随壁纸生成品牌色（默认关闭）</string>
+    <string name="appearance_dynamic_on_hint">已开启壁纸动态取色，重启 App 后生效</string>
+    <string name="appearance_dynamic_off_hint">已关闭壁纸动态取色，重启 App 后生效</string>
+    <string name="shell_back_home">返回首页</string>
     <string name="more_section_features">功能</string>
     <string name="more_section_runtime">运行环境</string>
     <string name="more_warmup">后台预热 DSH</string>
@@ -491,7 +501,7 @@
     <string name="chat_error_banner">操作受限（%1$s）</string>
 
     <!-- PR-05 / PR-09: Native Onboarding / Credentials / Models / Sessions / Web Inventory. -->
-    <string name="nav_chats">会话</string>
+    <string name="nav_chats">对话</string>
     <string name="more_credentials">模型与凭据配置</string>
     <string name="more_credentials_sub">配置 DeepSeek 及兼容 Provider Key（不回显明文）</string>
     <string name="credentials_title">Provider 与凭据</string>
@@ -527,7 +537,10 @@
     <string name="chat_load_older">加载更早历史消息</string>
     <string name="chat_loading_older">正在加载更早历史…</string>
 
-    <string name="chats_title">会话</string>
+    <string name="chats_title">对话</string>
+    <string name="chats_menu_settings">设置</string>
+    <string name="chats_workspace_bar">工作区</string>
+    <string name="chats_workspace_bar_desc">打开工作区</string>
     <string name="chats_search_hint">搜索会话标题、ID 或工作区…</string>
     <string name="chats_search_action">搜索</string>
     <string name="chats_new_desc">新建会话</string>
@@ -695,9 +708,11 @@
     <string name="chats_inline_action_failed">操作未完成：%1$s</string>
     <string name="chats_inline_done">已提交审批结果</string>
     <string name="chats_filter_all">全部</string>
-    <string name="chats_filter_running">进行中</string>
-    <string name="chats_filter_pending_fmt">待审批 (%1$d)</string>
+    <string name="chats_filter_running">运行中</string>
+    <string name="chats_filter_pending">待处理</string>
+    <string name="chats_filter_pending_fmt">待处理 (%1$d)</string>
     <string name="chats_untitled_prefix">未命名会话</string>
+    <string name="chats_untitled_short">新对话</string>
     <string name="chats_cached_section">离线缓存会话（只读）</string>
     <string name="chats_cached_badge">离线缓存</string>
     <string name="chats_cached_meta_fmt">离线缓存 · %1$s</string>
@@ -764,7 +779,7 @@
     <string name="more_badge_unconfigured">未配置</string>
     <string name="more_badge_connected">已连接</string>
     <string name="more_badge_disconnected">未连接</string>
-    <string name="more_warmup_short_sub">回前台时静默预热以加快启动；低电量或温控受限时自动跳过。</string>
+    <string name="more_warmup_short_sub">回前台时静默预热，加快启动</string>
     <string name="credentials_action_set_short">配置</string>
     <string name="plugins_filter_all">全部</string>
     <string name="plugins_filter_manageable">可管理</string>
@@ -808,6 +823,7 @@
     <string name="chat_code_expand_all">展开全部</string>
     <string name="chat_code_expand_all_fmt">展开全部 %1$d 行</string>
     <string name="chat_code_collapse">收起代码块</string>
+    <string name="chat_code_language_fallback">code</string>
 
     <!-- UI-S2 步骤 A2：助手回复 Footer 与流式 Live 状态 -->
     <string name="chat_reply_copy">复制回复</string>
@@ -823,11 +839,11 @@
     <string name="chat_request_slot_desc_question">Agent 需要你的回答后才能继续本轮任务。</string>
     <string name="chat_request_slot_switch_desc">切换到下一项待处理请求</string>
 
-    <!-- UI-S3：轻盈双层 Composer -->
+    <!-- UI-S3：一体化 Composer -->
     <string name="chat_stop_pill">⏹ 停止</string>
     <string name="chat_composer_plus_desc">更多输入操作</string>
     <string name="chat_composer_tray_images">相册图片</string>
-    <string name="chat_composer_tray_slash">斜杠命令 /</string>
+    <string name="chat_composer_tray_slash">斜杠命令</string>
     <string name="chat_stop_guard_hint">刚发送消息，请稍后再停止</string>
     <string name="chat_attachment_remove_fmt">移除图片 %1$s</string>
     <string name="chat_attachment_remove">移除图片</string>

@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 工作区「文件 / Git」槽式切换器外槽：18dp 圆角、无描边，直接引用浅 / 深语义底槽色。 -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <corners android:radius="18dp" />
+    <solid android:color="@color/dshm_segment_track_bg" />
+</shape>

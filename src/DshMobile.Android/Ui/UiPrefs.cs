@@ -1,4 +1,5 @@
 using Android.Content;
+using AndroidX.AppCompat.App;
 
 namespace DshMobile.App.Ui;
 
@@ -146,5 +147,63 @@ public static class UiPrefs
         var editor = context.GetSharedPreferences(File, FileCreationMode.Private)!.Edit()!;
         editor.PutBoolean(LanAskedKey, asked);
         editor.Apply();
+    }
+
+    private const string DynamicColorKey = "dynamic_color_enabled";
+
+    /// <summary>
+    /// 是否启用 Material You 壁纸动态取色。默认关闭，避免医院灰绿等壁纸把品牌色盘染成不可控色调；
+    /// 关闭时始终使用 colors.xml 中的 Graphite 中性品牌色盘。
+    /// </summary>
+    public static bool DynamicColorEnabled(Context context) =>
+        context.GetSharedPreferences(File, FileCreationMode.Private)!.GetBoolean(DynamicColorKey, false);
+
+    public static void SetDynamicColorEnabled(Context context, bool enabled)
+    {
+        var editor = context.GetSharedPreferences(File, FileCreationMode.Private)!.Edit()!;
+        editor.PutBoolean(DynamicColorKey, enabled);
+        editor.Apply();
+    }
+
+    private const string ThemeModeKey = "theme_mode";
+
+    /// <summary>外观模式：跟随系统。</summary>
+    public const string ThemeModeSystem = "system";
+
+    /// <summary>外观模式：始终浅色。</summary>
+    public const string ThemeModeLight = "light";
+
+    /// <summary>外观模式：始终深色。</summary>
+    public const string ThemeModeDark = "dark";
+
+    /// <summary>
+    /// 读取外观模式偏好。仅接受 system / light / dark，未知或缺失值安全兜底为 system（跟随系统）。
+    /// </summary>
+    public static string ThemeMode(Context context)
+    {
+        var value = context.GetSharedPreferences(File, FileCreationMode.Private)!.GetString(ThemeModeKey, ThemeModeSystem);
+        return value is ThemeModeLight or ThemeModeDark ? value : ThemeModeSystem;
+    }
+
+    /// <summary>写入外观模式偏好；非法值统一落回 system，保证持久化内容始终可解析。</summary>
+    public static void SetThemeMode(Context context, string mode)
+    {
+        var normalized = mode is ThemeModeLight or ThemeModeDark ? mode : ThemeModeSystem;
+        var editor = context.GetSharedPreferences(File, FileCreationMode.Private)!.Edit()!;
+        editor.PutString(ThemeModeKey, normalized);
+        editor.Apply();
+    }
+
+    /// <summary>
+    /// 把外观模式偏好映射到 AppCompat 的默认夜间模式。Application 启动时调用一次即可覆盖后续 Activity。
+    /// </summary>
+    public static void ApplyThemeMode(Context context)
+    {
+        AppCompatDelegate.DefaultNightMode = ThemeMode(context) switch
+        {
+            ThemeModeLight => AppCompatDelegate.ModeNightNo,
+            ThemeModeDark => AppCompatDelegate.ModeNightYes,
+            _ => AppCompatDelegate.ModeNightFollowSystem,
+        };
     }
 }
