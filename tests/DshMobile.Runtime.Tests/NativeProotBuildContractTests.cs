@@ -102,6 +102,7 @@ public partial class NativeProotBuildContractTests
             "01-statx-fast-exit.patch",
             "02-seccomp-optional-skip-close.patch",
             "03-canon-ro-prefix-cache.patch",
+            "04-canon-nearest-ancestor.patch",
         ], patches);
         foreach (var name in patches)
         {
@@ -124,5 +125,17 @@ public partial class NativeProotBuildContractTests
         // 向后兼容：PROOT_RO_CACHE_NONEXIST 未设/非 "0" 时仍对全部前缀生效；"0" 时才查询按前缀白名单。
         Assert.Contains("getenv(\"PROOT_RO_CACHE_NONEXIST\")", text, StringComparison.Ordinal);
         Assert.Contains("ro_cache_nonexist_state > 0", text, StringComparison.Ordinal);
+    }
+
+    /// <summary>ADR-0030：04 补丁只允许从已验证的 DIR 祖先起走，剩余段仍由原循环校验。</summary>
+    [Fact]
+    public void NearestAncestorPatch_SeedsOnlyFromCachedDirectories()
+    {
+        var text = File.ReadAllText(Path.Combine(ProotDir, "patches", "04-canon-nearest-ancestor.patch"));
+
+        Assert.Contains("while (parent_len > 1)", text, StringComparison.Ordinal);
+        Assert.Contains("parent_kind == RO_ENTRY_DIR", text, StringComparison.Ordinal);
+        Assert.Contains("lookup_len != user_len", text, StringComparison.Ordinal);
+        Assert.Contains("return -ENOTDIR;", text, StringComparison.Ordinal);
     }
 }

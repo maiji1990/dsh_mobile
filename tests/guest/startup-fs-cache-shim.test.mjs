@@ -8,10 +8,11 @@ import {
   readdirSync,
   rmSync,
   statSync,
+  symlinkSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { delimiter, dirname, join, resolve } from "node:path";
+import { delimiter, dirname, join, resolve, sep } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
@@ -31,6 +32,9 @@ function spawnShim(script, env, options = {}) {
   const args = [];
   if (exposeInternals) {
     args.push("--expose-internals");
+  }
+  for (const preload of options.preloads ?? []) {
+    args.push("--import", pathToFileURL(preload).href);
   }
   args.push("--import", shimUrl, "--input-type=module", "-e", script);
   return spawnSync(process.execPath, args, {
@@ -99,6 +103,8 @@ test("readonly metadata, readdir snapshots and internalModuleStat are cached; wr
       assert.equal(state.active, true);
       assert.equal(state.usesRealpathCacheKey, true);
       assert.equal(state.usesInternalModuleStat, true);
+      assert.equal(state.usesPackageJsonReader, false); // 默认不安装：启动链路全部走 loaderMethods
+      assert.equal(state.usesLoaderMethods, true);
       // 负缓存前缀只保留严格只读目录：误配的 /usr/local 与 /tmp 会被过滤。
       assert.deepEqual(state.negativePrefixes, [path.resolve(roDir)]);
 
@@ -154,6 +160,22 @@ test("readonly metadata, readdir snapshots and internalModuleStat are cached; wr
       assert.ok(state.stats.moduleStatHits >= 2);
       assert.ok(state.stats.moduleStatHits > hitsBefore);
 
+      // 4b. 严格只读前缀内负结果可缓存；可写前缀绝不缓存负结果。
+      const roMissingModule = path.join(roDir, "no-such-module.js");
+      const rwMissingModule = path.join(rwDir, "no-such-module.js");
+      const negHitsBefore = state.stats.moduleStatHits;
+      assert.ok(bindingStat(roMissingModule) < 0);
+      assert.ok(bindingStat(roMissingModule) < 0);
+      assert.ok(state.stats.moduleStatHits > negHitsBefore, "readonly negative stat must hit cache");
+      writeFileSync(roMissingModule, "module.exports = 1;");
+      assert.ok(bindingStat(roMissingModule) < 0, "TTL 内严格只读层负结果保持旧结论");
+      const rwNegHitsBefore = state.stats.moduleStatHits;
+      assert.ok(bindingStat(rwMissingModule) < 0);
+      assert.ok(bindingStat(rwMissingModule) < 0);
+      assert.equal(state.stats.moduleStatHits, rwNegHitsBefore, "writable prefix must not cache negative stat");
+      writeFileSync(rwMissingModule, "module.exports = 1;");
+      assert.equal(bindingStat(rwMissingModule), 0);
+
       // 5. 可写前缀：先缺失后创建必须立即可见（不缓存 ENOENT）。
       const rwMissing = path.join(rwDir, "created-later.txt");
       assert.equal(existsSync(rwMissing), false);
@@ -182,6 +204,10 @@ test("readonly metadata, readdir snapshots and internalModuleStat are cached; wr
       assert.ok(state.stats.bypasses > 0);
 
       assert.ok(state.stats.hits >= 8, "expected cache hits, got " + state.stats.hits);
+      // POSIX 目标平台上干净绝对路径必须走零分配快路径；Windows 上按设计回退慢路径。
+      if (${JSON.stringify(sep)} === "/") {
+        assert.ok(state.stats.fastPathHits > 0, "clean absolute paths must use the fast path");
+      }
       console.log("OK");
     `;
     const env = {
@@ -224,6 +250,8 @@ test("works without --expose-internals: readdir/moduleStat stay cached, realpath
       assert.equal(state.active, true);
       assert.equal(state.usesRealpathCacheKey, false);
       assert.equal(state.usesInternalModuleStat, true);
+      assert.equal(state.usesPackageJsonReader, false);
+      assert.equal(state.usesLoaderMethods, false);
       assert.equal(existsSync(roPkg), true);
       assert.deepEqual(readdirSync(roDir), ["pkg"]);
       assert.deepEqual(readdirSync(roDir), ["pkg"]);
@@ -253,11 +281,16 @@ test("TTL uninstall restores every fs method and the internalModuleStat binding,
       const state = globalThis[Symbol.for("dshmobile.startupFsCache.state")];
       const roDir = ${JSON.stringify(roDir)};
       const roPkg = path.join(roDir, "pkg", "package.json");
+      const roMissingModule = path.join(roDir, "ttl-missing.js");
 
       assert.equal(readFileSync(roPkg, "utf8"), '{"name":"ro","v":1}');
       const names = readdirSync(roDir);
       assert.deepEqual(names, ["pkg"]);
       assert.equal(state.usesInternalModuleStat, true);
+      assert.equal(state.usesPackageJsonReader, false);
+      const bindingStatEarly = process.binding("fs").internalModuleStat;
+      assert.ok(bindingStatEarly(roMissingModule) < 0);
+      assert.ok(bindingStatEarly(roMissingModule) < 0);
 
       // TTL 内：底层文件/目录已变，但缓存仍返回旧快照。
       writeFileSync(roPkg, '{"name":"ro","v":2}');
@@ -269,6 +302,8 @@ test("TTL uninstall restores every fs method and the internalModuleStat binding,
 
       assert.equal(state.active, false);
       assert.equal(state.usesInternalModuleStat, false);
+      assert.equal(state.usesPackageJsonReader, false);
+      assert.equal(state.usesLoaderMethods, false);
       // uninstall 后所有方法恢复原生行为，缓存不再干扰。
       assert.equal(readFileSync(roPkg, "utf8"), '{"name":"ro","v":2}');
       assert.ok(readdirSync(roDir).includes("late.txt"));
@@ -278,6 +313,9 @@ test("TTL uninstall restores every fs method and the internalModuleStat binding,
       assert.equal(bindingStat(roPkg), 0);
       assert.equal(bindingStat(roPkg), 0);
       assert.equal(state.stats.moduleStatHits, hitsBefore);
+      // 负缓存也随 uninstall 清空：新建文件后必须立刻可见。
+      writeFileSync(roMissingModule, "module.exports = 1;");
+      assert.equal(bindingStat(roMissingModule), 0);
       console.log("UNINSTALLED");
     `;
     const env = {
@@ -286,6 +324,345 @@ test("TTL uninstall restores every fs method and the internalModuleStat binding,
       DSHM_FS_CACHE_TTL_MS: "40",
     };
     assert.equal(runWithShim(script, env), "UNINSTALLED");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("readonly .json/.yml manifests are cached only under the strict readonly prefix", () => {
+  const { root, roDir, rwDir } = makeDirs();
+  writeFileSync(join(roDir, "cordis.yml"), "plugins: 1\n");
+  writeFileSync(join(rwDir, "cordis.yml"), "plugins: 1\n");
+  writeFileSync(join(roDir, "cordis.json"), '{"plugins":1}');
+  try {
+    const script = `
+      import assert from "node:assert/strict";
+      import { readFileSync, writeFileSync } from "node:fs";
+      import path from "node:path";
+      const state = globalThis[Symbol.for("dshmobile.startupFsCache.state")];
+      const roYml = ${JSON.stringify(join(roDir, "cordis.yml"))};
+      const rwYml = ${JSON.stringify(join(rwDir, "cordis.yml"))};
+      const roJson = ${JSON.stringify(join(roDir, "cordis.json"))};
+
+      // 严格只读前缀：正结果缓存，磁盘变化在 TTL 内不可见。
+      assert.equal(readFileSync(roYml, "utf8"), "plugins: 1\\n");
+      writeFileSync(roYml, "plugins: 2\\n");
+      assert.equal(readFileSync(roYml, "utf8"), "plugins: 1\\n");
+      assert.ok(state.stats.manifestHits >= 1, "readonly yml must hit cache");
+      const roBuf = readFileSync(roYml);
+      assert.equal(Buffer.isBuffer(roBuf), true);
+      roBuf[0] = 0x58;
+      assert.equal(readFileSync(roYml, "utf8"), "plugins: 1\\n");
+
+      // 非 package.json 的 .json 同属只读清单。
+      assert.equal(readFileSync(roJson, "utf8"), '{"plugins":1}');
+      writeFileSync(roJson, '{"plugins":2}');
+      assert.equal(readFileSync(roJson, "utf8"), '{"plugins":1}');
+
+      // 可写前缀保持透传：修改后立即读到新内容。
+      assert.equal(readFileSync(rwYml, "utf8"), "plugins: 1\\n");
+      writeFileSync(rwYml, "plugins: 2\\n");
+      assert.equal(readFileSync(rwYml, "utf8"), "plugins: 2\\n");
+
+      state.uninstall();
+      assert.equal(readFileSync(roYml, "utf8"), "plugins: 2\\n");
+      console.log("MANIFEST_OK");
+    `;
+    const env = {
+      DSHM_FS_CACHE_PREFIXES: [roDir, rwDir].join(delimiter),
+      DSHM_FS_CACHE_NONEXIST_PREFIXES: roDir,
+      DSHM_FS_CACHE_TTL_MS: "0",
+    };
+    assert.equal(runWithShim(script, env), "MANIFEST_OK");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("package_json_reader.read is cached only for the strict readonly prefix and fully restored", () => {
+  const { root, roDir, rwDir } = makeDirs();
+  try {
+    const script = `
+      import assert from "node:assert/strict";
+      import { createRequire } from "node:module";
+      const state = globalThis[Symbol.for("dshmobile.startupFsCache.state")];
+      const require = createRequire(import.meta.url);
+      const reader = require("internal/modules/package_json_reader");
+      const roPkg = ${JSON.stringify(join(roDir, "pkg", "package.json"))};
+      const rwPkg = ${JSON.stringify(join(rwDir, "pkg", "package.json"))};
+
+      assert.equal(state.usesPackageJsonReader, true);
+      const first = reader.read(roPkg);
+      assert.equal(first.exists, true);
+      assert.equal(first.name, "ro");
+      const hitsBefore = state.stats.packageJsonReaderHits;
+      const second = reader.read(roPkg);
+      assert.equal(second.name, "ro");
+      assert.notEqual(second, first, "each hit must return an independent top-level object");
+      assert.ok(state.stats.packageJsonReaderHits > hitsBefore, "readonly package.json must hit cache");
+
+      // 可写前缀不进入本层缓存：计数不增长。
+      const rwHitsBefore = state.stats.packageJsonReaderHits;
+      reader.read(rwPkg);
+      reader.read(rwPkg);
+      assert.equal(state.stats.packageJsonReaderHits, rwHitsBefore, "writable prefix must not be cached");
+
+      // 包装可完整还原：uninstall 后 read 不再是包装函数。
+      const wrapped = reader.read;
+      state.uninstall();
+      assert.equal(state.active, false);
+      assert.equal(state.usesPackageJsonReader, false);
+      assert.notEqual(reader.read, wrapped);
+      assert.equal(reader.read(roPkg).name, "ro");
+      console.log("READER_OK");
+    `;
+    const env = {
+      DSHM_FS_CACHE_PREFIXES: [roDir, rwDir].join(delimiter),
+      DSHM_FS_CACHE_NONEXIST_PREFIXES: roDir,
+      DSHM_FS_CACHE_TTL_MS: "0",
+      // 该包装默认关闭（启动链路实测 read 调用为 0），仅此用例显式开启以验证包装语义。
+      DSHM_FS_CACHE_PACKAGE_READER: "1",
+    };
+    assert.equal(runWithShim(script, env), "READER_OK");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("loaderMethods breaks through esm/get_format early destructuring for CJS and ESM", () => {
+  const { root, roDir, rwDir } = makeDirs();
+  mkdirSync(join(roDir, "esm"), { recursive: true });
+  writeFileSync(join(roDir, "esm", "package.json"), '{"type":"module"}');
+  writeFileSync(join(roDir, "esm", "mod.js"), "export const value = 1;");
+  try {
+    const script = `
+      import assert from "node:assert/strict";
+      import { createRequire } from "node:module";
+      import { pathToFileURL } from "node:url";
+      const state = globalThis[Symbol.for("dshmobile.startupFsCache.state")];
+      const require = createRequire(import.meta.url);
+      const reader = require("internal/modules/package_json_reader");
+      const lm = require("internal/modules/helpers").loaderMethods;
+      const roPkg = ${JSON.stringify(join(roDir, "pkg", "package.json"))};
+      const roEsm = ${JSON.stringify(join(roDir, "esm", "mod.js"))};
+      const rwPkg = ${JSON.stringify(join(rwDir, "pkg", "package.json"))};
+
+      assert.equal(state.usesLoaderMethods, true, "shim must wrap loaderMethods");
+
+      // CJS 侧：reader.read 与 reader.getPackageScopeConfig 内部都会回落到 loaderMethods。
+      const hits0 = state.stats.loaderMethodsHits;
+      const first = reader.read(roPkg);
+      assert.equal(first.exists, true);
+      const scope1 = reader.getPackageScopeConfig(pathToFileURL(roPkg).href);
+      assert.equal(scope1.exists, true);
+      reader.read(roPkg);
+      reader.getPackageScopeConfig(pathToFileURL(roPkg).href);
+      assert.ok(state.stats.loaderMethodsHits > hits0, "readonly package lookups must hit the loaderMethods cache");
+
+      // 可写前缀绝不进缓存。
+      const rwHits = state.stats.loaderMethodsHits;
+      reader.getPackageScopeConfig(pathToFileURL(rwPkg).href);
+      reader.getPackageScopeConfig(pathToFileURL(rwPkg).href);
+      assert.equal(state.stats.loaderMethodsHits, rwHits, "writable prefix must not be cached");
+
+      // ESM 真实路径：import 一个 type=module 下的 .js 会触发 getPackageScopeConfig。
+      const esmMisses = state.stats.loaderMethodsMisses;
+      await import(pathToFileURL(roEsm).href);
+      assert.ok(state.stats.loaderMethodsMisses > esmMisses, "real ESM import must reach the loaderMethods wrapper");
+
+      // uninstall 完整还原：包装函数被替换回原生函数。
+      const wrapped = lm.getPackageScopeConfig;
+      state.uninstall();
+      assert.equal(state.usesLoaderMethods, false);
+      assert.notEqual(lm.getPackageScopeConfig, wrapped);
+      assert.equal(lm.readPackageJSON !== undefined, true);
+      assert.equal(reader.getPackageScopeConfig(pathToFileURL(roPkg).href).exists, true);
+      console.log("LOADER_METHODS_OK");
+    `;
+    const env = {
+      DSHM_FS_CACHE_PREFIXES: [roDir, rwDir].join(delimiter),
+      DSHM_FS_CACHE_NONEXIST_PREFIXES: roDir,
+      DSHM_FS_CACHE_TTL_MS: "0",
+    };
+    assert.equal(runWithShim(script, env), "LOADER_METHODS_OK");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("loaderMethods installation rolls back when an export is non-writable", () => {
+  const root = mkdtempSync(join(tmpdir(), "dshm-loader-rollback-"));
+  const sabotage = join(root, "sabotage.mjs");
+  const pkg = join(root, "package.json");
+  writeFileSync(pkg, '{"name":"rollback"}');
+  writeFileSync(
+    sabotage,
+    `import { createRequire } from "node:module";
+const require = createRequire(import.meta.url);
+const lm = require("internal/modules/helpers").loaderMethods;
+Object.defineProperty(lm, "readPackageJSON", { value: lm.readPackageJSON, writable: false, configurable: false });
+`,
+  );
+  try {
+    const script = `
+      import assert from "node:assert/strict";
+      import { createRequire } from "node:module";
+      const state = globalThis[Symbol.for("dshmobile.startupFsCache.state")];
+      const require = createRequire(import.meta.url);
+      const lm = require("internal/modules/helpers").loaderMethods;
+      const descriptor = Object.getOwnPropertyDescriptor(lm, "readPackageJSON");
+      // 任一项不可写时必须整体放弃安装，且不抛错、不影响 package_json_reader 包装。
+      assert.equal(state.usesLoaderMethods, false);
+      assert.equal(descriptor.writable, false);
+      assert.equal(state.usesPackageJsonReader, false);
+      require("internal/modules/package_json_reader").read(${JSON.stringify(pkg)});
+      console.log("ROLLBACK_OK");
+    `;
+    assert.equal(runWithShim(script, {}, { preloads: [sabotage] }), "ROLLBACK_OK");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("symlinked manifests and symlinked module paths are never cached", () => {
+  const { root, roDir } = makeDirs();
+  const target = join(roDir, "pkg", "package.json");
+  const link = join(roDir, "linked.json");
+  let linked = false;
+  try {
+    symlinkSync(target, link, "file");
+    linked = true;
+  } catch {
+    /* Windows 无符号链接权限时跳过符号链接断言。 */
+  }
+  try {
+    const script = `
+      import assert from "node:assert/strict";
+      import { readFileSync, writeFileSync, lstatSync } from "node:fs";
+      const state = globalThis[Symbol.for("dshmobile.startupFsCache.state")];
+      const roDir = ${JSON.stringify(roDir)};
+      const link = ${JSON.stringify(link)};
+      const target = ${JSON.stringify(target)};
+      const linked = ${JSON.stringify(linked)};
+      if (!linked) { console.log("SYMLINK_SKIPPED"); } else {
+        assert.equal(lstatSync(link).isSymbolicLink(), true);
+        assert.equal(readFileSync(link, "utf8"), '{"name":"ro","v":1}');
+        writeFileSync(target, '{"name":"ro","v":3}');
+        assert.equal(readFileSync(link, "utf8"), '{"name":"ro","v":3}', "symlinked manifest must bypass the cache");
+        assert.equal(state.stats.manifestHits, 0);
+        console.log("SYMLINK_OK");
+      }
+    `;
+    const out = runWithShim(script, {
+      DSHM_FS_CACHE_PREFIXES: roDir,
+      DSHM_FS_CACHE_NONEXIST_PREFIXES: roDir,
+      DSHM_FS_CACHE_TTL_MS: "0",
+    });
+    assert.ok(out === "SYMLINK_OK" || out === "SYMLINK_SKIPPED");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("clean absolute paths outside the allowlist bypass without path.resolve or caching", () => {
+  const script = `
+    import assert from "node:assert/strict";
+    import { existsSync } from "node:fs";
+    const state = globalThis[Symbol.for("dshmobile.startupFsCache.state")];
+    const before = state.stats.bypasses;
+    // 干净绝对路径但不在白名单：两次调用都必须透传且不入缓存。
+    assert.equal(existsSync("/root/projects/no-such-probe.js"), false);
+    assert.equal(existsSync("/root/projects/no-such-probe.js"), false);
+    assert.equal(state.stats.bypasses, before + 2, "non-allowlisted absolute path must bypass twice");
+    console.log("NONALLOWLIST_BYPASS_OK");
+  `;
+  const env = {
+    DSHM_FS_CACHE_PREFIXES: "/opt/dshapp/runtime",
+    DSHM_FS_CACHE_NONEXIST_PREFIXES: "/opt/dshapp/runtime",
+    DSHM_FS_CACHE_TTL_MS: "0",
+  };
+  assert.equal(runWithShim(script, env), "NONALLOWLIST_BYPASS_OK");
+});
+
+test("file:/// URL and plain path share the same readFileSync cache key", () => {
+  const { root, roDir } = makeDirs();
+  try {
+    const script = `
+      import assert from "node:assert/strict";
+      import { readFileSync } from "node:fs";
+      import { pathToFileURL } from "node:url";
+      const state = globalThis[Symbol.for("dshmobile.startupFsCache.state")];
+      const roPkg = ${JSON.stringify(join(roDir, "pkg", "package.json"))};
+      assert.equal(readFileSync(pathToFileURL(roPkg), "utf8"), '{"name":"ro","v":1}');
+      const hits = state.stats.hits;
+      assert.equal(readFileSync(roPkg, "utf8"), '{"name":"ro","v":1}');
+      assert.ok(state.stats.hits > hits, "file:// URL and plain path must share the cache");
+      console.log("FILE_URL_OK");
+    `;
+    const env = {
+      DSHM_FS_CACHE_PREFIXES: roDir,
+      DSHM_FS_CACHE_NONEXIST_PREFIXES: roDir,
+      DSHM_FS_CACHE_TTL_MS: "0",
+    };
+    assert.equal(runWithShim(script, env), "FILE_URL_OK");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("accessSync and fs.promises cache readonly lookups and restore on uninstall", () => {
+  const { root, roDir, rwDir } = makeDirs();
+  try {
+    const script = `
+      import assert from "node:assert/strict";
+      import fs, { accessSync, constants, readFileSync, writeFileSync, rmSync } from "node:fs";
+      import path from "node:path";
+      const state = globalThis[Symbol.for("dshmobile.startupFsCache.state")];
+      const roDir = ${JSON.stringify(roDir)};
+      const rwDir = ${JSON.stringify(rwDir)};
+      const roPkg = path.join(roDir, "pkg", "package.json");
+      const rwFile = path.join(rwDir, "w.txt");
+
+      // accessSync：正结果可缓存；只读前缀内缺失先探测后创建仍按缓存返回 ENOENT。
+      accessSync(roPkg);
+      accessSync(roPkg, constants.R_OK);
+      const missing = path.join(roDir, "late-access.txt");
+      assert.throws(() => accessSync(missing), (e) => e.code === "ENOENT");
+      writeFileSync(missing, "x");
+      assert.throws(() => accessSync(missing), (e) => e.code === "ENOENT");
+
+      // W_OK 必须透传：删除后立即报 ENOENT，不被缓存。
+      writeFileSync(rwFile, "x");
+      accessSync(rwFile, constants.W_OK);
+      rmSync(rwFile);
+      assert.throws(() => accessSync(rwFile, constants.W_OK), (e) => e.code === "ENOENT");
+
+      // fs.promises：同类缓存命中并返回独立副本。
+      await fs.promises.access(roPkg);
+      await fs.promises.stat(roPkg);
+      await fs.promises.lstat(roPkg);
+      await fs.promises.realpath(roPkg);
+      await fs.promises.readdir(roDir);
+      assert.equal(await fs.promises.readFile(roPkg, "utf8"), '{"name":"ro","v":1}');
+      writeFileSync(roPkg, '{"name":"ro","v":9}');
+      assert.equal(await fs.promises.readFile(roPkg, "utf8"), '{"name":"ro","v":1}');
+      assert.equal(await fs.promises.access(roPkg).then(() => true), true);
+
+      // uninstall 必须恢复所有 promises 原生引用。
+      const wrappedStat = fs.promises.stat;
+      const wrappedAccess = fs.promises.access;
+      state.uninstall();
+      assert.notEqual(fs.promises.stat, wrappedStat);
+      assert.notEqual(fs.promises.access, wrappedAccess);
+      assert.ok(fs.promises.stat(roPkg) instanceof Promise);
+      console.log("PROMISES_OK");
+    `;
+    const env = {
+      DSHM_FS_CACHE_PREFIXES: [roDir, rwDir].join(delimiter),
+      DSHM_FS_CACHE_NONEXIST_PREFIXES: roDir,
+      DSHM_FS_CACHE_TTL_MS: "0",
+    };
+    assert.equal(runWithShim(script, env), "PROMISES_OK");
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

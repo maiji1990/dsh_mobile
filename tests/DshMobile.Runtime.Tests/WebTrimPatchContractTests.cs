@@ -43,6 +43,10 @@ public sealed class WebTrimPatchContractTests
         "shortcuts",
         "resources",
         "entry-customization",
+        // 突破口 C：服务端热更新（plugin-manager 中为 optional peer）与纯遥测，均不承载用户能力。
+        "hmr",
+        "otel",
+        "session-telemetry-otel",
     ];
 
     private static List<string> DisabledIds() => File.ReadLines(PatchFile)
@@ -55,7 +59,6 @@ public sealed class WebTrimPatchContractTests
     public void Patch_DoesNotDisableRequiredControllersOrServices()
     {
         var disabled = DisabledIds();
-
         foreach (var id in RequiredIds)
         {
             Assert.DoesNotContain(id, disabled);
@@ -94,5 +97,19 @@ public sealed class WebTrimPatchContractTests
         Assert.All(content, line => Assert.True(
             IdLine.IsMatch(line) || DisabledLine.IsMatch(line),
             $"裁剪 patch 含意外行：{line}"));
+    }
+
+    /// <summary>突破口 C：hmr 在 dsh-plugin-manager 中声明为 optional peer，otel 两项为纯遥测。</summary>
+    [Fact]
+    public void Patch_DisablesHmrAndTelemetryOnly()
+    {
+        var disabled = DisabledIds();
+
+        Assert.Contains("hmr", disabled);
+        Assert.Contains("otel", disabled);
+        Assert.Contains("session-telemetry-otel", disabled);
+        // 插件管理器本身（而非 hot-reload 服务）必须保持可用。
+        Assert.DoesNotContain("plugin-manager", disabled);
+        Assert.DoesNotContain("plugin-inventory", disabled);
     }
 }

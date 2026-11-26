@@ -114,7 +114,7 @@ PR-00 (基线 + 路线A/B PoC + ADR-0033 + DshMobile.Agent骨架 + 门禁)
 ### 分支 B 任务（仅当 ADR-0033 选择路线 B 时执行）
 
 - [x] **N-01B-01｜裁剪型 `web`/Remote `--patch` 资产与主机启动**
-  - 生成固定受控 `--patch`（[dsh-web-trim-patch.yml](../../src/DshMobile.Runtime/Guest/Assets/dsh-web-trim-patch.yml)，禁用 `frontend-static` / `modules` 与浏览器 `ui-*` 插件行，保留 `connection` / `session-controller` / `settings-controller` / `plugin-inventory` / `ui_*`），并钉住 SHA-256（`ca9797888b7f6402a21a15dd9bd3308faeb936d50f171a31262d50824d605fd2`）。
+  - 生成固定受控 `--patch`（[dsh-web-trim-patch.yml](../../src/DshMobile.Runtime/Guest/Assets/dsh-web-trim-patch.yml)，禁用 `frontend-static` / `modules` 与浏览器 `ui-*` 插件行，保留 `connection` / `session-controller` / `settings-controller` / `plugin-inventory` / `ui_*`），并钉住 SHA-256（`a1bc318f6e69b8c917936b833797b97701ade02ca5383146fdc902ead41046e7`）。
 - [x] **N-01B-02｜原生 C# `DshRemoteConnection`（HTTP + `/api/remote.mux` WebSocket）**
   - 仅允许 `127.0.0.1`/loopback、禁用代理与自动重定向；实现内存 launch token → 签名 Cookie 交换（token 绝不落日志）；
   - 实现 `/api` 一元 RPC（含 `multipart/form-data` 附件解析）与 `/api/remote.mux` `$events` 逻辑流，严格等待 `{ type: 'ready' }` 首帧后才发布 connection generation；实现指数退避重连与有序排空（`BeginDrainAsync`）。
