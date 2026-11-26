@@ -30,16 +30,16 @@ public sealed class WarmupDefaultsContractTests
     }
 
     [Fact]
-    public void WarmupSettingText_StatesDefaultOnAndProtections()
+    public void WarmupSettingText_StatesSilentWarmupAndProtections()
     {
+        // 副标题已精简为 ≤2 行：保留“静默预热 / 低电量 / 温控 / 自动跳过”等关键语义。
         foreach (var key in new[] { "more_warmup_sub", "more_warmup_short_sub" })
         {
             var text = StringResource(key);
-            Assert.Contains("默认开启", text, StringComparison.Ordinal);
+            Assert.Contains("静默预热", text, StringComparison.Ordinal);
             Assert.Contains("低电量", text, StringComparison.Ordinal);
-            Assert.Contains("省电", text, StringComparison.Ordinal);
             Assert.Contains("温控", text, StringComparison.Ordinal);
-            Assert.Contains("关闭", text, StringComparison.Ordinal);
+            Assert.Contains("自动跳过", text, StringComparison.Ordinal);
             Assert.DoesNotContain("默认关闭", text, StringComparison.Ordinal);
         }
     }

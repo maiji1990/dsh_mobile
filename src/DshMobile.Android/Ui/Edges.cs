@@ -31,7 +31,14 @@ public static class Edges
     /// 宽屏/横屏（<c>values-w600dp</c>）内容限宽居中：当可用宽度超过 <c>dshm_content_max_width</c> 时，
     /// 在保留初始水平内边距的基础上对称追加左右留白，保持 720dp 最佳阅读与表单宽度。
     /// </summary>
-    public static void ClampMaxWidth(params View?[] views)
+    public static void ClampMaxWidth(params View?[] views) =>
+        ClampMaxWidthTo(Resource.Dimension.dshm_content_max_width, views);
+
+    /// <summary>
+    /// 指定尺寸 Token 的内容限宽居中：对话页使用 <c>dshm_chat_max_width</c>（手机 0dp 不限宽，宽屏 700dp），
+    /// 其余页面继续使用 <c>dshm_content_max_width</c>。
+    /// </summary>
+    public static void ClampMaxWidthTo(int maxWidthDimensionResourceId, params View?[] views)
     {
         foreach (var view in views)
         {
@@ -50,7 +57,7 @@ public static class Edges
                 {
                     return;
                 }
-                var maxWidth = res.GetDimensionPixelSize(Resource.Dimension.dshm_content_max_width);
+                var maxWidth = res.GetDimensionPixelSize(maxWidthDimensionResourceId);
                 var extra = maxWidth > 0 ? Math.Max(0, (view.Width - baseLeft - baseRight - maxWidth) / 2) : 0;
                 var wantLeft = baseLeft + extra;
                 var wantRight = baseRight + extra;
@@ -68,7 +75,11 @@ public static class Edges
     /// 宽屏/横屏（<c>values-w600dp</c>）外边距居中限宽：适用于自带圆角背景/描边的卡片、横幅或浮层；
     /// 严格依据父容器可用宽度计算对称留白，避免修改自身宽度引起重排震荡。
     /// </summary>
-    public static void ClampMaxWidthByMargin(params View?[] views)
+    public static void ClampMaxWidthByMargin(params View?[] views) =>
+        ClampMaxWidthByMarginTo(Resource.Dimension.dshm_content_max_width, views);
+
+    /// <summary>指定尺寸 Token 的外边距限宽居中，供对话页与普通页面使用不同的阅读宽度。</summary>
+    public static void ClampMaxWidthByMarginTo(int maxWidthDimensionResourceId, params View?[] views)
     {
         foreach (var view in views)
         {
@@ -90,7 +101,7 @@ public static class Edges
                 {
                     return;
                 }
-                var maxWidth = res.GetDimensionPixelSize(Resource.Dimension.dshm_content_max_width);
+                var maxWidth = res.GetDimensionPixelSize(maxWidthDimensionResourceId);
                 var extra = maxWidth > 0 ? Math.Max(0, (parent.Width - baseLeft - baseRight - maxWidth) / 2) : 0;
                 var wantLeft = baseLeft + extra;
                 var wantRight = baseRight + extra;
@@ -111,6 +122,7 @@ public static class Edges
 
     internal sealed class Listener(Func<View, WindowInsetsCompat, WindowInsetsCompat> apply) : Java.Lang.Object, IOnApplyWindowInsetsListener
     {
-        public WindowInsetsCompat OnApplyWindowInsets(View v, WindowInsetsCompat insets) => apply(v, insets);
+        public WindowInsetsCompat? OnApplyWindowInsets(View? v, WindowInsetsCompat? insets) =>
+            v is null || insets is null ? insets : apply(v, insets);
     }
 }

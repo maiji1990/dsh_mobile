@@ -2,4 +2,16 @@
 <resources>
     <dimen name="dshm_page_padding_horizontal">24dp</dimen>
     <dimen name="dshm_content_max_width">720dp</dimen>
+
+    <!-- UI-S1 宽屏视觉 Token：页边距放宽到 24dp，对话阅读流限制在 700dp 居中 -->
+    <dimen name="dshm_page_margin">24dp</dimen>
+    <dimen name="dshm_chat_max_width">700dp</dimen>
+    <dimen name="dshm_radius_sheet">28dp</dimen>
+    <dimen name="dshm_radius_composer">18dp</dimen>
+    <dimen name="dshm_radius_bubble">20dp</dimen>
+    <dimen name="dshm_radius_card">16dp</dimen>
+    <dimen name="dshm_radius_block">12dp</dimen>
+    <dimen name="dshm_touch_min">48dp</dimen>
+    <dimen name="dshm_hairline">1dp</dimen>
+    <dimen name="dshm_table_cell_max_width">220dp</dimen>
 </resources>

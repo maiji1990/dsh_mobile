@@ -6,4 +6,23 @@
     <dimen name="dshm_card_stroke_width">0dp</dimen>
     <!-- 窄屏不限内容最大宽度；w600dp+（平板与横屏）收窄至 720dp 居中 -->
     <dimen name="dshm_content_max_width">0dp</dimen>
+
+    <!-- UI-S1 统一视觉 Token：全站左右页边距、对话阅读流基线 -->
+    <dimen name="dshm_page_margin">16dp</dimen>
+    <!-- 手机端 0dp 表示不额外限宽；宽屏由 values-w600dp 覆盖为 700dp 居中 -->
+    <dimen name="dshm_chat_max_width">0dp</dimen>
+    <!-- 圆角层级：BottomSheet / 输入胶囊 / 用户气泡 / 卡片 / 代码表格块 -->
+    <dimen name="dshm_radius_sheet">28dp</dimen>
+    <dimen name="dshm_radius_composer">26dp</dimen>
+    <dimen name="dshm_radius_bubble">20dp</dimen>
+    <dimen name="dshm_radius_card">16dp</dimen>
+    <dimen name="dshm_radius_block">12dp</dimen>
+    <!-- 最小触控靶区（视觉高度可小于该值，但可点击区域不得低于 48dp） -->
+    <dimen name="dshm_touch_min">48dp</dimen>
+    <!-- 列表分隔线与浅色卡片描边的极细线宽 -->
+    <dimen name="dshm_hairline">1dp</dimen>
+    <!-- UI-S5：无框通栏文件 / Git 行最小高度，保证 Material 3 触控热区 -->
+    <dimen name="dshm_list_row_min_height">60dp</dimen>
+    <!-- Markdown 表格单个单元格的最大宽度，超长内容在单元格内换行后横向滚动查看 -->
+    <dimen name="dshm_table_cell_max_width">200dp</dimen>
 </resources>

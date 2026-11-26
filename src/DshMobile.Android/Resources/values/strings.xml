@@ -216,7 +216,7 @@
     <string name="more_section_features">功能</string>
     <string name="more_section_runtime">运行环境</string>
     <string name="more_warmup">后台预热 DSH</string>
-    <string name="more_warmup_sub">默认开启：回到 App 时在后台静默启动 DSH（会显示常驻通知），点击启动更快就绪；低电量（≤15% 未充电）、省电模式或设备温控升高时自动不预热，可随时在此关闭</string>
+    <string name="more_warmup_sub">回前台时静默预热以加快启动；低电量或温控受限时自动跳过。</string>
     <string name="more_section_app">应用</string>
     <string name="more_section_developer">开发者</string>
     <string name="more_automation">手机操控</string>
@@ -427,6 +427,7 @@
     <string name="chat_status_retry_connect">重试连接</string>
     <string name="chat_empty_title">开始原生对话</string>
     <string name="chat_empty_subtitle">在下方输入消息，或点 + / 斜杠命令与 DSH 协作</string>
+    <string name="chat_pane_empty_hint">从左侧选择会话，或新建会话后在右栏继续对话</string>
     <string name="chat_composer_hint">向 DSH 发送消息…</string>
     <string name="chat_composer_mode">Agent · Standard</string>
     <string name="chat_send_desc">发送消息</string>
@@ -443,6 +444,25 @@
     <string name="chat_tool_status_error">失败</string>
     <string name="chat_tool_status_cancelled">已取消</string>
     <string name="chat_reasoning_title">思考过程</string>
+    <string name="chat_reasoning_active">思考中…</string>
+    <string name="chat_reasoning_done_fmt">已思考 %1$ds</string>
+    <string name="chat_reasoning_active_fmt">正在思考 · %1$ds</string>
+    <!-- 错误 / 未知事件通知（UI-S1）：面向用户的中文说明，原始错误码保留在可展开的技术详情中 -->
+    <string name="chat_notice_transport">本轮响应中断，连接暂时不可用</string>
+    <string name="chat_notice_credentials">模型凭据缺失或无效，请检查配置后重试</string>
+    <string name="chat_notice_timeout">等待 DSH 响应超时，请稍后重试</string>
+    <string name="chat_notice_busy">当前会话正忙，请稍后再试</string>
+    <string name="chat_notice_protocol">客户端与 DSH 协议不一致，请更新后重试</string>
+    <string name="chat_notice_process">DSH 进程已退出，请重新启动运行环境</string>
+    <string name="chat_notice_memory">设备内存受限，DSH 已被系统限制</string>
+    <string name="chat_notice_storage">运行层或存储不可用，请检查安装状态</string>
+    <string name="chat_notice_interrupted">本轮生成已中断，可重新发送消息继续</string>
+    <string name="chat_notice_max_tokens">本轮输出已达模型长度上限，可发送「继续」接着生成</string>
+    <string name="chat_notice_turn_failed">本轮生成未能完成，请稍后重试</string>
+    <string name="chat_notice_late_tool_result">收到迟到的工具结果，已忽略且不影响当前对话</string>
+    <string name="chat_notice_subagent_fmt">子任务 · %1$s</string>
+    <string name="chat_notice_unknown_event">收到暂不支持的事件</string>
+    <string name="chat_notice_generic">本轮未能完成，请查看技术详情或重试</string>
     <string name="chat_approval_title">等待授权</string>
     <string name="chat_approval_subtitle">Agent 请求执行工具 %1$s</string>
     <string name="chat_approval_missing_args">参数尚未加载，请谨慎确认后再授权</string>
@@ -457,6 +477,7 @@
     <string name="chat_question_custom_hint">或输入自定义回复…</string>
     <string name="chat_question_cancel">取消</string>
     <string name="chat_question_submit">提交</string>
+    <string name="chat_question_sending">正在提交回答…</string>
     <string name="chat_code_copy">复制</string>
     <string name="chat_code_copied">已复制代码</string>
     <string name="chat_diff_title">变更 Diff</string>
@@ -472,7 +493,7 @@
     <!-- PR-05 / PR-09: Native Onboarding / Credentials / Models / Sessions / Web Inventory. -->
     <string name="nav_chats">会话</string>
     <string name="more_credentials">模型与凭据配置</string>
-    <string name="more_credentials_sub">配置 DeepSeek 及兼容 Provider API Key（不回显明文）</string>
+    <string name="more_credentials_sub">配置 DeepSeek 及兼容 Provider Key（不回显明文）</string>
     <string name="credentials_title">Provider 与凭据</string>
     <string name="credentials_intro">API Key 通过 DSH 官方凭据通道写入私有凭据存储，界面仅显示已配置状态与脱敏掩码，绝不回显明文或落日志。</string>
     <string name="credentials_host_required">需先启动 DSH 后才能查询和写入凭据。</string>
@@ -508,11 +529,14 @@
 
     <string name="chats_title">会话</string>
     <string name="chats_search_hint">搜索会话标题、ID 或工作区…</string>
+    <string name="chats_search_action">搜索</string>
     <string name="chats_new_desc">新建会话</string>
     <string name="chats_host_stopped">DSH 尚未启动，点击下方按钮启动或安装运行环境后再创建实时会话。</string>
     <string name="chats_menu_stop_dsh">停止 DSH</string>
     <string name="chats_empty">暂无会话，点击右下角 + 开启新对话。</string>
     <string name="chats_empty_search">未找到匹配的会话</string>
+    <string name="chats_detail_empty_title">选择一个会话</string>
+    <string name="chats_detail_empty_hint">从左侧列表选择会话，或新建会话后在右栏继续对话。</string>
     <string name="chats_badge_running">运行中</string>
     <string name="chats_badge_pending">待确认 %1$d</string>
     <string name="chats_badge_subagent">子会话</string>
@@ -536,7 +560,7 @@
 
     <!-- PR-07: Native Plugins Directory (L0/L1, ADR-0033). -->
     <string name="more_plugins">插件目录</string>
-    <string name="more_plugins_sub">查看已安装插件状态、受控装卸与启停（需先启动 DSH）</string>
+    <string name="more_plugins_sub">查看已装插件状态，受控装卸与启停（需先启动 DSH）</string>
     <string name="plugins_title">插件目录</string>
     <string name="plugins_host_required">需先启动 DSH 后才能读取运行中插件清单；启动后可查看状态并执行受控变更。</string>
     <string name="plugins_restart_banner_msg">插件变更已保存，需要重启 DSH 生效</string>
@@ -652,9 +676,24 @@
     <string name="chats_pill_stopping">停止中</string>
     <string name="chats_pill_failed">异常</string>
     <string name="chats_pill_remote">远程已连</string>
+    <string name="chats_pill_local_host">本地 DSH</string>
+    <string name="chats_pill_remote_host_fmt">远程: %1$s</string>
     <string name="chats_host_pill_desc">宿主运行状态与快速控制</string>
     <string name="chats_remote_pill_desc">打开远程原生会话</string>
     <string name="chats_menu_host_control">DSH 状态与控制</string>
+    <string name="chats_section_pending">待你处理</string>
+    <string name="chats_section_running">进行中</string>
+    <string name="chats_section_today">今天</string>
+    <string name="chats_section_yesterday">昨天</string>
+    <string name="chats_section_earlier">更早</string>
+    <string name="chats_inline_view_all">查看全部 ›</string>
+    <string name="chats_inline_approve">允许一次</string>
+    <string name="chats_inline_reject">拒绝</string>
+    <string name="chats_inline_answer">去回答</string>
+    <string name="chats_inline_confirm">去会话确认</string>
+    <string name="chats_inline_no_args">参数尚未加载，请打开会话确认</string>
+    <string name="chats_inline_action_failed">操作未完成：%1$s</string>
+    <string name="chats_inline_done">已提交审批结果</string>
     <string name="chats_filter_all">全部</string>
     <string name="chats_filter_running">进行中</string>
     <string name="chats_filter_pending_fmt">待审批 (%1$d)</string>
@@ -673,6 +712,8 @@
     <string name="host_sheet_nav_runtime_sub">版本信息、导入与包回滚</string>
     <string name="host_sheet_nav_creds_sub">管理 DeepSeek 及兼容 Provider Key</string>
     <string name="chat_model_pill_fallback">切换模型</string>
+    <string name="chat_model_effort_label">推理档位</string>
+    <string name="chat_model_current_section">当前使用</string>
     <string name="chat_slash_panel_title">斜杠命令</string>
     <string name="chat_slash_panel_empty">未找到匹配的斜杠命令</string>
     <string name="chat_slash_action_run">立即执行</string>
@@ -716,11 +757,14 @@
     <!-- UI Slice 4: More & 6 Secondary Screens Full XML Refactor. -->
     <string name="more_overview_remote_connected">远程 · %1$s</string>
     <string name="more_overview_remote_disconnected">远程未连接</string>
+    <string name="more_summary_local_fmt">本机 DSH · %1$s</string>
+    <string name="more_summary_detail_fmt">%1$s · DSH %2$s</string>
+    <string name="more_summary_control_desc">打开宿主快速控制</string>
     <string name="more_badge_configured_count">已配置 %1$d 项</string>
     <string name="more_badge_unconfigured">未配置</string>
     <string name="more_badge_connected">已连接</string>
     <string name="more_badge_disconnected">未连接</string>
-    <string name="more_warmup_short_sub">默认开启：回到 App 时静默启动以加快就绪（低电量、省电、温控升高与手动停止时不触发，可在此关闭）</string>
+    <string name="more_warmup_short_sub">回前台时静默预热以加快启动；低电量或温控受限时自动跳过。</string>
     <string name="credentials_action_set_short">配置</string>
     <string name="plugins_filter_all">全部</string>
     <string name="plugins_filter_manageable">可管理</string>
@@ -750,4 +794,61 @@
     <string name="automation_badge_conflict">文件冲突</string>
     <string name="developer_log_fullscreen">全屏查看</string>
     <string name="developer_disable_sub">隐藏「更多」页开发者入口（可连点版本号 7 次重新开启）</string>
+
+    <!-- UI-S2 步骤 A2：工具分组、步骤详情与工作区文件胶囊 -->
+    <string name="chat_tool_group_earlier_fmt">展开更早 %1$d 步</string>
+    <string name="chat_tool_group_earlier_collapse">收起更早步骤</string>
+    <string name="chat_tool_duration_fmt">耗时 %1$s</string>
+    <string name="chat_tool_view_full_output">查看完整输出</string>
+    <string name="chat_tool_full_output">完整输出</string>
+
+    <!-- UI-S2 步骤 A2：代码块换行、复制与折叠 -->
+    <string name="chat_code_wrap">自动换行</string>
+    <string name="chat_code_wrap_off">取消自动换行</string>
+    <string name="chat_code_expand_all">展开全部</string>
+    <string name="chat_code_expand_all_fmt">展开全部 %1$d 行</string>
+    <string name="chat_code_collapse">收起代码块</string>
+
+    <!-- UI-S2 步骤 A2：助手回复 Footer 与流式 Live 状态 -->
+    <string name="chat_reply_copy">复制回复</string>
+    <string name="chat_reply_copied">已复制回复</string>
+    <string name="chat_live_thinking">正在思考…</string>
+    <string name="chat_live_executing">正在执行…</string>
+
+    <!-- UI-S3：固定审批 / 问答槽 -->
+    <string name="chat_request_slot_switch_fmt">待你处理 (%1$d/%2$d) · 切换下一项 ›</string>
+    <string name="chat_request_slot_waiting_approval_fmt">● 等待授权 · %1$s</string>
+    <string name="chat_request_slot_waiting_question">● 等待回答</string>
+    <string name="chat_request_slot_desc_approval_fmt">Agent 请求在当前会话执行工具 %1$s，请确认参数后授权。</string>
+    <string name="chat_request_slot_desc_question">Agent 需要你的回答后才能继续本轮任务。</string>
+    <string name="chat_request_slot_switch_desc">切换到下一项待处理请求</string>
+
+    <!-- UI-S3：轻盈双层 Composer -->
+    <string name="chat_stop_pill">⏹ 停止</string>
+    <string name="chat_composer_plus_desc">更多输入操作</string>
+    <string name="chat_composer_tray_images">相册图片</string>
+    <string name="chat_composer_tray_slash">斜杠命令 /</string>
+    <string name="chat_stop_guard_hint">刚发送消息，请稍后再停止</string>
+    <string name="chat_attachment_remove_fmt">移除图片 %1$s</string>
+    <string name="chat_attachment_remove">移除图片</string>
+    <string name="chat_attachment_default_name_fmt">图片 %1$d</string>
+
+    <!-- UI-S3：顶栏跨会话收件箱入口与真实环境副标题 -->
+    <string name="chat_menu_inbox">待办收件箱</string>
+    <string name="chat_menu_inbox_fmt">待办收件箱 (%1$d)</string>
+    <string name="chat_menu_inbox_desc">打开跨会话待办收件箱</string>
+    <string name="chat_session_subtitle_local_fmt">本地 · %1$s</string>
+    <string name="chat_session_subtitle_workspace_fallback">工作区</string>
+
+    <!-- UI-S5：工作区顶部减负（默认收起的搜索栏）与独立全屏 Diff 审查页 -->
+    <string name="files_search_toggle">搜索</string>
+    <string name="files_search_toggle_desc">展开或收起工作区搜索框</string>
+    <string name="git_diff_review_title">Diff 审查</string>
+    <string name="git_diff_review_subtitle_fmt">+%1$d −%2$d · %3$s</string>
+    <string name="git_diff_review_branch_fmt">%1$s · 分支：%2$s</string>
+    <string name="git_diff_review_wrap">自动换行</string>
+    <string name="git_diff_review_open">打开/编辑文件</string>
+    <string name="git_diff_review_open_desc">在全屏编辑器中打开该文件</string>
+    <string name="git_diff_review_collapse_hunk_desc">折叠或展开此段差异</string>
+    <string name="git_diff_open_not_file">该路径不是可打开的普通文件</string>
 </resources>

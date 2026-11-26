@@ -48,6 +48,33 @@
     <item name="android:enforceStatusBarContrast">false</item>
   </style>
 
+  <!-- UI-S4 模型选择器等 BottomSheetDialogFragment 的统一 28dp 顶部圆角 -->
+  <style name="ShapeAppearanceOverlay.DshMobile.Sheet" parent="">
+    <item name="cornerFamily">rounded</item>
+    <item name="cornerSizeTopLeft">@dimen/dshm_radius_sheet</item>
+    <item name="cornerSizeTopRight">@dimen/dshm_radius_sheet</item>
+    <item name="cornerSizeBottomLeft">0dp</item>
+    <item name="cornerSizeBottomRight">0dp</item>
+  </style>
+
+  <style name="Widget.DshMobile.BottomSheet.Modal" parent="Widget.Material3.BottomSheet.Modal">
+    <item name="shapeAppearance">@style/ShapeAppearanceOverlay.DshMobile.Sheet</item>
+    <item name="shapeAppearanceOverlay">@style/ShapeAppearanceOverlay.DshMobile.Sheet</item>
+  </style>
+
+  <style name="ThemeOverlay.DshMobile.BottomSheetDialog" parent="ThemeOverlay.Material3.BottomSheetDialog">
+    <item name="bottomSheetStyle">@style/Widget.DshMobile.BottomSheet.Modal</item>
+  </style>
+
+  <!-- 用户消息气泡：20dp 圆角 + 右下 6dp 微收的非对称尾角（UI-S1） -->
+  <style name="ShapeAppearanceOverlay.DshMobile.UserBubble" parent="">
+    <item name="cornerFamily">rounded</item>
+    <item name="cornerSizeTopLeft">@dimen/dshm_radius_bubble</item>
+    <item name="cornerSizeTopRight">@dimen/dshm_radius_bubble</item>
+    <item name="cornerSizeBottomLeft">@dimen/dshm_radius_bubble</item>
+    <item name="cornerSizeBottomRight">6dp</item>
+  </style>
+
   <!-- Section heading above a group of rows or cards. -->
   <style name="Widget.DshMobile.SectionHeader" parent="">
     <item name="android:layout_width">match_parent</item>

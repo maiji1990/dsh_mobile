@@ -38,8 +38,14 @@
   <color name="dshm_surface_container">#EEEDF1</color>
   <color name="dshm_surface_container_high">#E8E8EB</color>
   <color name="dshm_surface_container_highest">#E2E2E6</color>
+  <!-- 代码块悬浮操作底板：surfaceContainerHigh 的 92% 不透明度版本，保证不透视底部代码 -->
+  <color name="dshm_code_actions_bg">#EBE8E8EB</color>
   <!-- Status dot / icon for "running". Not a theme role: green reads as "up" in both schemes. -->
   <color name="dshm_running">#1E8E3E</color>
+  <!-- 琥珀关注色：仅用于待用户处理、待审批与需要介入的状态，不用于普通错误 -->
+  <color name="dshm_attention">#B26A00</color>
+  <color name="dshm_attention_container">#FFF3DF</color>
+  <color name="dshm_on_attention_container">#3B2000</color>
   <!-- Diff viewer colours (N-04-02), light scheme. -->
   <color name="dshm_diff_add_bg">#E6F4EA</color>
   <color name="dshm_diff_add_fg">#137333</color>
