@@ -85,7 +85,8 @@ public sealed partial class GuestAssetProvisionerTests : IDisposable
         var trimPatchBytes = File.ReadAllBytes(Path.Combine(dshmobile, GuestAssetProvisioner.WebTrimPatchName));
         Assert.Equal(File.ReadAllBytes(Repo.PathOf("src", "DshMobile.Runtime", "Guest", "Assets", "dsh-web-trim-patch.yml")),
             trimPatchBytes);
-        Assert.Equal("ca9797888b7f6402a21a15dd9bd3308faeb936d50f171a31262d50824d605fd2",
+        // 突破口 C：hmr/otel/session-telemetry-otel 三个禁用项改变内容，钉值随之更新。
+        Assert.Equal("a1bc318f6e69b8c917936b833797b97701ade02ca5383146fdc902ead41046e7",
             Convert.ToHexStringLower(SHA256.HashData(trimPatchBytes)));
         Assert.True(UiFacadeAssets.Intact(layout.GuestCacheDir));
         var corepack = GuestToolchain.CorepackDir(layout);

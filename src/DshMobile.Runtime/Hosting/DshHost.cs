@@ -107,6 +107,9 @@ public sealed class DshHost : IDshTokenSource, IDshHost
     private static readonly TimeSpan ProbeInterval = TimeSpan.FromSeconds(1);
     private static readonly TimeSpan StartupFastProbeInterval = TimeSpan.FromMilliseconds(150);
     private static readonly TimeSpan StartupFastProbeWindow = TimeSpan.FromSeconds(20);
+    /// <summary>收到首个输出或启动令牌后的加密探测间隔与窗口。</summary>
+    private static readonly TimeSpan StartupHintProbeInterval = TimeSpan.FromMilliseconds(25);
+    private static readonly TimeSpan StartupHintWindow = TimeSpan.FromSeconds(2);
     private static readonly TimeSpan SandboxReadyMaxWait = TimeSpan.FromMilliseconds(300);
     private static readonly TimeSpan LoopInterval = TimeSpan.FromSeconds(2);
 
@@ -130,6 +133,8 @@ public sealed class DshHost : IDshTokenSource, IDshHost
     private StartupTrace? _trace;
     private double _dshSpawnMark;
     private int _dshFirstOutput;
+    /// <summary>hint 探测窗口的截止时间（毫秒时间戳）；0 表示不在窗口内。</summary>
+    private long _startupHintUntilMs;
 
     public DshHost(RuntimeLayout layout, Action<string> log, TimeProvider? time = null)
         : this(layout, log, time, null, null, null)
@@ -252,10 +257,16 @@ public sealed class DshHost : IDshTokenSource, IDshHost
                 throw;
             }
             sandboxSpawn?.End(details: new Dictionary<string, object?> { ["pid"] = _sandbox.Id });
+            // 沙箱启动后立刻并行清理陈旧 DSH 与 writer lock；DSH 仍必须等沙箱就绪且清理完成后才 spawn。
+            var cleanupTask = CleanupStaleDshAsync(
+                () => KillTreesByMarker(RuntimeConstants.DshStartScript),
+                _layout.UserDataDir);
             await trace.TraceAsync("sandbox.fixed_delay", () => WaitSandboxReadyAsync(_sandbox, sandboxReady.Task, SandboxReadyMaxWait, ct)).ConfigureAwait(false);
             SetPhase(DshHostPhase.SandboxReady);
             if (_sandbox.HasExited)
             {
+                // 失败路径也要观察并行清理结果，避免未观察异常破坏清理语义。
+                await cleanupTask.ConfigureAwait(false);
                 var code = _sandbox.ExitCode;
                 await KillEverythingAsync().ConfigureAwait(false);
                 SetState(DshHostState.Failed);
@@ -268,10 +279,9 @@ public sealed class DshHost : IDshTokenSource, IDshHost
             }
 
             var cleanup = trace?.Measure("host.cleanup_processes");
-            KillTreesByMarker(RuntimeConstants.DshStartScript);
-            cleanup?.End();
             var sweepSpan = trace?.Measure("host.lock_sweep");
-            var sweep = DshWriterLockSweeper.SweepOnThisDevice(_layout.UserDataDir);
+            var sweep = await cleanupTask.ConfigureAwait(false);
+            cleanup?.End();
             sweepSpan?.End(details: new Dictionary<string, object?> { ["scanned"] = sweep.Scanned, ["removed"] = sweep.Removed.Count });
             if (sweep.Removed.Count > 0)
             {
@@ -279,7 +289,12 @@ public sealed class DshHost : IDshTokenSource, IDshHost
             }
             using var startupWake = new SemaphoreSlim(0, 1);
             SetPhase(DshHostPhase.DshStarting);
-            _dsh = SpawnDsh(trace, () => SignalStartupWake(startupWake));
+            _dsh = SpawnDsh(trace, () =>
+            {
+                // 首个输出/令牌到达通常意味着端口即将就绪：唤醒等待并开启 25 ms 加密探测窗口。
+                MarkStartupHint();
+                SignalStartupWake(startupWake);
+            });
 
             var ready = await WaitReadyAsync(ct, trace, startupWake).ConfigureAwait(false);
             if (!ready.Ok)
@@ -489,6 +504,33 @@ public sealed class DshHost : IDshTokenSource, IDshHost
     internal static TimeSpan StartupProbeInterval(long elapsedMs) =>
         elapsedMs < (long)StartupFastProbeWindow.TotalMilliseconds ? StartupFastProbeInterval : ProbeInterval;
 
+    /// <summary>
+    /// 在 hint 窗口内（收到首个输出或启动令牌后 2 秒）使用 25 ms 间隔，窗口外保持 150 ms / 1 s 原语义。
+    /// 仅影响两次探测之间的等待，不改变 DshHealthPolicy、就绪超时与取消语义。
+    /// </summary>
+    internal static TimeSpan StartupProbeInterval(long elapsedMs, long nowMs, long hintUntilMs) =>
+        nowMs < hintUntilMs ? StartupHintProbeInterval : StartupProbeInterval(elapsedMs);
+
+    /// <summary>
+    /// 在后台线程串行执行“清理陈旧 DSH 进程树 → 扫描 writer lock”，把这两步与沙箱就绪等待并行；
+    /// 调用方必须在 spawn DSH 前 await 该任务，异常照常向上传播以触发失败清理。
+    /// </summary>
+    internal static Task<DshWriterLockSweeper.Result> CleanupStaleDshAsync(Action killStaleDsh, string workspaceDir)
+    {
+        ArgumentNullException.ThrowIfNull(killStaleDsh);
+        return Task.Run(() =>
+        {
+            killStaleDsh();
+            return DshWriterLockSweeper.SweepOnThisDevice(workspaceDir);
+        });
+    }
+
+    /// <summary>记录 hint 窗口截止时间，供后续探测缩短间隔；只影响等待节奏，不决定 READY。</summary>
+    private void MarkStartupHint()
+    {
+        Volatile.Write(ref _startupHintUntilMs, NowMs() + (long)StartupHintWindow.TotalMilliseconds);
+    }
+
     /// <summary>等待沙箱保活进程输出就绪标记或提前退出，最长不超过 <paramref name="maxWait"/>。</summary>
     internal static async Task WaitSandboxReadyAsync(Process sandbox, Task<bool> markerSeen, TimeSpan maxWait, CancellationToken ct)
     {
@@ -576,6 +618,7 @@ public sealed class DshHost : IDshTokenSource, IDshHost
                     changed = _tokens.Update(token);
                 }
                 SetPhase(DshHostPhase.DshTokenAvailable);
+                MarkStartupHint();
                 if (changed)
                 {
                     _log("host: dsh web launch token refreshed");
@@ -643,7 +686,7 @@ public sealed class DshHost : IDshTokenSource, IDshHost
                     trace?.EmitSpan("host.ready", _dshSpawnMark, StartupTrace.Failed, new Dictionary<string, object?> { ["probes"] = probes, ["code"] = Exited });
                     return new DshHostResult(false, Exited, $"DSH exited during start (exit {exitCode})");
             }
-            var interval = StartupProbeInterval(now - _window.StartedAtMs);
+            var interval = StartupProbeInterval(now - _window.StartedAtMs, now, Volatile.Read(ref _startupHintUntilMs));
             if (startupWake is not null)
             {
                 await startupWake.WaitAsync(interval, ct).ConfigureAwait(false);
@@ -1012,6 +1055,7 @@ public sealed class DshHost : IDshTokenSource, IDshHost
                         t.EmitElapsed("dsh.first_output", t.Mark() - _dshSpawnMark, details: new Dictionary<string, object?> { ["stream"] = stream });
                     }
                     SetPhase(DshHostPhase.DshFirstOutput);
+                    MarkStartupHint();
                     onFirstOutput?.Invoke();
                 }
                 onRawLine?.Invoke(line);           // raw: token parsing only, never logged

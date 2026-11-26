@@ -2,6 +2,19 @@
 # Disables browser-only UI, desktop telemetry, HMR, and native browser/app openers while
 # keeping connection, session-controller, settings-controller, plugin-inventory,
 # workspace-controller, mcp-manager, schedule, web-runtime (--no-open), and ui_* intact.
+#
+# 突破口 C（ID 均按 0.2.2-rc.5 源包核实）：
+# hmr = @deepseek-ai/dsh-hmr。dsh-plugin-manager 的 peerDependenciesMeta 将其标为
+# optional: true，手机生产端无热更新需求；禁用后插件启停/装卸仍可用，仅提示重启生效。
+# E5 含子耗时 933 ms。
+- id: hmr
+  disabled: true
+# otel / session-telemetry-otel 为纯遥测追踪与会话遥测（E5 otel 36 ms），
+# 不承载任何 Agent 工具、LLM Provider 或控制器能力。
+- id: otel
+  disabled: true
+- id: session-telemetry-otel
+  disabled: true
 
 - id: desktop-product-telemetry
   disabled: true

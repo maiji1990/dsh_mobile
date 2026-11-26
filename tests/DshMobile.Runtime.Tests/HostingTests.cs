@@ -123,6 +123,54 @@ public sealed class HostingTests : IDisposable
     }
 
     [Fact]
+    public void StartupProbeInterval_HintWindowUses25ms_ThenRecoversToFastAndOneSecond()
+    {
+        // hint 窗口内即使已超过 20 s 基线窗口也使用 25 ms。
+        Assert.Equal(TimeSpan.FromMilliseconds(25), DshHost.StartupProbeInterval(25_000, 1_000, 3_000));
+        Assert.Equal(TimeSpan.FromMilliseconds(25), DshHost.StartupProbeInterval(0, 2_999, 3_000));
+        // 窗口到期恢复原语义：20 s 内 150 ms，之后 1 s。
+        Assert.Equal(TimeSpan.FromMilliseconds(150), DshHost.StartupProbeInterval(5_000, 3_000, 3_000));
+        Assert.Equal(TimeSpan.FromSeconds(1), DshHost.StartupProbeInterval(20_000, 3_001, 3_000));
+    }
+
+    [Fact]
+    public async Task CleanupStaleDshAsync_CompletesBothStepsBeforeAwaitReturns()
+    {
+        var order = new List<string>();
+        var workspace = Path.Combine(_dir, "no-dsh-home");
+        var task = DshHost.CleanupStaleDshAsync(
+            () =>
+            {
+                lock (order)
+                {
+                    order.Add("kill-stale-dsh");
+                }
+            },
+            workspace);
+
+        var result = await task;
+        lock (order)
+        {
+            order.Add("sweep-done");
+        }
+
+        // 清理任务只有在 kill 与 sweep 都完成后才返回，StartAsync 才能安全 spawn DSH。
+        Assert.Equal(["kill-stale-dsh", "sweep-done"], order);
+        Assert.Equal(0, result.Scanned);
+        Assert.True(task.IsCompletedSuccessfully);
+    }
+
+    [Fact]
+    public async Task CleanupStaleDshAsync_PropagatesFailure_SoStartAsyncTakesFailurePath()
+    {
+        var task = DshHost.CleanupStaleDshAsync(
+            () => throw new IOException("stale cleanup failed"),
+            Path.Combine(_dir, "no-dsh-home"));
+
+        await Assert.ThrowsAsync<IOException>(() => task);
+    }
+
+    [Fact]
     public async Task WaitSandboxReady_ReturnsImmediatelyWhenMarkerAlreadySeen()
     {
         var psi = OperatingSystem.IsWindows()
