@@ -1,8 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- Markdown 表格单元格（UI-S1）：限制单列最大宽度并允许长内容自动换行，不再被单行硬截断 -->
 <TextView xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/table_cell_text"
     android:layout_width="wrap_content"
     android:layout_height="wrap_content"
+    android:maxWidth="@dimen/dshm_table_cell_max_width"
+    android:minWidth="72dp"
     android:paddingStart="10dp"
     android:paddingTop="6dp"
     android:paddingEnd="10dp"

@@ -73,7 +73,7 @@ internal sealed class SlashCommandAdapter(Action<SlashCommandDescriptorView> onS
             else
             {
                 _desc.Visibility = ViewStates.Visible;
-                _desc.Text = cmd.Description;
+                _desc.Text = SlashCommandLocalization.Describe(cmd.Name, cmd.Description);
             }
 
             var needsArgs = !string.IsNullOrWhiteSpace(cmd.InputHint);

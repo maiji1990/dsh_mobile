@@ -24,7 +24,7 @@ public sealed record KeptTranscriptLoadResult(
     KeptTranscriptLoadStatus Status,
     KeptTranscriptRecord? Record = null);
 
-/// <summary>Sanitized cache row stored on disk with secrets &amp; approval tokens stripped (N-03-05).</summary>
+/// <summary>写入磁盘的脱敏缓存行，已剥离密钥与审批令牌（N-03-05）。</summary>
 public sealed record KeptChatRow(
     KeptRowKind Kind,
     string ItemId,
@@ -32,7 +32,9 @@ public sealed record KeptChatRow(
     string PrimaryText,
     string? SecondaryText = null,
     string? CodeOrToolName = null,
-    bool IsError = false);
+    bool IsError = false,
+    long? StartedAtUnixMs = null,
+    long? CompletedAtUnixMs = null);
 
 public sealed record KeptTranscriptRecord(
     int SchemaVersion,
@@ -41,7 +43,8 @@ public sealed record KeptTranscriptRecord(
     RunPhase Phase,
     long SavedAtUnixMs,
     IReadOnlyList<KeptChatRow> Rows,
-    string? SessionTitle = null);
+    string? SessionTitle = null,
+    Dictionary<long, long>? TurnDurationsMs = null);
 
 public sealed record LoadedRecentSession(
     SessionKey Scope,
@@ -56,8 +59,8 @@ public sealed record LoadedRecentSession(
 internal sealed partial class KeptTranscriptJsonContext : JsonSerializerContext;
 
 /// <summary>
-/// Atomic private-file snapshot store for `KeptTranscript` / `detachedTranscript` Cache-First boot (N-03-05).
-/// Passes every persisted string field through <see cref="SecretRedactor"/> before writing to disk.
+/// 面向 `KeptTranscript` / `detachedTranscript` 缓存优先启动的原子私有文件快照存储（N-03-05）。
+/// 落盘前所有持久化字符串字段都会经过 <see cref="SecretRedactor"/> 脱敏。
 /// </summary>
 public sealed class KeptTranscriptStore
 {
@@ -99,6 +102,9 @@ public sealed class KeptTranscriptStore
         var sanitizedTitle = string.IsNullOrWhiteSpace(snapshot.SessionTitle)
             ? null
             : SecretRedactor.RedactAndTruncate(snapshot.SessionTitle, 120);
+        var turnDurations = snapshot.TurnDurationsMs is { Count: > 0 } durations
+            ? new Dictionary<long, long>(durations)
+            : null;
         var record = new KeptTranscriptRecord(
             CurrentSchemaVersion,
             snapshot.Session,
@@ -106,7 +112,8 @@ public sealed class KeptTranscriptStore
             snapshot.Phase,
             nowUnixMs,
             keptRows,
-            sanitizedTitle);
+            sanitizedTitle,
+            turnDurations);
 
         var json = JsonSerializer.Serialize(record, KeptTranscriptJsonContext.Default.KeptTranscriptRecord);
         await WriteFileAtomicallyAsync(FilePathFor(snapshot.Session), json, ct).ConfigureAwait(false);
@@ -188,7 +195,7 @@ public sealed class KeptTranscriptStore
                 {
                     File.Delete(tmpPath);
                 }
-#pragma warning disable CA1031 // Best-effort temp file cleanup
+#pragma warning disable CA1031 // 尽力清理临时文件
                 catch (Exception ex) when (ex is not OperationCanceledException)
 #pragma warning restore CA1031
                 {
@@ -247,7 +254,15 @@ public sealed class KeptTranscriptStore
                     rows.Add(new MarkdownBlockRow(r.ItemId, r.TurnSeq, r.ItemId, 0, 0, r.PrimaryText, true, 0, false, false));
                     break;
                 case KeptRowKind.Reasoning:
-                    rows.Add(new ReasoningBlockRow(r.ItemId, r.TurnSeq, r.ItemId, 0, r.PrimaryText, true));
+                    rows.Add(new ReasoningBlockRow(
+                        r.ItemId,
+                        r.TurnSeq,
+                        r.ItemId,
+                        0,
+                        r.PrimaryText,
+                        true,
+                        r.StartedAtUnixMs,
+                        r.CompletedAtUnixMs));
                     break;
                 case KeptRowKind.ToolCall:
                     rows.Add(new ToolCallRow(
@@ -258,7 +273,9 @@ public sealed class KeptTranscriptStore
                         r.SecondaryText ?? string.Empty,
                         r.IsError ? ToolPhase.Error : ToolPhase.Completed,
                         null,
-                        r.IsError));
+                        r.IsError,
+                        r.StartedAtUnixMs,
+                        r.CompletedAtUnixMs));
                     break;
                 case KeptRowKind.Command:
                     rows.Add(new CommandRow(r.ItemId, r.TurnSeq, r.ItemId, r.CodeOrToolName ?? "command", r.SecondaryText, !r.IsError, r.PrimaryText));
@@ -295,7 +312,9 @@ public sealed class KeptTranscriptStore
                 KeptRowKind.Reasoning,
                 rs.ItemId,
                 rs.TurnSeq,
-                SecretRedactor.RedactAndTruncate(rs.Text, 4000)),
+                SecretRedactor.RedactAndTruncate(rs.Text, 4000),
+                StartedAtUnixMs: rs.StartedAtUnixMs,
+                CompletedAtUnixMs: rs.CompletedAtUnixMs),
             ToolCallRow tc => new KeptChatRow(
                 KeptRowKind.ToolCall,
                 tc.ItemId,
@@ -303,7 +322,9 @@ public sealed class KeptTranscriptStore
                 SecretRedactor.RedactAndTruncate(tc.OutputSummary ?? string.Empty, 400),
                 SecretRedactor.RedactAndTruncate(tc.ArgumentsJson, 200),
                 SecretRedactor.RedactAndTruncate(tc.ToolName, 120),
-                tc.IsError),
+                tc.IsError,
+                tc.StartedAtUnixMs,
+                tc.CompletedAtUnixMs),
             CommandRow cmd => new KeptChatRow(
                 KeptRowKind.Command,
                 cmd.ItemId,

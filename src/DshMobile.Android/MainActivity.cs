@@ -1,11 +1,13 @@
 using Android.Content;
 using Android.Content.PM;
 using Android.Views;
+using Android.Widget;
 using AndroidX.Activity;
 using AndroidX.AppCompat.App;
 using AndroidX.Core.View;
 using AndroidX.Fragment.App;
 using DshMobile.Agent.Presentation;
+using DshMobile.App.Chat;
 using DshMobile.App.Chats;
 using DshMobile.App.Files;
 using DshMobile.App.Inbox;
@@ -50,11 +52,21 @@ public sealed class MainActivity : AppCompatActivity
     /// <summary>Material 3 window size class "medium": from here on the rail replaces the bottom bar.</summary>
     private const int RailMinWidthDp = 600;
 
+    /// <summary>UI-S6：宽屏双栏左侧会话列表的目标宽度。</summary>
+    private const float ChatListPaneWidthDp = 340f;
+
+    /// <summary>UI-S6：嵌入右栏的 <see cref="ChatFragment"/> 固定 tag，保证宽窄切换时无重复实例。</summary>
+    private const string DetailChatTag = "main.chat.detail";
+
     private BottomNavigationView _bar = null!;
     private NavigationRailView _rail = null!;
     private View _root = null!;
     private View _inboxBanner = null!;
     private TextView _inboxBannerText = null!;
+    private FrameLayout _tabContent = null!;
+    private View _detailPane = null!;
+    private View _detailDivider = null!;
+    private View _detailEmpty = null!;
     private bool _wide;
     private int _tab = Resource.Id.nav_chats;
     private int _inboxRenderPosted;
@@ -70,6 +82,49 @@ public sealed class MainActivity : AppCompatActivity
     /// <summary>The navigation that is shown now.</summary>
     private NavigationBarView Nav => _wide ? _rail : _bar;
 
+    /// <summary>UI-S6：当前是否处于「宽屏 + 会话页签」的列表-详情双栏模式。</summary>
+    public bool IsWideChatsDualPane => _wide && _tab == Resource.Id.nav_chats;
+
+    /// <summary>
+    /// UI-S6：在右栏加载或切换会话。已有同类（本地/远程）聊天实例时直接复用并跳转，
+    /// 否则在固定的 <see cref="DetailChatTag"/> 上替换为新实例，避免重复 Fragment。
+    /// </summary>
+    public void OpenChatInDetailPane(string sessionId, bool isRemote, string? focusEventId)
+    {
+        if (!IsWideChatsDualPane)
+        {
+            return;
+        }
+
+        if (SupportFragmentManager.FindFragmentByTag(DetailChatTag) is ChatFragment existing
+            && existing.IsRemote == isRemote)
+        {
+            existing.NavigateToSession(sessionId, focusEventId);
+            _detailEmpty.Visibility = ViewStates.Gone;
+            return;
+        }
+
+        var args = new Bundle();
+        args.PutString(ChatActivity.ExtraSessionId, sessionId);
+        if (!string.IsNullOrWhiteSpace(focusEventId))
+        {
+            args.PutString(ChatActivity.ExtraFocusEventId, focusEventId);
+        }
+        if (isRemote)
+        {
+            args.PutBoolean(ChatActivity.ExtraIsRemote, true);
+        }
+        args.PutBoolean(ChatActivity.ExtraEmbeddedInPane, true);
+
+        var fragment = new ChatFragment { Arguments = args };
+        SupportFragmentManager
+            .BeginTransaction()
+            .Replace(Resource.Id.main_detail_container, fragment, DetailChatTag)
+            .SetReorderingAllowed(true)
+            .Commit();
+        _detailEmpty.Visibility = ViewStates.Gone;
+    }
+
     protected override void OnCreate(Bundle? savedInstanceState)
     {
         var savedTab = SavedTab(savedInstanceState);
@@ -81,6 +136,10 @@ public sealed class MainActivity : AppCompatActivity
         _rail = FindViewById<NavigationRailView>(Resource.Id.nav_rail)!;
         _inboxBanner = FindViewById(Resource.Id.main_inbox_banner)!;
         _inboxBannerText = FindViewById<TextView>(Resource.Id.main_inbox_banner_text)!;
+        _tabContent = FindViewById<FrameLayout>(Resource.Id.tab_content)!;
+        _detailPane = FindViewById(Resource.Id.main_detail_pane)!;
+        _detailDivider = FindViewById(Resource.Id.main_detail_divider)!;
+        _detailEmpty = FindViewById(Resource.Id.main_detail_empty)!;
         var inboxBtn = FindViewById<MaterialButton>(Resource.Id.main_inbox_banner_btn)!;
         _inboxBanner.Click += (_, _) => OpenInboxSheet();
         inboxBtn.Click += (_, _) => OpenInboxSheet();
@@ -279,7 +338,61 @@ public sealed class MainActivity : AppCompatActivity
         {
             Nav.SelectedItemId = _tab;
         }
+        ApplyChatPanes();
         ViewCompat.RequestApplyInsets(_root);
+    }
+
+    /// <summary>
+    /// UI-S6：只在宽屏 + 会话页签启用双栏；离开双栏（窄屏或切到文件/更多）即移除右栏聊天实例，
+    /// 防止同一个会话同时驻留在嵌入式 ChatFragment 与单栏 ChatActivity 中。
+    /// </summary>
+    private void ApplyChatPanes()
+    {
+        var dual = IsWideChatsDualPane;
+        if (!dual)
+        {
+            RemoveDetailChat();
+        }
+
+        var lp = (LinearLayout.LayoutParams)_tabContent.LayoutParameters!;
+        var width = dual ? Rows.Dp(this, ChatListPaneWidthDp) : 0;
+        var weight = dual ? 0f : 1f;
+        if (lp.Width != width || Math.Abs(lp.Weight - weight) > 0.001f)
+        {
+            lp.Width = width;
+            lp.Weight = weight;
+            _tabContent.LayoutParameters = lp;
+        }
+
+        _detailDivider.Visibility = dual ? ViewStates.Visible : ViewStates.Gone;
+        _detailPane.Visibility = dual ? ViewStates.Visible : ViewStates.Gone;
+        UpdateDetailEmptyState();
+    }
+
+    private void UpdateDetailEmptyState() =>
+        _detailEmpty.Visibility = SupportFragmentManager.FindFragmentByTag(DetailChatTag) is null
+            ? ViewStates.Visible
+            : ViewStates.Gone;
+
+    private void RemoveDetailChat()
+    {
+        if (SupportFragmentManager.FindFragmentByTag(DetailChatTag) is not { } detail)
+        {
+            return;
+        }
+        SupportFragmentManager.BeginTransaction().Remove(detail).CommitNowAllowingStateLoss();
+        _detailEmpty.Visibility = ViewStates.Visible;
+    }
+
+    /// <summary>返回键优先关闭右栏详情，再交给页签自身处理，最后才退出应用。</summary>
+    private bool CloseDetailPane()
+    {
+        if (SupportFragmentManager.FindFragmentByTag(DetailChatTag) is null)
+        {
+            return false;
+        }
+        RemoveDetailChat();
+        return true;
     }
 
     protected override void OnSaveInstanceState(Bundle outState)
@@ -333,6 +446,7 @@ public sealed class MainActivity : AppCompatActivity
         tx.SetReorderingAllowed(true);
         tx.CommitNow();
         _tab = id;
+        ApplyChatPanes();
         // Keep the hidden navigation on the same tab for the next width change (no listener runs for an equal id).
         foreach (NavigationBarView nav in new NavigationBarView[] { _bar, _rail })
         {
@@ -358,6 +472,10 @@ public sealed class MainActivity : AppCompatActivity
     {
         public override void HandleOnBackPressed()
         {
+            if (owner._wide && owner._tab == Resource.Id.nav_chats && owner.CloseDetailPane())
+            {
+                return;
+            }
             if ((owner.Current() as ITabRoot)?.OnBack() == true)
             {
                 return;

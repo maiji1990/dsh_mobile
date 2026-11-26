@@ -17,6 +17,38 @@ public sealed class ChatDisplayFormatterTests
     }
 
     [Fact]
+    public void FormatRelativeSessionTime_UsesJustNowClockYesterdayAndMonthDayBuckets()
+    {
+        // 一律以本机时区构造时间，断言不依赖测试机所在时区。
+        static DateTimeOffset LocalAt(int year, int month, int day, int hour, int minute)
+        {
+            var local = new DateTime(year, month, day, hour, minute, 0, DateTimeKind.Unspecified);
+            return new DateTimeOffset(local, TimeZoneInfo.Local.GetUtcOffset(local));
+        }
+
+        var now = LocalAt(2026, 3, 18, 14, 30);
+        Assert.Equal("刚刚", ChatDisplayFormatter.FormatRelativeSessionTime(
+            now.AddMinutes(-1).ToUnixTimeMilliseconds(), now));
+        Assert.Equal("09:20", ChatDisplayFormatter.FormatRelativeSessionTime(
+            LocalAt(2026, 3, 18, 9, 20).ToUnixTimeMilliseconds(), now));
+        Assert.Equal("昨天", ChatDisplayFormatter.FormatRelativeSessionTime(
+            LocalAt(2026, 3, 17, 23, 59).ToUnixTimeMilliseconds(), now));
+        Assert.Equal("03-01", ChatDisplayFormatter.FormatRelativeSessionTime(
+            LocalAt(2026, 3, 1, 8, 0).ToUnixTimeMilliseconds(), now));
+        Assert.Equal(string.Empty, ChatDisplayFormatter.FormatRelativeSessionTime(0, now));
+    }
+
+    [Fact]
+    public void ExtractLastPathSegment_HandlesSlashBackslashAndTrailingSeparators()
+    {
+        Assert.Equal("projects", ChatDisplayFormatter.ExtractLastPathSegment("/root/projects"));
+        Assert.Equal("dsh_mobile", ChatDisplayFormatter.ExtractLastPathSegment(@"D:\CSharp\Github\dsh_mobile\"));
+        Assert.Equal("root", ChatDisplayFormatter.ExtractLastPathSegment("root"));
+        Assert.Null(ChatDisplayFormatter.ExtractLastPathSegment("   "));
+        Assert.Null(ChatDisplayFormatter.ExtractLastPathSegment(null));
+    }
+
+    [Fact]
     public void FormatCompactModelBadge_StripsProviderPrefixAndAppendsEffort()
     {
         var spec = new ModelSelectionSpec("deepseek-official", "deepseek-flash", "max");
@@ -54,6 +86,18 @@ public sealed class ChatDisplayFormatterTests
         Assert.Equal("执行工具 · custom", malformed.HeaderLabel);
         Assert.Equal("{not-json", malformed.SummaryLine);
         Assert.Equal("{not-json", malformed.DetailJson);
+    }
+
+    [Fact]
+    public void FormatToolCallSummary_UsesSingleSpaceBetweenGlobPatternAndPath()
+    {
+        var summary = ChatDisplayFormatter.FormatToolCallSummary(
+            "glob",
+            """{"pattern":"probe4","path":"/tmp"}""");
+
+        Assert.Equal("glob · tmp", summary.HeaderLabel);
+        Assert.Equal("probe4 @ /tmp", summary.SummaryLine);
+        Assert.DoesNotContain("  @ ", summary.SummaryLine, StringComparison.Ordinal);
     }
 
     [Fact]

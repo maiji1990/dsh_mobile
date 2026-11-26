@@ -15,7 +15,8 @@ public sealed record SessionListItemView(
     string? ParentSessionId,
     string? Cwd,
     string? AgentPreset,
-    string? FormatStatus);
+    string? FormatStatus,
+    string? Origin = null);
 
 /// <summary>原生会话列表页不可变状态快照（N-05-03）。</summary>
 public sealed record SessionsUiState(
@@ -375,7 +376,8 @@ public sealed class SessionsViewModel : ISessionsActions, IAsyncDisposable
                         ParentSessionId: s.ParentSessionId,
                         Cwd: s.Cwd,
                         AgentPreset: s.AgentPreset,
-                        FormatStatus: s.FormatStatus);
+                        FormatStatus: s.FormatStatus,
+                        Origin: s.Origin);
                 })
                 .Where(item => query.Length == 0 ||
                     item.DisplayTitle.Contains(query, StringComparison.OrdinalIgnoreCase) ||
@@ -395,7 +397,8 @@ public sealed class SessionsViewModel : ISessionsActions, IAsyncDisposable
                     ParentSessionId: null,
                     Cwd: null,
                     AgentPreset: null,
-                    FormatStatus: null))
+                    FormatStatus: null,
+                    Origin: null))
                 .Where(item => query.Length == 0 ||
                     item.DisplayTitle.Contains(query, StringComparison.OrdinalIgnoreCase) ||
                     item.SessionId.Contains(query, StringComparison.OrdinalIgnoreCase))

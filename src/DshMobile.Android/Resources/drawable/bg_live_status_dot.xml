@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 流式 Live 状态圆点：与运行状态一致的绿色实心圆 -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="oval">
+    <solid android:color="@color/dshm_running" />
+    <size
+        android:width="8dp"
+        android:height="8dp" />
+</shape>

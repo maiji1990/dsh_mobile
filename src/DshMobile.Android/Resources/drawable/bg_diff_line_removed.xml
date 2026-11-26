@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- UI-S5：删除行柔和底色 + 左侧 3dp 红色标记条 -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item>
+        <shape android:shape="rectangle">
+            <solid android:color="@color/dshm_diff_del_bg" />
+        </shape>
+    </item>
+    <item
+        android:width="3dp"
+        android:gravity="left">
+        <shape android:shape="rectangle">
+            <solid android:color="@color/dshm_diff_del_fg" />
+        </shape>
+    </item>
+</layer-list>

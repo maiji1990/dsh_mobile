@@ -2,7 +2,7 @@ using DshMobile.Agent.Domain;
 
 namespace DshMobile.Agent.Engines;
 
-/// <summary>Strong scope identity preventing cross-runtime/profile/session event bleed (N-03-01).</summary>
+/// <summary>强作用域标识，防止跨运行时 / profile / 会话的事件串流（N-03-01）。</summary>
 public readonly record struct SessionKey(
     string RuntimeId,
     string ProfileId,
@@ -38,7 +38,7 @@ public static class ToolPhaseTransitions
     public static bool IsTerminal(this ToolPhase phase) =>
         phase is ToolPhase.Completed or ToolPhase.Error or ToolPhase.Cancelled;
 
-    /// <summary>Enforces strict monotonic transition; terminal states cannot regress.</summary>
+    /// <summary>强制严格单调的状态迁移；终态不可回退。</summary>
     public static ToolPhase Advance(ToolPhase current, ToolPhase target)
     {
         if (current.IsTerminal())
@@ -95,7 +95,16 @@ public sealed record ReasoningBlockRow(
     string MessageId,
     int BlockIndex,
     string Text,
-    bool IsSettled) : ChatRow(ItemId, TurnSeq);
+    bool IsSettled,
+    long? StartedAtUnixMs = null,
+    long? CompletedAtUnixMs = null) : ChatRow(ItemId, TurnSeq)
+{
+    /// <summary>真实耗时；仅当开始与完成时间均存在且顺序合理时返回，否则返回 <c>null</c>。</summary>
+    public long? DurationMs =>
+        StartedAtUnixMs is { } started && CompletedAtUnixMs is { } completed && completed >= started
+            ? completed - started
+            : null;
+}
 
 public sealed record ToolCallRow(
     string ItemId,
@@ -105,7 +114,16 @@ public sealed record ToolCallRow(
     string ArgumentsJson,
     ToolPhase Phase,
     string? OutputSummary,
-    bool IsError) : ChatRow(ItemId, TurnSeq);
+    bool IsError,
+    long? StartedAtUnixMs = null,
+    long? CompletedAtUnixMs = null) : ChatRow(ItemId, TurnSeq)
+{
+    /// <summary>真实耗时；仅当开始与完成时间均存在且顺序合理时返回，否则返回 <c>null</c>。</summary>
+    public long? DurationMs =>
+        StartedAtUnixMs is { } started && CompletedAtUnixMs is { } completed && completed >= started
+            ? completed - started
+            : null;
+}
 
 public sealed record CommandRow(
     string ItemId,
@@ -128,7 +146,7 @@ public sealed record UnknownEventRow(
     long TurnSeq,
     string EventType) : ChatRow(ItemId, TurnSeq);
 
-/// <summary>Deterministic performance & invariant counters locked by `Stream6000` (N-03-08).</summary>
+/// <summary>由 `Stream6000` 锁定的确定性性能与不变量计数器（N-03-08）。</summary>
 public sealed record TranscriptCounters(
     long Publishes,
     long Derives,
@@ -155,4 +173,5 @@ public sealed record ChatSnapshot(
     IReadOnlyList<ChatRow> Rows,
     TranscriptCounters Counters,
     string? SessionTitle = null,
-    long? EarliestSeq = null);
+    long? EarliestSeq = null,
+    IReadOnlyDictionary<long, long>? TurnDurationsMs = null);

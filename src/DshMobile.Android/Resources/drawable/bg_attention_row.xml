@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 待你处理内联卡底色：中性容器色 + 12dp 圆角，左侧由 3dp 琥珀色竖条承担强调。 -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <solid android:color="?attr/colorSurfaceContainerLow" />
+    <corners android:radius="@dimen/dshm_radius_block" />
+</shape>

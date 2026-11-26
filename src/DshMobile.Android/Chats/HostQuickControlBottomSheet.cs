@@ -1,6 +1,8 @@
 using Android.Content;
+using Android.OS;
 using Android.Views;
 using Android.Widget;
+using AndroidX.Fragment.App;
 using DshMobile.App.Bridge;
 using DshMobile.App.Ui;
 using DshMobile.Application.Ui;
@@ -8,39 +10,84 @@ using DshMobile.Runtime.Updates;
 using Google.Android.Material.BottomSheet;
 using Google.Android.Material.Button;
 using Google.Android.Material.ProgressIndicator;
+using FragmentManager = AndroidX.Fragment.App.FragmentManager;
 
 namespace DshMobile.App.Chats;
 
 /// <summary>
-/// UI Slice 2：顶栏宿主状态药丸点击后弹出的快速控制底部抽屉（全 XML <c>sheet_host_quick_control.xml</c>），
+/// UI Slice 2 / UI-S6：顶栏宿主状态药丸点击后弹出的快速控制底部抽屉（全 XML <c>sheet_host_quick_control.xml</c>），
 /// 支持一步启停 DSH、直达远程主机、查看运行环境与凭据配置。
+/// 已统一为 <see cref="BottomSheetDialogFragment"/>：标题/详情等标量经 <c>Arguments</c> 传递，
+/// 动作经宿主 <see cref="IHost"/> 回调派发；配置变更后若宿主不可用则安全关闭。
 /// </summary>
-internal static class HostQuickControlBottomSheet
+public sealed class HostQuickControlBottomSheet : BottomSheetDialogFragment
 {
-    public static void Show(
-        Context ctx,
-        BridgeHost bridge,
-        HomeStatus status,
-        string titleText,
-        string detailText,
-        Action<HomeAction> onAction,
-        Action onOpenRemote,
-        Action onOpenRuntime,
-        Action onOpenCredentials)
+    public const string SheetTag = "dsh.host_quick_control.bottom_sheet";
+
+    private const string ArgTitle = "sheet.host.title";
+    private const string ArgDetail = "sheet.host.detail";
+
+    /// <summary>宿主（会话页或更多页）回调契约。</summary>
+    public interface IHost
     {
-        var view = LayoutInflater.From(ctx)!.Inflate(Resource.Layout.sheet_host_quick_control, null)!;
+        void OnHostQuickAction(HomeAction action);
+
+        void OnHostQuickOpenRemote();
+
+        void OnHostQuickOpenRuntime();
+
+        void OnHostQuickOpenCredentials();
+
+        void OnHostQuickCancelUpdate();
+    }
+
+    private IHost? _host;
+    private BridgeHost _bridge = null!;
+
+    /// <summary>以 tag 去重打开抽屉；已存在实例时直接复用，避免双击弹出双份。</summary>
+    public static void Show(FragmentManager manager, string titleText, string detailText)
+    {
+        ArgumentNullException.ThrowIfNull(manager);
+        if (manager.FindFragmentByTag(SheetTag) is not null)
+        {
+            return;
+        }
+
+        var args = new Bundle();
+        args.PutString(ArgTitle, titleText);
+        args.PutString(ArgDetail, detailText);
+        new HostQuickControlBottomSheet { Arguments = args }.Show(manager, SheetTag);
+    }
+
+    public override void OnCreate(Bundle? savedInstanceState)
+    {
+        base.OnCreate(savedInstanceState);
+        SetStyle(AndroidX.Fragment.App.DialogFragment.StyleNoTitle, Resource.Style.ThemeOverlay_DshMobile_BottomSheetDialog);
+    }
+
+    public override View OnCreateView(LayoutInflater inflater, ViewGroup? container, Bundle? savedInstanceState)
+    {
+        var view = inflater.Inflate(Resource.Layout.sheet_host_quick_control, container, false)!;
         Edges.Pad(view, top: false, bottom: true);
 
-        view.FindViewById<TextView>(Resource.Id.sheet_host_title)!.Text = titleText;
-        view.FindViewById<TextView>(Resource.Id.sheet_host_detail)!.Text = detailText;
+        _host = ParentFragment as IHost ?? Activity as IHost;
+        _bridge = DshMobileApplication.Current.Bridge;
+        var ctx = RequireContext();
+        var status = _bridge.Status;
+
+        view.FindViewById<TextView>(Resource.Id.sheet_host_title)!.Text =
+            Arguments?.GetString(ArgTitle) ?? ctx.GetString(Resource.String.home_title_stopped);
+        view.FindViewById<TextView>(Resource.Id.sheet_host_detail)!.Text =
+            Arguments?.GetString(ArgDetail) ?? ctx.GetString(Resource.String.chats_host_stopped);
 
         var pill = view.FindViewById<TextView>(Resource.Id.sheet_host_pill)!;
-        ApplyHostPillAppearance(ctx, pill, status.Phase, appendCaret: false);
+        var remoteLabel = _bridge.Agent.IsRemoteEndpointReady ? _bridge.Agent.RemoteHostLabel : null;
+        ApplyHostPillAppearance(ctx, pill, status.Phase, appendCaret: false, remoteLabel);
 
         var progress = view.FindViewById<LinearProgressIndicator>(Resource.Id.sheet_host_progress)!;
         var busy = status.Phase is HomePhase.Starting or HomePhase.WaitingForDsh or HomePhase.Stopping or HomePhase.Busy;
         progress.Visibility = busy ? ViewStates.Visible : ViewStates.Gone;
-        if (busy && bridge.Progress is { Total: > 0 } p)
+        if (busy && _bridge.Progress is { Total: > 0 } p)
         {
             progress.Indeterminate = false;
             progress.SetProgressCompat((int)Math.Clamp(p.Done * 100 / p.Total, 0, 100), true);
@@ -50,46 +97,31 @@ internal static class HostQuickControlBottomSheet
             progress.Indeterminate = true;
         }
 
-        var dialog = new BottomSheetDialog(ctx);
-        dialog.SetContentView(view);
-
         var primaryBtn = view.FindViewById<MaterialButton>(Resource.Id.sheet_host_primary)!;
         var secondaryBtn = view.FindViewById<MaterialButton>(Resource.Id.sheet_host_secondary)!;
 
         // 就绪时主操作直接呈现「停止 DSH」，避免再钻入次级菜单。
         var primaryAction = status.Phase == HomePhase.Ready ? HomeAction.Stop : status.Primary;
-        BindActionButton(primaryBtn, primaryAction, status.Phase, () =>
-        {
-            dialog.Dismiss();
-            onAction(primaryAction);
-        });
+        BindActionButton(primaryBtn, primaryAction, status.Phase, () => DispatchHome(primaryAction));
 
         var secondaryCancelsDownload = busy
-            && bridge.CurrentOperation == HomeStatus.UpdateInstallOperation
-            && bridge.Progress is { Step: UpdatePhases.Downloading };
+            && _bridge.CurrentOperation == HomeStatus.UpdateInstallOperation
+            && _bridge.Progress is { Step: UpdatePhases.Downloading };
         if (secondaryCancelsDownload)
         {
             secondaryBtn.Visibility = ViewStates.Visible;
             secondaryBtn.SetText(Resource.String.update_cancel);
             secondaryBtn.SetIconResource(Resource.Drawable.ic_close);
-            secondaryBtn.Click += (_, _) =>
-            {
-                dialog.Dismiss();
-                bridge.CancelUpdate();
-            };
+            secondaryBtn.Click += (_, _) => DispatchCancelUpdate();
         }
         else
         {
             var secondaryAction = status.Phase == HomePhase.Ready ? HomeAction.OpenChat : status.Secondary;
-            BindActionButton(secondaryBtn, secondaryAction, status.Phase, () =>
-            {
-                dialog.Dismiss();
-                onAction(secondaryAction);
-            });
+            BindActionButton(secondaryBtn, secondaryAction, status.Phase, () => DispatchHome(secondaryAction));
         }
 
-        var remoteBadge = bridge.Agent.IsRemoteEndpointReady
-            ? (_bridgeLabelOrDefault(ctx, bridge.Agent.RemoteHostLabel))
+        var remoteBadge = _bridge.Agent.IsRemoteEndpointReady
+            ? _bridgeLabelOrDefault(ctx, _bridge.Agent.RemoteHostLabel)
             : null;
         BindNavRow(
             view.FindViewById(Resource.Id.sheet_host_nav_remote)!,
@@ -97,11 +129,7 @@ internal static class HostQuickControlBottomSheet
             ctx.GetString(Resource.String.more_remote),
             ctx.GetString(Resource.String.host_sheet_nav_remote_sub),
             remoteBadge,
-            () =>
-            {
-                dialog.Dismiss();
-                onOpenRemote();
-            });
+            DispatchOpenRemote);
 
         BindNavRow(
             view.FindViewById(Resource.Id.sheet_host_nav_runtime)!,
@@ -109,11 +137,7 @@ internal static class HostQuickControlBottomSheet
             ctx.GetString(Resource.String.more_runtime),
             ctx.GetString(Resource.String.host_sheet_nav_runtime_sub),
             status.DshVersion,
-            () =>
-            {
-                dialog.Dismiss();
-                onOpenRuntime();
-            });
+            DispatchOpenRuntime);
 
         BindNavRow(
             view.FindViewById(Resource.Id.sheet_host_nav_credentials)!,
@@ -121,37 +145,70 @@ internal static class HostQuickControlBottomSheet
             ctx.GetString(Resource.String.more_credentials),
             ctx.GetString(Resource.String.host_sheet_nav_creds_sub),
             trailingBadge: null,
-            () =>
-            {
-                dialog.Dismiss();
-                onOpenCredentials();
-            });
+            DispatchOpenCredentials);
 
-        dialog.Show();
+        return view;
     }
 
-    /// <summary>统一设置宿主状态药丸的文案与 Material 3 语义色彩（顶栏与底部抽屉共用）。</summary>
-    public static void ApplyHostPillAppearance(Context ctx, TextView pill, HomePhase phase, bool appendCaret)
+    public override void OnStart()
     {
-        var (labelRes, bgAttr, fgAttr, useRunningGreen) = phase switch
+        base.OnStart();
+        if (_host is null)
         {
-            HomePhase.Ready => (Resource.String.chats_pill_running, Resource.Attribute.colorSecondaryContainer, 0, true),
+            // 重建后宿主回调可能已失效：安全关闭，绝不把空引用抛给用户。
+            DismissAllowingStateLoss();
+            return;
+        }
+
+        if (Dialog is BottomSheetDialog sheet)
+        {
+            sheet.Behavior.SkipCollapsed = true;
+            sheet.Behavior.State = BottomSheetBehavior.StateExpanded;
+        }
+    }
+
+    /// <summary>
+    /// 统一设置宿主状态药丸的文案与 Material 3 语义色彩（顶栏与底部抽屉共用）。
+    /// UI-S4：就绪健康态只显示绿点 + 简洁名称（本地 DSH / 远程: label），仅启动中、停止中与异常态显示状态词。
+    /// </summary>
+    public static void ApplyHostPillAppearance(
+        Context ctx,
+        TextView pill,
+        HomePhase phase,
+        bool appendCaret,
+        string? remoteLabel = null)
+    {
+        if (phase == HomePhase.Ready)
+        {
+            var name = string.IsNullOrWhiteSpace(remoteLabel)
+                ? ctx.GetString(Resource.String.chats_pill_local_host)
+                : ctx.GetString(Resource.String.chats_pill_remote_host_fmt, remoteLabel!);
+            pill.Text = appendCaret ? $"{name} ▾" : name;
+            pill.SetCompoundDrawablesRelativeWithIntrinsicBounds(Resource.Drawable.bg_live_status_dot, 0, 0, 0);
+            pill.CompoundDrawablePadding = Rows.Dp(ctx, 6);
+            pill.BackgroundTintList = Android.Content.Res.ColorStateList.ValueOf(
+                new Android.Graphics.Color(Rows.Color(pill, Resource.Attribute.colorSurfaceContainerHigh)));
+            pill.SetTextColor(new Android.Graphics.Color(Rows.Color(pill, Resource.Attribute.colorOnSurface)));
+            return;
+        }
+
+        var (labelRes, bgAttr, fgAttr) = phase switch
+        {
             HomePhase.Starting or HomePhase.WaitingForDsh or HomePhase.Busy or HomePhase.Stopping =>
                 (phase == HomePhase.Stopping ? Resource.String.chats_pill_stopping : Resource.String.chats_pill_starting,
-                 Resource.Attribute.colorTertiaryContainer, Resource.Attribute.colorOnTertiaryContainer, false),
-            HomePhase.Failed => (Resource.String.chats_pill_failed, Resource.Attribute.colorErrorContainer, Resource.Attribute.colorOnErrorContainer, false),
-            HomePhase.NotInstalled => (Resource.String.chats_pill_not_installed, Resource.Attribute.colorSurfaceContainerHigh, Resource.Attribute.colorOnSurfaceVariant, false),
-            _ => (Resource.String.chats_pill_stopped, Resource.Attribute.colorSurfaceContainerHigh, Resource.Attribute.colorOnSurfaceVariant, false),
+                 Resource.Attribute.colorTertiaryContainer, Resource.Attribute.colorOnTertiaryContainer),
+            HomePhase.Failed => (Resource.String.chats_pill_failed, Resource.Attribute.colorErrorContainer, Resource.Attribute.colorOnErrorContainer),
+            HomePhase.NotInstalled => (Resource.String.chats_pill_not_installed, Resource.Attribute.colorSurfaceContainerHigh, Resource.Attribute.colorOnSurfaceVariant),
+            _ => (Resource.String.chats_pill_stopped, Resource.Attribute.colorSurfaceContainerHigh, Resource.Attribute.colorOnSurfaceVariant),
         };
 
-        var label = ctx.GetString(labelRes);
-        pill.Text = appendCaret ? $"{label} ▾" : label;
+        var statusLabel = ctx.GetString(labelRes);
+        pill.Text = appendCaret ? $"{statusLabel} ▾" : statusLabel;
+        pill.SetCompoundDrawablesRelativeWithIntrinsicBounds(0, 0, 0, 0);
+        pill.CompoundDrawablePadding = 0;
         pill.BackgroundTintList = Android.Content.Res.ColorStateList.ValueOf(
             new Android.Graphics.Color(Rows.Color(pill, bgAttr)));
-        var fgColor = useRunningGreen
-            ? new Android.Graphics.Color(ctx.GetColor(Resource.Color.dshm_running))
-            : new Android.Graphics.Color(Rows.Color(pill, fgAttr));
-        pill.SetTextColor(fgColor);
+        pill.SetTextColor(new Android.Graphics.Color(Rows.Color(pill, fgAttr)));
     }
 
     private static string _bridgeLabelOrDefault(Context ctx, string? label) =>
@@ -208,5 +265,40 @@ internal static class HostQuickControlBottomSheet
             badge.Visibility = ViewStates.Gone;
         }
         row.Click += (_, _) => onClick();
+    }
+
+    private void DispatchHome(HomeAction action)
+    {
+        var host = _host;
+        DismissAllowingStateLoss();
+        host?.OnHostQuickAction(action);
+    }
+
+    private void DispatchCancelUpdate()
+    {
+        var host = _host;
+        DismissAllowingStateLoss();
+        host?.OnHostQuickCancelUpdate();
+    }
+
+    private void DispatchOpenRemote()
+    {
+        var host = _host;
+        DismissAllowingStateLoss();
+        host?.OnHostQuickOpenRemote();
+    }
+
+    private void DispatchOpenRuntime()
+    {
+        var host = _host;
+        DismissAllowingStateLoss();
+        host?.OnHostQuickOpenRuntime();
+    }
+
+    private void DispatchOpenCredentials()
+    {
+        var host = _host;
+        DismissAllowingStateLoss();
+        host?.OnHostQuickOpenCredentials();
     }
 }
