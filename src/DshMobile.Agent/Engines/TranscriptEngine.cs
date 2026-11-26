@@ -320,7 +320,7 @@ public sealed class TranscriptHandle : IAsyncDisposable
                 return;
             }
             var rows = KeptTranscriptStore.ToDetachedChatRows(kept);
-            r.LoadDetachedCache(kept.CursorSeq, kept.Phase, rows);
+            r.LoadDetachedCache(kept.CursorSeq, kept.Phase, rows, kept.TurnDurationsMs);
             _publisher.NotifyDirty();
             _publisher.Flush();
         }, notifyPublisher: false);

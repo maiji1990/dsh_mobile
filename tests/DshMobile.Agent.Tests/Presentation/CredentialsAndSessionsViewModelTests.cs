@@ -135,6 +135,34 @@ public sealed class CredentialsAndSessionsViewModelTests : IDisposable
     }
 
     [Fact]
+    public async Task SessionsViewModel_PassesThroughOriginCwdAndPreset_WithoutDroppingMetadata()
+    {
+        var gw = new StubPr05Gateway();
+        await using var transcripts = new TranscriptEngine(coalesceWindow: TimeSpan.FromMilliseconds(5));
+        await using var requests = new RequestsEngine(gw, gw, transcripts);
+        await using var sessionsVm = new SessionsViewModel(gw, requests);
+
+        await sessionsVm.RefreshAsync();
+
+        // UI-S4: 列表项必须保留网关返回的 Origin、Cwd 与 AgentPreset，供来源分组与副标题展示。
+        var local = sessionsVm.State.Sessions.First(s => s.SessionId == "sess-cached");
+        Assert.Equal("web", local.Origin);
+        Assert.Equal("/root/projects", local.Cwd);
+        Assert.Equal("build", local.AgentPreset);
+
+        var remote = sessionsVm.State.Sessions.First(s => s.SessionId == "sess-other");
+        Assert.Equal("remote", remote.Origin);
+        Assert.Equal("/root/proj", remote.Cwd);
+        Assert.Null(remote.AgentPreset);
+
+        // 搜索仍可按标题/ID/工作区过滤，且过滤后来源字段不丢失。
+        sessionsVm.SetSearchQuery("projects");
+        var filtered = Assert.Single(sessionsVm.State.Sessions);
+        Assert.Equal("sess-cached", filtered.SessionId);
+        Assert.Equal("web", filtered.Origin);
+    }
+
+    [Fact]
     public async Task SessionsViewModel_AggregatesBadgesSearchRenameForkAndCancelGating()
     {
         var gw = new StubPr05Gateway();
@@ -179,8 +207,10 @@ public sealed class CredentialsAndSessionsViewModelTests : IDisposable
         private readonly Dictionary<string, string> _secrets = new(StringComparer.Ordinal);
         private readonly List<SessionSummaryView> _sessions =
         [
-            new("sess-cached", 2000, false, false, true, Title: "排查构建失败"),
-            new("sess-other", 1000, true, false, true, ParentSessionId: "sess-cached", Cwd: "/root/proj"),
+            new("sess-cached", 2000, false, false, true,
+                Title: "排查构建失败", Cwd: "/root/projects", AgentPreset: "build", Origin: "web"),
+            new("sess-other", 1000, true, false, true,
+                ParentSessionId: "sess-cached", Cwd: "/root/proj", Origin: "remote"),
         ];
 
         public bool CancelSupported { get; set; } = true;

@@ -6,14 +6,14 @@ using DshMobile.Agent.Protocol;
 
 namespace DshMobile.Agent.Engines;
 
-/// <summary>Sanitized tool invocation metadata resolved from `tool/call` events for `RequestsEngine` (N-03-07).</summary>
+/// <summary>由 `tool/call` 事件解析并脱敏后的工具调用元数据，供 `RequestsEngine` 使用（N-03-07）。</summary>
 public sealed record ToolInvocationSummary(
     string CallId,
     string ToolName,
     string SanitizedArguments);
 
 /// <summary>
-/// Single-threaded deterministic transcript state machine &amp; Turn-prefix caching reducer (N-03-01 .. N-03-03).
+/// 单线程确定性 Transcript 状态机与 Turn 前缀缓存归约器（N-03-01 .. N-03-03）。
 /// </summary>
 public sealed class TranscriptReducer
 {
@@ -61,6 +61,8 @@ public sealed class TranscriptReducer
     private long _prefixTurnReuseHits;
     private long _completedTurnTailChars;
     private long _completedTurnTailReparses;
+    private long _arrivalOrder;
+    private IReadOnlyDictionary<long, long>? _detachedTurnDurationsMs;
     private IReadOnlyList<ChatRow> _lastDerivedRows = [];
 
     public TranscriptReducer(
@@ -84,7 +86,7 @@ public sealed class TranscriptReducer
     public int DeferredCount => _deferredParts.Count;
     public bool HasLiveEvents => !_isDetachedCache && (_cursorSeq >= 0 || _settledTurnRows.Count > 0 || _activeTurn is not null);
 
-    /// <summary>Thread-safe lock-free read against the latest immutable tool ledger snapshot.</summary>
+    /// <summary>对最新不可变工具台账快照做线程安全的无锁读取。</summary>
     public bool TryGetToolInvocation(string callId, out ToolInvocationSummary summary)
     {
         if (string.IsNullOrEmpty(callId))
@@ -101,7 +103,10 @@ public sealed class TranscriptReducer
         _dirty = true;
     }
 
-    /// <summary>Validates subagent lineage; rejects foreign session updates before mutating state.</summary>
+    /// <summary>单调递增的到达序号，用于活动 Turn 内跨类型节点的稳定保序（不持久化）。</summary>
+    private long NextArrivalOrder() => ++_arrivalOrder;
+
+    /// <summary>校验子代理归属；在改变状态前拒绝外部会话的更新。</summary>
     public bool RegisterValidatedSubagent(string childSessionId, string? parentSessionId)
     {
         if (string.IsNullOrWhiteSpace(childSessionId) ||
@@ -151,13 +156,13 @@ public sealed class TranscriptReducer
             return false;
         }
 
-        // Detached cache must be cleared BEFORE seq comparison or EnsureActiveTurn so live replay never appends to cache rows.
+        // 必须在 seq 比较或 EnsureActiveTurn 之前清空离线缓存，避免实时回放追加到缓存行。
         if (_isDetachedCache)
         {
             ClearDetachedCacheInternal();
         }
 
-        // Durable seq idempotency
+        // 持久化 seq 幂等
         if (wireEvent.Seq <= _cursorSeq)
         {
             return false;
@@ -169,6 +174,9 @@ public sealed class TranscriptReducer
             _earliestSeq = wireEvent.Seq;
         }
         _dirty = true;
+
+        var arrivalOrder = NextArrivalOrder();
+        var eventTimeUnixMs = wireEvent.TimeUnixMs > 0 ? wireEvent.TimeUnixMs : (long?)null;
 
         switch (wireEvent.Type)
         {
@@ -189,14 +197,17 @@ public sealed class TranscriptReducer
                     assignedTurnSeq = AllocateUniqueTurnSeq();
                 }
 
-                _activeTurn = new TurnAccumulator(assignedTurnSeq, wireEvent.Seq);
+                _activeTurn = new TurnAccumulator(assignedTurnSeq, wireEvent.Seq, eventTimeUnixMs);
                 _phase = RunPhase.Streaming;
                 _failureCode = null;
                 break;
 
             case "turn/end":
                 var reason = RemoteProtocolCodec.ParseTurnEndReason(wireEvent.Data);
-                var endTurn = EnsureActiveTurn(wireEvent.Seq);
+                var endTurn = EnsureActiveTurn(wireEvent.Seq, eventTimeUnixMs);
+                endTurn.NoteWireEvent(arrivalOrder, eventTimeUnixMs);
+                endTurn.SettledAtUnixMs = eventTimeUnixMs;
+                endTurn.CloseActiveReasoning(eventTimeUnixMs);
                 if (endTurn.ActiveAttempt is { } activeAtt)
                 {
                     _settledAttemptIds.Add(activeAtt.AttemptId);
@@ -206,12 +217,12 @@ public sealed class TranscriptReducer
                 {
                     _phase = reason.Kind == TurnEndReasonKind.Aborted ? RunPhase.Cancelled : RunPhase.Failed;
                     _failureCode = reason.ErrorCode ?? reason.RawKind;
-                    endTurn.Notices.Add(new NoticeRow(
+                    endTurn.AddNotice(new NoticeRow(
                         $"notice:turnend:{wireEvent.Seq}",
                         endTurn.TurnSeq,
                         _failureCode,
                         $"turn.failed.{reason.RawKind}",
-                        IsError: true));
+                        IsError: true), arrivalOrder);
                 }
                 else
                 {
@@ -235,34 +246,24 @@ public sealed class TranscriptReducer
                 {
                     break;
                 }
-                var userTurn = EnsureActiveTurn(wireEvent.Seq);
-                userTurn.UserMessages.RemoveAll(u => u.MessageId == uMsgId);
-                userTurn.UserMessages.Add(new UserMessageRow(
+                var userTurn = EnsureActiveTurn(wireEvent.Seq, eventTimeUnixMs);
+                userTurn.NoteWireEvent(arrivalOrder, eventTimeUnixMs);
+                userTurn.AddUserMessage(new UserMessageRow(
                     $"msg:{uMsgId}",
                     userTurn.TurnSeq,
                     uMsgId,
                     uText,
                     imgCount,
-                    IsPending: false));
+                    IsPending: false), arrivalOrder);
                 break;
 
             case "assistant/message":
-                var aTurn = EnsureActiveTurn(wireEvent.Seq);
+                var aTurn = EnsureActiveTurn(wireEvent.Seq, eventTimeUnixMs);
                 var aMsgId = ExtractMessageId(wireEvent.Data) ?? $"asst:{wireEvent.Seq}";
                 aTurn.AssistantMessageId = aMsgId;
-                var finalReasoning = ExtractBlocksText(wireEvent.Data, "reasoning");
-                if (!string.IsNullOrEmpty(finalReasoning))
-                {
-                    aTurn.Reasoning.Clear();
-                    aTurn.Reasoning.Append(finalReasoning);
-                }
-                var finalText = ExtractBlocksText(wireEvent.Data, "text");
-                if (!string.IsNullOrEmpty(finalText))
-                {
-                    aTurn.AssistantMarkdown.Reset(finalText);
-                    aTurn.AssistantMarkdown.FlushFinal();
-                }
-                ExtractDurableToolCalls(aTurn, wireEvent.Data);
+                // 先用消息到达前的最后真实事件时间作为推理片段起点，再应用终帧并记录完成时间。
+                ApplyAssistantMessage(aTurn, wireEvent.Data, arrivalOrder, eventTimeUnixMs);
+                aTurn.NoteWireEvent(arrivalOrder, eventTimeUnixMs);
                 if (aTurn.ActiveAttempt is { } att)
                 {
                     _settledAttemptIds.Add(att.AttemptId);
@@ -281,14 +282,16 @@ public sealed class TranscriptReducer
                     _callIdToTurnSeq.TryGetValue(callId, out var settledSeqForCall) &&
                     _settledTurnsBySeq.TryGetValue(settledSeqForCall, out var settledCallTurn))
                 {
-                    settledCallTurn.UpsertToolCall(callId, toolName, sanitized, ToolPhase.Running);
+                    settledCallTurn.NoteWireEvent(arrivalOrder, eventTimeUnixMs);
+                    settledCallTurn.UpsertToolCall(callId, toolName, sanitized, ToolPhase.Running, arrivalOrder, eventTimeUnixMs);
                     RefreshSettledTurnRows(settledSeqForCall, settledCallTurn);
                 }
                 else
                 {
-                    var tcTurn = EnsureActiveTurn(wireEvent.Seq);
+                    var tcTurn = EnsureActiveTurn(wireEvent.Seq, eventTimeUnixMs);
+                    tcTurn.NoteWireEvent(arrivalOrder, eventTimeUnixMs);
                     _callIdToTurnSeq[callId] = tcTurn.TurnSeq;
-                    tcTurn.UpsertToolCall(callId, toolName, sanitized, ToolPhase.Running);
+                    tcTurn.UpsertToolCall(callId, toolName, sanitized, ToolPhase.Running, arrivalOrder, eventTimeUnixMs);
                 }
                 break;
 
@@ -305,17 +308,19 @@ public sealed class TranscriptReducer
                     _callIdToTurnSeq.TryGetValue(resultCallId, out var ownerTurnSeq) &&
                     _settledTurnsBySeq.TryGetValue(ownerTurnSeq, out var settledTurn))
                 {
-                    // Backfill directly into settled Turn without creating a synthetic Turn or overwriting Turn 1!
-                    ApplyToolResult(settledTurn, wireEvent.Data, wireEvent.Seq);
+                    // 直接回填已结算 Turn，不创建合成 Turn，也不覆盖 Turn 1！
+                    settledTurn.NoteWireEvent(arrivalOrder, eventTimeUnixMs);
+                    ApplyToolResult(settledTurn, wireEvent.Data, wireEvent.Seq, arrivalOrder, eventTimeUnixMs);
                     RefreshSettledTurnRows(ownerTurnSeq, settledTurn);
                 }
                 else if (_activeTurn is not null)
                 {
-                    ApplyToolResult(_activeTurn, wireEvent.Data, wireEvent.Seq);
+                    _activeTurn.NoteWireEvent(arrivalOrder, eventTimeUnixMs);
+                    ApplyToolResult(_activeTurn, wireEvent.Data, wireEvent.Seq, arrivalOrder, eventTimeUnixMs);
                 }
                 else
                 {
-                    // Standalone late tool/result for unknown call: record safely as non-colliding notice, never overwrite Turns or phase.
+                    // 未知调用的独立迟到 tool/result：安全记录为不冲突的通知，绝不覆盖 Turn 或阶段。
                     AppendSessionNotice(new NoticeRow(
                         $"tool-late:{wireEvent.Seq}",
                         Math.Max(1, _nextSyntheticTurnSeq - 1),
@@ -326,19 +331,21 @@ public sealed class TranscriptReducer
                 break;
 
             case "command/run":
-                var crTurn = EnsureActiveTurn(wireEvent.Seq);
+                var crTurn = EnsureActiveTurn(wireEvent.Seq, eventTimeUnixMs);
+                crTurn.NoteWireEvent(arrivalOrder, eventTimeUnixMs);
                 var cmdId = TryGetString(wireEvent.Data, "commandId") ?? $"cmd:{wireEvent.Seq}";
                 var cmdName = TryGetString(wireEvent.Data, "name") ?? "command";
                 var cmdArgs = TryGetString(wireEvent.Data, "args");
-                crTurn.UpsertCommand(cmdId, cmdName, cmdArgs is null ? null : SecretRedactor.RedactAndTruncate(cmdArgs, 200), null, null);
+                crTurn.UpsertCommand(cmdId, cmdName, cmdArgs is null ? null : SecretRedactor.RedactAndTruncate(cmdArgs, 200), null, null, arrivalOrder, eventTimeUnixMs);
                 break;
 
             case "command/done":
-                var cdTurn = EnsureActiveTurn(wireEvent.Seq);
+                var cdTurn = EnsureActiveTurn(wireEvent.Seq, eventTimeUnixMs);
+                cdTurn.NoteWireEvent(arrivalOrder, eventTimeUnixMs);
                 var doneId = TryGetString(wireEvent.Data, "commandId") ?? $"cmd:{wireEvent.Seq}";
                 var succeeded = TryGetString(wireEvent.Data, "kind") == "success";
                 var text = TryGetString(wireEvent.Data, "text");
-                cdTurn.CompleteCommand(doneId, succeeded, text is null ? null : SecretRedactor.RedactAndTruncate(text, 400));
+                cdTurn.CompleteCommand(doneId, succeeded, text is null ? null : SecretRedactor.RedactAndTruncate(text, 400), arrivalOrder, eventTimeUnixMs);
                 break;
 
             case "session/title":
@@ -410,10 +417,11 @@ public sealed class TranscriptReducer
                 {
                     if (_activeTurn is not null)
                     {
-                        _activeTurn.UnknownEvents.Add(new UnknownEventRow(
+                        _activeTurn.NoteWireEvent(arrivalOrder, eventTimeUnixMs);
+                        _activeTurn.AddUnknownEvent(new UnknownEventRow(
                             $"unk:{wireEvent.Seq}",
                             _activeTurn.TurnSeq,
-                            wireEvent.Type));
+                            wireEvent.Type), arrivalOrder);
                     }
                     else
                     {
@@ -442,7 +450,7 @@ public sealed class TranscriptReducer
 
         if (_settledAttemptIds.Contains(frame.AttemptId))
         {
-            // Late stream frames for already settled/ended attempts must NEVER regress _phase back to Streaming.
+            // 已结算/已结束尝试的迟到流帧绝不能把 _phase 回退为 Streaming。
             return false;
         }
 
@@ -451,6 +459,7 @@ public sealed class TranscriptReducer
             ClearDetachedCacheInternal();
         }
 
+        var arrivalOrder = NextArrivalOrder();
         switch (frame.FrameType)
         {
             case "start":
@@ -475,17 +484,18 @@ public sealed class TranscriptReducer
                     _activeTurn.ActiveAttempt.AttemptId != frame.AttemptId ||
                     frame.Revision > _activeTurn.ActiveAttempt.Revision)
                 {
-                    // Buffer boundedly without creating synthetic turns or pulling _phase to Streaming after turn/end.
-                    BufferDeferredChunk(new DeferredStreamChunk(frame.AttemptId, frame.Revision, index, frame.RawFrame.Clone()));
+                    // 有界缓冲，不创建合成 Turn，也不在 turn/end 后把 _phase 拉回 Streaming。
+                    BufferDeferredChunk(new DeferredStreamChunk(frame.AttemptId, frame.Revision, index, arrivalOrder, frame.RawFrame.Clone()));
                     return false;
                 }
 
-                return ApplyChunkToAttempt(_activeTurn, _activeTurn.ActiveAttempt, index, frame.RawFrame);
+                return ApplyChunkToAttempt(_activeTurn, _activeTurn.ActiveAttempt, index, arrivalOrder, frame.RawFrame);
 
             case "end":
                 if (_activeTurn?.ActiveAttempt is { } active && active.AttemptId == frame.AttemptId)
                 {
                     _activeTurn.AssistantMarkdown.FlushFinal();
+                    _activeTurn.CloseActiveReasoning(_activeTurn.LastEventTimeUnixMs);
                     _settledAttemptIds.Add(active.AttemptId);
                     _activeTurn.ActiveAttempt = null;
                     _dirty = true;
@@ -499,14 +509,19 @@ public sealed class TranscriptReducer
         }
     }
 
-    /// <summary>Hydrates offline detached cache without marking live continuity (`N-03-05`).</summary>
-    public void LoadDetachedCache(long cursorSeq, RunPhase phase, IReadOnlyList<ChatRow> cachedRows)
+    /// <summary>加载离线缓存且不标记实时连续性（`N-03-05`）。</summary>
+    public void LoadDetachedCache(
+        long cursorSeq,
+        RunPhase phase,
+        IReadOnlyList<ChatRow> cachedRows,
+        IReadOnlyDictionary<long, long>? turnDurationsMs = null)
     {
         ArgumentNullException.ThrowIfNull(cachedRows);
         ResetInternal();
         _isDetachedCache = true;
         _cursorSeq = cursorSeq;
         _phase = phase;
+        _detachedTurnDurationsMs = turnDurationsMs;
         _lastDerivedRows = cachedRows.ToArray();
         _settledTurnRows.Add(_lastDerivedRows);
 
@@ -641,8 +656,8 @@ public sealed class TranscriptReducer
             PrefixTurnReuseHits: _prefixTurnReuseHits);
 
     /// <summary>
-    /// Derives the immutable <see cref="ChatSnapshot"/> using Turn-level cached prefixes and only recomputing the
-    /// active tail turn (16-line <see cref="StreamingBlocks"/> cap guarantees O(1) tail derivation).
+    /// 使用 Turn 级缓存前缀派生不可变 <see cref="ChatSnapshot"/>，只重算活动尾 Turn
+    /// （<see cref="StreamingBlocks"/> 的 16 行上限保证尾块派发为 O(1)）。
     /// </summary>
     public ChatSnapshot DeriveSnapshot(long publishes, long skippedWhileHidden, long historyVisits)
     {
@@ -659,7 +674,8 @@ public sealed class TranscriptReducer
                 _lastDerivedRows,
                 SnapshotCounters(publishes, skippedWhileHidden, historyVisits),
                 _sessionTitle,
-                _earliestSeq);
+                _earliestSeq,
+                BuildTurnDurations());
         }
 
         _derives++;
@@ -700,7 +716,28 @@ public sealed class TranscriptReducer
             _lastDerivedRows,
             SnapshotCounters(publishes, skippedWhileHidden, historyVisits),
             _sessionTitle,
-            _earliestSeq);
+            _earliestSeq,
+            BuildTurnDurations());
+    }
+
+    private IReadOnlyDictionary<long, long>? BuildTurnDurations()
+    {
+        if (_isDetachedCache)
+        {
+            return _detachedTurnDurationsMs;
+        }
+        Dictionary<long, long>? durations = null;
+        foreach (var (turnSeq, turn) in _settledTurnsBySeq)
+        {
+            if (turn.StartedAtUnixMs is { } started &&
+                turn.SettledAtUnixMs is { } completed &&
+                completed >= started)
+            {
+                durations ??= new Dictionary<long, long>();
+                durations[turnSeq] = completed - started;
+            }
+        }
+        return durations;
     }
 
     private void SealActiveTurnIfPresent(bool markCompleted)
@@ -713,6 +750,7 @@ public sealed class TranscriptReducer
         {
             _activeTurn.AssistantMarkdown.FlushFinal();
         }
+        _activeTurn.CloseActiveReasoning(_activeTurn.SettledAtUnixMs);
         _completedTurnTailChars += _activeTurn.AssistantMarkdown.TotalTailCharsReparsed;
         _completedTurnTailReparses += _activeTurn.AssistantMarkdown.TailReevalCount;
 
@@ -722,7 +760,7 @@ public sealed class TranscriptReducer
         var seq = _activeTurn.TurnSeq;
         if (_settledTurnIndexBySeq.ContainsKey(seq))
         {
-            // Never overwrite an already-settled Turn; allocate a unique slot if a collision ever occurred.
+            // 绝不覆盖已结算 Turn；若发生冲突则分配唯一槽位。
             seq = AllocateUniqueTurnSeq();
         }
 
@@ -758,7 +796,7 @@ public sealed class TranscriptReducer
         return _nextSyntheticTurnSeq++;
     }
 
-    private TurnAccumulator EnsureActiveTurn(long fallbackSeq)
+    private TurnAccumulator EnsureActiveTurn(long fallbackSeq, long? startedAtUnixMs = null)
     {
         if (_activeTurn is not null)
         {
@@ -768,7 +806,8 @@ public sealed class TranscriptReducer
         {
             ClearDetachedCacheInternal();
         }
-        _activeTurn = new TurnAccumulator(AllocateUniqueTurnSeq(), fallbackSeq);
+        // 无 turn/start 时也不伪造时间：只有调用方拿到的真实 wire 事件时间才作为起点。
+        _activeTurn = new TurnAccumulator(AllocateUniqueTurnSeq(), fallbackSeq, startedAtUnixMs);
         return _activeTurn;
     }
 
@@ -785,6 +824,8 @@ public sealed class TranscriptReducer
         _cursorSeq = -1;
         _earliestSeq = null;
         _nextSyntheticTurnSeq = 1;
+        _arrivalOrder = 0;
+        _detachedTurnDurationsMs = null;
         _isDetachedCache = false;
         _dirty = true;
     }
@@ -808,6 +849,8 @@ public sealed class TranscriptReducer
         _nextSyntheticTurnSeq = 1;
         _cursorSeq = -1;
         _earliestSeq = null;
+        _arrivalOrder = 0;
+        _detachedTurnDurationsMs = null;
         _completedTurnTailChars = 0;
         _completedTurnTailReparses = 0;
         _phase = RunPhase.Idle;
@@ -849,7 +892,7 @@ public sealed class TranscriptReducer
         }
     }
 
-    private bool ApplyChunkToAttempt(TurnAccumulator turn, AttemptStreamState attempt, int index, JsonElement chunkWrapper)
+    private bool ApplyChunkToAttempt(TurnAccumulator turn, AttemptStreamState attempt, int index, long arrivalOrder, JsonElement chunkWrapper)
     {
         if (index >= 0 && !attempt.SeenChunkIndices.Add(index))
         {
@@ -868,7 +911,8 @@ public sealed class TranscriptReducer
                 var textDelta = TryGetString(chunk, "text");
                 if (!string.IsNullOrEmpty(textDelta))
                 {
-                    turn.AssistantMarkdown.Append(textDelta);
+                    turn.MarkStreamedMarkdown();
+                    turn.AppendMarkdown(textDelta, arrivalOrder);
                     _dirty = true;
                     return true;
                 }
@@ -878,7 +922,8 @@ public sealed class TranscriptReducer
                 var rDelta = TryGetString(chunk, "text");
                 if (!string.IsNullOrEmpty(rDelta))
                 {
-                    turn.Reasoning.Append(rDelta);
+                    turn.MarkStreamedReasoning();
+                    turn.AppendReasoning(rDelta, arrivalOrder);
                     _dirty = true;
                     return true;
                 }
@@ -890,7 +935,7 @@ public sealed class TranscriptReducer
                 var argDelta = TryGetString(chunk, "argumentsDelta") ?? string.Empty;
                 if (!string.IsNullOrEmpty(id))
                 {
-                    turn.AppendToolCallDelta(id, name, argDelta);
+                    turn.AppendToolCallDelta(id, name, argDelta, arrivalOrder, turn.LastEventTimeUnixMs);
                     var combined = turn.GetToolCallArguments(id);
                     RecordToolInvocation(id, name ?? turn.GetToolName(id), SecretRedactor.RedactAndTruncate(combined));
                     _callIdToTurnSeq[id] = turn.TurnSeq;
@@ -930,77 +975,98 @@ public sealed class TranscriptReducer
         _deferredParts.RemoveAll(d => d.AttemptId == attemptId && d.Revision <= revision);
         foreach (var d in matching)
         {
-            ApplyChunkToAttempt(turn, turn.ActiveAttempt, d.Index, d.RawFrame);
+            ApplyChunkToAttempt(turn, turn.ActiveAttempt, d.Index, d.ArrivalOrder, d.RawFrame);
         }
     }
 
     private static ChatRow[] BuildTurnRows(TurnAccumulator turn, bool isSettled)
     {
-        var list = new List<ChatRow>(8);
-        list.AddRange(turn.UserMessages);
-
-        if (turn.Reasoning.Length > 0)
+        var markdownBlocks = new Dictionary<(int BlockIndex, int ChunkIndex), StreamingMarkdownBlock>();
+        foreach (var block in turn.AssistantMarkdown.SnapshotAllBlocks())
         {
-            list.Add(new ReasoningBlockRow(
-                $"reason:{turn.TurnSeq}",
-                turn.TurnSeq,
-                turn.AssistantMessageId ?? $"turn:{turn.TurnSeq}",
-                0,
-                turn.Reasoning.ToString(),
-                isSettled));
+            markdownBlocks[(block.BlockIndex, block.ChunkIndex)] = block;
         }
 
-        var mdBlocks = turn.AssistantMarkdown.SnapshotAllBlocks();
-        var msgId = turn.AssistantMessageId ?? $"turn:{turn.TurnSeq}";
-        for (var i = 0; i < mdBlocks.Count; i++)
+        var messageId = turn.AssistantMessageId ?? $"turn:{turn.TurnSeq}";
+        var rows = new List<ChatRow>(turn.Timeline.Count);
+        foreach (var node in turn.Timeline)
         {
-            var b = mdBlocks[i];
-            list.Add(new MarkdownBlockRow(
-                $"md:{turn.TurnSeq}:{msgId}:{b.BlockIndex}:{b.ChunkIndex}",
-                turn.TurnSeq,
-                msgId,
-                b.BlockIndex,
-                b.ChunkIndex,
-                b.Markdown,
-                b.IsSettled,
-                b.ListDepth,
-                b.ContinuedFromPrevious,
-                b.ContinuesToNext));
-        }
+            switch (node.Kind)
+            {
+                case TurnNodeKind.User when node.User is { } user:
+                    rows.Add(user);
+                    break;
 
-        for (var i = 0; i < turn.Tools.Count; i++)
-        {
-            var t = turn.Tools[i];
-            list.Add(new ToolCallRow(
-                $"tool:{t.CallId}",
-                turn.TurnSeq,
-                t.CallId,
-                t.ToolName,
-                t.SanitizedArguments,
-                t.Phase,
-                t.OutputSummary,
-                t.IsError));
-        }
+                case TurnNodeKind.Reasoning when node.Reasoning is { } reasoning:
+                    rows.Add(new ReasoningBlockRow(
+                        turn.ReasoningItemId(reasoning),
+                        turn.TurnSeq,
+                        messageId,
+                        reasoning.SegmentIndex,
+                        reasoning.Text.ToString(),
+                        isSettled,
+                        reasoning.StartedAtUnixMs,
+                        reasoning.CompletedAtUnixMs));
+                    break;
 
-        for (var i = 0; i < turn.Commands.Count; i++)
-        {
-            var c = turn.Commands[i];
-            list.Add(new CommandRow(
-                $"cmd:{c.CommandId}",
-                turn.TurnSeq,
-                c.CommandId,
-                c.Name,
-                c.Args,
-                c.Succeeded,
-                c.ResultText));
-        }
+                case TurnNodeKind.Markdown when node.MarkdownKey is { } key &&
+                    markdownBlocks.TryGetValue(key, out var block):
+                    rows.Add(new MarkdownBlockRow(
+                        $"md:{turn.TurnSeq}:{messageId}:{block.BlockIndex}:{block.ChunkIndex}",
+                        turn.TurnSeq,
+                        messageId,
+                        block.BlockIndex,
+                        block.ChunkIndex,
+                        block.Markdown,
+                        block.IsSettled,
+                        block.ListDepth,
+                        block.ContinuedFromPrevious,
+                        block.ContinuesToNext));
+                    break;
 
-        list.AddRange(turn.Notices);
-        list.AddRange(turn.UnknownEvents);
-        return list.ToArray();
+                case TurnNodeKind.Tool when node.Tool is { } tool:
+                    rows.Add(new ToolCallRow(
+                        $"tool:{tool.CallId}",
+                        turn.TurnSeq,
+                        tool.CallId,
+                        tool.ToolName,
+                        tool.SanitizedArguments,
+                        tool.Phase,
+                        tool.OutputSummary,
+                        tool.IsError,
+                        tool.StartedAtUnixMs,
+                        tool.CompletedAtUnixMs));
+                    break;
+
+                case TurnNodeKind.Command when node.Command is { } command:
+                    rows.Add(new CommandRow(
+                        $"cmd:{command.CommandId}",
+                        turn.TurnSeq,
+                        command.CommandId,
+                        command.Name,
+                        command.Args,
+                        command.Succeeded,
+                        command.ResultText));
+                    break;
+
+                case TurnNodeKind.Notice when node.Notice is { } notice:
+                    rows.Add(notice);
+                    break;
+
+                case TurnNodeKind.Unknown when node.Unknown is { } unknown:
+                    rows.Add(unknown);
+                    break;
+            }
+        }
+        return rows.ToArray();
     }
 
-    private static void ApplyToolResult(TurnAccumulator turn, JsonElement data, long seq)
+    private static void ApplyToolResult(
+        TurnAccumulator turn,
+        JsonElement data,
+        long seq,
+        long arrivalOrder,
+        long? completedAtUnixMs)
     {
         string? callId = TryGetString(data, "callId");
         var isError = false;
@@ -1019,34 +1085,152 @@ public sealed class TranscriptReducer
             isError = true;
         }
         callId ??= $"call:{seq}";
-        turn.CompleteToolCall(callId, isError ? ToolPhase.Error : ToolPhase.Completed, summary, isError);
+        turn.CompleteToolCall(
+            callId,
+            isError ? ToolPhase.Error : ToolPhase.Completed,
+            summary,
+            isError,
+            arrivalOrder,
+            completedAtUnixMs);
     }
 
-    private void ExtractDurableToolCalls(TurnAccumulator turn, JsonElement data)
+    /// <summary>
+    /// 应用服务端最终 assistant/message：已有流式内容时保留其真实到达序，只补全终帧新增片段；
+    /// 同一 Turn 的多条 assistant/message 按到达顺序逐段追加，只有时间线尚无推理/正文/工具节点时才整体重建。
+    /// </summary>
+    private void ApplyAssistantMessage(
+        TurnAccumulator turn,
+        JsonElement data,
+        long arrivalOrder,
+        long? eventTimeUnixMs)
     {
-        if (!data.TryGetProperty("message", out var msgEl) ||
-            !msgEl.TryGetProperty("content", out var arr) ||
-            arr.ValueKind != JsonValueKind.Array)
+        // 先取出并复位“当前段”的 live 流式标记，避免上一条消息的状态影响本条消息。
+        var (hasStreamedReasoning, hasStreamedMarkdown) = turn.ConsumeStreamedFlags();
+        var content = TryGetMessageContent(data);
+        if (content is null)
+        {
+            // 兼容没有 content 数组的旧结构：只有在缺少流式内容时才用聚合文本补全。
+            if (turn.Reasonings.Count == 0)
+            {
+                var finalReasoning = ExtractBlocksText(data, "reasoning");
+                if (!string.IsNullOrEmpty(finalReasoning))
+                {
+                    turn.AppendReasoning(finalReasoning, arrivalOrder, eventTimeUnixMs, isFinal: true);
+                }
+            }
+            if (turn.AssistantMarkdown.SettledCount == 0 && turn.AssistantMarkdown.TailKey is null)
+            {
+                var finalText = ExtractBlocksText(data, "text");
+                if (!string.IsNullOrEmpty(finalText))
+                {
+                    turn.ResetMarkdown(finalText, arrivalOrder);
+                }
+            }
+            turn.CompleteCurrentReasoning(eventTimeUnixMs);
+            return;
+        }
+
+        var parts = content.Value.EnumerateArray()
+            .Where(part => TryGetString(part, "type") is "reasoning" or "text" or "tool-call")
+            .ToArray();
+        if (parts.Length == 0)
         {
             return;
         }
-        foreach (var item in arr.EnumerateArray())
+
+        // 只有该 Turn 完全没有推理/正文/工具节点（冷读或回放的开始）时才整体重建；
+        // 否则保留前一条 assistant/message 的片段，按到达顺序追加本段内容。
+        var hasInterleavedNode = turn.Timeline.Any(node =>
+            node.Kind is TurnNodeKind.Reasoning or TurnNodeKind.Markdown or TurnNodeKind.Tool);
+        if (!hasInterleavedNode)
         {
-            if (TryGetString(item, "type") != "tool-call")
+            turn.BeginFinalAssistantRebuild();
+        }
+
+        var seenToolCallIds = new HashSet<string>(StringComparer.Ordinal);
+        var appendedTextPart = false;
+        foreach (var part in parts)
+        {
+            var partType = TryGetString(part, "type");
+            switch (partType)
+            {
+                case "reasoning":
+                    if (hasStreamedReasoning)
+                    {
+                        break;
+                    }
+                    var reasoningText = TryGetString(part, "text");
+                    if (!string.IsNullOrEmpty(reasoningText))
+                    {
+                        turn.AppendReasoning(
+                            reasoningText,
+                            NextArrivalOrder(),
+                            eventTimeUnixMs,
+                            isFinal: true);
+                    }
+                    break;
+
+                case "text":
+                    if (hasStreamedMarkdown)
+                    {
+                        break;
+                    }
+                    var textPart = TryGetString(part, "text");
+                    if (!string.IsNullOrEmpty(textPart))
+                    {
+                        if (appendedTextPart)
+                        {
+                            turn.AppendMarkdown("\n", NextArrivalOrder());
+                        }
+                        turn.AppendMarkdown(textPart, NextArrivalOrder());
+                        appendedTextPart = true;
+                    }
+                    break;
+
+                case "tool-call":
+                    var callId = TryGetString(part, "id");
+                    if (string.IsNullOrEmpty(callId) || !seenToolCallIds.Add(callId))
+                    {
+                        break;
+                    }
+                    var name = TryGetString(part, "name") ?? "unknown";
+                    var rawArgs = TryGetString(part, "arguments") ?? "{}";
+                    var sanitized = SecretRedactor.RedactAndTruncate(rawArgs);
+                    RecordToolInvocation(callId, name, sanitized);
+                    _callIdToTurnSeq[callId] = turn.TurnSeq;
+                    turn.UpsertToolCall(
+                        callId,
+                        name,
+                        sanitized,
+                        ToolPhase.Running,
+                        NextArrivalOrder(),
+                        eventTimeUnixMs);
+                    break;
+            }
+        }
+
+        // 终帧未重述、但此前已通过 tool/call 或流式增量创建的工具状态不能丢失。
+        foreach (var toolState in turn.Tools)
+        {
+            if (seenToolCallIds.Contains(toolState.CallId))
             {
                 continue;
             }
-            var callId = TryGetString(item, "id");
-            var name = TryGetString(item, "name") ?? "unknown";
-            var rawArgs = TryGetString(item, "arguments") ?? "{}";
-            if (!string.IsNullOrEmpty(callId))
-            {
-                var sanitized = SecretRedactor.RedactAndTruncate(rawArgs);
-                RecordToolInvocation(callId, name, sanitized);
-                _callIdToTurnSeq[callId] = turn.TurnSeq;
-                turn.UpsertToolCall(callId, name, sanitized, ToolPhase.Running);
-            }
+            turn.EnsureToolTimelineNode(toolState, NextArrivalOrder());
         }
+
+        turn.AssistantMarkdown.FlushFinal();
+        turn.CompleteCurrentReasoning(eventTimeUnixMs);
+    }
+
+    private static JsonElement? TryGetMessageContent(JsonElement data)
+    {
+        var container = data.TryGetProperty("message", out var message) ? message : data;
+        return container.ValueKind == JsonValueKind.Object &&
+               container.TryGetProperty("content", out var content) &&
+               content.ValueKind == JsonValueKind.Array
+            ? content
+            : null;
     }
 
     private static string? ExtractUserMessageSourceKind(JsonElement data)
@@ -1147,7 +1331,13 @@ public sealed class TranscriptReducer
             ? n
             : null;
 
-    private sealed record DeferredStreamChunk(string AttemptId, long Revision, int Index, JsonElement RawFrame);
+    /// <summary>提前到达、等待 start 帧的流式分片；保留收到时的到达序号以维持真实顺序。</summary>
+    private sealed record DeferredStreamChunk(
+        string AttemptId,
+        long Revision,
+        int Index,
+        long ArrivalOrder,
+        JsonElement RawFrame);
 
     private sealed class AttemptStreamState(string attemptId, long revision)
     {
@@ -1156,7 +1346,7 @@ public sealed class TranscriptReducer
         public HashSet<int> SeenChunkIndices { get; } = [];
     }
 
-    private sealed class ToolState(string callId, string toolName, string args)
+    private sealed class ToolState(string callId, string toolName, string args, long? startedAtUnixMs = null)
     {
         public string CallId { get; } = callId;
         public string ToolName { get; set; } = toolName;
@@ -1165,56 +1355,259 @@ public sealed class TranscriptReducer
         public ToolPhase Phase { get; set; } = ToolPhase.Pending;
         public string? OutputSummary { get; set; }
         public bool IsError { get; set; }
+        public long? StartedAtUnixMs { get; set; } = startedAtUnixMs;
+        public long? CompletedAtUnixMs { get; set; }
     }
 
-    private sealed class CommandState(string commandId, string name, string? args)
+    private sealed class CommandState(string commandId, string name, string? args, long? startedAtUnixMs = null)
     {
         public string CommandId { get; } = commandId;
         public string Name { get; } = name;
         public string? Args { get; } = args;
         public bool? Succeeded { get; set; }
         public string? ResultText { get; set; }
+        public long? StartedAtUnixMs { get; set; } = startedAtUnixMs;
+        public long? CompletedAtUnixMs { get; set; }
     }
 
-    private sealed class TurnAccumulator(long turnSeq, long firstSeq)
+    private sealed class ReasoningState(int segmentIndex, long? startedAtUnixMs)
+    {
+        public int SegmentIndex { get; } = segmentIndex;
+        public StringBuilder Text { get; } = new();
+        public long? StartedAtUnixMs { get; set; } = startedAtUnixMs;
+        public long? CompletedAtUnixMs { get; set; }
+    }
+
+    private enum TurnNodeKind
+    {
+        User,
+        Reasoning,
+        Markdown,
+        Tool,
+        Command,
+        Notice,
+        Unknown,
+    }
+
+    /// <summary>Turn 内部时间线节点，按到达序号稳定排序，承载跨类型的真实交错顺序。</summary>
+    private sealed class TurnTimelineNode(TurnNodeKind kind, long arrivalOrder)
+    {
+        public TurnNodeKind Kind { get; } = kind;
+        public long ArrivalOrder { get; } = arrivalOrder;
+        public UserMessageRow? User { get; set; }
+        public ReasoningState? Reasoning { get; set; }
+        public (int BlockIndex, int ChunkIndex)? MarkdownKey { get; set; }
+        public ToolState? Tool { get; set; }
+        public CommandState? Command { get; set; }
+        public NoticeRow? Notice { get; set; }
+        public UnknownEventRow? Unknown { get; set; }
+    }
+
+    private sealed class TurnAccumulator(long turnSeq, long firstSeq, long? startedAtUnixMs)
     {
         public long TurnSeq { get; } = turnSeq;
         public long FirstSeq { get; } = firstSeq;
+        public long? StartedAtUnixMs { get; } = startedAtUnixMs;
+        public long? SettledAtUnixMs { get; set; }
+        public long? LastEventTimeUnixMs { get; private set; } = startedAtUnixMs;
         public string? AssistantMessageId { get; set; }
         public AttemptStreamState? ActiveAttempt { get; set; }
         public List<UserMessageRow> UserMessages { get; } = [];
-        public StringBuilder Reasoning { get; } = new();
+        public List<ReasoningState> Reasonings { get; } = [];
         public StreamingBlocks AssistantMarkdown { get; } = new();
         public List<ToolState> Tools { get; } = [];
         public List<CommandState> Commands { get; } = [];
         public List<NoticeRow> Notices { get; } = [];
         public List<UnknownEventRow> UnknownEvents { get; } = [];
+        public List<TurnTimelineNode> Timeline { get; } = [];
         private readonly Dictionary<string, ToolState> _toolMap = new(StringComparer.Ordinal);
         private readonly Dictionary<string, CommandState> _cmdMap = new(StringComparer.Ordinal);
+        private readonly HashSet<(int BlockIndex, int ChunkIndex)> _markdownKeys = [];
+        private ReasoningState? _activeReasoning;
+        private int _nextReasoningSegmentIndex;
+        private bool _hasStreamedReasoning;
+        private bool _hasStreamedMarkdown;
 
-        public void UpsertToolCall(string callId, string toolName, string sanitizedArgs, ToolPhase targetPhase)
+        /// <summary>标记当前 assistant/message 段已收到 live 推理增量，终帧到达时据此去重。</summary>
+        public void MarkStreamedReasoning() => _hasStreamedReasoning = true;
+
+        /// <summary>标记当前 assistant/message 段已收到 live 正文增量，终帧到达时据此去重。</summary>
+        public void MarkStreamedMarkdown() => _hasStreamedMarkdown = true;
+
+        /// <summary>读取并复位当前段落的 live 流式标记；上一条消息的状态不得泄漏到下一条消息。</summary>
+        public (bool Reasoning, bool Markdown) ConsumeStreamedFlags()
         {
-            if (!_toolMap.TryGetValue(callId, out var state))
-            {
-                state = new ToolState(callId, toolName, sanitizedArgs);
-                _toolMap[callId] = state;
-                Tools.Add(state);
-            }
-            else if (!state.Phase.IsTerminal())
-            {
-                state.ToolName = toolName;
-                state.SanitizedArguments = sanitizedArgs;
-            }
-            state.Phase = ToolPhaseTransitions.Advance(state.Phase, targetPhase);
+            var flags = (_hasStreamedReasoning, _hasStreamedMarkdown);
+            _hasStreamedReasoning = false;
+            _hasStreamedMarkdown = false;
+            return flags;
         }
 
-        public void AppendToolCallDelta(string callId, string? name, string delta)
+        public void NoteWireEvent(long arrivalOrder, long? timeUnixMs)
         {
+            _ = arrivalOrder;
+            if (timeUnixMs is { } time)
+            {
+                LastEventTimeUnixMs = time;
+            }
+        }
+
+        public void AddUserMessage(UserMessageRow row, long arrivalOrder)
+        {
+            CloseActiveReasoning(null);
+            Timeline.RemoveAll(node => node.Kind == TurnNodeKind.User && node.User?.MessageId == row.MessageId);
+            UserMessages.RemoveAll(message => message.MessageId == row.MessageId);
+            UserMessages.Add(row);
+            AddNode(new TurnTimelineNode(TurnNodeKind.User, arrivalOrder) { User = row });
+        }
+
+        public void AppendReasoning(
+            string delta,
+            long arrivalOrder,
+            long? completedAtUnixMs = null,
+            bool isFinal = false)
+        {
+            if (string.IsNullOrEmpty(delta))
+            {
+                return;
+            }
+            // 推理片段与正文尾块交错时先封口旧尾块，避免工具前的正文被合并进后续块。
+            SealMarkdownTail();
+            if (_activeReasoning is null)
+            {
+                var segment = new ReasoningState(_nextReasoningSegmentIndex++, LastEventTimeUnixMs);
+                Reasonings.Add(segment);
+                AddNode(new TurnTimelineNode(TurnNodeKind.Reasoning, arrivalOrder) { Reasoning = segment });
+                _activeReasoning = segment;
+            }
+            _activeReasoning.Text.Append(delta);
+            if (isFinal && completedAtUnixMs is { } completed)
+            {
+                _activeReasoning.CompletedAtUnixMs = completed;
+            }
+        }
+
+        public void CloseActiveReasoning(long? completedAtUnixMs)
+        {
+            if (_activeReasoning is null)
+            {
+                return;
+            }
+            if (completedAtUnixMs is { } completed)
+            {
+                _activeReasoning.CompletedAtUnixMs = completed;
+            }
+            _activeReasoning = null;
+        }
+
+        /// <summary>用真实终帧时间补齐最近一段推理的完成时间；没有真实时间时保持 <c>null</c>。</summary>
+        public void CompleteCurrentReasoning(long? completedAtUnixMs)
+        {
+            CloseActiveReasoning(completedAtUnixMs);
+            if (completedAtUnixMs is { } completed &&
+                Reasonings.Count > 0 &&
+                Reasonings[^1].CompletedAtUnixMs is null)
+            {
+                // 正文先开始会关闭推理段；终帧到达时仍需补记该段的完成时间。
+                Reasonings[^1].CompletedAtUnixMs = completed;
+            }
+        }
+
+        public void AppendMarkdown(string delta, long arrivalOrder)
+        {
+            if (string.IsNullOrEmpty(delta))
+            {
+                return;
+            }
+            // 正文开始意味着当前推理片段结束；流式分片没有独立的真实时间，完成时间保持缺省。
+            CloseActiveReasoning(null);
+            var settledBefore = AssistantMarkdown.SettledCount;
+            AssistantMarkdown.Append(delta);
+            RegisterNewMarkdownNodes(arrivalOrder, settledBefore);
+        }
+
+        public void ResetMarkdown(string text, long arrivalOrder)
+        {
+            Timeline.RemoveAll(node => node.Kind == TurnNodeKind.Markdown);
+            _markdownKeys.Clear();
+            AssistantMarkdown.Reset(text);
+            RegisterAllMarkdownNodes(arrivalOrder);
+        }
+
+        public void BeginFinalAssistantRebuild()
+        {
+            CloseActiveReasoning(null);
+            Timeline.RemoveAll(node =>
+                node.Kind is TurnNodeKind.Reasoning or TurnNodeKind.Markdown or TurnNodeKind.Tool);
+            _markdownKeys.Clear();
+            Reasonings.Clear();
+            _nextReasoningSegmentIndex = 0;
+            AssistantMarkdown.Reset(string.Empty);
+        }
+
+        public string ReasoningItemId(ReasoningState state) =>
+            state.SegmentIndex == 0
+                ? $"reason:{TurnSeq}"
+                : $"reason:{TurnSeq}:{state.SegmentIndex}";
+
+        public void AddNotice(NoticeRow notice, long arrivalOrder)
+        {
+            CloseActiveReasoning(null);
+            Notices.Add(notice);
+            AddNode(new TurnTimelineNode(TurnNodeKind.Notice, arrivalOrder) { Notice = notice });
+        }
+
+        public void AddUnknownEvent(UnknownEventRow unknown, long arrivalOrder)
+        {
+            CloseActiveReasoning(null);
+            UnknownEvents.Add(unknown);
+            AddNode(new TurnTimelineNode(TurnNodeKind.Unknown, arrivalOrder) { Unknown = unknown });
+        }
+
+        public void UpsertToolCall(
+            string callId,
+            string toolName,
+            string sanitizedArgs,
+            ToolPhase targetPhase,
+            long arrivalOrder,
+            long? startedAtUnixMs)
+        {
+            CloseActiveReasoning(null);
+            SealMarkdownTail();
             if (!_toolMap.TryGetValue(callId, out var state))
             {
-                state = new ToolState(callId, name ?? "unknown", string.Empty);
+                state = new ToolState(callId, toolName, sanitizedArgs, startedAtUnixMs);
                 _toolMap[callId] = state;
                 Tools.Add(state);
+            }
+            else
+            {
+                if (!state.Phase.IsTerminal())
+                {
+                    state.ToolName = toolName;
+                    state.SanitizedArguments = sanitizedArgs;
+                }
+                state.StartedAtUnixMs ??= startedAtUnixMs;
+            }
+            state.Phase = ToolPhaseTransitions.Advance(state.Phase, targetPhase);
+            EnsureToolTimelineNode(state, arrivalOrder);
+        }
+
+        public void AppendToolCallDelta(
+            string callId,
+            string? name,
+            string delta,
+            long arrivalOrder,
+            long? startedAtUnixMs)
+        {
+            CloseActiveReasoning(null);
+            SealMarkdownTail();
+            if (!_toolMap.TryGetValue(callId, out var state))
+            {
+                state = new ToolState(callId, name ?? "unknown", string.Empty, startedAtUnixMs);
+                _toolMap[callId] = state;
+                Tools.Add(state);
+                AddNode(new TurnTimelineNode(TurnNodeKind.Tool, arrivalOrder) { Tool = state });
             }
             if (state.Phase.IsTerminal())
             {
@@ -1229,54 +1622,156 @@ public sealed class TranscriptReducer
             state.Phase = ToolPhaseTransitions.Advance(state.Phase, ToolPhase.Running);
         }
 
-        public string GetToolCallArguments(string callId) =>
-            _toolMap.TryGetValue(callId, out var st) ? st.RawDeltaBuilder.ToString() : string.Empty;
-
-        public string GetToolName(string callId) =>
-            _toolMap.TryGetValue(callId, out var st) ? st.ToolName : "unknown";
-
-        public void CompleteToolCall(string callId, ToolPhase terminalPhase, string? summary, bool isError)
+        public void CompleteToolCall(
+            string callId,
+            ToolPhase terminalPhase,
+            string? summary,
+            bool isError,
+            long arrivalOrder,
+            long? completedAtUnixMs)
         {
+            CloseActiveReasoning(null);
             if (!_toolMap.TryGetValue(callId, out var state))
             {
                 state = new ToolState(callId, "unknown", string.Empty);
                 _toolMap[callId] = state;
                 Tools.Add(state);
+                AddNode(new TurnTimelineNode(TurnNodeKind.Tool, arrivalOrder) { Tool = state });
             }
             if (state.Phase.IsTerminal())
             {
+                state.CompletedAtUnixMs ??= completedAtUnixMs;
                 return;
             }
             state.Phase = ToolPhaseTransitions.Advance(state.Phase, terminalPhase);
             state.OutputSummary = summary;
             state.IsError = isError;
+            state.CompletedAtUnixMs = completedAtUnixMs;
         }
 
-        public void UpsertCommand(string id, string name, string? args, bool? succeeded, string? text)
+        public void EnsureToolTimelineNode(ToolState state, long arrivalOrder)
         {
-            if (!_cmdMap.TryGetValue(id, out var cmd))
+            CloseActiveReasoning(null);
+            if (Timeline.Any(node => node.Kind == TurnNodeKind.Tool && ReferenceEquals(node.Tool, state)))
             {
-                cmd = new CommandState(id, name, args);
-                _cmdMap[id] = cmd;
-                Commands.Add(cmd);
+                return;
+            }
+            AddNode(new TurnTimelineNode(TurnNodeKind.Tool, arrivalOrder) { Tool = state });
+        }
+
+        public string GetToolCallArguments(string callId) =>
+            _toolMap.TryGetValue(callId, out var state) ? state.RawDeltaBuilder.ToString() : string.Empty;
+
+        public string GetToolName(string callId) =>
+            _toolMap.TryGetValue(callId, out var state) ? state.ToolName : "unknown";
+
+        public void UpsertCommand(
+            string id,
+            string name,
+            string? args,
+            bool? succeeded,
+            string? text,
+            long arrivalOrder,
+            long? startedAtUnixMs)
+        {
+            CloseActiveReasoning(null);
+            if (!_cmdMap.TryGetValue(id, out var command))
+            {
+                command = new CommandState(id, name, args, startedAtUnixMs);
+                _cmdMap[id] = command;
+                Commands.Add(command);
+                AddNode(new TurnTimelineNode(TurnNodeKind.Command, arrivalOrder) { Command = command });
+            }
+            else
+            {
+                command.StartedAtUnixMs ??= startedAtUnixMs;
             }
             if (succeeded.HasValue)
             {
-                cmd.Succeeded = succeeded;
-                cmd.ResultText = text;
+                command.Succeeded = succeeded;
+                command.ResultText = text;
             }
         }
 
-        public void CompleteCommand(string id, bool succeeded, string? text)
+        public void CompleteCommand(
+            string id,
+            bool succeeded,
+            string? text,
+            long arrivalOrder,
+            long? completedAtUnixMs)
         {
-            if (!_cmdMap.TryGetValue(id, out var cmd))
+            CloseActiveReasoning(null);
+            if (!_cmdMap.TryGetValue(id, out var command))
             {
-                cmd = new CommandState(id, "command", null);
-                _cmdMap[id] = cmd;
-                Commands.Add(cmd);
+                command = new CommandState(id, "command", null);
+                _cmdMap[id] = command;
+                Commands.Add(command);
+                AddNode(new TurnTimelineNode(TurnNodeKind.Command, arrivalOrder) { Command = command });
             }
-            cmd.Succeeded = succeeded;
-            cmd.ResultText = text;
+            command.Succeeded = succeeded;
+            command.ResultText = text;
+            command.CompletedAtUnixMs = completedAtUnixMs;
+        }
+
+        /// <summary>若存在未封口正文尾块则先封口，保证工具/推理节点前后的正文各自成块。</summary>
+        private void SealMarkdownTail()
+        {
+            if (AssistantMarkdown.TailKey is not null)
+            {
+                AssistantMarkdown.FlushFinal();
+            }
+        }
+
+        private void RegisterNewMarkdownNodes(long arrivalOrder, int settledBefore)
+        {
+            var settled = AssistantMarkdown.SettledBlocks;
+            for (var index = settledBefore; index < settled.Count; index++)
+            {
+                AddMarkdownNode(settled[index].BlockIndex, settled[index].ChunkIndex, arrivalOrder);
+            }
+            if (AssistantMarkdown.TailKey is { } tailKey)
+            {
+                AddMarkdownNode(tailKey.BlockIndex, tailKey.ChunkIndex, arrivalOrder);
+            }
+        }
+
+        private void RegisterAllMarkdownNodes(long arrivalOrder)
+        {
+            foreach (var block in AssistantMarkdown.SettledBlocks)
+            {
+                AddMarkdownNode(block.BlockIndex, block.ChunkIndex, arrivalOrder);
+            }
+            if (AssistantMarkdown.TailKey is { } tailKey)
+            {
+                AddMarkdownNode(tailKey.BlockIndex, tailKey.ChunkIndex, arrivalOrder);
+            }
+        }
+
+        private void AddMarkdownNode(int blockIndex, int chunkIndex, long arrivalOrder)
+        {
+            if (!_markdownKeys.Add((blockIndex, chunkIndex)))
+            {
+                return;
+            }
+            AddNode(new TurnTimelineNode(TurnNodeKind.Markdown, arrivalOrder)
+            {
+                MarkdownKey = (blockIndex, chunkIndex),
+            });
+        }
+
+        private void AddNode(TurnTimelineNode node)
+        {
+            if (Timeline.Count == 0 || Timeline[^1].ArrivalOrder <= node.ArrivalOrder)
+            {
+                Timeline.Add(node);
+                return;
+            }
+            var insertAt = Timeline.Count;
+            while (insertAt > 0 && Timeline[insertAt - 1].ArrivalOrder > node.ArrivalOrder)
+            {
+                insertAt--;
+            }
+            Timeline.Insert(insertAt, node);
         }
     }
 }

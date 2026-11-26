@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text;
 using System.Text.Encodings.Web;
 using System.Text.Json;
@@ -66,6 +67,54 @@ public static partial class ChatDisplayFormatter
         }
         var tag = sb.Length > 0 ? sb.ToString() : "session";
         return $"{untitledPrefix} · #{tag}";
+    }
+
+    /// <summary>
+    /// 会话列表紧凑相对时间：今天内 5 分钟内为「刚刚」，否则 <c>HH:mm</c>；昨天为「昨天」；更早为 <c>MM-dd</c>。
+    /// 无有效时间戳（<paramref name="updatedAtUnixMs"/> ≤ 0）返回空串，由 UI 自行隐藏时间槽。
+    /// </summary>
+    public static string FormatRelativeSessionTime(long updatedAtUnixMs, DateTimeOffset now)
+    {
+        if (updatedAtUnixMs <= 0)
+        {
+            return string.Empty;
+        }
+
+        var updated = DateTimeOffset.FromUnixTimeMilliseconds(updatedAtUnixMs).ToLocalTime();
+        var reference = now.ToLocalTime();
+        var updatedDate = updated.Date;
+        var today = reference.Date;
+        if (updatedDate == today)
+        {
+            var age = reference - updated;
+            return age >= TimeSpan.Zero && age < TimeSpan.FromMinutes(5)
+                ? "刚刚"
+                : updated.ToString("HH:mm", CultureInfo.InvariantCulture);
+        }
+
+        return updatedDate == today.AddDays(-1)
+            ? "昨天"
+            : updated.ToString("MM-dd", CultureInfo.InvariantCulture);
+    }
+
+    /// <summary>提取工作区路径的末级目录名（兼容 <c>/</c> 与 <c>\</c>），用于替代副标题里重复的整串路径。</summary>
+    public static string? ExtractLastPathSegment(string? path)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            return null;
+        }
+
+        var normalized = path.Replace('\\', '/').Trim().TrimEnd('/');
+        if (normalized.Length == 0)
+        {
+            return null;
+        }
+
+        var separator = normalized.LastIndexOf('/');
+        return separator >= 0 && separator + 1 < normalized.Length
+            ? normalized[(separator + 1)..]
+            : normalized;
     }
 
     /// <summary>生成底部输入区使用的紧凑模型/档位胶囊文本（去掉冗余 Provider 前缀）。</summary>
@@ -198,7 +247,7 @@ public static partial class ChatDisplayFormatter
         else if (!string.IsNullOrWhiteSpace(path))
         {
             summaryLine = !string.IsNullOrWhiteSpace(pattern)
-                ? $"{ToSingleLine(pattern, 60)}  @ {ToSingleLine(path, 80)}"
+                ? $"{ToSingleLine(pattern, 60)} @ {ToSingleLine(path, 80)}"
                 : ToSingleLine(path, 140);
         }
         else if (!string.IsNullOrWhiteSpace(pattern))

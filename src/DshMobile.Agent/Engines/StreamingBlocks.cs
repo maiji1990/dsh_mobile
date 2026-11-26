@@ -2,7 +2,7 @@ using System.Text;
 
 namespace DshMobile.Agent.Engines;
 
-/// <summary>Immutable slice produced by <see cref="StreamingBlocks"/> (N-03-02).</summary>
+/// <summary>由 <see cref="StreamingBlocks"/> 产出的不可变切片（N-03-02）。</summary>
 public sealed record StreamingMarkdownBlock(
     int BlockIndex,
     int ChunkIndex,
@@ -13,10 +13,10 @@ public sealed record StreamingMarkdownBlock(
     bool ContinuesToNext);
 
 /// <summary>
-/// Incremental single-pass Markdown block splitter with a hard 16-line tail cap (N-03-02).
-/// Closed blocks (headings, list items, blank-line paragraphs, closed code fences) and any
-/// open block exceeding 16 lines are sealed into immutable settled chunks so live tail re-parsing
-/// and Markdig work remain O(1) per token even on 6,000-word / 400-line code streams.
+/// 带 16 行尾块硬上限的单遍增量 Markdown 分块器（N-03-02）。
+/// 已闭合块（标题、列表项、空行段落、已闭合代码围栏）以及任意超过 16 行的
+/// 未闭合块都会被封口为不可变的已定块，使实时尾块重解析与 Markdig 计算在
+/// 6,000 词 / 400 行代码流下仍保持每 token O(1)。
 /// </summary>
 public sealed class StreamingBlocks
 {
@@ -36,6 +36,13 @@ public sealed class StreamingBlocks
     private int _tailListDepth;
 
     public IReadOnlyList<StreamingMarkdownBlock> SettledBlocks => _settled;
+
+    /// <summary>已封口块数量，用于增量登记时间线节点，避免每次遍历全部块。</summary>
+    public int SettledCount => _settled.Count;
+
+    /// <summary>当前未封口尾块的稳定键；没有尾块时返回 <c>null</c>。</summary>
+    public (int BlockIndex, int ChunkIndex)? TailKey =>
+        CurrentTailLineCount > 0 ? (_currentBlockIndex, _currentChunkIndex) : null;
 
     public long TotalTailCharsReparsed { get; private set; }
 
@@ -63,7 +70,7 @@ public sealed class StreamingBlocks
         }
     }
 
-    /// <summary>Replaces full text and rebuilds blocks deterministically.</summary>
+    /// <summary>替换全文并确定性地重建所有块。</summary>
     public void Reset(string text)
     {
         _settled.Clear();
@@ -80,7 +87,7 @@ public sealed class StreamingBlocks
         Append(text);
     }
 
-    /// <summary>Consumes an incremental text delta in O(delta length) time.</summary>
+    /// <summary>以 O(增量长度) 的代价消费一段增量文本。</summary>
     public void Append(string? delta)
     {
         if (string.IsNullOrEmpty(delta))
@@ -113,7 +120,7 @@ public sealed class StreamingBlocks
         }
     }
 
-    /// <summary>Seals any remaining tail text at stream completion.</summary>
+    /// <summary>在流结束时封口所有剩余尾块文本。</summary>
     public void FlushFinal()
     {
         if (_lineCarry.Length > 0)
@@ -158,7 +165,7 @@ public sealed class StreamingBlocks
 
             if (_tailLines.Count >= MaxTailLines)
             {
-                // Hard 16-line split inside open fence: close synthetic chunk so Markdig stays bounded and valid.
+                // 未闭合围栏内触发 16 行硬切分：补一个合成的闭合围栏，保证 Markdig 输入有界且合法。
                 SealCurrentTail(continuesToNext: true, startNewBlock: false);
             }
             return;
@@ -231,7 +238,7 @@ public sealed class StreamingBlocks
             return;
         }
 
-        // If continuing an active fence chunk, ensure the sealed slice has a closing fence for standalone rendering.
+        // 若正在延续未闭合围栏块，为可独立渲染的已定块补上闭合围栏。
         if (_inFence && continuesToNext && !IsClosingFence(_tailLines[^1], _fenceChar, _fenceLength))
         {
             text = text + "\n" + new string(_fenceChar, _fenceLength);
