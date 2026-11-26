@@ -100,11 +100,15 @@ test("readonly metadata, readdir snapshots and internalModuleStat are cached; wr
       const wsPkg = path.join(wsDir, "pkg", "package.json");
       const escapePath = path.join(roDir, "..", "user-workspace", "pkg", "package.json");
 
+      const { createRequire } = await import("node:module");
+      const internalRequire = createRequire(import.meta.url);
+      const hasLoaderMethods = Boolean(internalRequire("internal/modules/helpers")?.loaderMethods);
+
       assert.equal(state.active, true);
       assert.equal(state.usesRealpathCacheKey, true);
       assert.equal(state.usesInternalModuleStat, true);
       assert.equal(state.usesPackageJsonReader, false); // 默认不安装：启动链路全部走 loaderMethods
-      assert.equal(state.usesLoaderMethods, true);
+      assert.equal(state.usesLoaderMethods, hasLoaderMethods);
       // 负缓存前缀只保留严格只读目录：误配的 /usr/local 与 /tmp 会被过滤。
       assert.deepEqual(state.negativePrefixes, [path.resolve(roDir)]);
 
@@ -391,30 +395,47 @@ test("package_json_reader.read is cached only for the strict readonly prefix and
       const roPkg = ${JSON.stringify(join(roDir, "pkg", "package.json"))};
       const rwPkg = ${JSON.stringify(join(rwDir, "pkg", "package.json"))};
 
-      assert.equal(state.usesPackageJsonReader, true);
-      const first = reader.read(roPkg);
-      assert.equal(first.exists, true);
-      assert.equal(first.name, "ro");
-      const hitsBefore = state.stats.packageJsonReaderHits;
-      const second = reader.read(roPkg);
-      assert.equal(second.name, "ro");
-      assert.notEqual(second, first, "each hit must return an independent top-level object");
-      assert.ok(state.stats.packageJsonReaderHits > hitsBefore, "readonly package.json must hit cache");
+      const readDesc = Object.getOwnPropertyDescriptor(reader, "read");
+      const purgeDesc = Object.getOwnPropertyDescriptor(reader, "purgePackageJSONCacheForPrefix");
+      const supportsPackageReaderHook = Boolean(
+        readDesc
+        && typeof readDesc.value === "function"
+        && (readDesc.writable || readDesc.configurable)
+        && purgeDesc
+        && typeof purgeDesc.value === "function"
+        && (purgeDesc.writable || purgeDesc.configurable),
+      );
+      if (!supportsPackageReaderHook) {
+        // Node 22 等旧内核缺少 purgePackageJSONCacheForPrefix 时必须安全退化而非报错。
+        assert.equal(state.active, true);
+        assert.equal(state.usesPackageJsonReader, false);
+        console.log("READER_OK");
+      } else {
+        assert.equal(state.usesPackageJsonReader, true);
+        const first = reader.read(roPkg);
+        assert.equal(first.exists, true);
+        assert.equal(first.name, "ro");
+        const hitsBefore = state.stats.packageJsonReaderHits;
+        const second = reader.read(roPkg);
+        assert.equal(second.name, "ro");
+        assert.notEqual(second, first, "each hit must return an independent top-level object");
+        assert.ok(state.stats.packageJsonReaderHits > hitsBefore, "readonly package.json must hit cache");
 
-      // 可写前缀不进入本层缓存：计数不增长。
-      const rwHitsBefore = state.stats.packageJsonReaderHits;
-      reader.read(rwPkg);
-      reader.read(rwPkg);
-      assert.equal(state.stats.packageJsonReaderHits, rwHitsBefore, "writable prefix must not be cached");
+        // 可写前缀不进入本层缓存：计数不增长。
+        const rwHitsBefore = state.stats.packageJsonReaderHits;
+        reader.read(rwPkg);
+        reader.read(rwPkg);
+        assert.equal(state.stats.packageJsonReaderHits, rwHitsBefore, "writable prefix must not be cached");
 
-      // 包装可完整还原：uninstall 后 read 不再是包装函数。
-      const wrapped = reader.read;
-      state.uninstall();
-      assert.equal(state.active, false);
-      assert.equal(state.usesPackageJsonReader, false);
-      assert.notEqual(reader.read, wrapped);
-      assert.equal(reader.read(roPkg).name, "ro");
-      console.log("READER_OK");
+        // 包装可完整还原：uninstall 后 read 不再是包装函数。
+        const wrapped = reader.read;
+        state.uninstall();
+        assert.equal(state.active, false);
+        assert.equal(state.usesPackageJsonReader, false);
+        assert.notEqual(reader.read, wrapped);
+        assert.equal(reader.read(roPkg).name, "ro");
+        console.log("READER_OK");
+      }
     `;
     const env = {
       DSHM_FS_CACHE_PREFIXES: [roDir, rwDir].join(delimiter),
@@ -447,37 +468,45 @@ test("loaderMethods breaks through esm/get_format early destructuring for CJS an
       const roEsm = ${JSON.stringify(join(roDir, "esm", "mod.js"))};
       const rwPkg = ${JSON.stringify(join(rwDir, "pkg", "package.json"))};
 
-      assert.equal(state.usesLoaderMethods, true, "shim must wrap loaderMethods");
+      if (!lm) {
+        // Node 22 等未提供 internal/modules/helpers.loaderMethods 时安全退化，ESM 导入保持可用。
+        assert.equal(state.usesLoaderMethods, false);
+        const mod = await import(pathToFileURL(roEsm).href);
+        assert.equal(mod.value, 1);
+        console.log("LOADER_METHODS_OK");
+      } else {
+        assert.equal(state.usesLoaderMethods, true, "shim must wrap loaderMethods");
 
-      // CJS 侧：reader.read 与 reader.getPackageScopeConfig 内部都会回落到 loaderMethods。
-      const hits0 = state.stats.loaderMethodsHits;
-      const first = reader.read(roPkg);
-      assert.equal(first.exists, true);
-      const scope1 = reader.getPackageScopeConfig(pathToFileURL(roPkg).href);
-      assert.equal(scope1.exists, true);
-      reader.read(roPkg);
-      reader.getPackageScopeConfig(pathToFileURL(roPkg).href);
-      assert.ok(state.stats.loaderMethodsHits > hits0, "readonly package lookups must hit the loaderMethods cache");
+        // CJS 侧：reader.read 与 reader.getPackageScopeConfig 内部都会回落到 loaderMethods。
+        const hits0 = state.stats.loaderMethodsHits;
+        const first = reader.read(roPkg);
+        assert.equal(first.exists, true);
+        const scope1 = reader.getPackageScopeConfig(pathToFileURL(roPkg).href);
+        assert.equal(scope1.exists, true);
+        reader.read(roPkg);
+        reader.getPackageScopeConfig(pathToFileURL(roPkg).href);
+        assert.ok(state.stats.loaderMethodsHits > hits0, "readonly package lookups must hit the loaderMethods cache");
 
-      // 可写前缀绝不进缓存。
-      const rwHits = state.stats.loaderMethodsHits;
-      reader.getPackageScopeConfig(pathToFileURL(rwPkg).href);
-      reader.getPackageScopeConfig(pathToFileURL(rwPkg).href);
-      assert.equal(state.stats.loaderMethodsHits, rwHits, "writable prefix must not be cached");
+        // 可写前缀绝不进缓存。
+        const rwHits = state.stats.loaderMethodsHits;
+        reader.getPackageScopeConfig(pathToFileURL(rwPkg).href);
+        reader.getPackageScopeConfig(pathToFileURL(rwPkg).href);
+        assert.equal(state.stats.loaderMethodsHits, rwHits, "writable prefix must not be cached");
 
-      // ESM 真实路径：import 一个 type=module 下的 .js 会触发 getPackageScopeConfig。
-      const esmMisses = state.stats.loaderMethodsMisses;
-      await import(pathToFileURL(roEsm).href);
-      assert.ok(state.stats.loaderMethodsMisses > esmMisses, "real ESM import must reach the loaderMethods wrapper");
+        // ESM 真实路径：import 一个 type=module 下的 .js 会触发 getPackageScopeConfig。
+        const esmMisses = state.stats.loaderMethodsMisses;
+        await import(pathToFileURL(roEsm).href);
+        assert.ok(state.stats.loaderMethodsMisses > esmMisses, "real ESM import must reach the loaderMethods wrapper");
 
-      // uninstall 完整还原：包装函数被替换回原生函数。
-      const wrapped = lm.getPackageScopeConfig;
-      state.uninstall();
-      assert.equal(state.usesLoaderMethods, false);
-      assert.notEqual(lm.getPackageScopeConfig, wrapped);
-      assert.equal(lm.readPackageJSON !== undefined, true);
-      assert.equal(reader.getPackageScopeConfig(pathToFileURL(roPkg).href).exists, true);
-      console.log("LOADER_METHODS_OK");
+        // uninstall 完整还原：包装函数被替换回原生函数。
+        const wrapped = lm.getPackageScopeConfig;
+        state.uninstall();
+        assert.equal(state.usesLoaderMethods, false);
+        assert.notEqual(lm.getPackageScopeConfig, wrapped);
+        assert.equal(lm.readPackageJSON !== undefined, true);
+        assert.equal(reader.getPackageScopeConfig(pathToFileURL(roPkg).href).exists, true);
+        console.log("LOADER_METHODS_OK");
+      }
     `;
     const env = {
       DSHM_FS_CACHE_PREFIXES: [roDir, rwDir].join(delimiter),
@@ -499,8 +528,10 @@ test("loaderMethods installation rolls back when an export is non-writable", () 
     sabotage,
     `import { createRequire } from "node:module";
 const require = createRequire(import.meta.url);
-const lm = require("internal/modules/helpers").loaderMethods;
-Object.defineProperty(lm, "readPackageJSON", { value: lm.readPackageJSON, writable: false, configurable: false });
+const lm = require("internal/modules/helpers")?.loaderMethods;
+if (lm) {
+  Object.defineProperty(lm, "readPackageJSON", { value: lm.readPackageJSON, writable: false, configurable: false });
+}
 `,
   );
   try {
@@ -509,13 +540,15 @@ Object.defineProperty(lm, "readPackageJSON", { value: lm.readPackageJSON, writab
       import { createRequire } from "node:module";
       const state = globalThis[Symbol.for("dshmobile.startupFsCache.state")];
       const require = createRequire(import.meta.url);
-      const lm = require("internal/modules/helpers").loaderMethods;
-      const descriptor = Object.getOwnPropertyDescriptor(lm, "readPackageJSON");
-      // 任一项不可写时必须整体放弃安装，且不抛错、不影响 package_json_reader 包装。
+      const lm = require("internal/modules/helpers")?.loaderMethods;
+      // 任一项不可写或 loaderMethods 缺失时必须安全放弃安装，且不抛错、不影响 package_json_reader 包装。
       assert.equal(state.usesLoaderMethods, false);
-      assert.equal(descriptor.writable, false);
       assert.equal(state.usesPackageJsonReader, false);
-      require("internal/modules/package_json_reader").read(${JSON.stringify(pkg)});
+      if (lm) {
+        const descriptor = Object.getOwnPropertyDescriptor(lm, "readPackageJSON");
+        assert.equal(descriptor.writable, false);
+        require("internal/modules/package_json_reader").read(${JSON.stringify(pkg)});
+      }
       console.log("ROLLBACK_OK");
     `;
     assert.equal(runWithShim(script, {}, { preloads: [sabotage] }), "ROLLBACK_OK");
