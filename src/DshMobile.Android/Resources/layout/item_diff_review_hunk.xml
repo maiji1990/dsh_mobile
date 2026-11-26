@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- UI-S5：Hunk 头折叠/分隔条（点击折叠或展开该 Hunk 的正文，避免长 Diff 淹没屏幕） -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/diff_hunk_root"
+    android:layout_width="wrap_content"
+    android:layout_height="wrap_content"
+    android:background="@color/dshm_diff_hunk_bg"
+    android:clickable="true"
+    android:focusable="true"
+    android:foreground="?attr/selectableItemBackground"
+    android:gravity="center_vertical"
+    android:minHeight="32dp"
+    android:orientation="horizontal"
+    android:paddingStart="8dp"
+    android:paddingTop="4dp"
+    android:paddingEnd="16dp"
+    android:paddingBottom="4dp">
+
+    <ImageView
+        android:id="@+id/diff_hunk_chevron"
+        android:layout_width="16dp"
+        android:layout_height="16dp"
+        android:contentDescription="@string/git_diff_review_collapse_hunk_desc"
+        android:src="@drawable/ic_expand_more"
+        app:tint="@color/dshm_diff_hunk_fg" />
+
+    <TextView
+        android:id="@+id/diff_hunk_title"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="4dp"
+        android:fontFamily="monospace"
+        android:fontFeatureSettings="tnum"
+        android:includeFontPadding="false"
+        android:textAppearance="?attr/textAppearanceLabelMedium"
+        android:textColor="@color/dshm_diff_hunk_fg"
+        android:textSize="11sp" />
+</LinearLayout>

@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- UI-S5：独立全屏 Diff 审查页顶栏，仅保留两个可见动作（自动换行、打开/编辑文件） -->
+<menu xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto">
+    <item
+        android:id="@+id/diff_menu_wrap"
+        android:checkable="true"
+        android:icon="@drawable/ic_wrap_text"
+        android:title="@string/git_diff_review_wrap"
+        app:showAsAction="always" />
+    <item
+        android:id="@+id/diff_menu_open"
+        android:icon="@drawable/ic_open_in_new"
+        android:title="@string/git_diff_review_open"
+        app:showAsAction="always" />
+</menu>

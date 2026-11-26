@@ -6,6 +6,12 @@
         android:icon="@drawable/ic_refresh"
         android:title="@string/files_refresh"
         app:showAsAction="always" />
+    <!-- UI-S5：搜索框默认收起，顶栏图标一键平滑展开/收起，常态释放约 64dp 顶部空间 -->
+    <item
+        android:id="@+id/files_menu_toggle_search"
+        android:icon="@drawable/ic_search"
+        android:title="@string/files_search_toggle"
+        app:showAsAction="always" />
     <item
         android:id="@+id/files_menu_open_root"
         android:title="@string/files_go_root"

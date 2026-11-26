@@ -1,15 +1,17 @@
 <?xml version="1.0" encoding="utf-8"?>
-<com.google.android.material.card.MaterialCardView xmlns:android="http://schemas.android.com/apk/res/android"
+<!--
+  UI-S5：无框通栏工作区文件行（约 56dp）：透明底 + 选中态柔和 colorSecondaryContainer 高亮，
+  底部 1dp hairline 左右各内缩 16dp；彻底移除此前的独立 MaterialCardView 边框套娃。
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
-    android:id="@+id/workspace_entry_card"
-    style="@style/Widget.DshMobile.Card.Group"
+    android:id="@+id/workspace_entry_root"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:layout_marginBottom="6dp"
     android:clickable="true"
-    android:descendantFocusability="afterDescendants"
     android:focusable="true"
-    android:foreground="?attr/selectableItemBackground">
+    android:foreground="?attr/selectableItemBackground"
+    android:orientation="vertical">
 
     <LinearLayout
         android:layout_width="match_parent"
@@ -17,15 +19,15 @@
         android:gravity="center_vertical"
         android:minHeight="56dp"
         android:orientation="horizontal"
-        android:paddingStart="14dp"
-        android:paddingTop="8dp"
-        android:paddingEnd="6dp"
-        android:paddingBottom="8dp">
+        android:paddingStart="16dp"
+        android:paddingTop="4dp"
+        android:paddingEnd="4dp"
+        android:paddingBottom="4dp">
 
         <ImageView
             android:id="@+id/workspace_entry_icon"
-            android:layout_width="24dp"
-            android:layout_height="24dp"
+            android:layout_width="22dp"
+            android:layout_height="22dp"
             android:layout_marginEnd="14dp"
             android:importantForAccessibility="no"
             app:tint="?attr/colorOnSurfaceVariant" />
@@ -49,7 +51,6 @@
                 android:id="@+id/workspace_entry_subtitle"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="2dp"
                 android:ellipsize="middle"
                 android:maxLines="1"
                 android:textAppearance="?attr/textAppearanceBodySmall"
@@ -89,4 +90,12 @@
             app:iconSize="18dp"
             app:iconTint="?attr/colorOnSurfaceVariant" />
     </LinearLayout>
-</com.google.android.material.card.MaterialCardView>
+
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="@dimen/dshm_hairline"
+        android:layout_marginStart="16dp"
+        android:layout_marginEnd="16dp"
+        android:background="?attr/colorOutlineVariant"
+        android:importantForAccessibility="no" />
+</LinearLayout>

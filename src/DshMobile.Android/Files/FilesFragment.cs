@@ -8,7 +8,6 @@ using DshMobile.App.Ui;
 using DshMobile.Core.Files;
 using Google.Android.Material.AppBar;
 using Google.Android.Material.Button;
-using Google.Android.Material.Card;
 using Google.Android.Material.Chip;
 using Google.Android.Material.Dialog;
 using Google.Android.Material.FloatingActionButton;
@@ -27,7 +26,7 @@ namespace DshMobile.App.Files;
 /// 单手 FAB 承接新建/导入，Git 非仓库时自动扫描子仓库提供一键跳转；
 /// 所有路径校验、符号链接拦截、<c>.dsh</c> 保护与冲突检测严格委托 <see cref="WorkspaceProvider"/>。
 /// </summary>
-public sealed class FilesFragment : Fragment, ITabRoot
+public sealed class FilesFragment : Fragment, ITabRoot, FileActionsBottomSheet.IHost, WorkspaceCreateBottomSheet.IHost
 {
     private const int RequestImport = 71;
     private const int RequestExport = 72;
@@ -52,10 +51,11 @@ public sealed class FilesFragment : Fragment, ITabRoot
     private bool _gitMode;
     private int _gitGeneration;
     private string _gitRepoRoot = "";
-    private string? _activeDiffFile;
+    private string _gitBranch = "";
     private string? _pendingTargetPath;
     private bool _pendingTargetDiff;
     private bool _menuIsSelection;
+    private bool _searchExpanded;
     private string? _lastCrumbsKey;
 
     private MaterialToolbar _toolbar = null!;
@@ -67,20 +67,17 @@ public sealed class FilesFragment : Fragment, ITabRoot
     private View _gitHeaderBar = null!;
     private TextView _gitBranchText = null!;
     private TextView _gitRepoRootText = null!;
-    private View _gitDiffHeader = null!;
-    private TextView _gitDiffFileTitle = null!;
-    private TextView _gitDiffNotice = null!;
+    private TextView _gitNotice = null!;
     private RecyclerView _gitChangesList = null!;
-    private RecyclerView _gitDiffList = null!;
     private View _gitEmptyWrapper = null!;
     private TextView _gitEmptyText = null!;
     private View _gitSubreposBar = null!;
     private ChipGroup _gitSubreposChips = null!;
     private GitChangesAdapter _gitChangesAdapter = null!;
-    private GitDiffAdapter _gitDiffAdapter = null!;
 
     private LinearLayout _crumbs = null!;
     private HorizontalScrollView _crumbsScroll = null!;
+    private View _searchRow = null!;
     private TextInputEditText _filterText = null!;
     private MaterialButton _sortBtn = null!;
     private TextView _status = null!;
@@ -112,27 +109,17 @@ public sealed class FilesFragment : Fragment, ITabRoot
         _gitHeaderBar = view.FindViewById(Resource.Id.git_header_bar)!;
         _gitBranchText = view.FindViewById<TextView>(Resource.Id.git_branch_text)!;
         _gitRepoRootText = view.FindViewById<TextView>(Resource.Id.git_repo_root_text)!;
-        _gitDiffHeader = view.FindViewById(Resource.Id.git_diff_header)!;
-        _gitDiffFileTitle = view.FindViewById<TextView>(Resource.Id.git_diff_file_title)!;
-        _gitDiffNotice = view.FindViewById<TextView>(Resource.Id.git_diff_notice)!;
+        _gitNotice = view.FindViewById<TextView>(Resource.Id.git_notice)!;
         _gitChangesList = view.FindViewById<RecyclerView>(Resource.Id.git_changes_list)!;
-        _gitDiffList = view.FindViewById<RecyclerView>(Resource.Id.git_diff_list)!;
         _gitEmptyWrapper = view.FindViewById(Resource.Id.git_empty_wrapper)!;
         _gitEmptyText = view.FindViewById<TextView>(Resource.Id.git_empty_text)!;
         _gitSubreposBar = view.FindViewById(Resource.Id.git_subrepos_bar)!;
         _gitSubreposChips = view.FindViewById<ChipGroup>(Resource.Id.git_subrepos_chips)!;
 
         _gitChangesList.SetLayoutManager(new LinearLayoutManager(RequireContext()));
-        _gitChangesAdapter = new GitChangesAdapter(entry => _ = OpenGitDiffAsync(_gitRepoRoot, entry.RelativePath));
+        // UI-S5：Git 变更点击直接拉起独立全屏 DiffReviewActivity，按返回无缝回到变更列表
+        _gitChangesAdapter = new GitChangesAdapter(OpenGitDiff);
         _gitChangesList.SetAdapter(_gitChangesAdapter);
-
-        _gitDiffList.SetLayoutManager(new LinearLayoutManager(RequireContext()));
-        _gitDiffList.SetItemAnimator(null);
-        _gitDiffAdapter = new GitDiffAdapter();
-        _gitDiffList.SetAdapter(_gitDiffAdapter);
-
-        view.FindViewById<MaterialButton>(Resource.Id.git_diff_back_btn)!.Click += (_, _) => ExitDiffView();
-        view.FindViewById<MaterialButton>(Resource.Id.git_diff_open_file_btn)!.Click += (_, _) => OpenDiffTargetFilePreview();
 
         _modeToggle.Check(_gitMode ? Resource.Id.files_mode_git : Resource.Id.files_mode_files);
         view.FindViewById<MaterialButton>(Resource.Id.files_mode_files)!.Click += (_, _) =>
@@ -149,6 +136,9 @@ public sealed class FilesFragment : Fragment, ITabRoot
         _crumbs = view.FindViewById<LinearLayout>(Resource.Id.files_crumbs)!;
         _crumbsScroll = view.FindViewById<HorizontalScrollView>(Resource.Id.files_crumbs_scroll)!;
 
+        _searchRow = view.FindViewById(Resource.Id.files_search_row)!;
+        _searchRow.Visibility = ViewStates.Gone;
+        _searchExpanded = false;
         var filterLayout = view.FindViewById(Resource.Id.files_filter_layout)!;
         _filterText = filterLayout.FindViewById<TextInputEditText>(Resource.Id.search_input)!;
         _filterText.Hint = GetString(Resource.String.files_filter_or_search_hint);
@@ -212,8 +202,7 @@ public sealed class FilesFragment : Fragment, ITabRoot
             view.FindViewById(Resource.Id.files_search_row),
             view.FindViewById(Resource.Id.files_crumbs_scroll),
             _list,
-            view.FindViewById(Resource.Id.git_changes_list),
-            view.FindViewById(Resource.Id.git_diff_list));
+            view.FindViewById(Resource.Id.git_changes_list));
 
         EnsureProvider();
         ApplyModeVisibility();
@@ -248,10 +237,7 @@ public sealed class FilesFragment : Fragment, ITabRoot
         {
             if (_gitMode)
             {
-                if (_activeDiffFile is null)
-                {
-                    _ = LoadGitStatusAsync(_dir);
-                }
+                _ = LoadGitStatusAsync(_dir);
             }
             else if (_searchQuery is null)
             {
@@ -264,13 +250,14 @@ public sealed class FilesFragment : Fragment, ITabRoot
     {
         if (_gitMode)
         {
-            if (_activeDiffFile is not null)
-            {
-                ExitDiffView();
-                return true;
-            }
             _modeToggle.Check(Resource.Id.files_mode_files);
             SetGitMode(false);
+            return true;
+        }
+        // 展开中的搜索栏优先收起，并同时清空筛选词与已执行的递归搜索结果，避免隐藏后仍停留在旧结果。
+        if (_searchExpanded)
+        {
+            CollapseSearch();
             return true;
         }
         if (_searchQuery is not null)
@@ -301,7 +288,6 @@ public sealed class FilesFragment : Fragment, ITabRoot
     {
         if (_gitMode)
         {
-            ExitDiffView();
             _ = LoadGitStatusAsync(_dir);
             return;
         }
@@ -350,10 +336,9 @@ public sealed class FilesFragment : Fragment, ITabRoot
         var parentDir = parentSlash < 0 ? "" : norm[..parentSlash];
         if (preferDiff)
         {
-            _dir = parentDir;
-            _modeToggle.Check(Resource.Id.files_mode_git);
-            SetGitMode(true, triggerLoad: false);
-            _ = OpenTargetDiffWithFallbackAsync(parentDir, norm);
+            // UI-S5：统一拉起独立全屏 DiffReviewActivity；其内部再次执行工作区安全路径校验
+            // （规范化、越界拒绝、.dsh/ 保护与符号链接拦截），绝不绕过安全门禁。
+            StartActivity(DiffReviewActivity.CreateWorkspaceIntent(RequireContext(), norm));
         }
         else
         {
@@ -366,10 +351,6 @@ public sealed class FilesFragment : Fragment, ITabRoot
     private void SetGitMode(bool gitMode, bool triggerLoad = true)
     {
         _gitMode = gitMode;
-        if (!gitMode)
-        {
-            _activeDiffFile = null;
-        }
         ApplyModeVisibility();
         UpdateChrome();
         if (triggerLoad)
@@ -391,24 +372,6 @@ public sealed class FilesFragment : Fragment, ITabRoot
         _gitPane.Visibility = _gitMode ? ViewStates.Visible : ViewStates.Gone;
     }
 
-    private void ExitDiffView()
-    {
-        _activeDiffFile = null;
-        _gitDiffHeader.Visibility = ViewStates.Gone;
-        _gitDiffNotice.Visibility = ViewStates.Gone;
-        _gitDiffList.Visibility = ViewStates.Gone;
-        _gitChangesList.Visibility = ViewStates.Visible;
-        if (_gitChangesAdapter.ItemCount == 0)
-        {
-            _gitEmptyWrapper.Visibility = ViewStates.Visible;
-        }
-        else
-        {
-            _gitEmptyWrapper.Visibility = ViewStates.Gone;
-        }
-        UpdateChrome();
-    }
-
     private async Task LoadGitStatusAsync(string repoSearchDir)
     {
         var git = DshMobileApplication.Current.Bridge.CreateWorkspaceGitService();
@@ -420,8 +383,7 @@ public sealed class FilesFragment : Fragment, ITabRoot
         }
         var gen = ++_gitGeneration;
         _gitProgress.Visibility = ViewStates.Visible;
-        _gitDiffNotice.Visibility = ViewStates.Gone;
-        ExitDiffView();
+        _gitNotice.Visibility = ViewStates.Gone;
         try
         {
             var fs = _provider?.FileSystem;
@@ -464,6 +426,8 @@ public sealed class FilesFragment : Fragment, ITabRoot
         if (!status.IsRepository)
         {
             _gitHeaderBar.Visibility = ViewStates.Gone;
+            _gitRepoRoot = "";
+            _gitBranch = "";
             _gitBranchText.Text = string.Empty;
             _gitRepoRootText.Text = string.Empty;
             _gitChangesAdapter.Submit([]);
@@ -478,6 +442,7 @@ public sealed class FilesFragment : Fragment, ITabRoot
         _gitHeaderBar.Visibility = ViewStates.Visible;
         _gitSubreposBar.Visibility = ViewStates.Gone;
         _gitRepoRoot = status.RepoRelativeRoot;
+        _gitBranch = status.BranchName ?? "";
         _gitBranchText.Text = status.IsDetachedHead
             ? Rows.Fmt(ctx, Resource.String.git_branch_detached, status.BranchName ?? "HEAD")
             : Rows.Fmt(ctx, Resource.String.git_branch_fmt, status.BranchName ?? "HEAD");
@@ -489,12 +454,12 @@ public sealed class FilesFragment : Fragment, ITabRoot
         _gitChangesAdapter.Submit(status.Changes);
         if (status.Truncated)
         {
-            _gitDiffNotice.Visibility = ViewStates.Visible;
-            _gitDiffNotice.Text = Rows.Fmt(ctx, Resource.String.git_changes_truncated, status.Changes.Count, status.TotalChangeCount);
+            _gitNotice.Visibility = ViewStates.Visible;
+            _gitNotice.Text = Rows.Fmt(ctx, Resource.String.git_changes_truncated, status.Changes.Count, status.TotalChangeCount);
         }
         else
         {
-            _gitDiffNotice.Visibility = ViewStates.Gone;
+            _gitNotice.Visibility = ViewStates.Gone;
         }
 
         if (status.Changes.Count == 0)
@@ -511,6 +476,7 @@ public sealed class FilesFragment : Fragment, ITabRoot
     private void ShowGitEmpty(string message, IReadOnlyList<Breadcrumb> subRepos)
     {
         _gitChangesAdapter.Submit([]);
+        _gitNotice.Visibility = ViewStates.Gone;
         _gitEmptyText.Text = message;
         _gitEmptyWrapper.Visibility = ViewStates.Visible;
 
@@ -536,142 +502,19 @@ public sealed class FilesFragment : Fragment, ITabRoot
         }
     }
 
-    private async Task OpenGitDiffAsync(string repoRelRoot, string fileRelativeToRepo)
+    /// <summary>
+    /// UI-S5：Git 变更行点击后直接拉起独立全屏 <see cref="DiffReviewActivity"/>。
+    /// 路径由 <see cref="WorkspaceGitService"/> 在审查页内再次校验（.dsh/ 保护、越界、符号链接），
+    /// 这里只负责携带仓库相对根与文件相对路径，且不再维护任何内嵌 Diff 视图状态。
+    /// </summary>
+    private void OpenGitDiff(GitChangeEntry entry)
     {
-        var git = DshMobileApplication.Current.Bridge.CreateWorkspaceGitService();
-        if (git is null)
+        if (!EnsureProvider())
         {
+            ShowStatus(GetString(Resource.String.files_no_workspace));
             return;
         }
-        var gen = ++_gitGeneration;
-        _gitProgress.Visibility = ViewStates.Visible;
-        try
-        {
-            var doc = await Task.Run(() => git.GetFileDiffAsync(repoRelRoot, fileRelativeToRepo)).ConfigureAwait(false);
-            Activity?.RunOnUiThread(() =>
-            {
-                if (gen != _gitGeneration || !IsAdded)
-                {
-                    return;
-                }
-                _gitProgress.Visibility = ViewStates.Gone;
-                ShowGitDiffDocument(doc);
-            });
-        }
-        catch (WorkspaceException ex)
-        {
-            Activity?.RunOnUiThread(() =>
-            {
-                if (gen == _gitGeneration && IsAdded)
-                {
-                    _gitProgress.Visibility = ViewStates.Gone;
-                    ShowError(ex);
-                }
-            });
-        }
-    }
-
-    private void ShowGitDiffDocument(GitDiffDocument doc)
-    {
-        _activeDiffFile = doc.FileRelativePath;
-        _gitDiffHeader.Visibility = ViewStates.Visible;
-        _gitDiffFileTitle.Text = doc.FileRelativePath;
-        _gitChangesList.Visibility = ViewStates.Gone;
-        _gitEmptyWrapper.Visibility = ViewStates.Gone;
-        _gitDiffList.Visibility = ViewStates.Visible;
-
-        if (doc.IsBinary)
-        {
-            _gitDiffNotice.Visibility = ViewStates.Visible;
-            _gitDiffNotice.SetText(Resource.String.git_diff_binary);
-            _gitDiffAdapter.Submit([]);
-        }
-        else if (doc.Lines.Count == 0)
-        {
-            _gitDiffNotice.Visibility = ViewStates.Visible;
-            _gitDiffNotice.SetText(Resource.String.git_diff_empty);
-            _gitDiffAdapter.Submit([]);
-        }
-        else
-        {
-            if (doc.IsTruncated && !string.IsNullOrWhiteSpace(doc.TruncationReason))
-            {
-                _gitDiffNotice.Visibility = ViewStates.Visible;
-                _gitDiffNotice.Text = Rows.Fmt(RequireContext(), Resource.String.git_diff_truncated_fmt, doc.TruncationReason!);
-            }
-            else
-            {
-                _gitDiffNotice.Visibility = ViewStates.Gone;
-            }
-            _gitDiffAdapter.Submit(doc.Lines);
-        }
-        UpdateChrome();
-    }
-
-    private async Task OpenTargetDiffWithFallbackAsync(string parentDir, string workspaceRelativePath)
-    {
-        var git = DshMobileApplication.Current.Bridge.CreateWorkspaceGitService();
-        if (git is null)
-        {
-            return;
-        }
-        var gen = ++_gitGeneration;
-        _gitProgress.Visibility = ViewStates.Visible;
-        try
-        {
-            var status = await Task.Run(() => git.GetStatusAsync(parentDir)).ConfigureAwait(false);
-            if (!status.IsRepository)
-            {
-                Activity?.RunOnUiThread(() =>
-                {
-                    if (gen != _gitGeneration || !IsAdded)
-                    {
-                        return;
-                    }
-                    _gitProgress.Visibility = ViewStates.Gone;
-                    _modeToggle.Check(Resource.Id.files_mode_files);
-                    SetGitMode(false, triggerLoad: false);
-                    _ = OpenTargetFilePreviewAsync(parentDir, workspaceRelativePath);
-                });
-                return;
-            }
-
-            var relToRepo = string.IsNullOrEmpty(status.RepoRelativeRoot)
-                ? workspaceRelativePath
-                : workspaceRelativePath.StartsWith(status.RepoRelativeRoot + "/", StringComparison.Ordinal)
-                    ? workspaceRelativePath[(status.RepoRelativeRoot.Length + 1)..]
-                    : workspaceRelativePath;
-            var doc = await Task.Run(() => git.GetFileDiffAsync(status.RepoRelativeRoot, relToRepo)).ConfigureAwait(false);
-            Activity?.RunOnUiThread(() =>
-            {
-                if (gen != _gitGeneration || !IsAdded)
-                {
-                    return;
-                }
-                _gitProgress.Visibility = ViewStates.Gone;
-                ApplyGitStatus(status, []);
-                if (!doc.IsBinary && doc.Lines.Count == 0)
-                {
-                    ShowStatus(GetString(Resource.String.git_jump_no_diff_fallback));
-                    _modeToggle.Check(Resource.Id.files_mode_files);
-                    SetGitMode(false, triggerLoad: false);
-                    _ = OpenTargetFilePreviewAsync(parentDir, workspaceRelativePath);
-                    return;
-                }
-                ShowGitDiffDocument(doc);
-            });
-        }
-        catch (WorkspaceException ex)
-        {
-            Activity?.RunOnUiThread(() =>
-            {
-                if (gen == _gitGeneration && IsAdded)
-                {
-                    _gitProgress.Visibility = ViewStates.Gone;
-                    ShowError(ex);
-                }
-            });
-        }
+        StartActivity(DiffReviewActivity.CreateIntent(RequireContext(), _gitRepoRoot, entry.RelativePath, _gitBranch));
     }
 
     private async Task OpenTargetFilePreviewAsync(string parentDir, string workspaceRelativePath)
@@ -698,20 +541,6 @@ public sealed class FilesFragment : Fragment, ITabRoot
         {
             ShowError(ex);
         }
-    }
-
-    private void OpenDiffTargetFilePreview()
-    {
-        if (_activeDiffFile is not { } diffRel || !EnsureProvider())
-        {
-            return;
-        }
-        var wsRel = string.IsNullOrEmpty(_gitRepoRoot) ? diffRel : $"{_gitRepoRoot}/{diffRel}";
-        var slash = wsRel.LastIndexOf('/');
-        var parentDir = slash < 0 ? "" : wsRel[..slash];
-        _modeToggle.Check(Resource.Id.files_mode_files);
-        SetGitMode(false, triggerLoad: false);
-        _ = OpenTargetFilePreviewAsync(parentDir, wsRel);
     }
 
     private bool EnsureProvider()
@@ -816,15 +645,8 @@ public sealed class FilesFragment : Fragment, ITabRoot
         if (_gitMode)
         {
             _toolbar.Subtitle = null;
-            if (_activeDiffFile is not null)
-            {
-                _toolbar.SetNavigationIcon(Resource.Drawable.ic_arrow_back);
-                _toolbar.SetNavigationContentDescription(Resource.String.git_diff_back);
-            }
-            else
-            {
-                _toolbar.NavigationIcon = null;
-            }
+            // Git 页签只展示变更列表；Diff 在独立全屏审查页中查看，因此这里不再出现第二个返回箭头。
+            _toolbar.NavigationIcon = null;
             SyncMenu(isSelection: false, isGitMode: true);
             return;
         }
@@ -962,6 +784,10 @@ public sealed class FilesFragment : Fragment, ITabRoot
         {
             StartImport();
         }
+        else if (id == Resource.Id.files_menu_toggle_search)
+        {
+            ToggleSearch();
+        }
         else if (id == Resource.Id.files_menu_search)
         {
             AskName(Resource.String.files_search, Resource.String.files_search_hint, "", q => _ = SearchAsync(q));
@@ -1014,12 +840,7 @@ public sealed class FilesFragment : Fragment, ITabRoot
     private void ShowCreateSheet()
     {
         var displayDir = string.IsNullOrEmpty(_dir) ? GuestRoot : $"{GuestRoot}/{_dir}";
-        WorkspaceCreateBottomSheet.Show(
-            RequireContext(),
-            displayDir,
-            () => AskName(Resource.String.files_new_file, Resource.String.files_name_hint, "", n => Run(() => _provider!.CreateFile(_dir, n))),
-            () => AskName(Resource.String.files_new_folder, Resource.String.files_name_hint, "", n => Run(() => _provider!.CreateDirectory(_dir, n))),
-            StartImport);
+        WorkspaceCreateBottomSheet.ShowSheet(ChildFragmentManager, displayDir);
     }
 
     private void ChooseSort()
@@ -1091,24 +912,67 @@ public sealed class FilesFragment : Fragment, ITabRoot
             ShowStatus(GetString(Resource.String.files_protected));
             return;
         }
-        FileActionsBottomSheet.Show(
-            RequireContext(),
-            e,
-            caps,
-            onOpenOrEdit: () => OpenEditorActivity(e, startEditing: caps.HasFlag(FileCapabilities.Write)),
-            onExport: () =>
-            {
-                _pendingExport = e.RelativePath;
+        FileActionsBottomSheet.Show(ChildFragmentManager, e, caps);
+    }
+
+    public void OnFileAction(FileActionsBottomSheet.Action action, WorkspaceEntry entry)
+    {
+        var provider = _provider;
+        if (provider is null)
+        {
+            return;
+        }
+
+        var caps = provider.CapabilitiesOf(entry);
+        switch (action)
+        {
+            case FileActionsBottomSheet.Action.OpenOrEdit:
+                OpenEditorActivity(entry, startEditing: caps.HasFlag(FileCapabilities.Write));
+                break;
+            case FileActionsBottomSheet.Action.Export:
+                _pendingExport = entry.RelativePath;
 #pragma warning disable CS0618
-                StartActivityForResult(DocumentPicker.CreateIntent(e.Name), RequestExport);
+                StartActivityForResult(DocumentPicker.CreateIntent(entry.Name), RequestExport);
 #pragma warning restore CS0618
-            },
-            onExtract: () => _ = ExtractAsync(e),
-            onRename: () => AskName(Resource.String.files_rename, Resource.String.files_name_hint, e.Name, n => Run(() => provider.Rename(e.RelativePath, n))),
-            onCopy: () => SetClip([e.RelativePath], cut: false),
-            onCut: () => SetClip([e.RelativePath], cut: true),
-            onZip: () => _ = ZipAsync([e.RelativePath]),
-            onDelete: () => ConfirmDelete([e.RelativePath]));
+                break;
+            case FileActionsBottomSheet.Action.Extract:
+                _ = ExtractAsync(entry);
+                break;
+            case FileActionsBottomSheet.Action.Rename:
+                AskName(Resource.String.files_rename, Resource.String.files_name_hint, entry.Name,
+                    n => Run(() => provider.Rename(entry.RelativePath, n)));
+                break;
+            case FileActionsBottomSheet.Action.Copy:
+                SetClip([entry.RelativePath], cut: false);
+                break;
+            case FileActionsBottomSheet.Action.Cut:
+                SetClip([entry.RelativePath], cut: true);
+                break;
+            case FileActionsBottomSheet.Action.Zip:
+                _ = ZipAsync([entry.RelativePath]);
+                break;
+            case FileActionsBottomSheet.Action.Delete:
+                ConfirmDelete([entry.RelativePath]);
+                break;
+        }
+    }
+
+    public void OnWorkspaceCreateAction(WorkspaceCreateBottomSheet.Action action)
+    {
+        switch (action)
+        {
+            case WorkspaceCreateBottomSheet.Action.NewFile:
+                AskName(Resource.String.files_new_file, Resource.String.files_name_hint, "",
+                    n => Run(() => _provider!.CreateFile(_dir, n)));
+                break;
+            case WorkspaceCreateBottomSheet.Action.NewFolder:
+                AskName(Resource.String.files_new_folder, Resource.String.files_name_hint, "",
+                    n => Run(() => _provider!.CreateDirectory(_dir, n)));
+                break;
+            case WorkspaceCreateBottomSheet.Action.Import:
+                StartImport();
+                break;
+        }
     }
 
     private void OpenEditorActivity(WorkspaceEntry e, bool startEditing)
@@ -1281,6 +1145,76 @@ public sealed class FilesFragment : Fragment, ITabRoot
         }
     }
 
+    /// <summary>UI-S5：顶栏 🔍 图标平滑展开/收起工作区搜索框（默认隐藏，常态释放约 64dp 顶部空间）。</summary>
+    private void ToggleSearch()
+    {
+        if (_searchExpanded)
+        {
+            CollapseSearch();
+        }
+        else
+        {
+            ExpandSearch();
+        }
+    }
+
+    private void ExpandSearch()
+    {
+        if (!IsAdded || View is null)
+        {
+            return;
+        }
+        _searchExpanded = true;
+        _searchRow.Visibility = ViewStates.Visible;
+        _searchRow.Alpha = 0f;
+        _searchRow.TranslationY = -Rows.Dp(RequireContext(), 8f);
+        _searchRow.Animate()?.Alpha(1f).TranslationY(0f).SetDuration(180).Start();
+        _filterText.RequestFocus();
+        if (Context?.GetSystemService(Context.InputMethodService) is InputMethodManager imm)
+        {
+            imm.ShowSoftInput(_filterText, ShowFlags.Implicit);
+        }
+    }
+
+    private void CollapseSearch()
+    {
+        if (!IsAdded || View is null)
+        {
+            return;
+        }
+        // 收起即清空：普通筛选词与已执行的递归搜索都归零，避免搜索栏隐藏后列表仍停在旧结果。
+        var hadSearch = _searchQuery is not null;
+        _searchExpanded = false;
+        _searchQuery = null;
+        _searchResult = null;
+        _filter = "";
+        _filterText.Text = "";
+        if (Context?.GetSystemService(Context.InputMethodService) is InputMethodManager imm && _filterText.WindowToken is { } token)
+        {
+            imm.HideSoftInputFromWindow(token, HideSoftInputFlags.None);
+        }
+        _filterText.ClearFocus();
+        _searchRow.Animate()?.Alpha(0f).TranslationY(-Rows.Dp(RequireContext(), 8f)).SetDuration(140).Start();
+        _searchRow.PostDelayed(() =>
+        {
+            // 动画结束后再收起；期间若用户重新展开则保持可见，避免闪烁。
+            if (!_searchExpanded)
+            {
+                _searchRow.Visibility = ViewStates.Gone;
+                _searchRow.Alpha = 1f;
+                _searchRow.TranslationY = 0f;
+            }
+        }, 160);
+        if (hadSearch)
+        {
+            _ = LoadAsync();
+        }
+        else
+        {
+            Show();
+        }
+    }
+
     private async Task SearchAsync(string query)
     {
         if (string.IsNullOrWhiteSpace(query) || _provider is null)
@@ -1420,7 +1354,7 @@ public sealed class FilesFragment : Fragment, ITabRoot
 
     private sealed class RowHolder(View view) : RecyclerView.ViewHolder(view)
     {
-        public MaterialCardView Card { get; } = (MaterialCardView)view;
+        public View Root { get; } = view;
         public ImageView Icon { get; } = view.FindViewById<ImageView>(Resource.Id.workspace_entry_icon)!;
         public TextView Title { get; } = view.FindViewById<TextView>(Resource.Id.workspace_entry_title)!;
         public TextView Subtitle { get; } = view.FindViewById<TextView>(Resource.Id.workspace_entry_subtitle)!;
@@ -1490,7 +1424,6 @@ public sealed class FilesFragment : Fragment, ITabRoot
             var h = (RowHolder)holder;
             var (e, selected, inSelectionMode) = _rows[position];
             h.Entry = e;
-            var context = h.ItemView.Context!;
             h.Title.Text = e.Name;
             var where = _inSearch ? WhereOf(e.RelativePath) : null;
 
@@ -1531,15 +1464,11 @@ public sealed class FilesFragment : Fragment, ITabRoot
             h.Lock.Visibility = !selected && e.Protected ? ViewStates.Visible : ViewStates.Gone;
             h.MoreBtn.Visibility = !selected && !e.Protected && !inSelectionMode ? ViewStates.Visible : ViewStates.Gone;
 
-            h.Card.SetCardBackgroundColor(Rows.Color(
-                h.Card,
-                selected ? Resource.Attribute.colorSecondaryContainer : Resource.Attribute.colorSurfaceContainerLow));
-            h.Card.StrokeWidth = selected
-                ? Rows.Dp(context, 1.5f)
-                : context.Resources!.GetDimensionPixelSize(Resource.Dimension.dshm_card_stroke_width);
-            h.Card.StrokeColor = Rows.Color(
-                h.Card,
-                selected ? Resource.Attribute.colorPrimary : Resource.Attribute.colorOutlineVariant);
+            // UI-S5 无框通栏行：选中态用柔和 colorSecondaryContainer 铺底，未选中保持透明，
+            // 不再为每行绘制独立描边卡片，首屏可多显示约 30% 条目。
+            h.Root.SetBackgroundColor(selected
+                ? new global::Android.Graphics.Color(Rows.Color(h.Root, Resource.Attribute.colorSecondaryContainer))
+                : global::Android.Graphics.Color.Transparent);
         }
 
         private static string WhereOf(string path)
