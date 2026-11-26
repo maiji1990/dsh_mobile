@@ -389,7 +389,8 @@ public sealed partial class WorkspaceGitService
         var lines = new List<GitDiffLine>(Math.Min(lineCount + 3, limits.MaxLines + 1))
         {
             new(GitDiffLineKind.Meta, null, null, " ", $"new file (untracked): {displayPath}"),
-            new(GitDiffLineKind.HunkHeader, null, null, "@@", $"@@ -0,0 +1,{Math.Min(lineCount, limits.MaxLines)} @@"),
+            // 标记列留空，避免 UI 把标记列与正文的 "@@" 拼成 "@@@@"
+            new(GitDiffLineKind.HunkHeader, null, null, string.Empty, $"@@ -0,0 +1,{Math.Min(lineCount, limits.MaxLines)} @@"),
         };
 
         var truncated = exceededBytes;
@@ -695,17 +696,48 @@ public sealed partial class WorkspaceGitService
                 oldLine = o;
                 newLine = n;
             }
-            return new GitDiffLine(GitDiffLineKind.HunkHeader, null, null, "@@", ClipLine(rawLine, maxLineLength));
+            // 根因修复（UI-S5）：旧实现把 Hunk 头的标记列写成 "@@"、正文又保留完整的 "@@ -1 +1 @@"
+            // 原始行，DiffLineView 相邻渲染时拼成 "@@@@ -1 +1 @@"。标记列留空并在核心侧规范化为
+            // 单一 "@@" 前缀，彻底杜绝重复前缀（同时兼容上游已经拼坏的 "@@@@" 输入）。
+            return new GitDiffLine(
+                GitDiffLineKind.HunkHeader,
+                null,
+                null,
+                string.Empty,
+                ClipLine(UnifiedDiffReview.NormalizeHunkHeader(rawLine), maxLineLength));
         }
 
-        if (rawLine.StartsWith("diff ", StringComparison.Ordinal) ||
-            rawLine.StartsWith("index ", StringComparison.Ordinal) ||
-            rawLine.StartsWith("--- ", StringComparison.Ordinal) ||
-            rawLine.StartsWith("+++ ", StringComparison.Ordinal) ||
-            rawLine.StartsWith("new file mode ", StringComparison.Ordinal) ||
-            rawLine.StartsWith("deleted file mode ", StringComparison.Ordinal) ||
-            rawLine.StartsWith("rename ", StringComparison.Ordinal) ||
-            rawLine.StartsWith("\\ No newline", StringComparison.Ordinal))
+        if (rawLine.StartsWith("diff ", StringComparison.Ordinal))
+        {
+            // 新的文件段落开始：重置行号状态，避免上一文件的 hunk 状态污染下一次解析。
+            oldLine = null;
+            newLine = null;
+            return new GitDiffLine(GitDiffLineKind.Meta, null, null, " ", ClipLine(rawLine, maxLineLength));
+        }
+
+        if (rawLine.StartsWith("\\ No newline", StringComparison.Ordinal))
+        {
+            return new GitDiffLine(GitDiffLineKind.Meta, null, null, " ", ClipLine(rawLine, maxLineLength));
+        }
+
+        // 只有在 Hunk 之外才把 "--- "/"+++ " 等前缀当作 git 文件头元数据；Hunk 内以 "--- " / "+++ "
+        // 开头的行是真实删除/新增正文（例如内容为 "-- foo" 的删除行），必须交由下面的 +/- 分支处理，
+        // 否则会被误删，导致内容丢失且增删统计偏差。
+        var insideHunk = oldLine is not null || newLine is not null;
+        if (!insideHunk &&
+            (rawLine.StartsWith("index ", StringComparison.Ordinal) ||
+             rawLine.StartsWith("--- ", StringComparison.Ordinal) ||
+             rawLine.StartsWith("+++ ", StringComparison.Ordinal) ||
+             rawLine.StartsWith("new file mode ", StringComparison.Ordinal) ||
+             rawLine.StartsWith("deleted file mode ", StringComparison.Ordinal) ||
+             rawLine.StartsWith("old mode ", StringComparison.Ordinal) ||
+             rawLine.StartsWith("new mode ", StringComparison.Ordinal) ||
+             rawLine.StartsWith("similarity index ", StringComparison.Ordinal) ||
+             rawLine.StartsWith("dissimilarity index ", StringComparison.Ordinal) ||
+             rawLine.StartsWith("rename from ", StringComparison.Ordinal) ||
+             rawLine.StartsWith("rename to ", StringComparison.Ordinal) ||
+             rawLine.StartsWith("copy from ", StringComparison.Ordinal) ||
+             rawLine.StartsWith("copy to ", StringComparison.Ordinal)))
         {
             return new GitDiffLine(GitDiffLineKind.Meta, null, null, " ", ClipLine(rawLine, maxLineLength));
         }
