@@ -126,6 +126,12 @@ public static class Rows
         }
         badge.Visibility = ViewStates.Visible;
         badge.Text = text;
+        // Polish-P3：设置行已去掉灰底胶囊，纯透明背景只用淡灰文字，不再注入语义色底。
+        if (badge.Background is null)
+        {
+            badge.SetTextColor(new Android.Graphics.Color(badge.Context!.GetColor(Resource.Color.dshm_text_tertiary)));
+            return;
+        }
         var (bg, fg) = tone switch
         {
             BadgeTone.Primary => (

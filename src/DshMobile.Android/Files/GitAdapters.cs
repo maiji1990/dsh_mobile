@@ -79,7 +79,7 @@ internal sealed class GitChangesAdapter(Action<GitChangeEntry> onSelect) : Recyc
                     ResolveAttrColor(ctx, Resource.Attribute.colorSecondaryContainer),
                     ResolveAttrColor(ctx, Resource.Attribute.colorOnSecondaryContainer)),
             };
-            _badge.SetBackgroundColor(bg);
+            _badge.BackgroundTintList = Android.Content.Res.ColorStateList.ValueOf(bg);
             _badge.SetTextColor(fg);
 
             var parts = new List<string>(3);

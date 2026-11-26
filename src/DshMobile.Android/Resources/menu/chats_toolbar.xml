@@ -1,4 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- Polish-P3 首页极简顶栏：仅保留搜索、待办收件箱（有内容时）与设置三个线性图标；
+     刷新等低频动作全部收回溢出菜单，避免粗重刷新按钮抢占首屏视线。 -->
 <menu xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto">
     <item
@@ -7,10 +9,21 @@
         android:title="@string/chats_search_action"
         app:showAsAction="always" />
     <item
+        android:id="@+id/chats_menu_inbox"
+        android:icon="@drawable/ic_inbox"
+        android:title="@string/chat_menu_inbox"
+        android:visible="false"
+        app:showAsAction="always" />
+    <item
+        android:id="@+id/chats_menu_settings"
+        android:icon="@drawable/ic_settings"
+        android:title="@string/chats_menu_settings"
+        app:showAsAction="always" />
+    <item
         android:id="@+id/chats_menu_refresh"
         android:icon="@drawable/ic_refresh"
         android:title="@string/chat_menu_refresh"
-        app:showAsAction="ifRoom" />
+        app:showAsAction="never" />
     <item
         android:id="@+id/chats_menu_host_control"
         android:title="@string/chats_menu_host_control"

@@ -1,7 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
   UI-S5：无框通栏工作区文件行（约 56dp）：透明底 + 选中态柔和 colorSecondaryContainer 高亮，
-  底部 1dp hairline 左右各内缩 16dp；彻底移除此前的独立 MaterialCardView 边框套娃。
+  Polish-P3 将底部 1dp hairline 左缩进到 56dp（对齐文字起点），颜色沿用 7% 透明 colorOutlineVariant。
+  彻底移除此前的独立 MaterialCardView 边框套娃。
 -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
@@ -28,7 +29,7 @@
             android:id="@+id/workspace_entry_icon"
             android:layout_width="22dp"
             android:layout_height="22dp"
-            android:layout_marginEnd="14dp"
+            android:layout_marginEnd="18dp"
             android:importantForAccessibility="no"
             app:tint="?attr/colorOnSurfaceVariant" />
 
@@ -94,7 +95,7 @@
     <View
         android:layout_width="match_parent"
         android:layout_height="@dimen/dshm_hairline"
-        android:layout_marginStart="16dp"
+        android:layout_marginStart="56dp"
         android:layout_marginEnd="16dp"
         android:background="?attr/colorOutlineVariant"
         android:importantForAccessibility="no" />

@@ -16,32 +16,10 @@
             android:id="@+id/chats_toolbar"
             style="@style/Widget.DshMobile.Toolbar.InAppBar"
             android:layout_width="match_parent"
-            android:layout_height="?attr/actionBarSize"
+            android:layout_height="72dp"
             app:menu="@menu/chats_toolbar"
-            app:title="@string/chats_title">
-
-            <LinearLayout
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_gravity="end|center_vertical"
-                android:layout_marginEnd="4dp"
-                android:gravity="center_vertical"
-                android:orientation="horizontal">
-
-                <!-- UI-S4：仅保留单一连接胶囊；远程连接态由 host pill 显示「远程: label」。
-                     远程主机入口仍可通过该胶囊 → 宿主快速控制抽屉的「远程主机」行到达。 -->
-                <TextView
-                    android:id="@+id/chats_host_pill"
-                    style="@style/Widget.DshMobile.Badge.Neutral"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:clickable="true"
-                    android:contentDescription="@string/chats_host_pill_desc"
-                    android:focusable="true"
-                    android:foreground="?attr/selectableItemBackgroundBorderless"
-                    android:text="@string/chats_pill_stopped" />
-            </LinearLayout>
-        </com.google.android.material.appbar.MaterialToolbar>
+            app:title="@string/chats_title"
+            app:titleTextAppearance="@style/TextAppearance.DshMobile.LargeTitle" />
 
         <com.google.android.material.progressindicator.LinearProgressIndicator
             android:id="@+id/chats_progress"
@@ -56,6 +34,73 @@
         android:layout_height="match_parent"
         android:orientation="vertical"
         app:layout_behavior="@string/appbar_scrolling_view_behavior">
+
+        <!-- Polish-P3 第二行无边框胶囊条：连接状态胶囊与「全部 / 运行中 / 待处理」柔和筛选并排，
+             不再悬挂在顶栏内抢占标题空间。 -->
+        <HorizontalScrollView
+            android:id="@+id/chats_filter_bar"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:clipToPadding="false"
+            android:scrollbars="none">
+
+            <LinearLayout
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:gravity="center_vertical"
+                android:orientation="horizontal"
+                android:paddingStart="16dp"
+                android:paddingTop="2dp"
+                android:paddingEnd="16dp"
+                android:paddingBottom="8dp">
+
+                <!-- 宿主状态胶囊下沉到第二行：18dp 圆角、36dp 高、surfaceContainerHighest 填充、零描边。 -->
+                <TextView
+                    android:id="@+id/chats_host_pill"
+                    style="@style/Widget.DshMobile.HostPill"
+                    android:layout_width="wrap_content"
+                    android:layout_height="36dp"
+                    android:layout_marginEnd="8dp"
+                    android:clickable="true"
+                    android:contentDescription="@string/chats_host_pill_desc"
+                    android:focusable="true"
+                    android:foreground="?attr/selectableItemBackgroundBorderless"
+                    android:text="@string/chats_pill_stopped" />
+
+                <com.google.android.material.chip.ChipGroup
+                    android:id="@+id/chats_filter_chips"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    app:checkedChip="@id/chats_filter_all"
+                    app:chipSpacingHorizontal="8dp"
+                    app:selectionRequired="true"
+                    app:singleLine="true"
+                    app:singleSelection="true">
+
+                    <com.google.android.material.chip.Chip
+                        android:id="@+id/chats_filter_all"
+                        style="@style/Widget.DshMobile.Chip.Filter"
+                        android:layout_width="wrap_content"
+                        android:layout_height="36dp"
+                        android:checked="true"
+                        android:text="@string/chats_filter_all" />
+
+                    <com.google.android.material.chip.Chip
+                        android:id="@+id/chats_filter_running"
+                        style="@style/Widget.DshMobile.Chip.Filter"
+                        android:layout_width="wrap_content"
+                        android:layout_height="36dp"
+                        android:text="@string/chats_filter_running" />
+
+                    <com.google.android.material.chip.Chip
+                        android:id="@+id/chats_filter_pending"
+                        style="@style/Widget.DshMobile.Chip.Filter"
+                        android:layout_width="wrap_content"
+                        android:layout_height="36dp"
+                        android:text="@string/chats_filter_pending" />
+                </com.google.android.material.chip.ChipGroup>
+            </LinearLayout>
+        </HorizontalScrollView>
 
         <!-- 宿主启动/安装引导卡（就绪后自动隐藏并交由顶栏状态药丸接管） -->
         <com.google.android.material.card.MaterialCardView
@@ -296,51 +341,6 @@
             android:layout_marginBottom="4dp"
             android:visibility="gone" />
 
-        <!-- 可选轻量筛选芯片（仅当存在运行中或待审批会话时显示） -->
-        <HorizontalScrollView
-            android:id="@+id/chats_filter_bar"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:clipToPadding="false"
-            android:scrollbars="none"
-            android:visibility="gone">
-
-            <com.google.android.material.chip.ChipGroup
-                android:id="@+id/chats_filter_chips"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:paddingStart="16dp"
-                android:paddingTop="2dp"
-                android:paddingEnd="16dp"
-                android:paddingBottom="4dp"
-                app:checkedChip="@id/chats_filter_all"
-                app:selectionRequired="true"
-                app:singleLine="true"
-                app:singleSelection="true">
-
-                <com.google.android.material.chip.Chip
-                    android:id="@+id/chats_filter_all"
-                    style="@style/Widget.Material3.Chip.Filter"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:checked="true"
-                    android:text="@string/chats_filter_all" />
-
-                <com.google.android.material.chip.Chip
-                    android:id="@+id/chats_filter_running"
-                    style="@style/Widget.Material3.Chip.Filter"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="@string/chats_filter_running" />
-
-                <com.google.android.material.chip.Chip
-                    android:id="@+id/chats_filter_pending"
-                    style="@style/Widget.Material3.Chip.Filter"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content" />
-            </com.google.android.material.chip.ChipGroup>
-        </HorizontalScrollView>
-
         <TextView
             android:id="@+id/chats_cached_subheader"
             android:layout_width="match_parent"
@@ -365,7 +365,7 @@
                 android:layout_height="match_parent"
                 android:clipToPadding="false"
                 android:paddingTop="4dp"
-                android:paddingBottom="96dp" />
+                android:paddingBottom="112dp" />
 
             <include
                 android:id="@+id/chats_empty"
@@ -374,13 +374,83 @@
         </FrameLayout>
     </LinearLayout>
 
-    <com.google.android.material.floatingactionbutton.ExtendedFloatingActionButton
+    <!-- Polish-P4 底部遮罩：位于列表之上、悬浮操作栏之下，从底缘向上渐隐，
+         消除 projects 等文本在底缘露出半截的穿帮；不拦截触摸。 -->
+    <View
+        android:id="@+id/chats_bottom_scrim"
+        android:layout_width="match_parent"
+        android:layout_height="132dp"
+        android:layout_gravity="bottom"
+        android:background="@drawable/bg_bottom_scrim"
+        android:clickable="false"
+        android:focusable="false"
+        android:importantForAccessibility="no" />
+
+    <!-- Polish-P3 底部轻盈操作区：左侧 56dp 半透明工作区悬浮条，右侧 56dp 纯圆品牌绿 + FAB。
+         宽屏（>=600dp）由 ChatsFragment 自动隐藏工作区条，FAB 仍在右下角。 -->
+    <com.google.android.material.card.MaterialCardView
+        android:id="@+id/chats_workspace_bar"
+        style="@style/Widget.DshMobile.Card.Group"
+        android:layout_width="match_parent"
+        android:layout_height="56dp"
+        android:layout_gravity="bottom"
+        android:layout_marginStart="16dp"
+        android:layout_marginEnd="88dp"
+        android:layout_marginBottom="16dp"
+        android:clickable="true"
+        android:contentDescription="@string/chats_workspace_bar_desc"
+        android:focusable="true"
+        android:foreground="?attr/selectableItemBackground"
+        app:cardBackgroundColor="?attr/colorSurfaceContainer"
+        app:cardCornerRadius="18dp"
+        app:cardElevation="2dp"
+        app:strokeColor="?attr/colorOutlineVariant"
+        app:strokeWidth="1dp">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:gravity="center_vertical"
+            android:orientation="horizontal"
+            android:paddingStart="18dp"
+            android:paddingEnd="16dp">
+
+            <ImageView
+                android:layout_width="20dp"
+                android:layout_height="20dp"
+                android:importantForAccessibility="no"
+                android:src="@drawable/ic_folder"
+                app:tint="?attr/colorOnSurfaceVariant" />
+
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="10dp"
+                android:layout_weight="1"
+                android:text="@string/chats_workspace_bar"
+                android:textAppearance="@style/TextAppearance.DshMobile.RowTitle"
+                android:textColor="?attr/colorOnSurface" />
+
+            <ImageView
+                android:layout_width="20dp"
+                android:layout_height="20dp"
+                android:importantForAccessibility="no"
+                android:src="@drawable/ic_chevron_right"
+                app:tint="?attr/colorOnSurfaceVariant" />
+        </LinearLayout>
+    </com.google.android.material.card.MaterialCardView>
+
+    <com.google.android.material.floatingactionbutton.FloatingActionButton
         android:id="@+id/chats_new_fab"
+        style="@style/Widget.Material3.FloatingActionButton.Primary"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_gravity="bottom|end"
-        android:layout_margin="16dp"
+        android:layout_marginEnd="16dp"
+        android:layout_marginBottom="16dp"
         android:contentDescription="@string/chats_new_desc"
-        android:text="@string/chats_new_desc"
-        app:icon="@drawable/ic_add" />
+        app:backgroundTint="?attr/colorPrimary"
+        app:shapeAppearanceOverlay="@style/ShapeAppearanceOverlay.DshMobile.Fab"
+        app:srcCompat="@drawable/ic_add"
+        app:tint="?attr/colorOnPrimary" />
 </androidx.coordinatorlayout.widget.CoordinatorLayout>

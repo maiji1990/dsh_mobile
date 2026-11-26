@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  UI-S5：无框通栏 Git 变更行（约 56dp）：透明底 + 1dp hairline（左右内缩 16dp），
-  移除此前的 Outlined MaterialCardView；变更徽标、路径与暂存状态信息完整保留。
+  UI-S5：无框通栏 Git 变更行（约 56dp）：透明底 + 1dp hairline（Polish-P3 左缩进 56dp、右 16dp），
+  移除此前的 Outlined MaterialCardView；变更徽标改为圆角柔和语义色胶囊，路径与暂存状态信息完整保留。
 -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
@@ -26,11 +26,15 @@
 
         <TextView
             android:id="@+id/git_change_badge"
-            android:layout_width="28dp"
-            android:layout_height="28dp"
-            android:background="?attr/colorSecondaryContainer"
+            android:layout_width="wrap_content"
+            android:layout_height="24dp"
+            android:background="@drawable/bg_git_status_pill"
             android:fontFamily="monospace"
             android:gravity="center"
+            android:includeFontPadding="false"
+            android:minWidth="28dp"
+            android:paddingStart="8dp"
+            android:paddingEnd="8dp"
             android:textAppearance="?attr/textAppearanceLabelMedium"
             android:textColor="?attr/colorOnSecondaryContainer"
             android:textStyle="bold" />
@@ -73,7 +77,7 @@
     <View
         android:layout_width="match_parent"
         android:layout_height="@dimen/dshm_hairline"
-        android:layout_marginStart="16dp"
+        android:layout_marginStart="56dp"
         android:layout_marginEnd="16dp"
         android:background="?attr/colorOutlineVariant"
         android:importantForAccessibility="no" />

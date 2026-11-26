@@ -9,6 +9,7 @@ using DshMobile.Application.Ui;
 using DshMobile.Runtime.Updates;
 using Google.Android.Material.BottomSheet;
 using Google.Android.Material.Button;
+using Google.Android.Material.Card;
 using Google.Android.Material.ProgressIndicator;
 using FragmentManager = AndroidX.Fragment.App.FragmentManager;
 
@@ -84,6 +85,13 @@ public sealed class HostQuickControlBottomSheet : BottomSheetDialogFragment
         var remoteLabel = _bridge.Agent.IsRemoteEndpointReady ? _bridge.Agent.RemoteHostLabel : null;
         ApplyHostPillAppearance(ctx, pill, status.Phase, appendCaret: false, remoteLabel);
 
+        // Polish-P3：运行中用极淡品牌绿雾卡片，其余状态用中性纸面卡，不再以整行分割线划分区域。
+        var statusCard = view.FindViewById<MaterialCardView>(Resource.Id.sheet_host_status_card)!;
+        var statusCardColor = status.Phase == HomePhase.Ready
+            ? ctx.GetColor(Resource.Color.dshm_selected_tint)
+            : Rows.Color(statusCard, Resource.Attribute.colorSurfaceContainerLow);
+        statusCard.SetCardBackgroundColor(new Android.Graphics.Color(statusCardColor));
+
         var progress = view.FindViewById<LinearProgressIndicator>(Resource.Id.sheet_host_progress)!;
         var busy = status.Phase is HomePhase.Starting or HomePhase.WaitingForDsh or HomePhase.Stopping or HomePhase.Busy;
         progress.Visibility = busy ? ViewStates.Visible : ViewStates.Gone;
@@ -100,9 +108,9 @@ public sealed class HostQuickControlBottomSheet : BottomSheetDialogFragment
         var primaryBtn = view.FindViewById<MaterialButton>(Resource.Id.sheet_host_primary)!;
         var secondaryBtn = view.FindViewById<MaterialButton>(Resource.Id.sheet_host_secondary)!;
 
-        // 就绪时主操作直接呈现「停止 DSH」，避免再钻入次级菜单。
-        var primaryAction = status.Phase == HomePhase.Ready ? HomeAction.Stop : status.Primary;
-        BindActionButton(primaryBtn, primaryAction, status.Phase, () => DispatchHome(primaryAction));
+        // Polish-P3：就绪时主操作是「打开会话」，停止降级为次级 Tonal/Text 动作，不再用填充主按钮强调停止。
+        var primaryAction = status.Phase == HomePhase.Ready ? HomeAction.OpenChat : status.Primary;
+        BindActionButton(primaryBtn, primaryAction, status.Phase, primary: true, () => DispatchHome(primaryAction));
 
         var secondaryCancelsDownload = busy
             && _bridge.CurrentOperation == HomeStatus.UpdateInstallOperation
@@ -116,9 +124,16 @@ public sealed class HostQuickControlBottomSheet : BottomSheetDialogFragment
         }
         else
         {
-            var secondaryAction = status.Phase == HomePhase.Ready ? HomeAction.OpenChat : status.Secondary;
-            BindActionButton(secondaryBtn, secondaryAction, status.Phase, () => DispatchHome(secondaryAction));
+            var secondaryAction = status.Phase == HomePhase.Ready ? HomeAction.Stop : status.Secondary;
+            BindActionButton(secondaryBtn, secondaryAction, status.Phase, primary: false, () => DispatchHome(secondaryAction));
         }
+
+        // Polish-P3：主次动作都不可用时整行收起，避免残留 12dp 空白撑高抽屉。
+        var actionsRow = view.FindViewById(Resource.Id.sheet_host_actions)!;
+        actionsRow.Visibility = primaryBtn.Visibility == ViewStates.Visible
+            || secondaryBtn.Visibility == ViewStates.Visible
+                ? ViewStates.Visible
+                : ViewStates.Gone;
 
         var remoteBadge = _bridge.Agent.IsRemoteEndpointReady
             ? _bridgeLabelOrDefault(ctx, _bridge.Agent.RemoteHostLabel)
@@ -187,7 +202,7 @@ public sealed class HostQuickControlBottomSheet : BottomSheetDialogFragment
             pill.SetCompoundDrawablesRelativeWithIntrinsicBounds(Resource.Drawable.bg_live_status_dot, 0, 0, 0);
             pill.CompoundDrawablePadding = Rows.Dp(ctx, 6);
             pill.BackgroundTintList = Android.Content.Res.ColorStateList.ValueOf(
-                new Android.Graphics.Color(Rows.Color(pill, Resource.Attribute.colorSurfaceContainerHigh)));
+                new Android.Graphics.Color(Rows.Color(pill, Resource.Attribute.colorSurfaceContainerHighest)));
             pill.SetTextColor(new Android.Graphics.Color(Rows.Color(pill, Resource.Attribute.colorOnSurface)));
             return;
         }
@@ -198,8 +213,8 @@ public sealed class HostQuickControlBottomSheet : BottomSheetDialogFragment
                 (phase == HomePhase.Stopping ? Resource.String.chats_pill_stopping : Resource.String.chats_pill_starting,
                  Resource.Attribute.colorTertiaryContainer, Resource.Attribute.colorOnTertiaryContainer),
             HomePhase.Failed => (Resource.String.chats_pill_failed, Resource.Attribute.colorErrorContainer, Resource.Attribute.colorOnErrorContainer),
-            HomePhase.NotInstalled => (Resource.String.chats_pill_not_installed, Resource.Attribute.colorSurfaceContainerHigh, Resource.Attribute.colorOnSurfaceVariant),
-            _ => (Resource.String.chats_pill_stopped, Resource.Attribute.colorSurfaceContainerHigh, Resource.Attribute.colorOnSurfaceVariant),
+            HomePhase.NotInstalled => (Resource.String.chats_pill_not_installed, Resource.Attribute.colorSurfaceContainerHighest, Resource.Attribute.colorOnSurfaceVariant),
+            _ => (Resource.String.chats_pill_stopped, Resource.Attribute.colorSurfaceContainerHighest, Resource.Attribute.colorOnSurfaceVariant),
         };
 
         var statusLabel = ctx.GetString(labelRes);
@@ -214,7 +229,12 @@ public sealed class HostQuickControlBottomSheet : BottomSheetDialogFragment
     private static string _bridgeLabelOrDefault(Context ctx, string? label) =>
         string.IsNullOrWhiteSpace(label) ? ctx.GetString(Resource.String.chats_pill_remote) : label!;
 
-    private static void BindActionButton(MaterialButton button, HomeAction action, HomePhase phase, Action onClick)
+    private static void BindActionButton(
+        MaterialButton button,
+        HomeAction action,
+        HomePhase phase,
+        bool primary,
+        Action onClick)
     {
         if (action == HomeAction.None)
         {
@@ -238,6 +258,25 @@ public sealed class HostQuickControlBottomSheet : BottomSheetDialogFragment
         };
         button.SetText(textRes);
         button.SetIconResource(iconRes);
+
+        // Polish-P4 就绪态语义修正：「打开对话」用正向 colorPrimary 主按钮；
+        // 「停止」退为中性 surfaceContainerHighest 次级按钮，绝不再用健康绿块标示停止。
+        if (phase == HomePhase.Ready)
+        {
+            var isPositive = primary && action == HomeAction.OpenChat;
+            var (bgAttr, fgAttr) = isPositive
+                ? (Resource.Attribute.colorPrimary, Resource.Attribute.colorOnPrimary)
+                : (Resource.Attribute.colorSurfaceContainerHighest, Resource.Attribute.colorOnSurface);
+            var background = Android.Content.Res.ColorStateList.ValueOf(
+                new Android.Graphics.Color(Rows.Color(button, bgAttr)));
+            var foreground = Android.Content.Res.ColorStateList.ValueOf(
+                new Android.Graphics.Color(Rows.Color(button, fgAttr)));
+            button.BackgroundTintList = background;
+            button.SetTextColor(foreground);
+            button.IconTint = foreground;
+            button.StrokeWidth = 0;
+        }
+
         button.Click += (_, _) => onClick();
     }
 

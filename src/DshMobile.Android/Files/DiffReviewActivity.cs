@@ -5,6 +5,7 @@ using Android.Widget;
 using AndroidX.RecyclerView.Widget;
 using DshMobile.App.Ui;
 using DshMobile.Core.Files;
+using Google.Android.Material.Card;
 using Google.Android.Material.ProgressIndicator;
 
 namespace DshMobile.App.Files;
@@ -28,11 +29,15 @@ public sealed class DiffReviewActivity : DshActivity
 
     private const string StateWrap = "diff.review.wrap";
     private const string GuestRoot = "/root/projects";
+    // 不超过该行数的短 Diff 让圆角纸面卡自然包裹内容，长 Diff 仍占满视口并内部滚动。
+    private const int ShortDiffLineLimit = 16;
 
     private WorkspaceProvider? _provider;
     private DiffReviewAdapter _adapter = null!;
     private HorizontalScrollView _hScroll = null!;
     private RecyclerView _list = null!;
+    private MaterialCardView _card = null!;
+    private View _container = null!;
     private LinearProgressIndicator _progress = null!;
     private TextView _notice = null!;
     private TextView _empty = null!;
@@ -67,6 +72,8 @@ public sealed class DiffReviewActivity : DshActivity
         _empty = FindViewById<TextView>(Resource.Id.diff_empty)!;
         _hScroll = FindViewById<HorizontalScrollView>(Resource.Id.diff_hscroll)!;
         _list = FindViewById<RecyclerView>(Resource.Id.diff_list)!;
+        _card = FindViewById<MaterialCardView>(Resource.Id.diff_card)!;
+        _container = FindViewById(Resource.Id.diff_container)!;
 
         // 折行模式下把列表宽度锁到横向滚动视口的实测宽度：HorizontalScrollView 默认不限制子视图宽度，
         // 不锁宽会让 RecyclerView 按内容无限展开，自动换行因此失效。
@@ -107,6 +114,8 @@ public sealed class DiffReviewActivity : DshActivity
         Toolbar.MenuItemClick += (_, e) => OnMenu(e.Item?.ItemId ?? 0);
 
         ApplyWrap();
+        // 加载期间维持限高滚动形态；拿到真实 Diff 后再按行数决定是否收缩为 wrap_content。
+        ApplyCardHeight(compact: false);
         _ = LoadAsync();
     }
 
@@ -159,6 +168,44 @@ public sealed class DiffReviewActivity : DshActivity
         _hScroll.HorizontalScrollBarEnabled = !_wrap;
         _list.RequestLayout();
         _adapter.NotifyDataSetChanged();
+    }
+
+    /// <summary>
+    /// 短 Diff 让外层圆角纸面卡自然包裹内容，避免拉出 90% 死白空洞；
+    /// 长 Diff 则恢复 0dp + weight 的限高滚动，保证数千行仍可正常纵向浏览。
+    /// </summary>
+    private void ApplyCardHeight(bool compact)
+    {
+        if (_card.LayoutParameters is LinearLayout.LayoutParams cardParams)
+        {
+            var targetHeight = compact ? ViewGroup.LayoutParams.WrapContent : 0;
+            var targetWeight = compact ? 0f : 1f;
+            if (cardParams.Height != targetHeight || Math.Abs(cardParams.Weight - targetWeight) > 0.001f)
+            {
+                cardParams.Height = targetHeight;
+                cardParams.Weight = targetWeight;
+                _card.LayoutParameters = cardParams;
+            }
+        }
+
+        SetChildHeight(_container, compact);
+        SetChildHeight(_hScroll, compact);
+        SetChildHeight(_list, compact);
+        _card.RequestLayout();
+    }
+
+    private static void SetChildHeight(View view, bool compact)
+    {
+        if (view.LayoutParameters is not { } lp)
+        {
+            return;
+        }
+        var target = compact ? ViewGroup.LayoutParams.WrapContent : ViewGroup.LayoutParams.MatchParent;
+        if (lp.Height != target)
+        {
+            lp.Height = target;
+            view.LayoutParameters = lp;
+        }
     }
 
     private async Task LoadAsync()
@@ -265,6 +312,7 @@ public sealed class DiffReviewActivity : DshActivity
         _empty.Visibility = ViewStates.Gone;
         _hScroll.Visibility = ViewStates.Visible;
         _adapter.Submit(review.Lines);
+        ApplyCardHeight(review.Lines.Count <= ShortDiffLineLimit);
 
         if (doc.IsTruncated && !string.IsNullOrWhiteSpace(doc.TruncationReason))
         {
@@ -285,6 +333,8 @@ public sealed class DiffReviewActivity : DshActivity
         _hScroll.Visibility = ViewStates.Gone;
         _empty.Text = message;
         _empty.Visibility = ViewStates.Visible;
+        // 无 Diff / 二进制 / 空内容时也让纸面卡包裹提示文本，不保留整屏空白。
+        ApplyCardHeight(compact: true);
     }
 
     /// <summary>「打开/编辑文件」：严格经工作区安全路径校验（含 .dsh/ 保护、符号链接拒绝）后跳转编辑器。</summary>

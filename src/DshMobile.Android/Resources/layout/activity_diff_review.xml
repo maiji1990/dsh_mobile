@@ -18,7 +18,9 @@
         android:layout_width="match_parent"
         android:layout_height="?attr/actionBarSize"
         app:menu="@menu/diff_review_toolbar"
-        app:title="@string/git_diff_review_title" />
+        app:subtitleTextAppearance="@style/TextAppearance.DshMobile.Secondary"
+        app:title="@string/git_diff_review_title"
+        app:titleTextAppearance="@style/TextAppearance.DshMobile.BarTitle" />
 
     <com.google.android.material.progressindicator.LinearProgressIndicator
         android:id="@+id/diff_progress"
@@ -42,40 +44,56 @@
         android:textIsSelectable="true"
         android:visibility="gone" />
 
-    <FrameLayout
+    <!-- Polish-P4：Diff 正文整体收进 14dp 圆角 surfaceContainerLow 干净纸面卡，
+         默认 wrap_content 包裹短 Diff（如 2 行），长 Diff 由 C# 切换为限高滚动，避免 90% 死白空洞。 -->
+    <com.google.android.material.card.MaterialCardView
+        android:id="@+id/diff_card"
         android:layout_width="match_parent"
-        android:layout_height="0dp"
-        android:layout_weight="1">
+        android:layout_height="wrap_content"
+        android:layout_marginStart="12dp"
+        android:layout_marginTop="8dp"
+        android:layout_marginEnd="12dp"
+        android:layout_marginBottom="12dp"
+        app:cardBackgroundColor="?attr/colorSurfaceContainerLow"
+        app:cardCornerRadius="14dp"
+        app:cardElevation="0dp"
+        app:strokeWidth="0dp">
 
-        <!-- 自动换行关闭时整表横向滚动；换行开启时列表收为视口宽度由 C# 切换宽高参数。
-             fillViewport 保证短内容也至少铺满视口，避免右侧白边。 -->
-        <HorizontalScrollView
-            android:id="@+id/diff_hscroll"
+        <FrameLayout
+            android:id="@+id/diff_container"
             android:layout_width="match_parent"
-            android:layout_height="match_parent"
-            android:fillViewport="true"
-            android:scrollbars="horizontal">
+            android:layout_height="match_parent">
 
-            <androidx.recyclerview.widget.RecyclerView
-                android:id="@+id/diff_list"
-                android:layout_width="wrap_content"
+            <!-- 自动换行关闭时整表横向滚动；换行开启时列表收为视口宽度由 C# 切换宽高参数。
+                 fillViewport 保证短内容也至少铺满视口，避免右侧白边。 -->
+            <HorizontalScrollView
+                android:id="@+id/diff_hscroll"
+                android:layout_width="match_parent"
                 android:layout_height="match_parent"
-                android:clipToPadding="false"
-                android:paddingTop="4dp"
-                android:paddingBottom="24dp"
-                android:scrollbars="vertical" />
-        </HorizontalScrollView>
+                android:fillViewport="true"
+                android:scrollbars="horizontal">
 
-        <TextView
-            android:id="@+id/diff_empty"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_gravity="center"
-            android:gravity="center"
-            android:paddingStart="32dp"
-            android:paddingEnd="32dp"
-            android:textAppearance="?attr/textAppearanceBodyLarge"
-            android:textColor="?attr/colorOnSurfaceVariant"
-            android:visibility="gone" />
-    </FrameLayout>
+                <androidx.recyclerview.widget.RecyclerView
+                    android:id="@+id/diff_list"
+                    android:layout_width="wrap_content"
+                    android:layout_height="match_parent"
+                    android:clipToPadding="false"
+                    android:paddingTop="4dp"
+                    android:paddingBottom="24dp"
+                    android:scrollbars="vertical" />
+            </HorizontalScrollView>
+
+            <TextView
+                android:id="@+id/diff_empty"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_gravity="center"
+                android:gravity="center"
+                android:paddingStart="32dp"
+                android:paddingEnd="32dp"
+                android:textAppearance="?attr/textAppearanceBodyLarge"
+                android:textColor="?attr/colorOnSurfaceVariant"
+                android:visibility="gone" />
+        </FrameLayout>
+    </com.google.android.material.card.MaterialCardView>
 </LinearLayout>

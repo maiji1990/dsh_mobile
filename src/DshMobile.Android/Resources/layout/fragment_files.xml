@@ -17,9 +17,10 @@
             android:id="@+id/toolbar"
             style="@style/Widget.DshMobile.Toolbar.InAppBar"
             android:layout_width="match_parent"
-            android:layout_height="?attr/actionBarSize"
+            android:layout_height="72dp"
             app:menu="@menu/files_toolbar"
-            app:title="@string/files_title" />
+            app:title="@string/files_title"
+            app:titleTextAppearance="@style/TextAppearance.DshMobile.LargeTitle" />
 
         <com.google.android.material.progressindicator.LinearProgressIndicator
             android:id="@+id/files_progress"
@@ -35,39 +36,41 @@
         android:orientation="vertical"
         app:layout_behavior="@string/appbar_scrolling_view_behavior">
 
-        <!-- 文件 / Git 紧凑切换条（UI-S5：进一步收紧上下留白与按钮高度） -->
-        <com.google.android.material.button.MaterialButtonToggleGroup
+        <!-- Polish-P4 槽式胶囊切换器：18dp 圆角语义底槽 + 3dp 内边距，两颗独立 14dp 全圆角滑块。
+             不再使用 MaterialButtonToggleGroup（其强制切平内侧圆角），选中滑块四边完整、深浅模式不再反色。 -->
+        <LinearLayout
             android:id="@+id/files_mode_toggle"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:paddingStart="16dp"
-            android:paddingTop="2dp"
-            android:paddingEnd="16dp"
-            android:paddingBottom="2dp"
-            app:checkedButton="@id/files_mode_files"
-            app:selectionRequired="true"
-            app:singleSelection="true">
+            android:layout_marginStart="16dp"
+            android:layout_marginTop="2dp"
+            android:layout_marginEnd="16dp"
+            android:layout_marginBottom="4dp"
+            android:background="@drawable/bg_mode_toggle_track"
+            android:orientation="horizontal"
+            android:padding="3dp">
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/files_mode_files"
-                style="?attr/materialButtonOutlinedStyle"
+                style="@style/Widget.DshMobile.SegmentButton"
                 android:layout_width="0dp"
                 android:layout_height="36dp"
                 android:layout_weight="1"
-                android:insetTop="0dp"
-                android:insetBottom="0dp"
+                android:checkable="true"
+                android:checked="true"
+                android:gravity="center"
                 android:text="@string/files_tab_files" />
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/files_mode_git"
-                style="?attr/materialButtonOutlinedStyle"
+                style="@style/Widget.DshMobile.SegmentButton"
                 android:layout_width="0dp"
                 android:layout_height="36dp"
                 android:layout_weight="1"
-                android:insetTop="0dp"
-                android:insetBottom="0dp"
+                android:checkable="true"
+                android:gravity="center"
                 android:text="@string/files_tab_git" />
-        </com.google.android.material.button.MaterialButtonToggleGroup>
+        </LinearLayout>
 
         <TextView
             android:id="@+id/files_status"
@@ -213,12 +216,11 @@
                 android:indeterminate="true"
                 android:visibility="gone" />
 
-            <!-- 无仓库时自动隐藏，消除空白灰条；顶栏已固定刷新图标故不再重复放置刷新按钮 -->
+            <!-- 无仓库时自动隐藏；去掉全宽纯白背景，改为透明轻文字区，仅保留 16dp 水平内边距。 -->
             <LinearLayout
                 android:id="@+id/git_header_bar"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:background="?attr/colorSurfaceContainerLow"
                 android:gravity="center_vertical"
                 android:orientation="vertical"
                 android:paddingStart="16dp"
