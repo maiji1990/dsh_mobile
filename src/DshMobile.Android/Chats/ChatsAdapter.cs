@@ -145,7 +145,7 @@ internal sealed class ChatsAdapter : RecyclerView.Adapter
         var running = new List<SessionListItemView>();
         foreach (var item in items)
         {
-            if (item.Running || IsActive(item, activeSessionId))
+            if (!item.IsArchived && (item.Running || IsActive(item, activeSessionId)))
             {
                 running.Add(item);
                 runningIds.Add(item.SessionId);
@@ -356,6 +356,7 @@ internal sealed class ChatsAdapter : RecyclerView.Adapter
     private sealed class SessionHolder : RecyclerView.ViewHolder
     {
         private readonly TextView _title;
+        private readonly TextView _archivedBadge;
         private readonly TextView _time;
         private readonly TextView _meta;
         private readonly View _runningDot;
@@ -371,6 +372,7 @@ internal sealed class ChatsAdapter : RecyclerView.Adapter
             _onOpen = onOpen;
             _onMore = onMore;
             _title = itemView.FindViewById<TextView>(Resource.Id.session_item_title)!;
+            _archivedBadge = itemView.FindViewById<TextView>(Resource.Id.session_item_badge_archived)!;
             _time = itemView.FindViewById<TextView>(Resource.Id.session_item_time)!;
             _meta = itemView.FindViewById<TextView>(Resource.Id.session_item_meta)!;
             _runningDot = itemView.FindViewById(Resource.Id.session_item_badge_running)!;
@@ -398,8 +400,7 @@ internal sealed class ChatsAdapter : RecyclerView.Adapter
             var context = ItemView.Context!;
             var untitledPrefix = context.GetString(Resource.String.chats_untitled_prefix) ?? string.Empty;
             var formatted = ChatDisplayFormatter.FormatShortSessionTitle(item.SessionId, item.DisplayTitle, untitledPrefix);
-            // Polish-P3：未命名会话不再在列表暴露 #bcce5e / #16870c 哈希后缀，统一显示「新对话」；
-            // 短 ID 仍保留在长按 SessionActionsBottomSheet 中查看。
+            // 未命名会话在列表统一显示「新对话」；短 ID 保留在长按 SessionActionsBottomSheet 中查看。
             var isUntitled = !string.IsNullOrWhiteSpace(untitledPrefix)
                 && formatted.StartsWith(untitledPrefix, StringComparison.Ordinal);
             _title.Text = isUntitled
@@ -409,7 +410,8 @@ internal sealed class ChatsAdapter : RecyclerView.Adapter
                 _title,
                 isActive ? Resource.Attribute.colorPrimary : Resource.Attribute.colorOnSurface)));
 
-            _runningDot.Visibility = item.Running ? ViewStates.Visible : ViewStates.Gone;
+            _archivedBadge.Visibility = item.IsArchived ? ViewStates.Visible : ViewStates.Gone;
+            _runningDot.Visibility = item.Running && !item.IsArchived ? ViewStates.Visible : ViewStates.Gone;
             var time = ChatDisplayFormatter.FormatRelativeSessionTime(item.UpdatedAtUnixMs, DateTimeOffset.Now);
             _time.Text = time;
             _time.Visibility = string.IsNullOrEmpty(time) ? ViewStates.Gone : ViewStates.Visible;

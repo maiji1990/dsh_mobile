@@ -4,7 +4,9 @@
     style="@style/Widget.DshMobile.Card.Group"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:layout_marginBottom="8dp">
+    android:layout_marginBottom="8dp"
+    app:strokeColor="?attr/colorOutlineVariant"
+    app:strokeWidth="@dimen/dshm_hairline">
 
     <LinearLayout
         android:layout_width="match_parent"
@@ -101,7 +103,7 @@
                 android:textColor="?attr/colorOnSurfaceVariant" />
         </LinearLayout>
 
-        <!-- 携带自定义 WebUI 插件如实提示，绝不内嵌 WebView 或构造 L2 表单 -->
+        <!-- 携带自定义前端界面的插件如实提示，绝不内嵌网页视图或构造动态配置表单 -->
         <TextView
             android:id="@+id/plugin_item_webui_notice"
             android:layout_width="match_parent"

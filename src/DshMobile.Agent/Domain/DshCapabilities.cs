@@ -20,7 +20,8 @@ public sealed record DshCapabilities(
     bool ServerPromptIdempotency,
     bool PluginInventory,
     bool PluginMutation,
-    bool GitOperations)
+    bool GitOperations,
+    bool ArchiveSessions = false)
 {
     public static readonly DshCapabilities Empty = new(
         Prompt: false,
@@ -38,5 +39,6 @@ public sealed record DshCapabilities(
         ServerPromptIdempotency: false,
         PluginInventory: false,
         PluginMutation: false,
-        GitOperations: false);
+        GitOperations: false,
+        ArchiveSessions: false);
 }

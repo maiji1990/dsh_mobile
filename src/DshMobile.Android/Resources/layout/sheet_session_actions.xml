@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:orientation="vertical"
@@ -40,7 +41,8 @@
 
     <com.google.android.material.divider.MaterialDivider
         android:layout_width="match_parent"
-        android:layout_height="wrap_content" />
+        android:layout_height="wrap_content"
+        app:dividerColor="?attr/colorOutlineVariant" />
 
     <include
         android:id="@+id/sheet_session_open"
@@ -56,5 +58,25 @@
 
     <include
         android:id="@+id/sheet_session_cancel"
+        layout="@layout/view_setting_action_row" />
+
+    <include
+        android:id="@+id/sheet_session_archive"
+        layout="@layout/view_setting_action_row" />
+
+    <include
+        android:id="@+id/sheet_session_unarchive"
+        layout="@layout/view_setting_action_row" />
+
+    <com.google.android.material.divider.MaterialDivider
+        android:id="@+id/sheet_session_danger_divider"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="4dp"
+        android:layout_marginBottom="4dp"
+        app:dividerColor="?attr/colorOutlineVariant" />
+
+    <include
+        android:id="@+id/sheet_session_remove"
         layout="@layout/view_setting_action_row" />
 </LinearLayout>

@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using DshMobile.Agent.Engines;
 
 namespace DshMobile.Agent.Protocol;
 
@@ -105,4 +106,12 @@ namespace DshMobile.Agent.Protocol;
 [JsonSerializable(typeof(WireLlmFailureDto))]
 [JsonSerializable(typeof(WireTurnEndReasonDto))]
 [JsonSerializable(typeof(WireTurnEndDataDto))]
+// Workspace 归档 / 订阅与本机隐藏列表 DTO
+[JsonSerializable(typeof(WireWorkspaceArchiveRequest))]
+[JsonSerializable(typeof(WireWorkspaceArchiveArgs))]
+[JsonSerializable(typeof(WireWorkspaceUnarchiveArgs))]
+[JsonSerializable(typeof(WireWorkspaceArchivedValue))]
+[JsonSerializable(typeof(WireWorkspaceSnapshotValue))]
+[JsonSerializable(typeof(WireWorkspaceFollowFrame))]
+[JsonSerializable(typeof(HiddenSessionsRecord))]
 public partial class AgentProtocolJsonContext : JsonSerializerContext;

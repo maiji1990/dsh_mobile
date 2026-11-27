@@ -94,6 +94,32 @@ public sealed class RemoteDshGatewayClientTests
         Assert.Equal(TurnEndReasonKind.MaxTokens, RemoteProtocolCodec.ParseTurnEndReason(variants[3]).Kind);
         Assert.Equal(TurnEndReasonKind.Interrupted, RemoteProtocolCodec.ParseTurnEndReason(variants[4]).Kind);
         Assert.Equal(TurnEndReasonKind.Unknown, RemoteProtocolCodec.ParseTurnEndReason(variants[5]).Kind);
+
+        var archivedRes = root.GetProperty("workspaceArchiveSession").GetProperty("result").GetProperty("value")
+            .Deserialize(AgentProtocolJsonContext.Default.WireWorkspaceArchivedValue);
+        Assert.Equal(["session-00000000-0000-4000-8000-000000000010"], archivedRes!.ArchivedSessionIds);
+
+        var unarchivedRes = root.GetProperty("workspaceUnarchiveSession").GetProperty("result").GetProperty("value")
+            .Deserialize(AgentProtocolJsonContext.Default.WireWorkspaceArchivedValue);
+        Assert.Empty(unarchivedRes!.ArchivedSessionIds);
+
+        var wsBaseline = Assert.IsType<WorkspaceBaselineFrame>(
+            RemoteProtocolCodec.DecodeWorkspaceFollowFrame(root.GetProperty("workspaceFollowBaseline").GetProperty("value")));
+        Assert.Single(wsBaseline.ArchivedSessionIds);
+        Assert.Empty(wsBaseline.PinnedSessionIds);
+
+        var wsArchived = Assert.IsType<WorkspaceArchivedChangedFrame>(
+            RemoteProtocolCodec.DecodeWorkspaceFollowFrame(root.GetProperty("workspaceFollowArchived").GetProperty("value")));
+        Assert.Equal(2, wsArchived.ArchivedSessionIds.Count);
+
+        var wsReplace = Assert.IsType<WorkspaceReplacedFrame>(
+            RemoteProtocolCodec.DecodeWorkspaceFollowFrame(root.GetProperty("workspaceFollowReplace").GetProperty("value")));
+        Assert.Empty(wsReplace.ArchivedSessionIds);
+        Assert.Single(wsReplace.PinnedSessionIds);
+
+        var wsUnknown = Assert.IsType<UnknownWorkspaceFollowFrame>(
+            RemoteProtocolCodec.DecodeWorkspaceFollowFrame(root.GetProperty("workspaceFollowUnknown").GetProperty("value")));
+        Assert.Equal("future-frame-v2", wsUnknown.RawType);
     }
 
     [Fact]
@@ -347,5 +373,223 @@ public sealed class RemoteDshGatewayClientTests
 
         Assert.False(plugins.IsOk);
         Assert.Equal(DshFailureCode.ProtocolMismatch, plugins.Error!.Code);
+    }
+
+    [Fact]
+    public async Task GatewayClient_WorkspaceArchive_StrictSchema_FollowStream_AndCapabilityProbe()
+    {
+        await using var server = new FakeRemoteServer();
+        var capturedArchiveBodies = new List<string>();
+        string? capturedUnarchiveBody = null;
+        var rejectActiveSession = true;
+
+        server.OnHttpRequest = req =>
+        {
+            if (req.Path == "/connect")
+            {
+                return Task.FromResult(new FakeRemoteServer.HttpResponseData(
+                    302, "Found", [("Location", "/"), ("Set-Cookie", $"dsh-auth-{server.Port}=ck-ws; HttpOnly")], []));
+            }
+
+            var rpcId = ParseRpcId(req.Body);
+            return req.Path switch
+            {
+                "/api/session/list" => Task.FromResult(FakeRemoteServer.HttpResponseData.Json(200,
+                    WrapOk(rpcId, """{"items":[]}"""))),
+                "/api/session/modelCatalog" => Task.FromResult(FakeRemoteServer.HttpResponseData.Json(200,
+                    WrapOk(rpcId, """{"default":{"provider":"deepseek-official","model":"deepseek-chat"},"routableProviders":[],"groups":[],"failures":[]}"""))),
+                "/api/credentials/describe" => Task.FromResult(FakeRemoteServer.HttpResponseData.Json(200,
+                    WrapOk(rpcId, "{}"))),
+                "/api/pluginInventory/list" => Task.FromResult(FakeRemoteServer.HttpResponseData.Json(200,
+                    WrapOk(rpcId, """{"managementAvailable":false,"entries":[]}"""))),
+                "/api/workspace/archiveSession" => HandleArchive(rpcId, req.Body),
+                "/api/workspace/unarchiveSession" => HandleUnarchive(rpcId, req.Body),
+                _ => Task.FromResult(FakeRemoteServer.HttpResponseData.Json(404, "{}")),
+            };
+        };
+
+        Task<FakeRemoteServer.HttpResponseData> HandleArchive(string rpcId, byte[] body)
+        {
+            var rawJson = Encoding.UTF8.GetString(body);
+            capturedArchiveBodies.Add(rawJson);
+            using var doc = JsonDocument.Parse(rawJson);
+            var reqEl = doc.RootElement.GetProperty("payload").GetProperty("args").GetProperty("request");
+            var stopActivity = reqEl.TryGetProperty("stopActivity", out var stopEl) && stopEl.GetBoolean();
+            if (rejectActiveSession && !stopActivity)
+            {
+                return Task.FromResult(FakeRemoteServer.HttpResponseData.Json(200,
+                    WrapErr(rpcId, "workspace/session-active", "session is active")));
+            }
+            return Task.FromResult(FakeRemoteServer.HttpResponseData.Json(200,
+                WrapOk(rpcId, """{"archivedSessionIds":["s-arch-1"]}""")));
+        }
+
+        Task<FakeRemoteServer.HttpResponseData> HandleUnarchive(string rpcId, byte[] body)
+        {
+            capturedUnarchiveBody = Encoding.UTF8.GetString(body);
+            return Task.FromResult(FakeRemoteServer.HttpResponseData.Json(200,
+                WrapOk(rpcId, """{"archivedSessionIds":[]}""")));
+        }
+
+        var followOpenCount = 0;
+        server.OnWebSocketConnected = async (_, ws, ct) =>
+        {
+            var openEv = await FakeRemoteServer.ReceiveTextAsync(ws, ct);
+            using var evDoc = JsonDocument.Parse(openEv!);
+            var evSid = evDoc.RootElement.GetProperty("streamId").GetString()!;
+            await FakeRemoteServer.SendTextAsync(ws, ReadyFrame(evSid, "c-ws"), ct);
+
+            while (ws.State == WebSocketState.Open && !ct.IsCancellationRequested)
+            {
+                var raw = await FakeRemoteServer.ReceiveTextAsync(ws, ct);
+                if (raw is null)
+                {
+                    break;
+                }
+                using var frame = JsonDocument.Parse(raw);
+                if (frame.RootElement.GetProperty("type").GetString() == "open" &&
+                    frame.RootElement.GetProperty("endpoint").GetString() == "workspace/follow")
+                {
+                    var wsStreamId = frame.RootElement.GetProperty("streamId").GetString()!;
+                    var currentOpen = Interlocked.Increment(ref followOpenCount);
+                    await FakeRemoteServer.SendTextAsync(ws,
+                        $$$$"""{"type":"item","streamId":"{{{{wsStreamId}}}}","value":{"type":"baseline","value":{"archivedSessionIds":["s-existing-arch"],"pinnedSessionIds":[]}}}""", ct);
+
+                    if (currentOpen >= 3)
+                    {
+                        // 实时订阅流依次推送增量归档、整包替换和未知未来帧
+                        await FakeRemoteServer.SendTextAsync(ws,
+                            $$$$"""{"type":"item","streamId":"{{{{wsStreamId}}}}","value":{"type":"archived","archivedSessionIds":["s-existing-arch","s-arch-2"]}}""", ct);
+                        await FakeRemoteServer.SendTextAsync(ws,
+                            $$$$"""{"type":"item","streamId":"{{{{wsStreamId}}}}","value":{"type":"replace","value":{"archivedSessionIds":["s-arch-3"],"pinnedSessionIds":[]}}}""", ct);
+                        await FakeRemoteServer.SendTextAsync(ws,
+                            $$$$"""{"type":"item","streamId":"{{{{wsStreamId}}}}","value":{"type":"future-delta"}}""", ct);
+                    }
+                }
+            }
+        };
+
+        await using var conn = new DshRemoteConnection(new RemoteConnectionOptions(server.BaseUri), () => DummyToken);
+        using var gw = new RemoteDshGatewayClient(conn);
+
+        // 1. ProbeCapabilitiesAsync 探测 workspace/follow 成功 → ArchiveSessions = true
+        var caps = await gw.ProbeCapabilitiesAsync();
+        Assert.True(caps.IsOk);
+        Assert.True(caps.Value!.ArchiveSessions);
+
+        // 2. GetArchivedSessionIdsAsync 读取首帧基线并释放流
+        var baseline = await gw.GetArchivedSessionIdsAsync();
+        Assert.True(baseline.IsOk);
+        Assert.Equal(["s-existing-arch"], baseline.Value!);
+
+        // 3. ArchiveSessionAsync(stopActivity: false) 严格不传 stopActivity 字段，且映射 workspace/session-active → SessionActive
+        var activeErr = await gw.ArchiveSessionAsync("s-arch-1", stopActivity: false);
+        Assert.False(activeErr.IsOk);
+        Assert.Equal(DshFailureCode.SessionActive, activeErr.Error!.Code);
+        using (var firstDoc = JsonDocument.Parse(capturedArchiveBodies[0]))
+        {
+            var props = firstDoc.RootElement.GetProperty("payload").GetProperty("args").GetProperty("request")
+                .EnumerateObject().Select(p => p.Name).ToArray();
+            Assert.Equal(["sessionId"], props);
+        }
+
+        // 4. ArchiveSessionAsync(stopActivity: true) 传 stopActivity=true 并返回最新归档 IDs
+        var archivedOk = await gw.ArchiveSessionAsync("s-arch-1", stopActivity: true);
+        Assert.True(archivedOk.IsOk);
+        Assert.Equal(["s-arch-1"], archivedOk.Value!);
+        using (var secondDoc = JsonDocument.Parse(capturedArchiveBodies[1]))
+        {
+            var reqEl = secondDoc.RootElement.GetProperty("payload").GetProperty("args").GetProperty("request");
+            Assert.True(reqEl.GetProperty("stopActivity").GetBoolean());
+        }
+
+        // 5. UnarchiveSessionAsync 严格仅发 sessionId 字段
+        var unarchivedOk = await gw.UnarchiveSessionAsync("s-arch-1");
+        Assert.True(unarchivedOk.IsOk);
+        Assert.Empty(unarchivedOk.Value!);
+        using (var unarchDoc = JsonDocument.Parse(capturedUnarchiveBody!))
+        {
+            var props = unarchDoc.RootElement.GetProperty("payload").GetProperty("args").GetProperty("request")
+                .EnumerateObject().Select(p => p.Name).ToArray();
+            Assert.Equal(["sessionId"], props);
+        }
+
+        // 6. FollowWorkspaceAsync 实时接收 baseline / archived / replace / unknown 帧
+        var received = new ConcurrentQueue<WorkspaceFollowFrame>();
+        var allFourTcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var followOutcome = await gw.FollowWorkspaceAsync(f =>
+        {
+            received.Enqueue(f);
+            if (received.Count >= 4)
+            {
+                allFourTcs.TrySetResult();
+            }
+            return ValueTask.CompletedTask;
+        });
+        Assert.True(followOutcome.IsOk);
+        await allFourTcs.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await followOutcome.Value!.DisposeAsync();
+
+        var frames = received.ToArray();
+        Assert.IsType<WorkspaceBaselineFrame>(frames[0]);
+        Assert.IsType<WorkspaceArchivedChangedFrame>(frames[1]);
+        Assert.IsType<WorkspaceReplacedFrame>(frames[2]);
+        var unk = Assert.IsType<UnknownWorkspaceFollowFrame>(frames[3]);
+        Assert.Equal("future-delta", unk.RawType);
+    }
+
+    [Fact]
+    public async Task GatewayClient_ProbeCapabilities_SetsArchiveFalseWhenWorkspaceFollowUnsupported()
+    {
+        await using var server = new FakeRemoteServer();
+        server.OnHttpRequest = req =>
+        {
+            if (req.Path == "/connect")
+            {
+                return Task.FromResult(new FakeRemoteServer.HttpResponseData(
+                    302, "Found", [("Location", "/"), ("Set-Cookie", $"dsh-auth-{server.Port}=ck-noarch; HttpOnly")], []));
+            }
+            var rpcId = ParseRpcId(req.Body);
+            return req.Path switch
+            {
+                "/api/session/list" => Task.FromResult(FakeRemoteServer.HttpResponseData.Json(200, WrapOk(rpcId, """{"items":[]}"""))),
+                "/api/session/modelCatalog" => Task.FromResult(FakeRemoteServer.HttpResponseData.Json(200, WrapErr(rpcId, "unsupported", "no"))),
+                "/api/credentials/describe" => Task.FromResult(FakeRemoteServer.HttpResponseData.Json(200, WrapOk(rpcId, "{}"))),
+                "/api/pluginInventory/list" => Task.FromResult(FakeRemoteServer.HttpResponseData.Json(200, WrapErr(rpcId, "unsupported", "no"))),
+                _ => Task.FromResult(FakeRemoteServer.HttpResponseData.Json(404, "{}")),
+            };
+        };
+
+        server.OnWebSocketConnected = async (_, ws, ct) =>
+        {
+            var openEv = await FakeRemoteServer.ReceiveTextAsync(ws, ct);
+            using var evDoc = JsonDocument.Parse(openEv!);
+            await FakeRemoteServer.SendTextAsync(ws, ReadyFrame(evDoc.RootElement.GetProperty("streamId").GetString()!, "c-noarch"), ct);
+
+            while (ws.State == WebSocketState.Open && !ct.IsCancellationRequested)
+            {
+                var raw = await FakeRemoteServer.ReceiveTextAsync(ws, ct);
+                if (raw is null)
+                {
+                    break;
+                }
+                using var frame = JsonDocument.Parse(raw);
+                if (frame.RootElement.GetProperty("type").GetString() == "open" &&
+                    frame.RootElement.GetProperty("endpoint").GetString() == "workspace/follow")
+                {
+                    var sid = frame.RootElement.GetProperty("streamId").GetString()!;
+                    await FakeRemoteServer.SendTextAsync(ws,
+                        $$$$"""{"type":"error","streamId":"{{{{sid}}}}","error":{"code":"unsupported","message":"workspace/follow disabled"}}""", ct);
+                }
+            }
+        };
+
+        await using var conn = new DshRemoteConnection(new RemoteConnectionOptions(server.BaseUri), () => DummyToken);
+        using var gw = new RemoteDshGatewayClient(conn);
+
+        var caps = await gw.ProbeCapabilitiesAsync();
+        Assert.True(caps.IsOk);
+        Assert.True(caps.Value!.ListSessions);
+        Assert.False(caps.Value.ArchiveSessions);
     }
 }

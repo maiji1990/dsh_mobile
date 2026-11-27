@@ -48,6 +48,22 @@ public static class PluginDisplayFormatter
         return new FormattedPluginDisplay(shortTitle, description, meta);
     }
 
+    /// <summary>格式化远端插件目录条目，统一短标题、描述与包元信息展示。</summary>
+    public static FormattedPluginDisplay FormatCatalog(Domain.PluginCatalogEntryView entry)
+    {
+        ArgumentNullException.ThrowIfNull(entry);
+
+        var shortTitle = ExtractShortTitle(entry.PackageName, entry.PackageName, entry.PackageName);
+        var description = string.IsNullOrWhiteSpace(entry.Description)
+            ? null
+            : entry.Description.Trim();
+        var meta = string.IsNullOrWhiteSpace(entry.Version)
+            ? entry.PackageName
+            : $"{entry.PackageName} · v{entry.Version}";
+
+        return new FormattedPluginDisplay(shortTitle, description, meta);
+    }
+
     private static string ExtractShortTitle(string? moduleName, string? packageName, string? entryId)
     {
         var candidate = !string.IsNullOrWhiteSpace(moduleName)

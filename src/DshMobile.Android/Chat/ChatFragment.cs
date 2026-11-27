@@ -46,6 +46,11 @@ public sealed class ChatFragment : Fragment
     private MaterialToolbar _toolbar = null!;
     private IMenuItem? _cancelMenuItem;
     private IMenuItem? _inboxMenuItem;
+    private IMenuItem? _archiveMenuItem;
+    private IMenuItem? _unarchiveMenuItem;
+    private IMenuItem? _removeMenuItem;
+    private View _archivedBanner = null!;
+    private MaterialButton _archivedUnarchiveBtn = null!;
     private View _statusBanner = null!;
     private LinearProgressIndicator _statusProgress = null!;
     private TextView _statusText = null!;
@@ -56,7 +61,7 @@ public sealed class ChatFragment : Fragment
     private MaterialButton _loadOlderBtn = null!;
     private RecyclerView _list = null!;
     private View _empty = null!;
-    private MaterialButton _scrollToBottom = null!;
+    private View _jumpBottomBar = null!;
     private View _slashPanel = null!;
     private RecyclerView _slashList = null!;
     private View _slashEmpty = null!;
@@ -90,7 +95,6 @@ public sealed class ChatFragment : Fragment
     private bool _lastImeVisible;
     private string? _pendingFocusEventId;
     private int _renderPosted;
-    private int _listBaseTopPadding;
     private PromptSendRequest? _lastSubmittedRequest;
 
     public override View OnCreateView(LayoutInflater inflater, ViewGroup? container, Bundle? savedInstanceState)
@@ -120,8 +124,18 @@ public sealed class ChatFragment : Fragment
         _cancelMenuItem?.SetVisible(false);
         _inboxMenuItem = _toolbar.Menu?.FindItem(Resource.Id.chat_menu_inbox);
         _inboxMenuItem?.SetVisible(false);
+        _archiveMenuItem = _toolbar.Menu?.FindItem(Resource.Id.chat_menu_archive);
+        _archiveMenuItem?.SetVisible(false);
+        _unarchiveMenuItem = _toolbar.Menu?.FindItem(Resource.Id.chat_menu_unarchive);
+        _unarchiveMenuItem?.SetVisible(false);
+        _removeMenuItem = _toolbar.Menu?.FindItem(Resource.Id.chat_menu_remove);
+        _removeMenuItem?.SetVisible(false);
         _toolbar.MenuItemClick += (_, e) => OnMenuClicked(e.Item?.ItemId ?? 0);
         _toolbar.Click += (_, _) => OnSessionHeaderClicked();
+
+        _archivedBanner = view.FindViewById(Resource.Id.chat_archived_banner)!;
+        _archivedUnarchiveBtn = view.FindViewById<MaterialButton>(Resource.Id.chat_archived_unarchive_btn)!;
+        _archivedUnarchiveBtn.Click += (_, _) => _ = UnarchiveCurrentSessionFlowAsync();
 
         _statusBanner = view.FindViewById(Resource.Id.chat_status_banner)!;
         _statusProgress = view.FindViewById<LinearProgressIndicator>(Resource.Id.chat_status_progress)!;
@@ -162,8 +176,8 @@ public sealed class ChatFragment : Fragment
         _empty.FindViewById<TextView>(Resource.Id.empty_text)!.SetText(
             _embeddedInPane ? Resource.String.chat_pane_empty_hint : Resource.String.chat_empty_subtitle);
 
-        _scrollToBottom = view.FindViewById<MaterialButton>(Resource.Id.chat_scroll_to_bottom)!;
-        _scrollToBottom.Click += (_, _) => ScrollToBottomAndFollow();
+        _jumpBottomBar = view.FindViewById(Resource.Id.chat_jump_bottom_bar)!;
+        _jumpBottomBar.Click += (_, _) => ScrollToBottomAndFollow();
 
         _slashPanel = view.FindViewById(Resource.Id.chat_slash_panel)!;
         _slashList = _slashPanel.FindViewById<RecyclerView>(Resource.Id.chat_slash_list)!;
@@ -214,11 +228,11 @@ public sealed class ChatFragment : Fragment
         _sendBtn.Click += (_, _) => _ = SendOrCancelAsync();
 
         // 横屏弹出软键盘时收起内嵌控制行与 Tray、压缩输入区为单行，配合 flagNoExtractUi 保住输入框完整可见。
-        var composer = view.FindViewById(Resource.Id.chat_composer)!;
+        var composerInner = view.FindViewById(Resource.Id.chat_composer_inner)!;
         var dp = Resources.DisplayMetrics!.Density;
-        var normalComposerPadH = composer.PaddingLeft;
-        var normalComposerPadT = composer.PaddingTop;
-        var normalComposerPadB = composer.PaddingBottom;
+        var normalComposerPadH = composerInner.PaddingLeft;
+        var normalComposerPadT = composerInner.PaddingTop;
+        var normalComposerPadB = composerInner.PaddingBottom;
         var normalInputPadH = _input.PaddingLeft;
         var normalInputPadT = _input.PaddingTop;
         var normalInputPadB = _input.PaddingBottom;
@@ -236,12 +250,12 @@ public sealed class ChatFragment : Fragment
             {
                 var p2 = (int)Math.Round(2f * dp);
                 var p4 = (int)Math.Round(4f * dp);
-                composer.SetPadding(normalComposerPadH, p2, normalComposerPadH, p2);
+                composerInner.SetPadding(normalComposerPadH, p2, normalComposerPadH, p2);
                 _input.SetPadding(normalInputPadH, p4, normalInputPadH, p4);
             }
             else
             {
-                composer.SetPadding(normalComposerPadH, normalComposerPadT, normalComposerPadH, normalComposerPadB);
+                composerInner.SetPadding(normalComposerPadH, normalComposerPadT, normalComposerPadH, normalComposerPadB);
                 _input.SetPadding(normalInputPadH, normalInputPadT, normalInputPadH, normalInputPadB);
             }
 
@@ -255,63 +269,15 @@ public sealed class ChatFragment : Fragment
         }));
 
         var requestSlotRoot = view.FindViewById(Resource.Id.chat_request_slot)!;
-        var headerPill = view.FindViewById(Resource.Id.chat_header_pill)!;
-        var topBanners = view.FindViewById<View>(Resource.Id.chat_top_banners)!;
-        // 用外边距限宽，避免 Edges.ClampMaxWidthTo 修改 RecyclerView 的 paddingTop，
-        // 从而保留“消息流从悬浮顶栏背后滚过”的固定顶部内边距。
+        // 宽屏保持阅读流与停靠输入区居中限宽，同时保留全宽贴顶顶栏与全宽底栏顶线。
         Edges.ClampMaxWidthByMarginTo(
             Resource.Dimension.dshm_chat_max_width,
             _list,
             _attachmentsBar,
             requestSlotRoot,
-            composer,
-            headerPill,
-            topBanners,
+            composerInner,
             _unknownBanner,
             _slashPanel);
-
-        // 状态横幅 / UnknownSend / 加载更早是悬浮层：按实际高度给列表补足首屏避让，
-        // 但滚动后消息仍可进入 68dp 顶栏区，形成通透的悬浮胶囊效果。
-        _listBaseTopPadding = _list.PaddingTop;
-        void ApplyTopBannerInset()
-        {
-            var extra = topBanners.Visibility == ViewStates.Visible ? Math.Max(0, topBanners.Height) : 0;
-            var targetTop = _listBaseTopPadding + extra;
-            if (_list.PaddingTop != targetTop)
-            {
-                _list.SetPadding(_list.PaddingLeft, targetTop, _list.PaddingRight, _list.PaddingBottom);
-                // 横幅显隐改变首屏避让后，跟底状态下重新贴底，避免最后一条被新内边距顶出视口。
-                if (_followBottom)
-                {
-                    ScrollToLatestItem();
-                }
-            }
-        }
-        topBanners.LayoutChange += (_, _) => ApplyTopBannerInset();
-        topBanners.Post(ApplyTopBannerInset);
-
-        // 回底悬浮钮始终贴着 Composer 上沿 10dp；Composer 高度会随 Tray / 多行输入变化。
-        void AnchorScrollButton()
-        {
-            if (_scrollToBottom.LayoutParameters is not FrameLayout.LayoutParams lp)
-            {
-                return;
-            }
-            var rootLocation = new int[2];
-            var composerLocation = new int[2];
-            view.GetLocationInWindow(rootLocation);
-            composer.GetLocationInWindow(composerLocation);
-            var composerTop = composerLocation[1] - rootLocation[1];
-            var targetBottomMargin = Math.Max(0, view.Height - composerTop + (int)Math.Round(10f * dp));
-            if (lp.BottomMargin != targetBottomMargin)
-            {
-                lp.BottomMargin = targetBottomMargin;
-                _scrollToBottom.LayoutParameters = lp;
-            }
-        }
-        composer.LayoutChange += (_, _) => AnchorScrollButton();
-        view.LayoutChange += (_, _) => AnchorScrollButton();
-        view.Post(AnchorScrollButton);
 
         RenderAttachments();
         return view;
@@ -579,8 +545,17 @@ public sealed class ChatFragment : Fragment
         if (_followBottom && items.Count > 0)
         {
             ScrollToLatestItem();
-            _scrollToBottom.Visibility = ViewStates.Gone;
+            _jumpBottomBar.Visibility = ViewStates.Gone;
         }
+
+        var hasRealSession = !string.IsNullOrWhiteSpace(s.ActiveSession.SessionId)
+            && !string.Equals(s.ActiveSession.SessionId, "pending", StringComparison.Ordinal);
+        var canArchive = !_isRemote && hasRealSession && s.IsConnected && s.Capabilities.ArchiveSessions;
+        _archivedBanner.Visibility = hasRealSession && s.IsArchived ? ViewStates.Visible : ViewStates.Gone;
+        _archivedUnarchiveBtn.Enabled = canArchive;
+        _archiveMenuItem?.SetVisible(canArchive && !s.IsArchived);
+        _unarchiveMenuItem?.SetVisible(canArchive && s.IsArchived);
+        _removeMenuItem?.SetVisible(!_isRemote && hasRealSession);
 
         var isRunningTurn = s.Transcript.Phase is RunPhase.Starting or RunPhase.Streaming;
         _cancelMenuItem?.SetVisible(isRunningTurn && s.Capabilities.CancelSession);
@@ -1001,6 +976,169 @@ public sealed class ChatFragment : Fragment
         {
             ShowInbox();
         }
+        else if (itemId == Resource.Id.chat_menu_archive)
+        {
+            StartArchiveCurrentSessionFlow();
+        }
+        else if (itemId == Resource.Id.chat_menu_unarchive)
+        {
+            _ = UnarchiveCurrentSessionFlowAsync();
+        }
+        else if (itemId == Resource.Id.chat_menu_remove)
+        {
+            ConfirmRemoveCurrentSession();
+        }
+    }
+
+    private void StartArchiveCurrentSessionFlow()
+    {
+        var phase = _vm.State.Transcript.Phase;
+        if (phase is RunPhase.Starting or RunPhase.Streaming)
+        {
+            ShowStopAndArchiveCurrentDialog();
+            return;
+        }
+        _ = ArchiveCurrentSessionFlowAsync(stopActivity: false);
+    }
+
+    private void ShowStopAndArchiveCurrentDialog()
+    {
+        new MaterialAlertDialogBuilder(RequireContext())
+            .SetTitle(Resource.String.chats_archive_active_title)!
+            .SetMessage(Resource.String.chats_archive_active_msg)!
+            .SetNegativeButton(Android.Resource.String.Cancel, (_, _) => { })!
+            .SetPositiveButton(Resource.String.chats_archive_active_confirm, (_, _) =>
+                _ = ArchiveCurrentSessionFlowAsync(stopActivity: true))!
+            .Show();
+    }
+
+    private async Task ArchiveCurrentSessionFlowAsync(bool stopActivity)
+    {
+        var res = await _vm.ArchiveCurrentSessionAsync(stopActivity).ConfigureAwait(false);
+        if (res.IsOk && !_isRemote && _bridge.Runtime.Host?.State == DshHostState.Ready)
+        {
+            _ = _bridge.Agent.Sessions.RefreshAsync();
+        }
+        Activity?.RunOnUiThread(() =>
+        {
+            if (View is not { } root)
+            {
+                return;
+            }
+            if (res.IsOk)
+            {
+                Snackbar.Make(root, Resource.String.chats_archive_done, Snackbar.LengthShort).Show();
+                return;
+            }
+            if (!stopActivity && res.Error?.Code == DshFailureCode.SessionActive)
+            {
+                ShowStopAndArchiveCurrentDialog();
+                return;
+            }
+            Snackbar.Make(
+                root,
+                Rows.Fmt(RequireContext(), Resource.String.chat_error_banner, res.Error?.DiagnosticKey ?? res.Error?.Code.ToString() ?? "ERROR"),
+                Snackbar.LengthShort).Show();
+        });
+    }
+
+    private async Task UnarchiveCurrentSessionFlowAsync()
+    {
+        var res = await _vm.UnarchiveCurrentSessionAsync().ConfigureAwait(false);
+        if (res.IsOk && !_isRemote && _bridge.Runtime.Host?.State == DshHostState.Ready)
+        {
+            _ = _bridge.Agent.Sessions.RefreshAsync();
+        }
+        Activity?.RunOnUiThread(() =>
+        {
+            if (View is not { } root)
+            {
+                return;
+            }
+            if (res.IsOk)
+            {
+                Snackbar.Make(root, Resource.String.chats_unarchive_done, Snackbar.LengthShort).Show();
+            }
+            else
+            {
+                Snackbar.Make(
+                    root,
+                    Rows.Fmt(RequireContext(), Resource.String.chat_error_banner, res.Error?.DiagnosticKey ?? res.Error?.Code.ToString() ?? "ERROR"),
+                    Snackbar.LengthShort).Show();
+            }
+        });
+    }
+
+    private void ConfirmRemoveCurrentSession()
+    {
+        var state = _vm.State;
+        var isCachedOnly = !state.IsConnected;
+        var titleRes = isCachedOnly ? Resource.String.chats_remove_cached_title : Resource.String.chats_remove_title;
+        var msgRes = isCachedOnly ? Resource.String.chats_remove_cached_msg : Resource.String.chats_remove_msg;
+        var positiveRes = isCachedOnly ? Resource.String.chats_remove_cached_confirm : Resource.String.chats_remove_confirm;
+
+        new MaterialAlertDialogBuilder(RequireContext())
+            .SetTitle(titleRes)!
+            .SetMessage(msgRes)!
+            .SetNegativeButton(Android.Resource.String.Cancel, (_, _) => { })!
+            .SetPositiveButton(positiveRes, (_, _) =>
+                _ = RemoveCurrentSessionFlowAsync(stopActivity: false, isCachedOnly))!
+            .Show();
+    }
+
+    private void ShowStopAndRemoveCurrentDialog()
+    {
+        new MaterialAlertDialogBuilder(RequireContext())
+            .SetTitle(Resource.String.chats_remove_active_title)!
+            .SetMessage(Resource.String.chats_remove_active_msg)!
+            .SetNegativeButton(Android.Resource.String.Cancel, (_, _) => { })!
+            .SetPositiveButton(Resource.String.chats_remove_active_confirm, (_, _) =>
+                _ = RemoveCurrentSessionFlowAsync(stopActivity: true, isCachedOnly: false))!
+            .Show();
+    }
+
+    private async Task RemoveCurrentSessionFlowAsync(bool stopActivity, bool isCachedOnly)
+    {
+        var sessionId = _vm.State.ActiveSession.SessionId;
+        var res = await _vm.DeleteCurrentSessionAsync(stopActivity).ConfigureAwait(false);
+        if (res.IsOk && !_isRemote)
+        {
+            if (_bridge.Runtime.Host?.State == DshHostState.Ready)
+            {
+                _ = _bridge.Agent.Sessions.RefreshAsync();
+            }
+            else
+            {
+                _ = _bridge.Agent.Sessions.LoadCachedSessionsAsync();
+            }
+        }
+        Activity?.RunOnUiThread(() =>
+        {
+            if (res.IsOk)
+            {
+                if (_embeddedInPane)
+                {
+                    (Activity as MainActivity)?.CloseDetailChatIfMatches(sessionId);
+                }
+                else
+                {
+                    Activity?.Finish();
+                }
+                return;
+            }
+            if (!isCachedOnly && !stopActivity && res.Error?.Code == DshFailureCode.SessionActive)
+            {
+                ShowStopAndRemoveCurrentDialog();
+                return;
+            }
+            if (View is { } root)
+            {
+                Snackbar.Make(
+                    root,
+                    Rows.Fmt(RequireContext(), Resource.String.chat_error_banner, res.Error?.DiagnosticKey ?? res.Error?.Code.ToString() ?? "ERROR"),
+                    Snackbar.LengthShort).Show();
+            }
+        });
     }
 
     /// <summary>
@@ -1282,7 +1420,7 @@ public sealed class ChatFragment : Fragment
     private void ScrollToBottomAndFollow()
     {
         _followBottom = true;
-        _scrollToBottom.Visibility = ViewStates.Gone;
+        _jumpBottomBar.Visibility = ViewStates.Gone;
         ScrollToLatestItem();
     }
 
@@ -1309,21 +1447,21 @@ public sealed class ChatFragment : Fragment
         });
     }
 
-    /// <summary>距底部超过 480dp 且用户已脱离贴底状态时才显示回底按钮，避免轻滑两行就挡住内容。</summary>
+    /// <summary>距底部超过 480dp 且用户已脱离贴底状态时显示停靠式回到底部提示条，绝不悬浮遮挡消息文字。</summary>
     private void UpdateScrollToBottomVisibility(RecyclerView recyclerView)
     {
-        if (_scrollToBottom is null)
+        if (_jumpBottomBar is null)
         {
             return;
         }
         if (_followBottom)
         {
-            // 贴底跟随时无需计算距离，直接隐藏按钮，避免流式输出期间每帧做滚动范围测量。
-            _scrollToBottom.Visibility = ViewStates.Gone;
+            // 贴底跟随时无需计算距离，直接隐藏提示条，避免流式输出期间每帧做滚动范围测量。
+            _jumpBottomBar.Visibility = ViewStates.Gone;
             return;
         }
         var show = DistanceFromBottom(recyclerView) >= DpToPx(recyclerView, 480f);
-        _scrollToBottom.Visibility = show ? ViewStates.Visible : ViewStates.Gone;
+        _jumpBottomBar.Visibility = show ? ViewStates.Visible : ViewStates.Gone;
     }
 
     private static int DistanceFromBottom(RecyclerView recyclerView) =>

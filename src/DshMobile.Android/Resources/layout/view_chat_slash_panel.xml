@@ -1,73 +1,64 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 斜杠命令面板（Polish-P2）：surfaceContainer + 7% hairline + 2dp 轻阴影 + 18dp 圆角，不再使用硬描边。 -->
-<com.google.android.material.card.MaterialCardView xmlns:android="http://schemas.android.com/apk/res/android"
+<!-- 停靠式斜杠命令面板：紧贴输入栏上沿，带 1dp 顶线与零阴影，不悬浮压迫消息流 -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
-    style="@style/Widget.Material3.CardView.Filled"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:layout_marginStart="12dp"
-    android:layout_marginTop="4dp"
-    android:layout_marginEnd="12dp"
-    android:layout_marginBottom="4dp"
-    app:cardBackgroundColor="?attr/colorSurfaceContainer"
-    app:cardCornerRadius="@dimen/dshm_panel_radius"
-    app:cardElevation="2dp"
-    app:strokeColor="?attr/colorOutlineVariant"
-    app:strokeWidth="@dimen/dshm_hairline">
+    android:background="?attr/colorSurfaceContainerLow"
+    android:orientation="vertical">
+
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="@dimen/dshm_hairline"
+        android:background="?attr/colorOutlineVariant" />
 
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:orientation="vertical">
-
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:gravity="center_vertical"
-            android:orientation="horizontal"
-            android:paddingStart="14dp"
-            android:paddingTop="8dp"
-            android:paddingEnd="8dp"
-            android:paddingBottom="4dp">
-
-            <TextView
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:text="@string/chat_slash_panel_title"
-                android:textAppearance="?attr/textAppearanceLabelMedium"
-                android:textColor="?attr/colorOnSurfaceVariant" />
-
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/chat_slash_close_btn"
-                style="@style/Widget.Material3.Button.IconButton"
-                android:layout_width="32dp"
-                android:layout_height="32dp"
-                android:contentDescription="@android:string/cancel"
-                app:icon="@drawable/ic_close"
-                app:iconSize="16dp"
-                app:iconTint="?attr/colorOnSurfaceVariant" />
-        </LinearLayout>
-
-        <com.google.android.material.divider.MaterialDivider
-            android:layout_width="match_parent"
-            android:layout_height="@dimen/dshm_hairline"
-            app:dividerColor="?attr/colorOutlineVariant" />
-
-        <androidx.recyclerview.widget.RecyclerView
-            android:id="@+id/chat_slash_list"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:scrollbars="vertical" />
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingStart="16dp"
+        android:paddingTop="6dp"
+        android:paddingEnd="8dp"
+        android:paddingBottom="4dp">
 
         <TextView
-            android:id="@+id/chat_slash_empty"
-            android:layout_width="match_parent"
+            android:layout_width="0dp"
             android:layout_height="wrap_content"
-            android:padding="14dp"
-            android:text="@string/chat_slash_panel_empty"
-            android:textAppearance="?attr/textAppearanceBodySmall"
-            android:textColor="?attr/colorOnSurfaceVariant"
-            android:visibility="gone" />
+            android:layout_weight="1"
+            android:text="@string/chat_slash_panel_title"
+            android:textAppearance="?attr/textAppearanceLabelMedium"
+            android:textColor="?attr/colorOnSurfaceVariant" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/chat_slash_close_btn"
+            style="@style/Widget.Material3.Button.IconButton"
+            android:layout_width="32dp"
+            android:layout_height="32dp"
+            android:contentDescription="@android:string/cancel"
+            app:icon="@drawable/ic_close"
+            app:iconSize="16dp"
+            app:iconTint="?attr/colorOnSurfaceVariant" />
     </LinearLayout>
-</com.google.android.material.card.MaterialCardView>
+
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="@dimen/dshm_hairline"
+        android:background="?attr/colorOutlineVariant" />
+
+    <androidx.recyclerview.widget.RecyclerView
+        android:id="@+id/chat_slash_list"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:scrollbars="vertical" />
+
+    <TextView
+        android:id="@+id/chat_slash_empty"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:padding="14dp"
+        android:text="@string/chat_slash_panel_empty"
+        android:textAppearance="?attr/textAppearanceBodySmall"
+        android:textColor="?attr/colorOnSurfaceVariant"
+        android:visibility="gone" />
+</LinearLayout>

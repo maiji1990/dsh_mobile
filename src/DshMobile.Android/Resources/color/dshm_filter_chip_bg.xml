@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Polish-P3 首页筛选胶囊背景：未选中为极淡中性容器，选中为品牌绿雾，全部零描边。 -->
+<!-- 筛选芯片背景：选中使用主题靛蓝容器高亮，未选中使用一级卡片白/深蓝表面 -->
 <selector xmlns:android="http://schemas.android.com/apk/res/android">
-    <item android:state_checked="true" android:color="@color/dshm_selected_tint" />
-    <item android:color="?attr/colorSurfaceContainerHighest" />
+    <item android:state_checked="true" android:color="?attr/colorPrimaryContainer" />
+    <item android:color="?attr/colorSurfaceContainerLow" />
 </selector>

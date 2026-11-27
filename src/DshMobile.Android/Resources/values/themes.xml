@@ -143,17 +143,10 @@
     <item name="cornerSizeBottomRight">6dp</item>
   </style>
 
-  <!-- Polish-P3 首页 56dp 纯圆 + FAB：M3 默认 16dp 圆角在此覆盖为 50%（正圆）。 -->
-  <style name="ShapeAppearanceOverlay.DshMobile.Fab" parent="">
-    <item name="cornerFamily">rounded</item>
-    <item name="cornerSize">50%</item>
-  </style>
-
-  <!-- Polish-P4 工作区「文件 / Git」滑块：显式 14dp 圆角，覆盖 M3 按钮默认的全圆胶囊，
-       保证选中滑块四边完整、不被父样式或相邻按钮切平内侧圆角。 -->
+  <!-- 工作区「文件 / Git」滑块：10dp 工程圆角，与外槽 12dp 协调对齐 -->
   <style name="ShapeAppearanceOverlay.DshMobile.Segment" parent="ShapeAppearance.Material3.Corner.Full">
     <item name="cornerFamily">rounded</item>
-    <item name="cornerSize">14dp</item>
+    <item name="cornerSize">10dp</item>
   </style>
 
   <!-- 分组标题：中性次级文本，不再用品牌色抢主按钮视线；16 / 20 / 16 / 8 的 4dp 标尺留白 -->
@@ -174,9 +167,9 @@
     <item name="navigationIconTint">?attr/colorOnSurface</item>
   </style>
 
-  <!-- 全透明、零抬升顶栏：彻底去掉滚动时的泛灰染色横带 -->
+  <!-- 贴顶稳固工作台顶栏：使用表面底色，零抬升阴影，底缘由各页 1dp hairline 明确分界 -->
   <style name="Widget.DshMobile.AppBar" parent="Widget.Material3.AppBarLayout">
-    <item name="android:background">@android:color/transparent</item>
+    <item name="android:background">?attr/colorSurface</item>
     <item name="liftOnScroll">false</item>
     <item name="elevation">0dp</item>
     <item name="android:stateListAnimator">@null</item>
@@ -212,32 +205,36 @@
     <item name="android:textColor">?attr/colorOnSurfaceVariant</item>
   </style>
 
-  <!-- 统一胶囊搜索 / 筛选框：柔和填充，默认零描边，聚焦仅保留 1dp 品牌色轮廓 -->
+  <!-- 统一工作台搜索 / 筛选框：12dp 工程圆角 + 1dp 结构描边，聚焦时高亮靛蓝轮廓 -->
   <style name="Widget.DshMobile.SearchField" parent="Widget.Material3.TextInputLayout.OutlinedBox.Dense">
     <item name="boxBackgroundColor">?attr/colorSurfaceContainerLow</item>
     <item name="boxCornerRadiusTopStart">@dimen/dshm_search_corner_radius</item>
     <item name="boxCornerRadiusTopEnd">@dimen/dshm_search_corner_radius</item>
     <item name="boxCornerRadiusBottomStart">@dimen/dshm_search_corner_radius</item>
     <item name="boxCornerRadiusBottomEnd">@dimen/dshm_search_corner_radius</item>
-    <item name="boxStrokeColor">?attr/colorPrimary</item>
-    <item name="boxStrokeWidth">0dp</item>
-    <item name="boxStrokeWidthFocused">1dp</item>
+    <item name="boxStrokeColor">?attr/colorOutlineVariant</item>
+    <item name="boxStrokeWidth">1dp</item>
+    <item name="boxStrokeWidthFocused">1.5dp</item>
     <item name="startIconDrawable">@drawable/ic_search</item>
     <item name="startIconTint">?attr/colorOnSurfaceVariant</item>
     <item name="endIconMode">clear_text</item>
   </style>
 
-  <!-- 基础卡片：只把底色换成一级纸面（surfaceContainerLow），圆角 / 描边 / 抬升沿用
-       Widget.Material3.CardView.Filled 的默认值；需要 18dp 语义圆角与零描边零抬升时用 Card.Group。 -->
+  <!-- 基础工作台卡片：14dp 克制圆角 + 1dp 精密结构边框 + 零浮空阴影 -->
   <style name="Widget.DshMobile.Card" parent="Widget.Material3.CardView.Filled">
     <item name="cardBackgroundColor">?attr/colorSurfaceContainerLow</item>
+    <item name="cardCornerRadius">@dimen/dshm_card_corner_radius</item>
+    <item name="strokeWidth">@dimen/dshm_card_stroke_width</item>
+    <item name="strokeColor">?attr/colorOutlineVariant</item>
+    <item name="cardElevation">0dp</item>
   </style>
 
   <style name="Widget.DshMobile.Card.Group" parent="Widget.Material3.CardView.Filled">
     <item name="cardBackgroundColor">?attr/colorSurfaceContainerLow</item>
     <item name="cardCornerRadius">@dimen/dshm_panel_radius</item>
-    <!-- 浅 / 深色均归零（values-night/dimens.xml 同样为 0dp），彻底去掉卡片硬描边 -->
+    <!-- 浅 / 深色统一使用 1dp 精致工作台结构边框 -->
     <item name="strokeWidth">@dimen/dshm_card_stroke_width</item>
+    <item name="strokeColor">?attr/colorOutlineVariant</item>
     <item name="cardElevation">0dp</item>
   </style>
 
@@ -277,25 +274,24 @@
     <item name="android:textColor">?attr/colorOnErrorContainer</item>
   </style>
 
-  <!--
-    Polish-P3 首页宿主状态胶囊：下沉到筛选行后统一为 36dp 高、18dp 圆角、
-    surfaceContainerHighest 填充且零描边；具体文案与语义色仍由 HostQuickControlBottomSheet 注入。
-  -->
+  <!-- 首页宿主状态标签：36dp 高、10dp 工程圆角，具体文案与语义色由 HostQuickControlBottomSheet 注入 -->
   <style name="Widget.DshMobile.HostPill" parent="">
     <item name="android:background">@drawable/bg_host_pill</item>
-    <item name="android:backgroundTint">?attr/colorSurfaceContainerHighest</item>
+    <item name="android:backgroundTint">?attr/colorSurfaceContainerHigh</item>
     <item name="android:gravity">center</item>
     <item name="android:minHeight">36dp</item>
-    <item name="android:paddingStart">14dp</item>
-    <item name="android:paddingEnd">14dp</item>
+    <item name="android:paddingStart">12dp</item>
+    <item name="android:paddingEnd">12dp</item>
     <item name="android:textAppearance">@style/TextAppearance.DshMobile.Label</item>
     <item name="android:textColor">?attr/colorOnSurface</item>
     <item name="android:maxLines">1</item>
   </style>
 
-  <!-- Polish-P3 无描边柔和筛选胶囊：去掉 Material 默认描边与选中对勾，只靠底色/文字区分。 -->
+  <!-- 深海靛蓝工作台筛选芯片：克制的 1dp 结构边框 + 10dp 圆角 + 选中态靛蓝容器高亮 -->
   <style name="Widget.DshMobile.Chip.Filter" parent="Widget.Material3.Chip.Filter">
-    <item name="chipStrokeWidth">0dp</item>
+    <item name="chipStrokeWidth">1dp</item>
+    <item name="chipStrokeColor">@color/dshm_filter_chip_stroke</item>
+    <item name="chipCornerRadius">10dp</item>
     <item name="chipBackgroundColor">@color/dshm_filter_chip_bg</item>
     <item name="android:textColor">@color/dshm_filter_chip_text</item>
     <item name="android:textAppearance">@style/TextAppearance.DshMobile.Label</item>
@@ -304,8 +300,7 @@
     <item name="chipIconVisible">false</item>
   </style>
 
-  <!-- Polish-P4 工作区「文件 / Git」槽式滑块：两颗独立按钮，选中四边完整 14dp 圆角，
-       未选中透明，零描边；底槽与选中色由 values / values-night 语义色明确区分。 -->
+  <!-- 工作区「文件 / Git」槽式滑块：10dp 工程圆角，选中高亮，未选中透明 -->
   <style name="Widget.DshMobile.SegmentButton" parent="Widget.Material3.Button.TextButton">
     <item name="android:insetTop">0dp</item>
     <item name="android:insetBottom">0dp</item>
@@ -315,7 +310,7 @@
     <item name="android:textColor">@color/dshm_segment_text</item>
     <item name="backgroundTint">@color/dshm_segment_bg</item>
     <item name="strokeWidth">0dp</item>
-    <item name="cornerRadius">14dp</item>
+    <item name="cornerRadius">10dp</item>
     <item name="shapeAppearanceOverlay">@style/ShapeAppearanceOverlay.DshMobile.Segment</item>
   </style>
 </resources>

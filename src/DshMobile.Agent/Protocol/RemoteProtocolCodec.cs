@@ -146,6 +146,59 @@ public static class RemoteProtocolCodec
         return JsonSerializer.SerializeToElement(dto, AgentProtocolJsonContext.Default.WireCommandsExecuteArgs);
     }
 
+    /// <summary>序列化工作区归档会话请求；仅当 <paramref name="stopActivity"/> 为 true 时输出 stopActivity 字段。</summary>
+    public static JsonElement SerializeWorkspaceArchive(string sessionId, bool stopActivity)
+    {
+        var dto = new WireWorkspaceArchiveArgs(new WireWorkspaceArchiveRequest(
+            sessionId,
+            StopActivity: stopActivity ? true : null));
+        return JsonSerializer.SerializeToElement(dto, AgentProtocolJsonContext.Default.WireWorkspaceArchiveArgs);
+    }
+
+    /// <summary>序列化工作区取消归档会话请求。</summary>
+    public static JsonElement SerializeWorkspaceUnarchive(string sessionId)
+    {
+        var dto = new WireWorkspaceUnarchiveArgs(new WireSessionIdRequest(sessionId));
+        return JsonSerializer.SerializeToElement(dto, AgentProtocolJsonContext.Default.WireWorkspaceUnarchiveArgs);
+    }
+
+    /// <summary>解码 workspace/follow 流推送帧，未知或畸形帧安全降级为 <see cref="UnknownWorkspaceFollowFrame"/>。</summary>
+    public static WorkspaceFollowFrame DecodeWorkspaceFollowFrame(JsonElement value)
+    {
+        if (value.ValueKind != JsonValueKind.Object)
+        {
+            return new UnknownWorkspaceFollowFrame("unexpected-frame-kind");
+        }
+
+        WireWorkspaceFollowFrame? frame;
+        try
+        {
+            frame = value.Deserialize(AgentProtocolJsonContext.Default.WireWorkspaceFollowFrame);
+        }
+        catch (JsonException)
+        {
+            return new UnknownWorkspaceFollowFrame("malformed-frame");
+        }
+
+        if (frame is null || string.IsNullOrWhiteSpace(frame.Type))
+        {
+            return new UnknownWorkspaceFollowFrame("missing-type");
+        }
+
+        return frame.Type switch
+        {
+            "baseline" => new WorkspaceBaselineFrame(
+                frame.Value?.ArchivedSessionIds ?? [],
+                frame.Value?.PinnedSessionIds ?? []),
+            "archived" => new WorkspaceArchivedChangedFrame(
+                frame.ArchivedSessionIds ?? []),
+            "replace" => new WorkspaceReplacedFrame(
+                frame.Value?.ArchivedSessionIds ?? [],
+                frame.Value?.PinnedSessionIds ?? []),
+            _ => new UnknownWorkspaceFollowFrame(frame.Type),
+        };
+    }
+
     public static TurnEndReasonInfo ParseTurnEndReason(JsonElement turnEndData)
     {
         if (turnEndData.ValueKind != JsonValueKind.Object)

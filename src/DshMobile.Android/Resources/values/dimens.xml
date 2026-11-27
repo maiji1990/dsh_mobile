@@ -1,43 +1,41 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <dimen name="dshm_page_padding_horizontal">16dp</dimen>
-    <dimen name="dshm_card_corner_radius">16dp</dimen>
-    <dimen name="dshm_search_corner_radius">24dp</dimen>
-    <dimen name="dshm_card_stroke_width">0dp</dimen>
+    <dimen name="dshm_card_corner_radius">14dp</dimen>
+    <dimen name="dshm_search_corner_radius">12dp</dimen>
+    <!-- 深海靛蓝稳固工作台：浅 / 深色统一使用 1dp 精密结构描边 -->
+    <dimen name="dshm_card_stroke_width">1dp</dimen>
     <!-- 窄屏不限内容最大宽度；w600dp+（平板与横屏）收窄至 720dp 居中 -->
     <dimen name="dshm_content_max_width">0dp</dimen>
 
-    <!-- UI-S1 统一视觉 Token：全站左右页边距、对话阅读流基线 -->
+    <!-- 统一视觉 Token：全站左右页边距、对话阅读流基线 -->
     <dimen name="dshm_page_margin">16dp</dimen>
     <!-- 手机端 0dp 表示不额外限宽；宽屏由 values-w600dp 覆盖为 700dp 居中 -->
     <dimen name="dshm_chat_max_width">0dp</dimen>
-    <!-- Polish-P2 悬浮胶囊顶栏占位：顶栏本体 52dp + 顶 6dp + 10dp 安全间距，
-         同时作为消息流首屏避让与状态横幅起始位置，避免两处硬编码 68dp 漂移 -->
-    <dimen name="dshm_chat_header_pill_inset">68dp</dimen>
-    <!-- 圆角层级：BottomSheet / 输入胶囊 / 用户气泡 / 卡片 / 代码表格块 -->
-    <dimen name="dshm_radius_sheet">28dp</dimen>
-    <dimen name="dshm_radius_composer">26dp</dimen>
-    <dimen name="dshm_radius_bubble">20dp</dimen>
-    <dimen name="dshm_radius_card">16dp</dimen>
-    <dimen name="dshm_radius_block">12dp</dimen>
-    <!-- Polish-P1 严格 4dp 空间标尺：新布局只允许使用这组间距 -->
+    <!-- 圆角层级：收敛泡泡圆角，建立克制工程感的圆角阶梯 -->
+    <dimen name="dshm_radius_sheet">20dp</dimen>
+    <dimen name="dshm_radius_composer">12dp</dimen>
+    <dimen name="dshm_radius_bubble">16dp</dimen>
+    <dimen name="dshm_radius_card">14dp</dimen>
+    <dimen name="dshm_radius_block">10dp</dimen>
+    <!-- 严格 4dp 空间标尺 -->
     <dimen name="dshm_space_1">4dp</dimen>
     <dimen name="dshm_space_2">8dp</dimen>
     <dimen name="dshm_space_3">12dp</dimen>
     <dimen name="dshm_space_4">16dp</dimen>
     <dimen name="dshm_space_5">20dp</dimen>
     <dimen name="dshm_space_6">24dp</dimen>
-    <!-- Polish-P1 语义圆角与行高：分组卡 / 代码块 / 大卡 / 单行与双行列表 -->
-    <dimen name="dshm_panel_radius">18dp</dimen>
-    <dimen name="dshm_code_radius">14dp</dimen>
-    <dimen name="dshm_card_radius">22dp</dimen>
+    <!-- 语义圆角与行高：分组卡 / 代码块 / 大卡 / 单行与双行列表 -->
+    <dimen name="dshm_panel_radius">14dp</dimen>
+    <dimen name="dshm_code_radius">10dp</dimen>
+    <dimen name="dshm_card_radius">14dp</dimen>
     <dimen name="dshm_row_height">56dp</dimen>
     <dimen name="dshm_row_height_two">64dp</dimen>
     <!-- 最小触控靶区（视觉高度可小于该值，但可点击区域不得低于 48dp） -->
     <dimen name="dshm_touch_min">48dp</dimen>
-    <!-- 列表分隔线与浅色卡片描边的极细线宽 -->
+    <!-- 列表分隔线与工作台结构描边的 1dp 线宽 -->
     <dimen name="dshm_hairline">1dp</dimen>
-    <!-- UI-S5：无框通栏文件 / Git 行最小高度，保证 Material 3 触控热区 -->
+    <!-- 无框通栏文件 / Git 行最小高度，保证 Material 3 触控热区 -->
     <dimen name="dshm_list_row_min_height">60dp</dimen>
     <!-- Markdown 表格单个单元格的最大宽度，超长内容在单元格内换行后横向滚动查看 -->
     <dimen name="dshm_table_cell_max_width">200dp</dimen>

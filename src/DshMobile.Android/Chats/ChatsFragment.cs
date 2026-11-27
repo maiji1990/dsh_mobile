@@ -20,7 +20,6 @@ using Google.Android.Material.AppBar;
 using Google.Android.Material.Button;
 using Google.Android.Material.Chip;
 using Google.Android.Material.Dialog;
-using Google.Android.Material.FloatingActionButton;
 using Google.Android.Material.ProgressIndicator;
 using Google.Android.Material.Snackbar;
 using Google.Android.Material.TextField;
@@ -29,19 +28,12 @@ using Fragment = AndroidX.Fragment.App.Fragment;
 namespace DshMobile.App.Chats;
 
 /// <summary>
-/// PR-05 / PR-09 / UI Slice 2 默认主入口原生会话列表页签：
-/// 承载顶栏宿主状态药丸与远程快捷入口、胶囊搜索框与轻量筛选芯片、紧凑会话卡片与底部操作抽屉、
-/// 离线缓存会话回看、以及未安装/停止/启动/失败/更新的就地快速控制。
+/// 原生会话列表页签：
+/// 承载贴顶工作台顶栏（常驻新建对话、搜索与收件箱）、宿主状态标签与四态筛选芯片（全部 / 运行中 / 待处理 / 已归档）、
+/// 1dp 结构卡片与操作抽屉（含归档、取消归档与删除）、离线缓存会话管理与就地宿主快速控制。
 /// </summary>
 public sealed class ChatsFragment : Fragment, ITabRoot, SessionActionsBottomSheet.IHost, HostQuickControlBottomSheet.IHost
 {
-    private enum SessionFilterMode
-    {
-        All,
-        Running,
-        Pending,
-    }
-
     private BridgeHost _bridge = null!;
     private SessionsViewModel _vm = null!;
     private ChatsAdapter _adapter = null!;
@@ -59,6 +51,7 @@ public sealed class ChatsFragment : Fragment, ITabRoot, SessionActionsBottomShee
     private View _updateBanner = null!;
     private TextView _updateBannerTitle = null!;
     private TextView _updateBannerDetail = null!;
+    private IMenuItem? _newMenuItem;
     private IMenuItem? _stopMenuItem;
     private IMenuItem? _inboxMenuItem;
     private View _webInvCard = null!;
@@ -67,18 +60,16 @@ public sealed class ChatsFragment : Fragment, ITabRoot, SessionActionsBottomShee
     private TextInputEditText _searchInput = null!;
     private bool _searchExpanded;
     private View _filterBar = null!;
+    private ChipGroup _filterChips = null!;
     private Chip _filterAll = null!;
     private Chip _filterRunning = null!;
     private Chip _filterPending = null!;
+    private Chip _filterArchived = null!;
+    private bool _syncingFilterChips;
     private View _cachedSubheader = null!;
     private RecyclerView _list = null!;
     private View _empty = null!;
     private TextView _emptyText = null!;
-    private View _workspaceBar = null!;
-    private FloatingActionButton _newFab = null!;
-    private bool _hostReady;
-    private bool _fabHiddenByScroll;
-    private SessionFilterMode _filterMode = SessionFilterMode.All;
     private HomeStatus? _shownStatus;
     private UpdatePlan? _bannerPlan;
     private bool _secondaryCancelsDownload;
@@ -93,6 +84,8 @@ public sealed class ChatsFragment : Fragment, ITabRoot, SessionActionsBottomShee
         _vm = _bridge.Agent.Sessions;
 
         var toolbar = view.FindViewById<MaterialToolbar>(Resource.Id.chats_toolbar)!;
+        _newMenuItem = toolbar.Menu?.FindItem(Resource.Id.chats_menu_new);
+        _newMenuItem?.SetVisible(false);
         _stopMenuItem = toolbar.Menu?.FindItem(Resource.Id.chats_menu_stop_dsh);
         _stopMenuItem?.SetVisible(false);
         _inboxMenuItem = toolbar.Menu?.FindItem(Resource.Id.chats_menu_inbox);
@@ -100,18 +93,17 @@ public sealed class ChatsFragment : Fragment, ITabRoot, SessionActionsBottomShee
         toolbar.MenuItemClick += (_, e) =>
         {
             var id = e.Item?.ItemId ?? 0;
-            if (id == Resource.Id.chats_menu_search)
+            if (id == Resource.Id.chats_menu_new)
+            {
+                _ = CreateAndOpenSessionAsync();
+            }
+            else if (id == Resource.Id.chats_menu_search)
             {
                 ToggleSearch();
             }
             else if (id == Resource.Id.chats_menu_inbox)
             {
                 OpenInboxSheet();
-            }
-            else if (id == Resource.Id.chats_menu_settings)
-            {
-                // Polish-P3：手机端无底栏后，顶栏齿轮是进入设置页的唯一主入口。
-                (Activity as MainActivity)?.OpenTab(Resource.Id.nav_more);
             }
             else if (id == Resource.Id.chats_menu_refresh)
             {
@@ -200,19 +192,26 @@ public sealed class ChatsFragment : Fragment, ITabRoot, SessionActionsBottomShee
         };
 
         _filterBar = view.FindViewById(Resource.Id.chats_filter_bar)!;
-        var filterChips = view.FindViewById<ChipGroup>(Resource.Id.chats_filter_chips)!;
+        _filterChips = view.FindViewById<ChipGroup>(Resource.Id.chats_filter_chips)!;
         _filterAll = view.FindViewById<Chip>(Resource.Id.chats_filter_all)!;
         _filterRunning = view.FindViewById<Chip>(Resource.Id.chats_filter_running)!;
         _filterPending = view.FindViewById<Chip>(Resource.Id.chats_filter_pending)!;
-        filterChips.CheckedStateChange += (_, e) =>
+        _filterArchived = view.FindViewById<Chip>(Resource.Id.chats_filter_archived)!;
+        _filterChips.CheckedStateChange += (_, _) =>
         {
-            var checkedId = filterChips.CheckedChipId;
-            _filterMode = checkedId == Resource.Id.chats_filter_running
+            if (_syncingFilterChips)
+            {
+                return;
+            }
+            var checkedId = _filterChips.CheckedChipId;
+            var nextMode = checkedId == Resource.Id.chats_filter_running
                 ? SessionFilterMode.Running
                 : checkedId == Resource.Id.chats_filter_pending
                     ? SessionFilterMode.Pending
-                    : SessionFilterMode.All;
-            Render(_vm.State);
+                    : checkedId == Resource.Id.chats_filter_archived
+                        ? SessionFilterMode.Archived
+                        : SessionFilterMode.All;
+            _vm.SetFilterMode(nextMode);
         };
 
         _cachedSubheader = view.FindViewById(Resource.Id.chats_cached_subheader)!;
@@ -228,8 +227,6 @@ public sealed class ChatsFragment : Fragment, ITabRoot, SessionActionsBottomShee
             OpenPendingChat,
             OpenInboxSheet);
         _list.SetAdapter(_adapter);
-        // Polish-P3：圆形 FAB 无 Extended 的收缩态，改为下滑隐藏、上滑/回顶显示。
-        _list.AddOnScrollListener(new FabScrollListener(this));
         new ItemTouchHelper(new SwipeToActionsCallback(_adapter, ShowSessionActionsSheet)).AttachToRecyclerView(_list);
 
         _empty = view.FindViewById(Resource.Id.chats_empty)!;
@@ -237,18 +234,8 @@ public sealed class ChatsFragment : Fragment, ITabRoot, SessionActionsBottomShee
         _emptyText = _empty.FindViewById<TextView>(Resource.Id.empty_text)!;
         _emptyText.SetText(Resource.String.chats_empty);
 
-        _newFab = view.FindViewById<FloatingActionButton>(Resource.Id.chats_new_fab)!;
-        _newFab.Click += (_, _) => _ = CreateAndOpenSessionAsync();
-
-        // Polish-P3：底部工作区悬浮条直达 FilesFragment；宽屏下由 OnShellWidthChanged 自动隐藏。
-        _workspaceBar = view.FindViewById(Resource.Id.chats_workspace_bar)!;
-        _workspaceBar.Click += (_, _) => (Activity as MainActivity)?.OpenTab(Resource.Id.nav_files);
-        _workspaceBar.Visibility = IsWideShell ? ViewStates.Gone : ViewStates.Visible;
-
         Edges.ClampMaxWidth(_list, _filterBar, _cachedSubheader);
         Edges.ClampMaxWidthByMargin(_hostBanner, _failureCard, _updateBanner, _webInvCard, _searchLayout);
-        // Polish-P3：宽屏内容限宽同时作用于底部悬浮工作区条与圆形 FAB，避免两者贴到屏幕最右缘。
-        Edges.ClampMaxWidthByMargin(_workspaceBar, _newFab);
 
         return view;
     }
@@ -276,59 +263,8 @@ public sealed class ChatsFragment : Fragment, ITabRoot, SessionActionsBottomShee
         base.OnHiddenChanged(hidden);
         if (!hidden)
         {
-            UpdateWorkspaceBar();
             Render(_vm.State);
             _ = RefreshIfReadyAsync();
-        }
-    }
-
-    /// <summary>Polish-P3：宽度切换时同步底部工作区悬浮条；宽屏双栏无需该入口。</summary>
-    public void OnShellWidthChanged(bool wide) => UpdateWorkspaceBar(wide);
-
-    private bool IsWideShell => Activity is MainActivity main && main.IsWideLayout;
-
-    private void UpdateWorkspaceBar(bool? wide = null)
-    {
-        if (_workspaceBar is not null)
-        {
-            _workspaceBar.Visibility = (wide ?? IsWideShell) ? ViewStates.Gone : ViewStates.Visible;
-        }
-    }
-
-    /// <summary>Polish-P3：FAB 仅在宿主就绪时随滚动收起/展开，避免盖住列表末尾。</summary>
-    private void HideFabByScroll()
-    {
-        if (!_hostReady || _fabHiddenByScroll)
-        {
-            return;
-        }
-        _fabHiddenByScroll = true;
-        _newFab.Hide();
-    }
-
-    private void ShowFabByScroll()
-    {
-        if (!_hostReady || !_fabHiddenByScroll)
-        {
-            return;
-        }
-        _fabHiddenByScroll = false;
-        _newFab.Show();
-    }
-
-    private sealed class FabScrollListener(ChatsFragment owner) : RecyclerView.OnScrollListener
-    {
-        public override void OnScrolled(RecyclerView recyclerView, int dx, int dy)
-        {
-            base.OnScrolled(recyclerView, dx, dy);
-            if (dy > 8)
-            {
-                owner.HideFabByScroll();
-            }
-            else if (dy < -8 || !recyclerView.CanScrollVertically(-1))
-            {
-                owner.ShowFabByScroll();
-            }
         }
     }
 
@@ -382,76 +318,97 @@ public sealed class ChatsFragment : Fragment, ITabRoot, SessionActionsBottomShee
             remoteLabel: remoteLabel);
 
         _progress.Visibility = state.IsLoading ? ViewStates.Visible : ViewStates.Gone;
+        _newMenuItem?.SetVisible(hostReady);
+        _newMenuItem?.SetEnabled(hostReady);
         _stopMenuItem?.SetVisible(hostReady && !_bridge.IsBusy);
+        var inboxItems = _bridge.Agent.Inbox.State.Items;
         var inboxTotal = _bridge.Agent.Inbox.State.TotalCount;
         _inboxMenuItem?.SetVisible(inboxTotal > 0);
-        _newFab.Enabled = hostReady;
-        _hostReady = hostReady;
-        if (!hostReady)
-        {
-            _fabHiddenByScroll = false;
-            _newFab.Hide();
-        }
-        else if (!_fabHiddenByScroll)
-        {
-            _newFab.Show();
-        }
 
         RenderStatusSlot(ctx, status, hostReady);
 
         var cachedItems = state.EffectiveCachedSessions;
         var liveSessions = state.Sessions;
-        var runningCount = liveSessions.Count(s => s.Running);
-        var pendingTotal = liveSessions.Count(s => s.PendingRequestCount > 0);
-        // Polish-P3：胶囊条常驻，连接状态与三个柔和筛选始终在同一行，不再随运行态整行闪现。
+        var pendingTotal = inboxItems
+            .Select(i => i.SessionId)
+            .Distinct(StringComparer.Ordinal)
+            .Count();
+
         _filterBar.Visibility = ViewStates.Visible;
         _filterRunning.Visibility = ViewStates.Visible;
         _filterPending.Visibility = ViewStates.Visible;
         _filterPending.Text = pendingTotal > 0
             ? Rows.Fmt(ctx, Resource.String.chats_filter_pending_fmt, pendingTotal)
             : GetString(Resource.String.chats_filter_pending);
-        if ((_filterMode == SessionFilterMode.Running && runningCount == 0)
-            || (_filterMode == SessionFilterMode.Pending && pendingTotal == 0))
-        {
-            _filterMode = SessionFilterMode.All;
-            _filterAll.Checked = true;
-        }
 
-        IReadOnlyList<SessionListItemView> displayed;
+        var showArchivedChip = hostReady && state.CanArchiveSessions;
+        _filterArchived.Visibility = showArchivedChip ? ViewStates.Visible : ViewStates.Gone;
+        _filterArchived.Text = state.ArchivedCount > 0
+            ? Rows.Fmt(ctx, Resource.String.chats_filter_archived_fmt, state.ArchivedCount)
+            : GetString(Resource.String.chats_filter_archived);
+
+        var activeFilter = state.FilterMode;
+        if (!showArchivedChip && activeFilter == SessionFilterMode.Archived)
+        {
+            activeFilter = SessionFilterMode.All;
+            _vm.SetFilterMode(SessionFilterMode.All);
+        }
+        SyncFilterChipSelection(activeFilter);
+
         var isCachedMode = !hostReady && cachedItems.Count > 0;
-        if (isCachedMode)
-        {
-            displayed = cachedItems;
-        }
-        else if (hostReady && _filterMode == SessionFilterMode.Running)
-        {
-            displayed = liveSessions.Where(s => s.Running).ToArray();
-        }
-        else if (hostReady && _filterMode == SessionFilterMode.Pending)
-        {
-            displayed = liveSessions.Where(s => s.PendingRequestCount > 0).ToArray();
-        }
-        else
-        {
-            displayed = liveSessions;
-        }
+        var displayed = isCachedMode ? cachedItems : liveSessions;
 
         var hasDisplayed = displayed.Count > 0;
         var hasQuery = !string.IsNullOrWhiteSpace(state.SearchQuery);
         _searchLayout.Visibility = _searchExpanded || hasQuery ? ViewStates.Visible : ViewStates.Gone;
         _cachedSubheader.Visibility = isCachedMode ? ViewStates.Visible : ViewStates.Gone;
 
-        IReadOnlyList<InboxItemView> pendingItems = hostReady ? _bridge.Agent.Inbox.State.Items : [];
+        IReadOnlyList<InboxItemView> pendingItems = hostReady && activeFilter != SessionFilterMode.Archived
+            ? inboxItems
+            : [];
         _adapter.Submit(displayed, pendingItems, state.ActiveSessionId, isCachedOffline: isCachedMode);
         var hasListContent = hasDisplayed || pendingItems.Count > 0;
         if (!hasListContent && (hostReady || hasQuery))
         {
-            _emptyText.SetText(hasQuery ? Resource.String.chats_empty_search : Resource.String.chats_empty);
+            var emptyRes = hasQuery
+                ? Resource.String.chats_empty_search
+                : activeFilter switch
+                {
+                    SessionFilterMode.Archived => Resource.String.chats_empty_archived,
+                    SessionFilterMode.Running => Resource.String.chats_empty_running,
+                    SessionFilterMode.Pending => Resource.String.chats_empty_pending,
+                    _ => Resource.String.chats_empty,
+                };
+            _emptyText.SetText(emptyRes);
             _empty.Visibility = ViewStates.Visible;
         }
         else
         {
             _empty.Visibility = ViewStates.Gone;
+        }
+    }
+
+    private void SyncFilterChipSelection(SessionFilterMode mode)
+    {
+        var wantId = mode switch
+        {
+            SessionFilterMode.Running => Resource.Id.chats_filter_running,
+            SessionFilterMode.Pending => Resource.Id.chats_filter_pending,
+            SessionFilterMode.Archived => Resource.Id.chats_filter_archived,
+            _ => Resource.Id.chats_filter_all,
+        };
+        if (_filterChips.CheckedChipId == wantId)
+        {
+            return;
+        }
+        _syncingFilterChips = true;
+        try
+        {
+            _filterChips.Check(wantId);
+        }
+        finally
+        {
+            _syncingFilterChips = false;
         }
     }
 
@@ -614,6 +571,15 @@ public sealed class ChatsFragment : Fragment, ITabRoot, SessionActionsBottomShee
             case SessionActionsBottomSheet.Action.Cancel:
                 _ = CancelSessionAsync(sessionId);
                 break;
+            case SessionActionsBottomSheet.Action.Archive:
+                StartArchiveFlow(sessionId);
+                break;
+            case SessionActionsBottomSheet.Action.Unarchive:
+                _ = UnarchiveSessionAsync(sessionId);
+                break;
+            case SessionActionsBottomSheet.Action.Remove:
+                ConfirmDeleteSession(sessionId);
+                break;
         }
     }
 
@@ -759,15 +725,21 @@ public sealed class ChatsFragment : Fragment, ITabRoot, SessionActionsBottomShee
 
     private void ShowSessionActionsSheet(SessionListItemView item)
     {
-        var hostReady = _bridge.Runtime.Host?.State == DshHostState.Ready;
+        var state = _vm.State;
+        var hostReady = _bridge.Runtime.Host?.State == DshHostState.Ready && state.IsConnected;
+        var isCachedOnly = !hostReady;
         SessionActionsBottomSheet.Show(
             ChildFragmentManager,
             item.SessionId,
             item.DisplayTitle,
             item.Cwd,
             hostReady,
-            _vm.State.CanCancelSession,
-            item.Running);
+            state.CanCancelSession,
+            item.Running,
+            item.IsArchived,
+            state.CanArchiveSessions,
+            isCachedOnly,
+            canRemove: true);
     }
 
     private void OpenChatSession(string sessionId) => OpenChatSession(sessionId, focusEventId: null);
@@ -876,6 +848,133 @@ public sealed class ChatsFragment : Fragment, ITabRoot, SessionActionsBottomShee
                     : GetString(msgRes);
                 Snackbar.Make(v, msg, Snackbar.LengthShort).Show();
             }
+        });
+    }
+
+    private void StartArchiveFlow(string sessionId)
+    {
+        var item = FindSession(sessionId);
+        if (item?.Running == true)
+        {
+            ShowStopAndArchiveDialog(sessionId);
+            return;
+        }
+        _ = ArchiveSessionAsync(sessionId, stopActivity: false);
+    }
+
+    private void ShowStopAndArchiveDialog(string sessionId)
+    {
+        new MaterialAlertDialogBuilder(RequireContext())
+            .SetTitle(Resource.String.chats_archive_active_title)!
+            .SetMessage(Resource.String.chats_archive_active_msg)!
+            .SetNegativeButton(Android.Resource.String.Cancel, (_, _) => { })!
+            .SetPositiveButton(Resource.String.chats_archive_active_confirm, (_, _) =>
+                _ = ArchiveSessionAsync(sessionId, stopActivity: true))!
+            .Show();
+    }
+
+    private async Task ArchiveSessionAsync(string sessionId, bool stopActivity)
+    {
+        var res = await _vm.ArchiveSessionAsync(sessionId, stopActivity).ConfigureAwait(false);
+        Activity?.RunOnUiThread(() =>
+        {
+            if (View is not { } root)
+            {
+                return;
+            }
+            if (res.IsOk)
+            {
+                Snackbar.Make(root, Resource.String.chats_archive_done, Snackbar.LengthShort).Show();
+                return;
+            }
+            if (!stopActivity && res.Error?.Code == DshFailureCode.SessionActive)
+            {
+                ShowStopAndArchiveDialog(sessionId);
+                return;
+            }
+            Snackbar.Make(
+                root,
+                Rows.Fmt(RequireContext(), Resource.String.chat_error_banner, res.Error?.DiagnosticKey ?? res.Error?.Code.ToString() ?? "ERROR"),
+                Snackbar.LengthShort).Show();
+        });
+    }
+
+    private async Task UnarchiveSessionAsync(string sessionId)
+    {
+        var res = await _vm.UnarchiveSessionAsync(sessionId).ConfigureAwait(false);
+        Activity?.RunOnUiThread(() =>
+        {
+            if (View is not { } root)
+            {
+                return;
+            }
+            if (res.IsOk)
+            {
+                Snackbar.Make(root, Resource.String.chats_unarchive_done, Snackbar.LengthShort).Show();
+            }
+            else
+            {
+                Snackbar.Make(
+                    root,
+                    Rows.Fmt(RequireContext(), Resource.String.chat_error_banner, res.Error?.DiagnosticKey ?? res.Error?.Code.ToString() ?? "ERROR"),
+                    Snackbar.LengthShort).Show();
+            }
+        });
+    }
+
+    private void ConfirmDeleteSession(string sessionId)
+    {
+        var isCachedOnly = _bridge.Runtime.Host?.State != DshHostState.Ready || !_vm.State.IsConnected;
+        var titleRes = isCachedOnly ? Resource.String.chats_remove_cached_title : Resource.String.chats_remove_title;
+        var msgRes = isCachedOnly ? Resource.String.chats_remove_cached_msg : Resource.String.chats_remove_msg;
+        var positiveRes = isCachedOnly ? Resource.String.chats_remove_cached_confirm : Resource.String.chats_remove_confirm;
+
+        new MaterialAlertDialogBuilder(RequireContext())
+            .SetTitle(titleRes)!
+            .SetMessage(msgRes)!
+            .SetNegativeButton(Android.Resource.String.Cancel, (_, _) => { })!
+            .SetPositiveButton(positiveRes, (_, _) =>
+                _ = DeleteSessionAsync(sessionId, stopActivity: false, isCachedOnly))!
+            .Show();
+    }
+
+    private void ShowStopAndDeleteDialog(string sessionId)
+    {
+        new MaterialAlertDialogBuilder(RequireContext())
+            .SetTitle(Resource.String.chats_remove_active_title)!
+            .SetMessage(Resource.String.chats_remove_active_msg)!
+            .SetNegativeButton(Android.Resource.String.Cancel, (_, _) => { })!
+            .SetPositiveButton(Resource.String.chats_remove_active_confirm, (_, _) =>
+                _ = DeleteSessionAsync(sessionId, stopActivity: true, isCachedOnly: false))!
+            .Show();
+    }
+
+    private async Task DeleteSessionAsync(string sessionId, bool stopActivity, bool isCachedOnly)
+    {
+        var res = await _vm.DeleteSessionAsync(sessionId, stopActivity).ConfigureAwait(false);
+        Activity?.RunOnUiThread(() =>
+        {
+            if (View is not { } root)
+            {
+                return;
+            }
+            if (res.IsOk)
+            {
+                Snackbar.Make(
+                    root,
+                    isCachedOnly ? Resource.String.chats_remove_cached_done : Resource.String.chats_remove_done,
+                    Snackbar.LengthShort).Show();
+                return;
+            }
+            if (!isCachedOnly && !stopActivity && res.Error?.Code == DshFailureCode.SessionActive)
+            {
+                ShowStopAndDeleteDialog(sessionId);
+                return;
+            }
+            Snackbar.Make(
+                root,
+                Rows.Fmt(RequireContext(), Resource.String.chat_error_banner, res.Error?.DiagnosticKey ?? res.Error?.Code.ToString() ?? "ERROR"),
+                Snackbar.LengthShort).Show();
         });
     }
 

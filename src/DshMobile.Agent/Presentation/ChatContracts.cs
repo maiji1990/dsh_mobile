@@ -21,7 +21,8 @@ public sealed record ChatUiState(
     ModelSelectionSpec? CurrentModel = null,
     IReadOnlyList<ModelProviderGroupView>? ModelGroups = null,
     bool NeedsCredentialOnboarding = false,
-    bool IsLoadingOlderHistory = false)
+    bool IsLoadingOlderHistory = false,
+    bool IsArchived = false)
 {
     public bool CanSend => IsConnected && Capabilities.Prompt && !IsSending;
 }
@@ -48,4 +49,7 @@ public interface IChatActions
     Task SelectModelAsync(ModelSelectionSpec selection, CancellationToken ct = default);
     Task RefreshCredentialReadinessAsync(CancellationToken ct = default);
     Task FlushPendingHoldsAsync(CancellationToken ct = default);
+    Task<Outcome<bool>> ArchiveCurrentSessionAsync(bool stopActivity = false, CancellationToken ct = default);
+    Task<Outcome<bool>> UnarchiveCurrentSessionAsync(CancellationToken ct = default);
+    Task<Outcome<bool>> DeleteCurrentSessionAsync(bool stopActivity = false, CancellationToken ct = default);
 }

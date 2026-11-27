@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 推理档位 Chip 背景：未选走主题中性容器色（支持动态取色），选中为极淡品牌绿雾，无任何描边。 -->
+<!-- 推理档位 Chip 背景：选中为靛蓝主容器高亮，未选为中性工作台表面 -->
 <selector xmlns:android="http://schemas.android.com/apk/res/android">
-    <item android:state_checked="true" android:color="@color/dshm_selected_tint" />
-    <item android:color="?attr/colorSurfaceContainerHighest" />
+    <item android:state_checked="true" android:color="?attr/colorPrimaryContainer" />
+    <item android:color="?attr/colorSurfaceContainerHigh" />
 </selector>

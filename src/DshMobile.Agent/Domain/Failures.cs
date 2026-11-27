@@ -16,6 +16,8 @@ public enum DshFailureCode
     CredentialsMissing,
     InvalidState,
     SessionBusy,
+    SessionActive,
+    SessionNotFound,
     StaleRequest,
     ProcessExited,
     TransportLost,
@@ -108,6 +110,12 @@ public static class DshFailureMapper
             "session/agent-busy" or
             "session/writer-held" =>
                 new DshFailure(DshFailureCode.SessionBusy, error.Code, Retryable: true),
+
+            "workspace/session-active" =>
+                new DshFailure(DshFailureCode.SessionActive, error.Code, Retryable: false),
+
+            "session/not-found" =>
+                new DshFailure(DshFailureCode.SessionNotFound, error.Code, Retryable: false),
 
             "session/conflict" or
             "session/invalid-time-zone" or

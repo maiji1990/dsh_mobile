@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 工作区去悬浮：顶栏新建 / 导入入口 -->
+    <string name="files_action_create">新建或导入</string>
+
+    <!-- 插件双模式工作台：顶栏与分段切换 -->
+    <string name="plugins_action_manual_install">手动安装</string>
+    <string name="plugins_tab_installed">已安装</string>
+    <string name="plugins_tab_installed_fmt">已安装 (%1$d)</string>
+    <string name="plugins_tab_discover">发现插件</string>
+
+    <!-- 双模式胶囊搜索框提示 -->
+    <string name="plugins_search_installed_hint">搜索已装插件名称、包名、描述或版本…</string>
+    <string name="plugins_search_discover_hint">搜索 npm 插件（dsh / cordis / mcp）</string>
+
+    <!-- 已安装模式筛选与结果统计 -->
+    <string name="plugins_filter_issues">需关注</string>
+    <string name="plugins_installed_count_all_fmt">共 %1$d 个已装插件</string>
+    <string name="plugins_installed_count_filtered_fmt">匹配 %1$d / 共 %2$d 项</string>
+    <string name="plugins_installed_empty_filtered">当前筛选或搜索条件下暂无匹配插件</string>
+
+    <!-- 发现模式快捷标签与状态提示 -->
+    <string name="plugins_discover_chip_official">@deepseek-ai</string>
+    <string name="plugins_discover_chip_dsh">dsh</string>
+    <string name="plugins_discover_chip_cordis">cordis</string>
+    <string name="plugins_discover_chip_mcp">mcp</string>
+    <string name="plugins_discover_searching">正在从 npm 公共仓库搜索插件…</string>
+    <string name="plugins_discover_result_fmt">找到 %1$d 个插件 · 来自 npm 公共仓库</string>
+    <string name="plugins_discover_result_partial_fmt">展示前 %1$d / 共 %2$d 个插件 · 来自 npm 公共仓库</string>
+    <string name="plugins_discover_empty">未在 npm 公共仓库找到匹配插件，可尝试更换关键词</string>
+    <string name="plugins_discover_unavailable">远端插件发现搜索暂不可用</string>
+    <string name="plugins_discover_error_fmt">远端搜索失败（%1$s）</string>
+    <string name="plugins_discover_retry">重试</string>
+
+    <!-- 远端发现插件卡片与安全安装确认 -->
+    <string name="plugins_catalog_official_badge">官方</string>
+    <string name="plugins_catalog_installed_badge">已安装</string>
+    <string name="plugins_catalog_installed_version_fmt">当前已装 v%1$s</string>
+    <string name="plugins_catalog_action_install">安装</string>
+    <string name="plugins_catalog_action_installed">已安装</string>
+    <string name="plugins_catalog_action_need_host">需先启动 DSH</string>
+    <string name="plugins_catalog_publisher_fmt">发布者 %1$s</string>
+    <string name="plugins_catalog_no_desc">暂无插件描述</string>
+    <string name="plugins_catalog_install_confirm_title">确认安装远端插件？</string>
+    <string name="plugins_catalog_install_confirm_msg">来源：npm 公共仓库\n安装规格：%1$s\n\n第三方插件代码将在沙箱内运行，请确认包名与来源可信；安装成功后需重启 DSH 生效。</string>
+</resources>

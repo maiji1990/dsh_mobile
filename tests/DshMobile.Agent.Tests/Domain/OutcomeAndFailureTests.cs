@@ -47,6 +47,12 @@ public sealed class OutcomeAndFailureTests
             DshFailureCode.Timeout,
             DshFailureMapper.FromRpcError(new RemoteRpcError("session/wait-timeout", "timed out")).Code);
         Assert.Equal(
+            DshFailureCode.SessionActive,
+            DshFailureMapper.FromRpcError(new RemoteRpcError("workspace/session-active", "session running")).Code);
+        Assert.Equal(
+            DshFailureCode.SessionNotFound,
+            DshFailureMapper.FromRpcError(new RemoteRpcError("session/not-found", "missing")).Code);
+        Assert.Equal(
             DshFailureCode.Unauthorized,
             DshFailureMapper.FromException(new RemoteAuthenticationException("secret token xyz", 401)).Code);
         Assert.Equal(
@@ -68,6 +74,10 @@ public sealed class OutcomeAndFailureTests
         Assert.Equal(DshFailureCode.Unavailable, (await gw.ReplyApprovalAsync("c1", "e1", ApprovalDecision.Rejected)).Error!.Code);
         Assert.Equal(DshFailureCode.Unavailable, (await gw.GetModelCatalogAsync()).Error!.Code);
         Assert.Equal(DshFailureCode.Unavailable, (await gw.GetPluginInventoryAsync()).Error!.Code);
+        Assert.Equal(DshFailureCode.Unavailable, (await gw.ArchiveSessionAsync("s1")).Error!.Code);
+        Assert.Equal(DshFailureCode.Unavailable, (await gw.UnarchiveSessionAsync("s1")).Error!.Code);
+        Assert.Equal(DshFailureCode.Unavailable, (await gw.GetArchivedSessionIdsAsync()).Error!.Code);
+        Assert.Equal(DshFailureCode.Unavailable, (await gw.FollowWorkspaceAsync(_ => ValueTask.CompletedTask)).Error!.Code);
     }
 
     [Fact]

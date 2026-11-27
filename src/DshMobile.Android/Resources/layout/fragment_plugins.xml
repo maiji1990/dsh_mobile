@@ -1,4 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- 插件工作台：双模式分段切换（已安装 | 发现插件）+ 统一胶囊搜索 + 上下文筛选/快捷标签，无悬浮 FAB -->
 <androidx.coordinatorlayout.widget.CoordinatorLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:id="@+id/screen_root"
@@ -21,6 +22,11 @@
             app:menu="@menu/plugins_toolbar"
             app:navigationIcon="@drawable/ic_arrow_back"
             app:title="@string/plugins_title" />
+
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="@dimen/dshm_hairline"
+            android:background="?attr/colorOutlineVariant" />
 
         <com.google.android.material.progressindicator.LinearProgressIndicator
             android:id="@+id/plugins_progress"
@@ -118,20 +124,56 @@
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
 
-        <!-- 统一胶囊搜索栏 + 静态 XML 状态筛选条 -->
+        <!-- 双模式槽式分段切换器：与工作区保持统一工作台语言 -->
+        <LinearLayout
+            android:id="@+id/plugins_mode_toggle"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="@dimen/dshm_page_padding_horizontal"
+            android:layout_marginTop="10dp"
+            android:layout_marginEnd="@dimen/dshm_page_padding_horizontal"
+            android:background="@drawable/bg_mode_toggle_track"
+            android:orientation="horizontal"
+            android:padding="3dp">
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/plugins_tab_installed"
+                style="@style/Widget.DshMobile.SegmentButton"
+                android:layout_width="0dp"
+                android:layout_height="36dp"
+                android:layout_weight="1"
+                android:checkable="true"
+                android:checked="true"
+                android:gravity="center"
+                android:text="@string/plugins_tab_installed" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/plugins_tab_discover"
+                style="@style/Widget.DshMobile.SegmentButton"
+                android:layout_width="0dp"
+                android:layout_height="36dp"
+                android:layout_weight="1"
+                android:checkable="true"
+                android:gravity="center"
+                android:text="@string/plugins_tab_discover" />
+        </LinearLayout>
+
+        <!-- 统一胶囊搜索框（已安装即时筛选 / 发现模式防抖远端搜索） -->
         <include
             android:id="@+id/plugins_search_layout"
             layout="@layout/view_search_pill"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginStart="@dimen/dshm_page_padding_horizontal"
-            android:layout_marginTop="8dp"
+            android:layout_marginTop="10dp"
             android:layout_marginEnd="@dimen/dshm_page_padding_horizontal" />
 
+        <!-- 已安装模式 5 枚上下文筛选芯片 -->
         <HorizontalScrollView
             android:id="@+id/plugins_filter_scroll"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
             android:clipToPadding="false"
             android:paddingStart="@dimen/dshm_page_padding_horizontal"
             android:paddingEnd="@dimen/dshm_page_padding_horizontal"
@@ -141,40 +183,138 @@
                 android:id="@+id/plugins_filter_chips"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
+                app:checkedChip="@id/plugins_filter_all"
+                app:chipSpacingHorizontal="8dp"
                 app:selectionRequired="true"
                 app:singleLine="true"
                 app:singleSelection="true">
 
                 <com.google.android.material.chip.Chip
                     android:id="@+id/plugins_filter_all"
-                    style="@style/Widget.Material3.Chip.Filter"
+                    style="@style/Widget.DshMobile.Chip.Filter"
                     android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
+                    android:layout_height="36dp"
                     android:checked="true"
                     android:text="@string/plugins_filter_all" />
 
                 <com.google.android.material.chip.Chip
                     android:id="@+id/plugins_filter_manageable"
-                    style="@style/Widget.Material3.Chip.Filter"
+                    style="@style/Widget.DshMobile.Chip.Filter"
                     android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
+                    android:layout_height="36dp"
                     android:text="@string/plugins_filter_manageable" />
 
                 <com.google.android.material.chip.Chip
                     android:id="@+id/plugins_filter_enabled"
-                    style="@style/Widget.Material3.Chip.Filter"
+                    style="@style/Widget.DshMobile.Chip.Filter"
                     android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
+                    android:layout_height="36dp"
                     android:text="@string/plugins_filter_enabled" />
 
                 <com.google.android.material.chip.Chip
                     android:id="@+id/plugins_filter_protected"
-                    style="@style/Widget.Material3.Chip.Filter"
+                    style="@style/Widget.DshMobile.Chip.Filter"
                     android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
+                    android:layout_height="36dp"
                     android:text="@string/plugins_filter_protected" />
+
+                <com.google.android.material.chip.Chip
+                    android:id="@+id/plugins_filter_issues"
+                    style="@style/Widget.DshMobile.Chip.Filter"
+                    android:layout_width="wrap_content"
+                    android:layout_height="36dp"
+                    android:text="@string/plugins_filter_issues" />
             </com.google.android.material.chip.ChipGroup>
         </HorizontalScrollView>
+
+        <!-- 发现模式 4 枚高频快捷搜索标签 -->
+        <HorizontalScrollView
+            android:id="@+id/plugins_discover_chips_scroll"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:clipToPadding="false"
+            android:paddingStart="@dimen/dshm_page_padding_horizontal"
+            android:paddingEnd="@dimen/dshm_page_padding_horizontal"
+            android:scrollbars="none"
+            android:visibility="gone">
+
+            <com.google.android.material.chip.ChipGroup
+                android:id="@+id/plugins_discover_chips"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                app:chipSpacingHorizontal="8dp"
+                app:singleLine="true">
+
+                <com.google.android.material.chip.Chip
+                    android:id="@+id/plugins_discover_chip_official"
+                    style="@style/Widget.DshMobile.Chip.Filter"
+                    android:layout_width="wrap_content"
+                    android:layout_height="36dp"
+                    android:text="@string/plugins_discover_chip_official" />
+
+                <com.google.android.material.chip.Chip
+                    android:id="@+id/plugins_discover_chip_dsh"
+                    style="@style/Widget.DshMobile.Chip.Filter"
+                    android:layout_width="wrap_content"
+                    android:layout_height="36dp"
+                    android:text="@string/plugins_discover_chip_dsh" />
+
+                <com.google.android.material.chip.Chip
+                    android:id="@+id/plugins_discover_chip_cordis"
+                    style="@style/Widget.DshMobile.Chip.Filter"
+                    android:layout_width="wrap_content"
+                    android:layout_height="36dp"
+                    android:text="@string/plugins_discover_chip_cordis" />
+
+                <com.google.android.material.chip.Chip
+                    android:id="@+id/plugins_discover_chip_mcp"
+                    style="@style/Widget.DshMobile.Chip.Filter"
+                    android:layout_width="wrap_content"
+                    android:layout_height="36dp"
+                    android:text="@string/plugins_discover_chip_mcp" />
+            </com.google.android.material.chip.ChipGroup>
+        </HorizontalScrollView>
+
+        <!-- 紧凑结果计数 / 搜索状态与错误重试提示栏 -->
+        <LinearLayout
+            android:id="@+id/plugins_summary_bar"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center_vertical"
+            android:minHeight="32dp"
+            android:orientation="horizontal"
+            android:paddingStart="@dimen/dshm_page_padding_horizontal"
+            android:paddingTop="4dp"
+            android:paddingEnd="@dimen/dshm_page_padding_horizontal"
+            android:paddingBottom="2dp"
+            android:visibility="gone">
+
+            <TextView
+                android:id="@+id/plugins_summary_text"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:ellipsize="end"
+                android:maxLines="2"
+                android:textAppearance="?attr/textAppearanceBodySmall"
+                android:textColor="?attr/colorOnSurfaceVariant" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/plugins_retry_search_btn"
+                style="@style/Widget.Material3.Button.TextButton"
+                android:layout_width="wrap_content"
+                android:layout_height="32dp"
+                android:layout_marginStart="8dp"
+                android:insetTop="0dp"
+                android:insetBottom="0dp"
+                android:minWidth="0dp"
+                android:paddingStart="10dp"
+                android:paddingEnd="10dp"
+                android:text="@string/plugins_discover_retry"
+                android:textAppearance="?attr/textAppearanceLabelMedium"
+                android:visibility="gone" />
+        </LinearLayout>
 
         <TextView
             android:id="@+id/plugins_empty"
@@ -187,6 +327,7 @@
             android:textColor="?attr/colorOnSurfaceVariant"
             android:visibility="gone" />
 
+        <!-- 已安装插件列表 -->
         <androidx.recyclerview.widget.RecyclerView
             android:id="@+id/plugins_list"
             android:layout_width="match_parent"
@@ -196,15 +337,19 @@
             android:paddingStart="@dimen/dshm_page_padding_horizontal"
             android:paddingTop="4dp"
             android:paddingEnd="@dimen/dshm_page_padding_horizontal"
-            android:paddingBottom="88dp" />
-    </LinearLayout>
+            android:paddingBottom="16dp" />
 
-    <com.google.android.material.floatingactionbutton.ExtendedFloatingActionButton
-        android:id="@+id/plugins_install_fab"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_gravity="bottom|end"
-        android:layout_margin="16dp"
-        android:text="@string/plugins_action_install"
-        app:icon="@drawable/ic_add" />
+        <!-- 远端发现结果列表（独立保持滚动位置） -->
+        <androidx.recyclerview.widget.RecyclerView
+            android:id="@+id/plugins_catalog_list"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:clipToPadding="false"
+            android:paddingStart="@dimen/dshm_page_padding_horizontal"
+            android:paddingTop="4dp"
+            android:paddingEnd="@dimen/dshm_page_padding_horizontal"
+            android:paddingBottom="16dp"
+            android:visibility="gone" />
+    </LinearLayout>
 </androidx.coordinatorlayout.widget.CoordinatorLayout>

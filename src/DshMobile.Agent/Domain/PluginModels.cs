@@ -138,6 +138,40 @@ public static partial class PluginPackageValidator
         ProtectedPackageNames.Contains(packageName);
 
     /// <summary>
+    /// 构造受控推荐安装规格：若 <c>PackageName@Version</c> 通过精确 SemVer 安装规格校验则采用之，
+    /// 否则退化为通过包名校验的 <c>PackageName</c>；若均不合法则返回 <see langword="null"/>。
+    /// </summary>
+    public static string? BuildRecommendedInstallSpec(string? packageName, string? version)
+    {
+        var trimmedPackage = packageName?.Trim();
+        if (!IsValidPackageName(trimmedPackage))
+        {
+            return null;
+        }
+
+        var trimmedVersion = version?.Trim();
+        if (!string.IsNullOrEmpty(trimmedVersion))
+        {
+            var pinnedSpec = $"{trimmedPackage}@{trimmedVersion}";
+            if (IsValidInstallSpec(pinnedSpec))
+            {
+                return pinnedSpec;
+            }
+        }
+
+        return IsValidInstallSpec(trimmedPackage) ? trimmedPackage : null;
+    }
+
+    /// <summary>判断已安装插件是否存在诊断异常、启动失败或待重启生效状态。</summary>
+    public static bool HasIssue(PluginEntryView entry)
+    {
+        ArgumentNullException.ThrowIfNull(entry);
+        return !string.IsNullOrWhiteSpace(entry.DiagnosticSummary)
+            || string.Equals(entry.FiberPhase, "failed", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(entry.FiberPhase, "pending-restart", StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
     /// 识别携带自定义 WebUI 的插件（ADR-0033：禁止内嵌 WebView 与自创 L2 Schema，UI 必须如实提示）。
     /// </summary>
     public static bool IsCustomWebUiPlugin(string moduleName, string entryId, bool manifestDeclaresClient = false)
@@ -181,6 +215,60 @@ public static partial class PluginPackageValidator
         var m = regex.Match(input);
         return m.Success && m.Index == 0 && m.Length == input.Length;
     }
+}
+
+/// <summary>已安装插件列表的本地多维筛选模式。</summary>
+public enum PluginFilterMode
+{
+    All,
+    Manageable,
+    Enabled,
+    Protected,
+    Issues,
+}
+
+/// <summary>插件管理页标签模式（已安装 / 发现远端插件）。</summary>
+public enum PluginTabMode
+{
+    Installed,
+    Discover,
+}
+
+/// <summary>远端插件目录（npm Registry）搜索条目视图模型。</summary>
+public sealed record PluginCatalogEntryView(
+    string PackageName,
+    string Version,
+    string Description,
+    IReadOnlyList<string> Keywords,
+    string? Publisher,
+    long? PublishedAtUnixMs,
+    string? NpmUrl,
+    bool IsOfficialScope,
+    bool IsInstalled,
+    string? InstalledVersion,
+    string RecommendedInstallSpec);
+
+/// <summary>远端插件目录搜索结果快照。</summary>
+public sealed record PluginCatalogSearchResult(
+    IReadOnlyList<PluginCatalogEntryView> Items,
+    int TotalCount,
+    string? DiagnosticWarning = null);
+
+/// <summary>纯托管远端插件目录搜索接口（默认对接 npm Registry HTTPS Search API）。</summary>
+public interface IPluginCatalogSearch
+{
+    Task<Outcome<PluginCatalogSearchResult>> SearchAsync(string query, int limit = 25, CancellationToken ct = default);
+}
+
+/// <summary>默认 fail-closed 占位实现（未注入远端搜索服务时返回 <see cref="DshFailureCode.Unsupported"/>）。</summary>
+public sealed class NoopPluginCatalogSearch : IPluginCatalogSearch
+{
+    public static readonly NoopPluginCatalogSearch Instance = new();
+
+    private NoopPluginCatalogSearch() { }
+
+    public Task<Outcome<PluginCatalogSearchResult>> SearchAsync(string query, int limit = 25, CancellationToken ct = default) =>
+        Task.FromResult(Outcome<PluginCatalogSearchResult>.Fail(DshFailureCode.Unsupported, "plugins.catalog_search_unavailable"));
 }
 
 /// <summary>来自 <c>dsh plugin --profile web list --json</c> 的已安装 npm 包信息。</summary>

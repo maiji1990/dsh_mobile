@@ -333,3 +333,26 @@ public sealed record WireTurnEndReasonDto(
 public sealed record WireTurnEndDataDto(
     [property: JsonPropertyName("turn")] int? Turn = null,
     [property: JsonPropertyName("reason")] WireTurnEndReasonDto? Reason = null);
+
+// Workspace 归档与订阅流 DTO（严格遵循 Typert strictCodec，不得传未知字段）
+public sealed record WireWorkspaceArchiveRequest(
+    [property: JsonPropertyName("sessionId")] string SessionId,
+    [property: JsonPropertyName("stopActivity")] bool? StopActivity = null);
+
+public sealed record WireWorkspaceArchiveArgs(
+    [property: JsonPropertyName("request")] WireWorkspaceArchiveRequest Request);
+
+public sealed record WireWorkspaceUnarchiveArgs(
+    [property: JsonPropertyName("request")] WireSessionIdRequest Request);
+
+public sealed record WireWorkspaceArchivedValue(
+    [property: JsonPropertyName("archivedSessionIds")] IReadOnlyList<string> ArchivedSessionIds);
+
+public sealed record WireWorkspaceSnapshotValue(
+    [property: JsonPropertyName("archivedSessionIds")] IReadOnlyList<string>? ArchivedSessionIds = null,
+    [property: JsonPropertyName("pinnedSessionIds")] IReadOnlyList<string>? PinnedSessionIds = null);
+
+public sealed record WireWorkspaceFollowFrame(
+    [property: JsonPropertyName("type")] string Type,
+    [property: JsonPropertyName("value")] WireWorkspaceSnapshotValue? Value = null,
+    [property: JsonPropertyName("archivedSessionIds")] IReadOnlyList<string>? ArchivedSessionIds = null);

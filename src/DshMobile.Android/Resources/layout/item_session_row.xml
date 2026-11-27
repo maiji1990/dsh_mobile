@@ -1,8 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  Polish-P3 独立轻量会话卡片：18dp 圆角、surfaceContainerLow 纸面、零描边零抬升，
-  左右 16dp 外边距、卡片间 8dp、内部 16dp / 14dp；彻底移除旧版通栏深灰分割线。
-  长按整行仍由 ChatsFragment / ChatsAdapter 呼出 SessionActionsBottomSheet。
+  深海靛蓝稳固工作台会话卡片：14dp 克制圆角、1dp 结构边框、零阴影；
+  已归档会话在标题行展示中性胶囊标签；长按整行或左滑呼出 SessionActionsBottomSheet。
 -->
 <com.google.android.material.card.MaterialCardView xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
@@ -17,9 +16,10 @@
     android:focusable="true"
     android:foreground="?attr/selectableItemBackground"
     app:cardBackgroundColor="?attr/colorSurfaceContainerLow"
-    app:cardCornerRadius="18dp"
+    app:cardCornerRadius="@dimen/dshm_card_corner_radius"
     app:cardElevation="0dp"
-    app:strokeWidth="0dp">
+    app:strokeColor="?attr/colorOutlineVariant"
+    app:strokeWidth="@dimen/dshm_card_stroke_width">
 
     <LinearLayout
         android:id="@+id/session_item_body"
@@ -47,6 +47,15 @@
                 android:maxLines="1"
                 android:textAppearance="?attr/textAppearanceTitleMedium"
                 android:textColor="?attr/colorOnSurface" />
+
+            <TextView
+                android:id="@+id/session_item_badge_archived"
+                style="@style/Widget.DshMobile.Badge.Neutral"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="8dp"
+                android:text="@string/chats_badge_archived"
+                android:visibility="gone" />
 
             <ImageView
                 android:id="@+id/session_item_badge_running"

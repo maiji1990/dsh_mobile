@@ -24,6 +24,7 @@ public sealed class ChatViewModel : IChatActions, IAsyncDisposable
     private readonly SendStateMachine _sends;
     private readonly HistoryReconciler _reconciler;
     private readonly KeptTranscriptStore? _keptStore;
+    private readonly HiddenSessionStore? _hiddenStore;
     private readonly string _runtimeId;
     private readonly string _profileId;
     private readonly Lock _stateLock = new();
@@ -46,7 +47,8 @@ public sealed class ChatViewModel : IChatActions, IAsyncDisposable
         HistoryReconciler reconciler,
         KeptTranscriptStore? keptStore = null,
         string runtimeId = "local",
-        string profileId = "web")
+        string profileId = "web",
+        HiddenSessionStore? hiddenStore = null)
     {
         _gateway = gateway ?? throw new ArgumentNullException(nameof(gateway));
         _transcripts = transcripts ?? throw new ArgumentNullException(nameof(transcripts));
@@ -54,6 +56,7 @@ public sealed class ChatViewModel : IChatActions, IAsyncDisposable
         _sends = sends ?? throw new ArgumentNullException(nameof(sends));
         _reconciler = reconciler ?? throw new ArgumentNullException(nameof(reconciler));
         _keptStore = keptStore;
+        _hiddenStore = hiddenStore;
         _runtimeId = string.IsNullOrWhiteSpace(runtimeId) ? "local" : runtimeId;
         _profileId = string.IsNullOrWhiteSpace(profileId) ? "web" : profileId;
 
@@ -76,6 +79,7 @@ public sealed class ChatViewModel : IChatActions, IAsyncDisposable
         _gateway.ForwardedEvent += OnGatewayForwardedEvent;
         _requests.RequestsChanged += OnRequestsChanged;
         _sends.EntryChanged += OnSendEntryChanged;
+        _transcripts.SessionRemoved += OnTranscriptSessionRemoved;
     }
 
     public ChatUiState State
@@ -123,9 +127,26 @@ public sealed class ChatViewModel : IChatActions, IAsyncDisposable
         }
 
         oldSub?.Dispose();
-        if (handleToSubscribe is not null)
+        if (handleToSubscribe is not null && !handleToSubscribe.IsDisposed)
         {
-            var newSub = handleToSubscribe.Subscribe(OnTranscriptPublished);
+            IDisposable? newSub = null;
+            try
+            {
+                newSub = handleToSubscribe.Subscribe(OnTranscriptPublished);
+            }
+            catch (ObjectDisposedException)
+            {
+                // 并发场景下若句柄恰好被归档/删除释放，清空悬空引用等待下一次 ConnectAndAttach 重建。
+                lock (_stateLock)
+                {
+                    if (ReferenceEquals(_activeHandle, handleToSubscribe))
+                    {
+                        _activeHandle = null;
+                    }
+                }
+                return;
+            }
+
             lock (_stateLock)
             {
                 if (_uiVisible && ReferenceEquals(_activeHandle, handleToSubscribe))
@@ -136,6 +157,16 @@ public sealed class ChatViewModel : IChatActions, IAsyncDisposable
                 }
             }
             newSub?.Dispose();
+        }
+        else if (handleToSubscribe is { IsDisposed: true })
+        {
+            lock (_stateLock)
+            {
+                if (ReferenceEquals(_activeHandle, handleToSubscribe))
+                {
+                    _activeHandle = null;
+                }
+            }
         }
     }
 
@@ -177,7 +208,7 @@ public sealed class ChatViewModel : IChatActions, IAsyncDisposable
             });
     }
 
-    /// <summary>冷启 0.2s Cache-First 路径：从本地索引恢复最近会话快照，无缓存时安静返回 false（N-05-04）。</summary>
+    /// <summary>冷启 0.2s Cache-First 路径：从本地索引恢复最近未被隐藏的会话快照，无缓存时安静返回 false（N-05-04）。</summary>
     public async Task<bool> LoadMostRecentCachedSessionAsync(CancellationToken ct = default)
     {
         ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
@@ -191,7 +222,21 @@ public sealed class ChatViewModel : IChatActions, IAsyncDisposable
             return current.Transcript.Rows.Count > 0;
         }
 
-        var loaded = await _keptStore.TryLoadMostRecentAsync(ct).ConfigureAwait(false);
+        if (_hiddenStore is not null)
+        {
+            await _hiddenStore.LoadAsync(ct).ConfigureAwait(false);
+        }
+
+        var recentList = await _keptStore.ListRecentAsync(maxCount: 20, ct).ConfigureAwait(false);
+        LoadedRecentSession? loaded = null;
+        foreach (var candidate in recentList)
+        {
+            if (_hiddenStore is null || !_hiddenStore.IsHidden(candidate.Scope.SessionId))
+            {
+                loaded = candidate;
+                break;
+            }
+        }
         if (loaded is null)
         {
             return false;
@@ -241,6 +286,24 @@ public sealed class ChatViewModel : IChatActions, IAsyncDisposable
             }
 
             var caps = capsOutcome.Value!;
+            if (_hiddenStore is not null)
+            {
+                await _hiddenStore.LoadAsync(ct).ConfigureAwait(false);
+            }
+
+            var archivedSet = new HashSet<string>(StringComparer.Ordinal);
+            if (caps.ArchiveSessions)
+            {
+                var archivedOutcome = await _gateway.GetArchivedSessionIdsAsync(ct).ConfigureAwait(false);
+                if (archivedOutcome.IsOk && archivedOutcome.Value is not null)
+                {
+                    foreach (var archivedId in archivedOutcome.Value)
+                    {
+                        archivedSet.Add(archivedId);
+                    }
+                }
+            }
+
             var sessionId = preferredSessionId;
             string? listedTitle = null;
             IReadOnlyList<SessionSummaryView>? listedSessions = null;
@@ -252,13 +315,19 @@ public sealed class ChatViewModel : IChatActions, IAsyncDisposable
                     listedSessions = listOutcome.Value;
                     if (string.IsNullOrWhiteSpace(sessionId))
                     {
-                        var cachedSid = State.ActiveSession.SessionId;
-                        var matchedCached = State.Transcript.IsDetachedCache && cachedSid is not "pending"
-                            ? listedSessions.FirstOrDefault(x => string.Equals(x.SessionId, cachedSid, StringComparison.Ordinal))
-                            : null;
-                        var chosen = matchedCached ?? listedSessions.OrderByDescending(x => x.UpdatedAtUnixMs).First();
-                        sessionId = chosen.SessionId;
-                        listedTitle = chosen.Title;
+                        var selectable = listedSessions
+                            .Where(x => !archivedSet.Contains(x.SessionId) && (_hiddenStore is null || !_hiddenStore.IsHidden(x.SessionId)))
+                            .ToArray();
+                        if (selectable.Length > 0)
+                        {
+                            var cachedSid = State.ActiveSession.SessionId;
+                            var matchedCached = State.Transcript.IsDetachedCache && cachedSid is not "pending"
+                                ? selectable.FirstOrDefault(x => string.Equals(x.SessionId, cachedSid, StringComparison.Ordinal))
+                                : null;
+                            var chosen = matchedCached ?? selectable.OrderByDescending(x => x.UpdatedAtUnixMs).First();
+                            sessionId = chosen.SessionId;
+                            listedTitle = chosen.Title;
+                        }
                     }
                     else
                     {
@@ -365,6 +434,7 @@ public sealed class ChatViewModel : IChatActions, IAsyncDisposable
                 FailureCode = reconcileOutcome.IsOk ? null : reconcileOutcome.Error!.Code.ToString(),
                 Transcript = snap,
                 PendingRequests = FilterPendingForSession(scope, _requests.Snapshot()),
+                IsArchived = archivedSet.Contains(resolvedSessionId),
             });
 
             await SaveCacheSnapshotAsync(snap, ct).ConfigureAwait(false);
@@ -759,6 +829,154 @@ public sealed class ChatViewModel : IChatActions, IAsyncDisposable
         await SaveCacheSnapshotAsync(State.Transcript, ct).ConfigureAwait(false);
     }
 
+    /// <summary>归档当前会话，并清理其本地缓存快照。</summary>
+    public async Task<Outcome<bool>> ArchiveCurrentSessionAsync(bool stopActivity = false, CancellationToken ct = default)
+    {
+        ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
+        var current = State;
+        var sessionId = current.ActiveSession.SessionId;
+        if (string.IsNullOrWhiteSpace(sessionId) || string.Equals(sessionId, "pending", StringComparison.Ordinal))
+        {
+            return Outcome<bool>.Fail(DshFailureCode.InvalidState, "chat_archive.no_active_session");
+        }
+        if (!current.IsConnected || (!current.Capabilities.ArchiveSessions && !_gateway.Capabilities.ArchiveSessions))
+        {
+            PublishState(s => s with { FailureCode = DshFailureCode.Unsupported.ToString() });
+            return Outcome<bool>.Fail(DshFailureCode.Unsupported, "chat_archive.unsupported");
+        }
+
+        var outcome = await _gateway.ArchiveSessionAsync(sessionId, stopActivity, ct).ConfigureAwait(false);
+        if (!outcome.IsOk)
+        {
+            PublishState(s => s with { FailureCode = outcome.Error!.DiagnosticKey ?? outcome.Error.Code.ToString() });
+            return Outcome<bool>.Fail(outcome.Error!);
+        }
+
+        if (_keptStore is not null)
+        {
+            await _keptStore.DeleteBySessionIdAsync(sessionId, ct).ConfigureAwait(false);
+        }
+
+        PublishState(s => string.Equals(s.ActiveSession.SessionId, sessionId, StringComparison.Ordinal)
+            ? s with { IsArchived = true, FailureCode = null }
+            : s);
+        return Outcome<bool>.Ok(true);
+    }
+
+    /// <summary>取消归档当前会话。</summary>
+    public async Task<Outcome<bool>> UnarchiveCurrentSessionAsync(CancellationToken ct = default)
+    {
+        ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
+        var current = State;
+        var sessionId = current.ActiveSession.SessionId;
+        if (string.IsNullOrWhiteSpace(sessionId) || string.Equals(sessionId, "pending", StringComparison.Ordinal))
+        {
+            return Outcome<bool>.Fail(DshFailureCode.InvalidState, "chat_unarchive.no_active_session");
+        }
+        if (!current.IsConnected || (!current.Capabilities.ArchiveSessions && !_gateway.Capabilities.ArchiveSessions))
+        {
+            PublishState(s => s with { FailureCode = DshFailureCode.Unsupported.ToString() });
+            return Outcome<bool>.Fail(DshFailureCode.Unsupported, "chat_unarchive.unsupported");
+        }
+
+        var outcome = await _gateway.UnarchiveSessionAsync(sessionId, ct).ConfigureAwait(false);
+        if (!outcome.IsOk)
+        {
+            PublishState(s => s with { FailureCode = outcome.Error!.DiagnosticKey ?? outcome.Error.Code.ToString() });
+            return Outcome<bool>.Fail(outcome.Error!);
+        }
+
+        PublishState(s => string.Equals(s.ActiveSession.SessionId, sessionId, StringComparison.Ordinal)
+            ? s with { IsArchived = false, FailureCode = null }
+            : s);
+        return Outcome<bool>.Ok(true);
+    }
+
+    /// <summary>删除/移出当前会话：在线时先归档（透传 SessionActive），随后停流、删除本地缓存、记录本机隐藏并重置聊天页状态。</summary>
+    public async Task<Outcome<bool>> DeleteCurrentSessionAsync(bool stopActivity = false, CancellationToken ct = default)
+    {
+        ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
+        var current = State;
+        var activeScope = current.ActiveSession;
+        var sessionId = activeScope.SessionId;
+        if (string.IsNullOrWhiteSpace(sessionId) || string.Equals(sessionId, "pending", StringComparison.Ordinal))
+        {
+            return Outcome<bool>.Fail(DshFailureCode.InvalidState, "chat_delete.no_active_session");
+        }
+
+        if (current.IsConnected && (current.Capabilities.ArchiveSessions || _gateway.Capabilities.ArchiveSessions))
+        {
+            var archiveOutcome = await _gateway.ArchiveSessionAsync(sessionId, stopActivity, ct).ConfigureAwait(false);
+            if (!archiveOutcome.IsOk && archiveOutcome.Error?.Code != DshFailureCode.SessionNotFound)
+            {
+                PublishState(s => s with { FailureCode = archiveOutcome.Error!.DiagnosticKey ?? archiveOutcome.Error.Code.ToString() });
+                return Outcome<bool>.Fail(archiveOutcome.Error!);
+            }
+        }
+
+        await DetachCurrentSessionStreamAndHandleAsync(ct).ConfigureAwait(false);
+        await _transcripts.RemoveSessionAsync(activeScope, ct).ConfigureAwait(false);
+        if (_keptStore is not null)
+        {
+            await _keptStore.DeleteBySessionIdAsync(sessionId, ct).ConfigureAwait(false);
+        }
+        if (current.IsConnected && _hiddenStore is not null)
+        {
+            await _hiddenStore.HideAsync(sessionId, ct).ConfigureAwait(false);
+        }
+
+        var emptyKey = new SessionKey(_runtimeId, _profileId, "pending");
+        PublishState(s => s with
+        {
+            ActiveSession = emptyKey,
+            SessionTitle = string.Empty,
+            IsArchived = false,
+            IsReconciling = false,
+            IsSending = false,
+            StatusKey = "chat.status.session_removed",
+            FailureCode = null,
+            Transcript = new ChatSnapshot(0, emptyKey, -1, RunPhase.Idle, false, false, null, [], TranscriptCounters.Zero),
+            PendingRequests = [],
+        });
+        return Outcome<bool>.Ok(true);
+    }
+
+    private async Task DetachCurrentSessionStreamAndHandleAsync(CancellationToken ct)
+    {
+        _ = ct;
+        IDisposable? oldSub;
+        IAsyncDisposable? oldFollow;
+        lock (_stateLock)
+        {
+            oldSub = _transcriptSub;
+            _transcriptSub = null;
+            _activeHandle = null;
+            oldFollow = _followSub;
+            _followSub = null;
+        }
+        oldSub?.Dispose();
+        if (oldFollow is not null)
+        {
+            await DisposeFollowSafelyAsync(oldFollow).ConfigureAwait(false);
+        }
+    }
+
+    private static async Task DisposeFollowSafelyAsync(IAsyncDisposable followSub)
+    {
+        try
+        {
+            await followSub.DisposeAsync().ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _ = ex;
+        }
+    }
+
     public async Task NotifyHostStoppingAsync(CancellationToken ct = default)
     {
         try
@@ -810,9 +1028,23 @@ public sealed class ChatViewModel : IChatActions, IAsyncDisposable
         }
         oldSub?.Dispose();
 
-        if (visible)
+        if (visible && !handle.IsDisposed)
         {
-            newSub = handle.Subscribe(OnTranscriptPublished);
+            try
+            {
+                newSub = handle.Subscribe(OnTranscriptPublished);
+            }
+            catch (ObjectDisposedException)
+            {
+                lock (_stateLock)
+                {
+                    if (ReferenceEquals(_activeHandle, handle))
+                    {
+                        _activeHandle = null;
+                    }
+                }
+                return;
+            }
             lock (_stateLock)
             {
                 if (_uiVisible && ReferenceEquals(_activeHandle, handle))
@@ -900,6 +1132,30 @@ public sealed class ChatViewModel : IChatActions, IAsyncDisposable
                     NeedsCredentialOnboarding = mapped.Code == DshFailureCode.CredentialsMissing || s.NeedsCredentialOnboarding,
                 });
                 break;
+            case SessionRemovedGatewayEvent removed when string.Equals(removed.SessionId, active.SessionId, StringComparison.Ordinal):
+            {
+                IAsyncDisposable? followToStop;
+                lock (_stateLock)
+                {
+                    followToStop = _followSub;
+                    _followSub = null;
+                }
+                if (followToStop is not null)
+                {
+                    _ = DisposeFollowSafelyAsync(followToStop);
+                }
+                PublishState(s => string.Equals(s.ActiveSession.SessionId, removed.SessionId, StringComparison.Ordinal)
+                    ? s with
+                    {
+                        IsReconciling = false,
+                        IsSending = false,
+                        StatusKey = "chat.status.session_removed",
+                        FailureCode = DshFailureCode.SessionNotFound.ToString(),
+                        PendingRequests = [],
+                    }
+                    : s);
+                break;
+            }
         }
     }
 
@@ -949,6 +1205,30 @@ public sealed class ChatViewModel : IChatActions, IAsyncDisposable
         StateChanged?.Invoke(next);
     }
 
+    private void OnTranscriptSessionRemoved(SessionKey removedScope)
+    {
+        IDisposable? oldSub = null;
+        IAsyncDisposable? oldFollow = null;
+        lock (_stateLock)
+        {
+            if (_activeHandle is null || _activeHandle.Scope != removedScope)
+            {
+                return;
+            }
+            oldSub = _transcriptSub;
+            _transcriptSub = null;
+            _activeHandle = null;
+            oldFollow = _followSub;
+            _followSub = null;
+        }
+
+        oldSub?.Dispose();
+        if (oldFollow is not null)
+        {
+            _ = DisposeFollowSafelyAsync(oldFollow);
+        }
+    }
+
     public async ValueTask DisposeAsync()
     {
         if (Interlocked.Exchange(ref _disposed, 1) != 0)
@@ -958,6 +1238,7 @@ public sealed class ChatViewModel : IChatActions, IAsyncDisposable
         _gateway.ForwardedEvent -= OnGatewayForwardedEvent;
         _requests.RequestsChanged -= OnRequestsChanged;
         _sends.EntryChanged -= OnSendEntryChanged;
+        _transcripts.SessionRemoved -= OnTranscriptSessionRemoved;
 
         IDisposable? sub;
         IAsyncDisposable? follow;

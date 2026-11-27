@@ -239,6 +239,27 @@ public sealed record SessionFollowAssistantStreamUpdate(
 public sealed record SessionFollowUnknownUpdate(
     string RawType) : SessionFollowUpdate;
 
+/// <summary>工作区订阅流（workspace/follow）推送的强类型帧基类。</summary>
+public abstract record WorkspaceFollowFrame;
+
+/// <summary>工作区订阅流首帧基线，包含已归档与已置顶会话 ID 列表。</summary>
+public sealed record WorkspaceBaselineFrame(
+    IReadOnlyList<string> ArchivedSessionIds,
+    IReadOnlyList<string> PinnedSessionIds) : WorkspaceFollowFrame;
+
+/// <summary>工作区已归档会话列表增量更新帧。</summary>
+public sealed record WorkspaceArchivedChangedFrame(
+    IReadOnlyList<string> ArchivedSessionIds) : WorkspaceFollowFrame;
+
+/// <summary>工作区状态整包替换帧。</summary>
+public sealed record WorkspaceReplacedFrame(
+    IReadOnlyList<string> ArchivedSessionIds,
+    IReadOnlyList<string> PinnedSessionIds) : WorkspaceFollowFrame;
+
+/// <summary>未识别的工作区订阅帧，安全降级忽略而不抛错。</summary>
+public sealed record UnknownWorkspaceFollowFrame(
+    string RawType) : WorkspaceFollowFrame;
+
 public abstract record ForwardedGatewayEvent;
 
 public sealed record ApprovalGatewayEvent(ApprovalRequestView Request) : ForwardedGatewayEvent;

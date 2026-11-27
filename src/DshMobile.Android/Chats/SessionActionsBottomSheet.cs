@@ -1,3 +1,4 @@
+using Android.Content.Res;
 using Android.OS;
 using Android.Views;
 using Android.Widget;
@@ -10,11 +11,9 @@ using FragmentManager = AndroidX.Fragment.App.FragmentManager;
 namespace DshMobile.App.Chats;
 
 /// <summary>
-/// UI Slice 2 / UI-S6：会话卡片轻量操作底部抽屉（全 XML <c>sheet_session_actions.xml</c>），
-/// 承接「打开会话」「重命名」「Fork 分支」「停止当前轮次」，替代原本卡片底部常驻的三按钮栏。
-/// 已统一为 <see cref="BottomSheetDialogFragment"/>：标量参数经 <c>Arguments</c> 传递，
-/// 动作经宿主 <see cref="IHost"/> 回调派发；tag 去重避免快速双击弹出双份弹窗，
-/// 配置变更后若宿主回调不可用则安全关闭而不会抛空引用异常。
+/// 会话卡片操作底部抽屉（全 XML <c>sheet_session_actions.xml</c>），
+/// 承接「打开」「重命名」「Fork 分支」「停止当前轮次」「归档 / 取消归档」与「删除对话 / 删除本地缓存」。
+/// 标量参数均通过安全的 <c>Arguments</c> 键传递，动作经宿主 <see cref="IHost"/> 回调派发。
 /// </summary>
 public sealed class SessionActionsBottomSheet : BottomSheetDialogFragment
 {
@@ -26,14 +25,21 @@ public sealed class SessionActionsBottomSheet : BottomSheetDialogFragment
     private const string ArgHostReady = "sheet.session.host_ready";
     private const string ArgCanCancel = "sheet.session.can_cancel";
     private const string ArgRunning = "sheet.session.running";
+    private const string ArgIsArchived = "arg_is_archived";
+    private const string ArgCanArchive = "arg_can_archive";
+    private const string ArgIsCachedOnly = "arg_is_cached_only";
+    private const string ArgCanRemove = "arg_can_remove";
 
-    /// <summary>会话卡片可派发的轻量动作。</summary>
+    /// <summary>会话卡片可派发的操作类型。</summary>
     public enum Action
     {
         Open,
         Rename,
         Fork,
         Cancel,
+        Archive,
+        Unarchive,
+        Remove,
     }
 
     /// <summary>宿主（会话列表页）回调契约；重建后宿主不再适用时由弹窗自行关闭。</summary>
@@ -53,7 +59,11 @@ public sealed class SessionActionsBottomSheet : BottomSheetDialogFragment
         string? cwd,
         bool hostReady,
         bool canCancel,
-        bool running)
+        bool running,
+        bool isArchived,
+        bool canArchive,
+        bool isCachedOnly,
+        bool canRemove)
     {
         ArgumentNullException.ThrowIfNull(manager);
         if (manager.FindFragmentByTag(SheetTag) is not null)
@@ -74,6 +84,10 @@ public sealed class SessionActionsBottomSheet : BottomSheetDialogFragment
         args.PutBoolean(ArgHostReady, hostReady);
         args.PutBoolean(ArgCanCancel, canCancel);
         args.PutBoolean(ArgRunning, running);
+        args.PutBoolean(ArgIsArchived, isArchived);
+        args.PutBoolean(ArgCanArchive, canArchive);
+        args.PutBoolean(ArgIsCachedOnly, isCachedOnly);
+        args.PutBoolean(ArgCanRemove, canRemove);
 
         new SessionActionsBottomSheet { Arguments = args }.Show(manager, SheetTag);
     }
@@ -94,7 +108,12 @@ public sealed class SessionActionsBottomSheet : BottomSheetDialogFragment
         var hostReady = Arguments?.GetBoolean(ArgHostReady, false) ?? false;
         var canCancel = Arguments?.GetBoolean(ArgCanCancel, false) ?? false;
         var running = Arguments?.GetBoolean(ArgRunning, false) ?? false;
+        var isArchived = Arguments?.GetBoolean(ArgIsArchived, false) ?? false;
+        var canArchive = Arguments?.GetBoolean(ArgCanArchive, false) ?? false;
+        var isCachedOnly = Arguments?.GetBoolean(ArgIsCachedOnly, false) ?? false;
+        var canRemove = Arguments?.GetBoolean(ArgCanRemove, true) ?? true;
 
+        var online = hostReady && !isCachedOnly;
         var ctx = RequireContext();
         var title = view.FindViewById<TextView>(Resource.Id.sheet_session_title)!;
         var subtitle = view.FindViewById<TextView>(Resource.Id.sheet_session_subtitle)!;
@@ -112,6 +131,7 @@ public sealed class SessionActionsBottomSheet : BottomSheetDialogFragment
             ctx.GetString(Resource.String.chats_sheet_open_sub),
             visible: true,
             enabled: true,
+            destructive: false,
             Action.Open);
 
         BindActionRow(
@@ -119,8 +139,9 @@ public sealed class SessionActionsBottomSheet : BottomSheetDialogFragment
             Resource.Drawable.ic_article,
             ctx.GetString(Resource.String.chats_action_rename),
             ctx.GetString(Resource.String.chats_sheet_rename_sub),
-            visible: hostReady,
-            enabled: hostReady,
+            visible: online,
+            enabled: online,
+            destructive: false,
             Action.Rename);
 
         BindActionRow(
@@ -128,8 +149,9 @@ public sealed class SessionActionsBottomSheet : BottomSheetDialogFragment
             Resource.Drawable.ic_code,
             ctx.GetString(Resource.String.chats_action_fork),
             ctx.GetString(Resource.String.chats_sheet_fork_sub),
-            visible: hostReady,
-            enabled: hostReady,
+            visible: online,
+            enabled: online,
+            destructive: false,
             Action.Fork);
 
         BindActionRow(
@@ -137,9 +159,44 @@ public sealed class SessionActionsBottomSheet : BottomSheetDialogFragment
             Resource.Drawable.ic_stop,
             ctx.GetString(Resource.String.chats_action_cancel),
             ctx.GetString(Resource.String.chats_sheet_cancel_sub),
-            visible: hostReady && running,
+            visible: online && running,
             enabled: canCancel,
+            destructive: false,
             Action.Cancel);
+
+        BindActionRow(
+            view.FindViewById(Resource.Id.sheet_session_archive)!,
+            Resource.Drawable.ic_archive,
+            ctx.GetString(Resource.String.chats_action_archive),
+            ctx.GetString(Resource.String.chats_sheet_archive_sub),
+            visible: online && canArchive && !isArchived,
+            enabled: online && canArchive,
+            destructive: false,
+            Action.Archive);
+
+        BindActionRow(
+            view.FindViewById(Resource.Id.sheet_session_unarchive)!,
+            Resource.Drawable.ic_unarchive,
+            ctx.GetString(Resource.String.chats_action_unarchive),
+            ctx.GetString(Resource.String.chats_sheet_unarchive_sub),
+            visible: online && canArchive && isArchived,
+            enabled: online && canArchive,
+            destructive: false,
+            Action.Unarchive);
+
+        var showRemove = canRemove && (online || isCachedOnly);
+        view.FindViewById(Resource.Id.sheet_session_danger_divider)!.Visibility =
+            showRemove ? ViewStates.Visible : ViewStates.Gone;
+
+        BindActionRow(
+            view.FindViewById(Resource.Id.sheet_session_remove)!,
+            Resource.Drawable.ic_delete,
+            ctx.GetString(isCachedOnly ? Resource.String.chats_action_remove_cached : Resource.String.chats_action_remove),
+            ctx.GetString(isCachedOnly ? Resource.String.chats_sheet_remove_cached_sub : Resource.String.chats_sheet_remove_sub),
+            visible: showRemove,
+            enabled: showRemove,
+            destructive: true,
+            Action.Remove);
 
         return view;
     }
@@ -168,6 +225,7 @@ public sealed class SessionActionsBottomSheet : BottomSheetDialogFragment
         string subtitleText,
         bool visible,
         bool enabled,
+        bool destructive,
         Action action)
     {
         row.Visibility = visible ? ViewStates.Visible : ViewStates.Gone;
@@ -175,11 +233,22 @@ public sealed class SessionActionsBottomSheet : BottomSheetDialogFragment
         {
             return;
         }
-        row.FindViewById<ImageView>(Resource.Id.row_icon)!.SetImageResource(iconRes);
-        row.FindViewById<TextView>(Resource.Id.row_title)!.Text = titleText;
+
+        var icon = row.FindViewById<ImageView>(Resource.Id.row_icon)!;
+        var title = row.FindViewById<TextView>(Resource.Id.row_title)!;
         var sub = row.FindViewById<TextView>(Resource.Id.row_subtitle)!;
+        icon.SetImageResource(iconRes);
+        title.Text = titleText;
         sub.Text = subtitleText;
         sub.Visibility = ViewStates.Visible;
+
+        if (destructive)
+        {
+            var errorColor = new Android.Graphics.Color(Rows.Color(row, Resource.Attribute.colorError));
+            icon.ImageTintList = ColorStateList.ValueOf(errorColor);
+            title.SetTextColor(errorColor);
+        }
+
         row.Enabled = enabled;
         row.Alpha = enabled ? 1.0f : 0.48f;
         row.Click += (_, _) =>

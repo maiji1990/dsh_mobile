@@ -59,7 +59,9 @@ public sealed class MainActivity : AppCompatActivity
     private const string DetailChatTag = "main.chat.detail";
 
     private BottomNavigationView _bar = null!;
+    private View _barDivider = null!;
     private NavigationRailView _rail = null!;
+    private View _railDivider = null!;
     private View _root = null!;
     private View _inboxBanner = null!;
     private TextView _inboxBannerText = null!;
@@ -67,10 +69,12 @@ public sealed class MainActivity : AppCompatActivity
     private View _detailPane = null!;
     private View _detailDivider = null!;
     private View _detailEmpty = null!;
+    private string? _detailSessionId;
     private bool _wide;
+    private bool _imeVisible;
     private int _tab = Resource.Id.nav_chats;
     private int _inboxRenderPosted;
-    /// <summary>Polish-P3：程序化同步底部 / 侧轨选中态时抑制递归的 ItemSelected 回调。</summary>
+    /// <summary>程序化同步底部导航栏与侧轨选中态时抑制递归的 ItemSelected 回调。</summary>
     private bool _switchingTabs;
 
     /// <summary>构造从原生聊天等页面直达工作区文件预览或 Git Diff 的 Intent（N-06-02）。</summary>
@@ -135,11 +139,13 @@ public sealed class MainActivity : AppCompatActivity
         if (SupportFragmentManager.FindFragmentByTag(DetailChatTag) is ChatFragment existing
             && existing.IsRemote == isRemote)
         {
+            _detailSessionId = sessionId;
             existing.NavigateToSession(sessionId, focusEventId);
             _detailEmpty.Visibility = ViewStates.Gone;
             return;
         }
 
+        _detailSessionId = sessionId;
         var args = new Bundle();
         args.PutString(ChatActivity.ExtraSessionId, sessionId);
         if (!string.IsNullOrWhiteSpace(focusEventId))
@@ -161,6 +167,16 @@ public sealed class MainActivity : AppCompatActivity
         _detailEmpty.Visibility = ViewStates.Gone;
     }
 
+    /// <summary>当右栏正展示的会话被归档或删除时自动移除嵌入式详情，避免右栏悬空展示已移除会话。</summary>
+    public void CloseDetailChatIfMatches(string? sessionId)
+    {
+        if (string.IsNullOrWhiteSpace(sessionId)
+            || string.Equals(_detailSessionId, sessionId, StringComparison.Ordinal))
+        {
+            RemoveDetailChat();
+        }
+    }
+
     protected override void OnCreate(Bundle? savedInstanceState)
     {
         var savedTab = SavedTab(savedInstanceState);
@@ -169,7 +185,9 @@ public sealed class MainActivity : AppCompatActivity
         Edges.Enable(Window!);
         SetContentView(Resource.Layout.activity_main);
         _bar = FindViewById<BottomNavigationView>(Resource.Id.bottom_nav)!;
+        _barDivider = FindViewById(Resource.Id.bottom_nav_divider)!;
         _rail = FindViewById<NavigationRailView>(Resource.Id.nav_rail)!;
+        _railDivider = FindViewById(Resource.Id.nav_rail_divider)!;
         _inboxBanner = FindViewById(Resource.Id.main_inbox_banner)!;
         _inboxBannerText = FindViewById<TextView>(Resource.Id.main_inbox_banner_text)!;
         _tabContent = FindViewById<FrameLayout>(Resource.Id.tab_content)!;
@@ -185,12 +203,10 @@ public sealed class MainActivity : AppCompatActivity
         {
             var bars = insets.GetInsets(WindowInsetsCompat.Type.SystemBars() | WindowInsetsCompat.Type.DisplayCutout())!;
             var ime = Edges.ImeVisible(insets);
-            // Polish-P3：窄屏不再有底部导航栏，根布局直接避让系统导航栏；宽屏仍由根布局避让。
-            // 键盘弹起时交给 tab_content 避让 IME，避免底部双重留白。
+            _imeVisible = ime;
+            // 根布局统一避让系统状态栏与导航栏；键盘弹起时交由 tab_content 避让 IME 并临时收起底栏，避免双重留白。
             v.SetPadding(bars.Left, bars.Top, bars.Right, ime ? 0 : bars.Bottom);
-            // 底部 3-Tab 在窄屏彻底退出布局（Gone 不占高度），宽屏仅显示左侧 NavigationRailView。
-            _bar.Visibility = ViewStates.Gone;
-            _rail.Visibility = _wide ? ViewStates.Visible : ViewStates.Gone;
+            UpdateNavigationChromeVisibility();
             content.SetPadding(0, 0, 0, ime ? insets.GetInsets(WindowInsetsCompat.Type.Ime())!.Bottom : 0);
             return insets;
         }));
@@ -241,8 +257,10 @@ public sealed class MainActivity : AppCompatActivity
     protected override void OnStart()
     {
         base.OnStart();
-        var inbox = DshMobileApplication.Current.Bridge.Agent.Inbox;
+        var agent = DshMobileApplication.Current.Bridge.Agent;
+        var inbox = agent.Inbox;
         inbox.StateChanged += OnInboxStateChanged;
+        agent.Sessions.SessionArchivedOrRemoved += OnSessionArchivedOrRemoved;
         RenderInbox(inbox.State);
         // ADR-0029: 回到前台时按节流间隔静默检查签名通道清单（仅只读拉取清单，不下载不安装）。
         if (UiPrefs.ShouldAutoCheckUpdates(this, DateTimeOffset.UtcNow))
@@ -257,8 +275,15 @@ public sealed class MainActivity : AppCompatActivity
 
     protected override void OnStop()
     {
-        DshMobileApplication.Current.Bridge.Agent.Inbox.StateChanged -= OnInboxStateChanged;
+        var agent = DshMobileApplication.Current.Bridge.Agent;
+        agent.Inbox.StateChanged -= OnInboxStateChanged;
+        agent.Sessions.SessionArchivedOrRemoved -= OnSessionArchivedOrRemoved;
         base.OnStop();
+    }
+
+    private void OnSessionArchivedOrRemoved(string sessionId)
+    {
+        RunOnUiThread(() => CloseDetailChatIfMatches(sessionId));
     }
 
     private void OnInboxStateChanged(InboxUiState state)
@@ -363,17 +388,26 @@ public sealed class MainActivity : AppCompatActivity
         LocalNetworkAccess.OnRequestResult(requestCode, grantResults);
     }
 
-    /// <summary>Rail or hidden bottom bar for this width; both stay on the current tab, then insets are re-applied.</summary>
+    /// <summary>按窗口宽度切换稳固底部导航栏（窄屏）与左侧导航轨（宽屏），并重新应用系统栏内边距。</summary>
     private void ApplyWidth(Android.Content.Res.Configuration config)
     {
         _wide = config.ScreenWidthDp >= RailMinWidthDp;
-        _rail.Visibility = _wide ? ViewStates.Visible : ViewStates.Gone;
-        // Polish-P3：底部 3-Tab 在窄屏也保持 Gone，仅保留侧轨在宽屏出现。
-        _bar.Visibility = ViewStates.Gone;
+        UpdateNavigationChromeVisibility();
         SelectNav(_tab);
         ApplyChatPanes();
         NotifyShellWidth();
         ViewCompat.RequestApplyInsets(_root);
+    }
+
+    private void UpdateNavigationChromeVisibility()
+    {
+        var showBottom = !_wide && !_imeVisible;
+        var bottomState = showBottom ? ViewStates.Visible : ViewStates.Gone;
+        var railState = _wide ? ViewStates.Visible : ViewStates.Gone;
+        _bar.Visibility = bottomState;
+        _barDivider.Visibility = bottomState;
+        _rail.Visibility = railState;
+        _railDivider.Visibility = railState;
     }
 
     /// <summary>Polish-P3：把宽窄变化广播给已存在的页签，让子页顶栏返回箭头与会话页悬浮工作区条即时切换。</summary>
@@ -422,8 +456,10 @@ public sealed class MainActivity : AppCompatActivity
 
     private void RemoveDetailChat()
     {
+        _detailSessionId = null;
         if (SupportFragmentManager.FindFragmentByTag(DetailChatTag) is not { } detail)
         {
+            _detailEmpty.Visibility = ViewStates.Visible;
             return;
         }
         SupportFragmentManager.BeginTransaction().Remove(detail).CommitNowAllowingStateLoss();
