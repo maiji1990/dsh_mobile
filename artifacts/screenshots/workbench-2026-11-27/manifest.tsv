@@ -1,0 +1,29 @@
+id	file	scene	theme_orientation	notes
+01	01_chats_light_initial.png	首页「对话」列表（DSH 就绪态）	light_portrait	深海靛蓝 1dp 结构卡片、稳固 3 栏底栏、顶栏固定新建/搜索/更多、零 FAB/悬浮条
+02	02_chat_new_session_light.png	新建临时会话聊天页（初版）	light_portrait	全宽贴顶顶栏、贴底无缝停靠输入栏（Docked Composer），初版空态文案末尾孤字后于定稿版修复
+03	03_session_actions_sheet.png	会话左滑弹出 SessionActionsBottomSheet	light_portrait	显示归档对话、分隔线及红色删除对话选项（针对临时会话 #38da6e）
+04	04_chats_after_archive.png	归档后「全部」列表与筛选栏	light_portrait	临时会话已从全部列表移出，筛选芯片更新为「已归档 (1)」
+05	05_chats_archived_tab.png	切到「已归档 (1)」筛选标签	light_portrait	卡片内联显示「已归档」胶囊徽标
+06	06_chat_archived_banner.png	打开已归档会话聊天页（P0 修复后）	light_portrait	流式排布「此对话已归档」横幅与「取消归档」按钮，且优化后空态文案单行居中零孤字
+07	07_chats_after_unarchive.png	点击取消归档后恢复回「全部」列表	light_portrait	临时会话恢复至「进行中」分组，「已归档」计数归零
+07b	07b_session_delete_confirm_dialog.png	点击删除对话弹出诚实说明确认框	light_portrait	明确告知 DSH 内核暂不支持物理销毁远端会话文件，将归档停活+清本地缓存+移出列表
+07c	07c_chats_after_delete.png	确认删除后的「全部」会话列表	light_portrait	临时测试会话彻底从「全部」与「已归档」消失，用户原有会话完好无损
+08	08_workspace_files_light.png	工作区页（统一标准顶栏修复后）	light_portrait	标准 actionBarSize 顶栏与对话/设置完全统一、固定新建按钮、文件/Git 槽式切换器、无 FAB
+09	09_workspace_create_sheet.png	工作区顶栏「新建」弹出抽屉	light_portrait	WorkspaceCreateBottomSheet（新建文件/新建文件夹/导入）正常弹出
+10	10_more_light.png	设置（更多）页	light_portrait	1dp 结构卡片、深海靛蓝 Switch/图标、稳固底栏且无多余返回箭头
+11	11_credentials_light.png	Provider 与凭据页	light_portrait	已移除底部悬浮 FAB，顶栏固定 + 与刷新按钮，脱敏掩码与安全提示完整显示
+12	12_plugins_installed_light.png	插件目录「已安装 (203)」全量列表	light_portrait	移除悬浮 FAB、顶栏固定手动安装/刷新、顶部双模式分段切换器与 5 枚筛选芯片
+13	13_plugins_installed_filtered.png	插件已安装模式搜索与筛选（timer + 可管理）	light_portrait	多条件即时过滤命中 cordis-plugin-timer，显示「匹配 1 / 共 203 项」统计条
+14	14_plugins_discover_default.png	插件「发现插件」默认 npm 推荐搜索（文案修复后）	light_portrait	搜索框 hint 完整无裁切，加载 npm 公共仓库真实列表（官方/版本徽标与安装按钮）
+15	15_plugins_discover_cordis.png	发现插件快捷标签 cordis 搜索结果	light_portrait	展示 11120 项匹配前 25 条，cordis-plugin-timer 准确识别「官方 + 已安装」态并置灰按钮
+16	16_plugins_discover_install_confirm.png	发现插件点击「安装」安全确认弹窗	light_portrait	列出 npm 来源、安装规格 cordis@4.0.0-rc.14 与沙箱安全提醒（实测点取消未污染设备）
+17	17_chat_long_history_light.png	真实长会话（Count from 1 to 200）	light_portrait	思考折叠行、命令执行卡、语法高亮代码块与全锚定停靠输入栏
+18	18_chat_jump_bottom_bar.png	长会话上滑触发停靠式回到底部条	light_portrait	chat_jump_bottom_bar 停靠在输入栏正上方（非悬浮圆钮），1dp 分隔线不遮挡正文
+19	19_chat_slash_panel.png	聊天页停靠式斜杠命令面板	light_portrait	通过 + Tray 展开停靠斜杠面板（/compact /export /feedback /goal），零浮空遮罩
+20	20_chat_model_picker.png	点击模型胶囊打开 ModelPickerDialog	light_portrait	推理档位芯片与深海靛蓝选中高亮，与工作台主题统一
+21	21_chat_dark.png	聊天页深色模式	dark_portrait	午夜蓝黑 #0B1120 底色 + 亮钴蓝 #60A5FA 发送按钮与清晰 1dp 结构框
+22	22_chats_dark.png	对话列表页深色模式	dark_portrait	1dp OLED 结构卡片、选中态芯片与活跃会话亮钴蓝标题对比度清晰
+23	23_workspace_dark.png	工作区深色模式（统一顶栏修复后）	dark_portrait	统一标准顶栏、槽式切换器与稳固底栏在深色模式下层次分明
+24	24_plugins_dark.png	插件目录深色模式	dark_portrait	双模式切换器、筛选芯片、核心保护/运行中徽标与 Switch 在深色下清晰可读
+25	25_landscape_chats_dualpane.png	横屏三栏双窗格会话工作台	light_landscape	左侧 NavigationRailView + 中间会话列表 + 右侧嵌入式聊天详情，1dp 分隔线精准对齐
+26	26_landscape_workspace.png	横屏工作区（统一顶栏修复后）	light_landscape	左侧 NavigationRailView + 统一标准顶栏与宽屏文件列表
