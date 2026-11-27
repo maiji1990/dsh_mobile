@@ -52,6 +52,12 @@ public sealed class OutcomeAndFailureTests
         Assert.Equal(
             DshFailureCode.SessionNotFound,
             DshFailureMapper.FromRpcError(new RemoteRpcError("session/not-found", "missing")).Code);
+        var conflict = DshFailureMapper.FromRpcError(new RemoteRpcError("settings/conflict", "stale revision"));
+        Assert.Equal(DshFailureCode.SettingsConflict, conflict.Code);
+        Assert.True(conflict.Retryable);
+        var rejected = DshFailureMapper.FromRpcError(new RemoteRpcError("settings/rejected", "read-only"));
+        Assert.Equal(DshFailureCode.SettingsRejected, rejected.Code);
+        Assert.False(rejected.Retryable);
         Assert.Equal(
             DshFailureCode.Unauthorized,
             DshFailureMapper.FromException(new RemoteAuthenticationException("secret token xyz", 401)).Code);
@@ -74,6 +80,14 @@ public sealed class OutcomeAndFailureTests
         Assert.Equal(DshFailureCode.Unavailable, (await gw.ReplyApprovalAsync("c1", "e1", ApprovalDecision.Rejected)).Error!.Code);
         Assert.Equal(DshFailureCode.Unavailable, (await gw.GetModelCatalogAsync()).Error!.Code);
         Assert.Equal(DshFailureCode.Unavailable, (await gw.GetPluginInventoryAsync()).Error!.Code);
+        Assert.Equal(DshFailureCode.Unavailable, (await gw.ListPluginBundlesAsync()).Error!.Code);
+        Assert.Equal(DshFailureCode.Unavailable, (await gw.ReadBundleDetailAsync("demo", "zh-CN")).Error!.Code);
+        Assert.Equal(DshFailureCode.Unavailable, (await gw.DescribeSettingsAsync()).Error!.Code);
+        Assert.Equal(DshFailureCode.Unavailable, (await gw.MutateSettingsAsync("demo", [SettingsPathOp.Unset(["a"])])).Error!.Code);
+        using (var emptyObj = System.Text.Json.JsonDocument.Parse("{}"))
+        {
+            Assert.Equal(DshFailureCode.Unavailable, (await gw.ReplaceSettingsAsync("demo", emptyObj.RootElement)).Error!.Code);
+        }
         Assert.Equal(DshFailureCode.Unavailable, (await gw.ArchiveSessionAsync("s1")).Error!.Code);
         Assert.Equal(DshFailureCode.Unavailable, (await gw.UnarchiveSessionAsync("s1")).Error!.Code);
         Assert.Equal(DshFailureCode.Unavailable, (await gw.GetArchivedSessionIdsAsync()).Error!.Code);

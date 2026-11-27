@@ -76,8 +76,13 @@ public static partial class PluginCommandRules
     }
 
     /// <summary>校验是否为合法的 npm 包安装规格（包名 + 可选精确 SemVer 版本号）。</summary>
-    public static bool IsValidInstallSpec(string? candidate)
+    public static bool IsValidInstallSpec(string? candidate) =>
+        TryExtractPackageNameFromInstallSpec(candidate, out _);
+
+    /// <summary>校验 npm 安装规格并提取其中的基础包名（剥离可选的精确 SemVer 版本后缀）。</summary>
+    public static bool TryExtractPackageNameFromInstallSpec(string? candidate, out string packageName)
     {
+        packageName = string.Empty;
         if (string.IsNullOrEmpty(candidate))
         {
             return false;
@@ -91,8 +96,13 @@ public static partial class PluginCommandRules
         {
             return false;
         }
-        var packageName = match.Groups[1].Value;
-        return packageName.Length <= MaxPackageNameLength && !packageName.Contains("..", StringComparison.Ordinal);
+        var extracted = match.Groups[1].Value;
+        if (extracted.Length > MaxPackageNameLength || extracted.Contains("..", StringComparison.Ordinal))
+        {
+            return false;
+        }
+        packageName = extracted;
+        return true;
     }
 
     /// <summary>校验 Cordis 插件入口 ID 是否安全合法。</summary>

@@ -21,7 +21,9 @@ public sealed record DshCapabilities(
     bool PluginInventory,
     bool PluginMutation,
     bool GitOperations,
-    bool ArchiveSessions = false)
+    bool ArchiveSessions = false,
+    bool PluginBundles = false,
+    bool PluginSettings = false)
 {
     public static readonly DshCapabilities Empty = new(
         Prompt: false,
@@ -40,5 +42,7 @@ public sealed record DshCapabilities(
         PluginInventory: false,
         PluginMutation: false,
         GitOperations: false,
-        ArchiveSessions: false);
+        ArchiveSessions: false,
+        PluginBundles: false,
+        PluginSettings: false);
 }

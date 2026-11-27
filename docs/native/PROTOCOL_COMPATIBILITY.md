@@ -36,7 +36,9 @@
 | `IQuestionGateway` | `ReplyOpenQuestionAsync` / `RejectOpenQuestionAsync` / `ReplyContinuedQuestionAsync` | `POST /api/$events/result` 或 `POST /api/userQuestions/answer` | Waterfall 用 `$events/result`；延续态用 `{ "agentId", "callId", "answer" }` | 支持单选、多选、`custom` 与拒绝撤销 |
 | `IProviderGateway` | `GetModelCatalogAsync` / `SelectSessionModelAsync` | `POST /api/session/modelCatalog` / `session/selectModel` | `selectModel`: `{ "request": { "sessionId", "provider", "model", "reasoningEffort"? } }` | `session/model-unavailable` → `DshFailureCode.SessionBusy` |
 | `ICredentialGateway` | `DescribeCredentialsAsync` / `SetCredentialAsync` / `UnsetCredentialAsync` | `POST /api/credentials/describe` / `set` / `unset` | `{ "refs" }` / `{ "ref", "value" }` / `{ "ref" }` | 只回显脱敏状态，明文密钥仅走 HTTPS/loopback 请求体，不落盘日志 |
-| `IPluginGateway` | `GetPluginInventoryAsync` | `POST /api/pluginInventory/list` | `{}` | 一期仅开放只读清单（`PluginMutation = false`） |
+| `IPluginGateway` | `GetPluginInventoryAsync` | `POST /api/pluginInventory/list` | `{}` | `meta` 对齐上游 `title`/`description`/`icon`/`error`（兼容旧夹具 `name`），`title` 与 `description` 分离解析 |
+| `IPluginGateway` | `ListPluginBundlesAsync` / `ReadBundleDetailAsync` | `POST /api/pluginManager/listBundles` / `readBundleDetail` | `{}` / `{ "name", "language" }` | 扁平参数无外层包装；`readBundleDetail` 返回 `found`（含 `origin`/`path`/`markdown`）或 `none`；`ProbeCapabilitiesAsync` 静默探测 `PluginBundles` |
+| `IPluginGateway` | `DescribeSettingsAsync` / `MutateSettingsAsync` / `ReplaceSettingsAsync` | `POST /api/settings/describe` / `mutate` / `replace` | `{}` / `{ "ns", "ops", "expectedRevision"? }` / `{ "ns", "section", "expectedRevision"? }` | 扁平参数无外层包装；`unset` 严格省略 `value` 字段；`settings/conflict` → `SettingsConflict`（自动刷新重读），`settings/rejected` → `SettingsRejected`；含密钥槽位时全量重置仅对非密钥覆盖项发 `mutate(unset)`，绝不误删 `role('secret')`；`ProbeCapabilitiesAsync` 静默探测 `PluginSettings` |
 | `IEventGateway` | `FollowSessionAsync` / `ForwardedEvent` | `WS /api/remote.mux` (`session/follow` + `$events`) | `session/follow`: `{ "request": { "address", "activate": true, "assistantStream": true } }` | 未知 follow frame 与未知转发事件均降级为 `Unknown*` 变体，绝不崩溃 |
 
 ---

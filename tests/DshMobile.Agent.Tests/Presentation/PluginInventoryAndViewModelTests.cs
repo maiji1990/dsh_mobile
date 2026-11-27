@@ -154,11 +154,11 @@ public sealed class PluginInventoryAndViewModelTests
     }
 
     [Fact]
-    public void PluginsFeature_HasZeroL2DynamicSchemaFormAndZeroWebView()
+    public void PluginsFeature_HasZeroWebViewAndUsesOfficialSettingsOnly()
     {
         var repoRoot = RepoLocator.FindRepoRoot();
 
-        // 检查 Android Plugins 目录及布局 XML 中零 WebView、零 L2 动态 Schema 表单解析（剥离注释行以防注释中的否定表述误报）
+        // ADR-0034：永久锁死零 WebView / Android.Webkit，并禁止引入外部/自创 JsonSchema / SchemaForm 表单库
         var pluginCsFiles = RepoLocator.EnumerateSourceFiles("src/DshMobile.Android/Plugins").ToList();
         Assert.NotEmpty(pluginCsFiles);
         foreach (var file in pluginCsFiles)
@@ -182,21 +182,70 @@ public sealed class PluginInventoryAndViewModelTests
             Assert.DoesNotContain("WebView", xmlNoComments, StringComparison.OrdinalIgnoreCase);
         }
 
-        // 检查 PluginsViewModel / PluginInventoryService 无 L2 动态表单解析逻辑
+        // 检查 Agent 插件全链路源码零 WebView、零外部 JsonSchema/SchemaForm 依赖（仅使用官方 settings/* 纯托管模型）
         var agentPluginFiles = new[]
         {
             Path.Combine(repoRoot, "src/DshMobile.Agent/Domain/PluginModels.cs"),
             Path.Combine(repoRoot, "src/DshMobile.Agent/Engines/PluginInventoryService.cs"),
             Path.Combine(repoRoot, "src/DshMobile.Agent/Engines/NpmRegistryPluginSearchService.cs"),
+            Path.Combine(repoRoot, "src/DshMobile.Agent/Engines/PluginSettingsSchemaParser.cs"),
             Path.Combine(repoRoot, "src/DshMobile.Agent/Presentation/PluginsViewModel.cs"),
+            Path.Combine(repoRoot, "src/DshMobile.Agent/Presentation/PluginDetailViewModel.cs"),
         };
         foreach (var file in agentPluginFiles)
         {
             var codeOnly = StripCSharpSingleLineComments(File.ReadAllText(file));
             Assert.DoesNotContain("WebView", codeOnly, StringComparison.Ordinal);
+            Assert.DoesNotContain("Android.Webkit", codeOnly, StringComparison.Ordinal);
             Assert.DoesNotContain("JsonSchema", codeOnly, StringComparison.Ordinal);
             Assert.DoesNotContain("SchemaForm", codeOnly, StringComparison.Ordinal);
         }
+    }
+
+    [Fact]
+    public async Task LoadInventoryAsync_AnnotatesConfigurableSettings_TrimmedRows_AndNonBundlePackages()
+    {
+        var gw = new ConfigurablePluginGateway();
+        var ops = new TrimmedAwarePluginOperations
+        {
+            InstalledPackages =
+            [
+                new("@thirdparty/my-ui-plugin", "1.2.3", HasCustomWebUi: true, HasBundleManifest: true, Description: "UI 面板扩展"),
+                new("plain-npm-lib", "0.1.0", HasCustomWebUi: false, HasBundleManifest: false, Description: "普通库"),
+            ],
+            TrimmedIds = new HashSet<string>(StringComparer.Ordinal) { "custom-ui" },
+            FullWebUiCompat = false,
+        };
+        var service = new PluginInventoryService(gw, ops);
+        await using var vm = new PluginsViewModel(gw, service);
+
+        await vm.RefreshAsync(includeCliPackages: true);
+        Assert.False(vm.State.IsFullWebUiCompatEnabled);
+
+        // 精简模式下被裁剪的条目：标记 IsTrimmedByNativeMode=true 且禁止拨动
+        var trimmed = Assert.Single(vm.State.Entries, e => e.EntryId == "include:custom-ui");
+        Assert.True(trimmed.IsTrimmedByNativeMode);
+        Assert.False(trimmed.CanToggle);
+        Assert.True(trimmed.HasConfigurableSettings);
+        Assert.Equal("custom-ui", trimmed.SettingsNamespace);
+
+        // 非 Bundle 普通 npm 包明确标记 HasBundleManifest=false 与 FiberPhase="not-bundle"
+        var nonBundle = Assert.Single(vm.State.Entries, e => e.PackageName == "plain-npm-lib");
+        Assert.False(nonBundle.HasBundleManifest);
+        Assert.Equal("not-bundle", nonBundle.FiberPhase);
+
+        // 搜索支持命中拆分出的 Description 字段
+        vm.SetSearchQuery("面板扩展");
+        Assert.Equal("@thirdparty/my-ui-plugin", Assert.Single(vm.State.Entries).PackageName);
+
+        // 开启完整 WebUI 兼容模式后，不再标记为被精简裁剪且允许切换
+        ops.FullWebUiCompat = true;
+        vm.SetSearchQuery(string.Empty);
+        await vm.RefreshAsync(includeCliPackages: true);
+        Assert.True(vm.State.IsFullWebUiCompatEnabled);
+        var restored = Assert.Single(vm.State.Entries, e => e.EntryId == "include:custom-ui");
+        Assert.False(restored.IsTrimmedByNativeMode);
+        Assert.True(restored.CanToggle);
     }
 
     [Fact]
@@ -609,5 +658,82 @@ public sealed class PluginInventoryAndViewModelTests
             LastQuery = query;
             return handler(query, limit, ct);
         }
+    }
+
+    private sealed class ConfigurablePluginGateway : DefaultDshGateway
+    {
+        public override DshCapabilities Capabilities => new(
+            Prompt: true,
+            PromptImages: true,
+            SlashCommands: true,
+            StreamingEvents: true,
+            Approvals: true,
+            UserQuestions: true,
+            ResumeKnownSession: true,
+            ListSessions: true,
+            HistoryReplay: true,
+            CancelSession: true,
+            SwitchModelInSession: true,
+            ManageCredentials: true,
+            ServerPromptIdempotency: true,
+            PluginInventory: true,
+            PluginMutation: false,
+            GitOperations: false,
+            PluginSettings: true);
+
+        public override Task<Outcome<DshCapabilities>> ProbeCapabilitiesAsync(CancellationToken ct = default) =>
+            Task.FromResult(Outcome<DshCapabilities>.Ok(Capabilities));
+
+        public override Task<Outcome<PluginInventoryView>> GetPluginInventoryAsync(CancellationToken ct = default)
+        {
+            var entries = new PluginInventoryEntryView[]
+            {
+                new("include:custom-ui", "@thirdparty/my-ui-plugin", false, null, "My UI Plugin", null, "UI 面板扩展"),
+            };
+            return Task.FromResult(Outcome<PluginInventoryView>.Ok(new PluginInventoryView(false, entries)));
+        }
+
+        public override Task<Outcome<SettingsDescribeSnapshotView>> DescribeSettingsAsync(CancellationToken ct = default)
+        {
+            using var schemaDoc = System.Text.Json.JsonDocument.Parse("""{"type":"object","dict":{"enabled":{"type":"boolean"}}}""");
+            using var valDoc = System.Text.Json.JsonDocument.Parse("""{"enabled":true}""");
+            var ns = new SettingsNamespaceView(
+                Namespace: "custom-ui",
+                AutoGenerate: true,
+                Schema: schemaDoc.RootElement.Clone(),
+                Value: valDoc.RootElement.Clone(),
+                Base: null,
+                User: null,
+                Applies: "live",
+                Secrets: [],
+                Revision: 1);
+            return Task.FromResult(Outcome<SettingsDescribeSnapshotView>.Ok(
+                new SettingsDescribeSnapshotView(Writable: true, HasDocument: true, [ns])));
+        }
+    }
+
+    private sealed class TrimmedAwarePluginOperations : IPluginOperations
+    {
+        public IReadOnlyList<PluginInstalledPackageView> InstalledPackages { get; set; } = [];
+        public IReadOnlySet<string> TrimmedIds { get; set; } = new HashSet<string>(StringComparer.Ordinal);
+        public bool FullWebUiCompat { get; set; }
+
+        public bool IsFullWebUiCompatEnabled => FullWebUiCompat;
+        public IReadOnlySet<string> GetNativeTrimmedEntryIds() => TrimmedIds;
+
+        public Task<Outcome<IReadOnlyList<PluginInstalledPackageView>>> ListInstalledPackagesAsync(CancellationToken ct = default) =>
+            Task.FromResult(Outcome<IReadOnlyList<PluginInstalledPackageView>>.Ok(InstalledPackages));
+
+        public Task<Outcome<Unit>> InstallPackageAsync(string packageSpec, CancellationToken ct = default) =>
+            Task.FromResult(Outcome<Unit>.Ok(Unit.Value));
+
+        public Task<Outcome<Unit>> UninstallPackageAsync(string packageName, CancellationToken ct = default) =>
+            Task.FromResult(Outcome<Unit>.Ok(Unit.Value));
+
+        public Task<Outcome<Unit>> SetPluginEnabledAsync(string entryId, string moduleName, bool enabled, CancellationToken ct = default) =>
+            Task.FromResult(Outcome<Unit>.Ok(Unit.Value));
+
+        public Task<Outcome<Unit>> RestartDshHostAsync(CancellationToken ct = default) =>
+            Task.FromResult(Outcome<Unit>.Ok(Unit.Value));
     }
 }

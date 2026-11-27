@@ -27,6 +27,8 @@ public enum DshFailureCode
     StorageUnavailable,
     PhantomProcessLimit,
     MemoryLimited,
+    SettingsConflict,
+    SettingsRejected,
 }
 
 public sealed record DshFailure(
@@ -146,10 +148,16 @@ public static class DshFailureMapper
                     ? new DshFailure(DshFailureCode.CredentialsMissing, error.Code, Retryable: false)
                     : new DshFailure(DshFailureCode.InvalidState, error.Code, Retryable: false),
 
+            "settings/conflict" =>
+                new DshFailure(DshFailureCode.SettingsConflict, error.Code, Retryable: true),
+
+            "settings/rejected" =>
+                new DshFailure(DshFailureCode.SettingsRejected, error.Code, Retryable: false),
+
             _ when error.Code.StartsWith("settings/", StringComparison.Ordinal) =>
                 error.Code.Contains("revision", StringComparison.Ordinal) ||
                 error.Code.Contains("conflict", StringComparison.Ordinal)
-                    ? new DshFailure(DshFailureCode.StaleRequest, error.Code, Retryable: true)
+                    ? new DshFailure(DshFailureCode.SettingsConflict, error.Code, Retryable: true)
                     : new DshFailure(DshFailureCode.InvalidState, error.Code, Retryable: false),
 
             _ when error.Code.StartsWith("unauthorized", StringComparison.OrdinalIgnoreCase) =>

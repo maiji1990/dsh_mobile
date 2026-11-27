@@ -5,6 +5,9 @@
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:layout_marginBottom="8dp"
+    android:clickable="true"
+    android:focusable="true"
+    android:foreground="?attr/selectableItemBackground"
     app:strokeColor="?attr/colorOutlineVariant"
     app:strokeWidth="@dimen/dshm_hairline">
 
@@ -56,7 +59,7 @@
                 android:layout_marginStart="8dp" />
         </LinearLayout>
 
-        <!-- 状态徽标、核心保护徽标与去重包名 -->
+        <!-- 状态徽标、核心保护、可配置徽标与去重包名 -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -77,6 +80,15 @@
                 android:layout_height="wrap_content"
                 android:layout_marginStart="6dp"
                 android:text="@string/plugins_protected_badge"
+                android:visibility="gone" />
+
+            <TextView
+                android:id="@+id/plugin_item_configurable"
+                style="@style/Widget.DshMobile.Badge.Success"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="6dp"
+                android:text="@string/plugins_configurable_badge"
                 android:visibility="gone" />
 
             <TextView
@@ -103,7 +115,39 @@
                 android:textColor="?attr/colorOnSurfaceVariant" />
         </LinearLayout>
 
-        <!-- 携带自定义前端界面的插件如实提示，绝不内嵌网页视图或构造动态配置表单 -->
+        <!-- 精简模式裁剪提示 -->
+        <TextView
+            android:id="@+id/plugin_item_trimmed_notice"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:background="?attr/colorErrorContainer"
+            android:paddingStart="10dp"
+            android:paddingTop="6dp"
+            android:paddingEnd="10dp"
+            android:paddingBottom="6dp"
+            android:text="@string/plugins_trimmed_notice"
+            android:textAppearance="?attr/textAppearanceBodySmall"
+            android:textColor="?attr/colorOnErrorContainer"
+            android:visibility="gone" />
+
+        <!-- 非 DSH Bundle 提示 -->
+        <TextView
+            android:id="@+id/plugin_item_non_bundle_notice"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:background="?attr/colorTertiaryContainer"
+            android:paddingStart="10dp"
+            android:paddingTop="6dp"
+            android:paddingEnd="10dp"
+            android:paddingBottom="6dp"
+            android:text="@string/plugins_non_bundle_notice"
+            android:textAppearance="?attr/textAppearanceBodySmall"
+            android:textColor="?attr/colorOnTertiaryContainer"
+            android:visibility="gone" />
+
+        <!-- 携带 Web 页面扩展的插件提示（引导进入详情启用兼容模式） -->
         <TextView
             android:id="@+id/plugin_item_webui_notice"
             android:layout_width="match_parent"
@@ -114,7 +158,7 @@
             android:paddingTop="6dp"
             android:paddingEnd="10dp"
             android:paddingBottom="6dp"
-            android:text="@string/plugins_custom_webui_notice"
+            android:text="@string/plugins_custom_webui_compat_hint"
             android:textAppearance="?attr/textAppearanceBodySmall"
             android:textColor="?attr/colorOnSurfaceVariant"
             android:visibility="gone" />

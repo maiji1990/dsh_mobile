@@ -217,6 +217,131 @@ public sealed class NpmRegistryPluginSearchServiceTests
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => slowService.SearchAsync("dsh", ct: callerCts.Token));
     }
 
+    [Fact]
+    public async Task GetPackageDetailAsync_ParsesReadmeVersionsDshManifestAndFiltersUnsafeUrls()
+    {
+        Uri? capturedUri = null;
+        var versionsJson = new StringBuilder();
+        var timesJson = new StringBuilder();
+        for (var i = 1; i <= 18; i++)
+        {
+            if (i > 1)
+            {
+                versionsJson.Append(',');
+                timesJson.Append(',');
+            }
+            var v = $"1.0.{i}";
+            versionsJson.Append(CultureInfo.InvariantCulture, $$$"""
+                "{{{v}}}": {
+                  "version": "{{{v}}}",
+                  "description": "DSH UI 增强插件 v{{{v}}}",
+                  "license": "MIT",
+                  "author": { "name": "Alice" },
+                  "homepage": "{{{(i == 18 ? "https://example.com/dsh-ui" : "http://insecure.example")}}}",
+                  "repository": { "type": "git", "url": "git+https://github.com/example/dsh-ui.git" },
+                  "dsh": {
+                    "bundle": { "patch": "./patch.yml" },
+                    "client": "./dist/client.js"
+                  }
+                }
+                """);
+            timesJson.Append(CultureInfo.InvariantCulture, $"\"{v}\":\"2026-06-{i:D2}T00:00:00.000Z\"");
+        }
+        // 加入一个非法非精确版本键验证过滤
+        versionsJson.Append(",\"bad-tag\":{\"version\":\"bad-tag\"}");
+
+        var payload = $$$"""
+            {
+              "name": "@thirdparty/dsh-ui-ext",
+              "description": "Fallback description",
+              "readme": "\uFEFF# DSH UI Ext\n\n支持自定义面板。",
+              "keywords": ["dsh", "ui", "DSH"],
+              "dist-tags": { "latest": "1.0.18" },
+              "versions": { {{{versionsJson}}} },
+              "time": { {{{timesJson}}} }
+            }
+            """;
+
+        using var handler = new StubHttpMessageHandler((req, _) =>
+        {
+            capturedUri = req.RequestUri;
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(payload, Encoding.UTF8, "application/json"),
+            });
+        });
+        using var service = new NpmRegistryPluginSearchService(handler);
+
+        var outcome = await service.GetPackageDetailAsync("@thirdparty/dsh-ui-ext");
+
+        Assert.True(outcome.IsOk);
+        Assert.NotNull(capturedUri);
+        Assert.Equal("https", capturedUri!.Scheme);
+        Assert.Equal("registry.npmjs.org", capturedUri.Host);
+        Assert.Contains("%40thirdparty%2Fdsh-ui-ext", capturedUri.OriginalString, StringComparison.Ordinal);
+
+        var detail = outcome.Value!;
+        Assert.Equal("@thirdparty/dsh-ui-ext", detail.PackageName);
+        Assert.Equal("1.0.18", detail.LatestVersion);
+        Assert.Equal("@thirdparty/dsh-ui-ext@1.0.18", detail.RecommendedInstallSpec);
+        Assert.Equal("DSH UI 增强插件 v1.0.18", detail.Description);
+        Assert.Equal("# DSH UI Ext\n\n支持自定义面板。", detail.ReadmeMarkdown);
+        Assert.Equal("MIT", detail.License);
+        Assert.Equal("Alice", detail.Author);
+        Assert.Equal("https://example.com/dsh-ui", detail.HomepageUrl);
+        Assert.Equal("https://github.com/example/dsh-ui", detail.RepositoryUrl);
+        Assert.Equal("https://www.npmjs.com/package/@thirdparty/dsh-ui-ext", detail.NpmUrl);
+        Assert.True(detail.HasBundleManifest);
+        Assert.True(detail.HasCustomWebUi);
+        Assert.False(detail.IsOfficialScope);
+        Assert.Equal(15, detail.AvailableVersions.Count);
+        Assert.Equal("1.0.18", detail.AvailableVersions[0]);
+        Assert.Equal("1.0.4", detail.AvailableVersions[^1]);
+    }
+
+    [Fact]
+    public async Task GetPackageDetailAsync_FiltersNonHttpsLinks_RejectsInvalidPackageNamesWithZeroHttp()
+    {
+        var httpCalls = 0;
+        var payload = """
+            {
+              "name": "plain-pkg",
+              "description": "普通包",
+              "readme": "ERROR: No README data found!",
+              "homepage": "javascript:alert(1)",
+              "repository": { "url": "http://insecure.example/repo.git" },
+              "dist-tags": { "latest": "0.2.0" },
+              "versions": {
+                "0.2.0": { "version": "0.2.0" }
+              }
+            }
+            """;
+
+        using var handler = new StubHttpMessageHandler((_, _) =>
+        {
+            httpCalls++;
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(payload, Encoding.UTF8, "application/json"),
+            });
+        });
+        using var service = new NpmRegistryPluginSearchService(handler);
+
+        var badOutcome = await service.GetPackageDetailAsync("../evil");
+        Assert.False(badOutcome.IsOk);
+        Assert.Equal(DshFailureCode.InvalidState, badOutcome.Error!.Code);
+        Assert.Equal(0, httpCalls);
+
+        var okOutcome = await service.GetPackageDetailAsync("plain-pkg");
+        Assert.True(okOutcome.IsOk);
+        Assert.Equal(1, httpCalls);
+        Assert.Null(okOutcome.Value!.ReadmeMarkdown);
+        Assert.Null(okOutcome.Value.HomepageUrl);
+        Assert.Null(okOutcome.Value.RepositoryUrl);
+        Assert.False(okOutcome.Value.HasBundleManifest);
+        Assert.False(okOutcome.Value.HasCustomWebUi);
+    }
+
     private sealed class StubHttpMessageHandler(Func<HttpRequestMessage, CancellationToken, Task<HttpResponseMessage>> handler)
         : HttpMessageHandler
     {

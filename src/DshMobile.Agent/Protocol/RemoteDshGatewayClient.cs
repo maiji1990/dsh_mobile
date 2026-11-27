@@ -70,6 +70,8 @@ public sealed class RemoteDshGatewayClient : DefaultDshGateway, IDisposable
                 ct).ConfigureAwait(false);
             var pluginProbe = await _connection.CallAsync("pluginInventory/list", RemoteWireCodec.EmptyArgs, ct).ConfigureAwait(false);
             var archiveSupported = hasGen && await ProbeWorkspaceArchiveAsync(ct).ConfigureAwait(false);
+            var pluginBundlesSupported = hasGen && await ProbeEndpointSilentAsync("pluginManager/listBundles", RemoteWireCodec.EmptyArgs, ct).ConfigureAwait(false);
+            var pluginSettingsSupported = hasGen && await ProbeEndpointSilentAsync("settings/describe", RemoteWireCodec.EmptyArgs, ct).ConfigureAwait(false);
 
             var caps = new DshCapabilities(
                 Prompt: hasGen,
@@ -88,7 +90,9 @@ public sealed class RemoteDshGatewayClient : DefaultDshGateway, IDisposable
                 PluginInventory: pluginProbe.Ok,
                 PluginMutation: false,
                 GitOperations: false,
-                ArchiveSessions: archiveSupported);
+                ArchiveSessions: archiveSupported,
+                PluginBundles: pluginBundlesSupported,
+                PluginSettings: pluginSettingsSupported);
 
             lock (_capLock)
             {
@@ -859,10 +863,210 @@ public sealed class RemoteDshGatewayClient : DefaultDshGateway, IDisposable
             e.ModuleName,
             e.Enabled,
             e.FiberPhase,
-            RemoteProtocolCodec.ResolveLocalizedText(e.Meta?.Name) ?? RemoteProtocolCodec.ResolveLocalizedText(e.Meta?.Description),
-            e.Diagnostic)).ToArray();
+            RemoteProtocolCodec.ResolveLocalizedText(e.Meta?.Title) ?? RemoteProtocolCodec.ResolveLocalizedText(e.Meta?.Name),
+            e.Diagnostic,
+            RemoteProtocolCodec.ResolveLocalizedText(e.Meta?.Description))).ToArray();
 
         return Outcome<PluginInventoryView>.Ok(new PluginInventoryView(dto.ManagementAvailable ?? false, entries));
+    }
+
+    public override async Task<Outcome<IReadOnlyList<PluginBundleInfoView>>> ListPluginBundlesAsync(CancellationToken ct = default)
+    {
+        var rpc = await CallRawAsync("pluginManager/listBundles", RemoteWireCodec.EmptyArgs, ct).ConfigureAwait(false);
+        if (!rpc.IsOk)
+        {
+            return Outcome<IReadOnlyList<PluginBundleInfoView>>.Fail(rpc.Error!);
+        }
+
+        var dtoOutcome = DeserializeValue(rpc.Value, AgentProtocolJsonContext.Default.WirePluginBundleInfoArray, "plugin_bundles.decode");
+        if (!dtoOutcome.IsOk)
+        {
+            return Outcome<IReadOnlyList<PluginBundleInfoView>>.Fail(dtoOutcome.Error!);
+        }
+
+        var bundles = dtoOutcome.Value!.Select(b => new PluginBundleInfoView(
+            Name: b.Name,
+            Official: b.Official,
+            Availability: b.Availability,
+            Version: b.Version,
+            DisplayName: RemoteProtocolCodec.ResolveLocalizedText(b.Meta?.Title) ?? RemoteProtocolCodec.ResolveLocalizedText(b.Meta?.Name),
+            Description: RemoteProtocolCodec.ResolveLocalizedText(b.Meta?.Description) ?? b.Description,
+            Enabled: b.Enabled,
+            Installed: b.Installed,
+            Optional: b.Optional,
+            Removable: b.Removable,
+            Rows: (b.Rows ?? []).Select(r => new PluginBundleRowView(
+                r.RowId,
+                r.ModuleName,
+                RemoteProtocolCodec.ResolveLocalizedText(r.Meta?.Title) ?? RemoteProtocolCodec.ResolveLocalizedText(r.Meta?.Name),
+                RemoteProtocolCodec.ResolveLocalizedText(r.Meta?.Description),
+                r.EntryId)).ToArray(),
+            Overrides: b.Overrides ?? [],
+            ReadOnlyReason: b.ReadOnlyReason,
+            ErrorCode: b.Error?.Code,
+            ErrorDiagnostic: b.Error?.Diagnostic)).ToArray();
+
+        return Outcome<IReadOnlyList<PluginBundleInfoView>>.Ok(bundles);
+    }
+
+    public override async Task<Outcome<PluginBundleDetailView>> ReadBundleDetailAsync(
+        string bundleName,
+        string language,
+        CancellationToken ct = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(bundleName);
+        var normalizedLanguage = string.IsNullOrWhiteSpace(language) ? "zh-CN" : language.Trim();
+        var args = JsonSerializer.SerializeToElement(
+            new WirePluginReadBundleDetailArgs(bundleName.Trim(), normalizedLanguage),
+            AgentProtocolJsonContext.Default.WirePluginReadBundleDetailArgs);
+
+        var rpc = await CallRawAsync("pluginManager/readBundleDetail", args, ct).ConfigureAwait(false);
+        if (!rpc.IsOk)
+        {
+            return Outcome<PluginBundleDetailView>.Fail(rpc.Error!);
+        }
+
+        var dtoOutcome = DeserializeValue(rpc.Value, AgentProtocolJsonContext.Default.WirePluginBundleDetailValue, "plugin_bundle_detail.decode");
+        if (!dtoOutcome.IsOk)
+        {
+            return Outcome<PluginBundleDetailView>.Fail(dtoOutcome.Error!);
+        }
+
+        var dto = dtoOutcome.Value!;
+        if (!string.Equals(dto.Status, "found", StringComparison.Ordinal))
+        {
+            return Outcome<PluginBundleDetailView>.Ok(new PluginBundleDetailView(Found: false));
+        }
+
+        return Outcome<PluginBundleDetailView>.Ok(new PluginBundleDetailView(
+            Found: true,
+            Origin: dto.Origin,
+            Path: dto.Path,
+            Markdown: dto.Markdown));
+    }
+
+    public override async Task<Outcome<SettingsDescribeSnapshotView>> DescribeSettingsAsync(CancellationToken ct = default)
+    {
+        var rpc = await CallRawAsync("settings/describe", RemoteWireCodec.EmptyArgs, ct).ConfigureAwait(false);
+        if (!rpc.IsOk)
+        {
+            return Outcome<SettingsDescribeSnapshotView>.Fail(rpc.Error!);
+        }
+
+        var dtoOutcome = DeserializeValue(rpc.Value, AgentProtocolJsonContext.Default.WireSettingsDescribeValue, "settings_describe.decode");
+        if (!dtoOutcome.IsOk)
+        {
+            return Outcome<SettingsDescribeSnapshotView>.Fail(dtoOutcome.Error!);
+        }
+
+        var dto = dtoOutcome.Value!;
+        var namespaces = dto.Namespaces.Select(MapSettingsNamespace).ToArray();
+        return Outcome<SettingsDescribeSnapshotView>.Ok(new SettingsDescribeSnapshotView(
+            dto.Writable,
+            dto.HasDocument,
+            namespaces));
+    }
+
+    public override async Task<Outcome<SettingsNamespaceView>> MutateSettingsAsync(
+        string ns,
+        IReadOnlyList<SettingsPathOp> ops,
+        long? expectedRevision = null,
+        CancellationToken ct = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(ns);
+        ArgumentNullException.ThrowIfNull(ops);
+        if (ops.Count == 0)
+        {
+            return Outcome<SettingsNamespaceView>.Fail(DshFailureCode.InvalidState, "settings.empty_ops");
+        }
+
+        var wireOps = new WireSettingsPathOp[ops.Count];
+        for (var i = 0; i < ops.Count; i++)
+        {
+            var op = ops[i];
+            if (op.Op == SettingsPathOpKind.Set)
+            {
+                if (op.Value is not { ValueKind: not JsonValueKind.Undefined } val)
+                {
+                    return Outcome<SettingsNamespaceView>.Fail(DshFailureCode.InvalidState, "settings.missing_set_value");
+                }
+                wireOps[i] = new WireSettingsPathOp("set", op.Path, val.Clone());
+            }
+            else
+            {
+                wireOps[i] = new WireSettingsPathOp("unset", op.Path, null);
+            }
+        }
+
+        var args = JsonSerializer.SerializeToElement(
+            new WireSettingsMutateArgs(ns.Trim(), wireOps, expectedRevision),
+            AgentProtocolJsonContext.Default.WireSettingsMutateArgs);
+
+        var rpc = await CallRawAsync("settings/mutate", args, ct).ConfigureAwait(false);
+        if (!rpc.IsOk)
+        {
+            return Outcome<SettingsNamespaceView>.Fail(rpc.Error!);
+        }
+
+        var dtoOutcome = DeserializeValue(rpc.Value, AgentProtocolJsonContext.Default.WireSettingsNamespaceView, "settings_mutate.decode");
+        return dtoOutcome.Map(MapSettingsNamespace);
+    }
+
+    public override async Task<Outcome<SettingsNamespaceView>> ReplaceSettingsAsync(
+        string ns,
+        JsonElement section,
+        long? expectedRevision = null,
+        CancellationToken ct = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(ns);
+        if (section.ValueKind != JsonValueKind.Object)
+        {
+            return Outcome<SettingsNamespaceView>.Fail(DshFailureCode.InvalidState, "settings.section_must_be_object");
+        }
+
+        var args = JsonSerializer.SerializeToElement(
+            new WireSettingsReplaceArgs(ns.Trim(), section.Clone(), expectedRevision),
+            AgentProtocolJsonContext.Default.WireSettingsReplaceArgs);
+
+        var rpc = await CallRawAsync("settings/replace", args, ct).ConfigureAwait(false);
+        if (!rpc.IsOk)
+        {
+            return Outcome<SettingsNamespaceView>.Fail(rpc.Error!);
+        }
+
+        var dtoOutcome = DeserializeValue(rpc.Value, AgentProtocolJsonContext.Default.WireSettingsNamespaceView, "settings_replace.decode");
+        return dtoOutcome.Map(MapSettingsNamespace);
+    }
+
+    private static SettingsNamespaceView MapSettingsNamespace(WireSettingsNamespaceView wire) =>
+        new(
+            Namespace: wire.Ns,
+            AutoGenerate: wire.AutoGenerate,
+            Schema: wire.Schema.Clone(),
+            Value: wire.Value.Clone(),
+            Base: wire.Base is { ValueKind: not JsonValueKind.Undefined } b ? b.Clone() : null,
+            User: wire.User is { ValueKind: not JsonValueKind.Undefined } u ? u.Clone() : null,
+            Applies: string.IsNullOrWhiteSpace(wire.Applies) ? "live" : wire.Applies,
+            Secrets: (wire.Secrets ?? []).Select(s => new SettingsSecretSlotView(s.Path, s.Set)).ToArray(),
+            Revision: wire.Revision);
+
+    /// <summary>无副作用探测可选 RPC 端点是否可用；任意非取消失败均安静返回 false，绝不阻断连接。</summary>
+    private async Task<bool> ProbeEndpointSilentAsync(string endpoint, JsonElement args, CancellationToken ct)
+    {
+        try
+        {
+            var res = await _connection.CallAsync(endpoint, args, ct).ConfigureAwait(false);
+            return res.Ok;
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _ = ex;
+            return false;
+        }
     }
 
     public override async Task<Outcome<IAsyncDisposable>> FollowSessionAsync(

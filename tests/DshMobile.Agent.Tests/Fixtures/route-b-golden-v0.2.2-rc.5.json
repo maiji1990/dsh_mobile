@@ -215,10 +215,15 @@
             "entryId": "localized-entry",
             "moduleName": "@deepseek-ai/dsh-demo",
             "meta": {
+              "title": {
+                "en": "Demo Plugin",
+                "zh": "示例插件标题"
+              },
               "description": {
                 "en": "Demo plugin",
                 "zh": "示例插件"
-              }
+              },
+              "icon": "data:image/png;base64,iVBORw0KGgo="
             },
             "enabled": true,
             "fiberPhase": "active"
@@ -350,6 +355,88 @@
     "value": {
       "type": "future-frame-v2",
       "extra": true
+    }
+  },
+  "pluginBundlesList": {
+    "type": "server-response",
+    "rpcId": "g-12",
+    "result": {
+      "ok": true,
+      "value": [
+        {
+          "name": "@deepseek-ai/dsh-demo",
+          "official": true,
+          "availability": "profile",
+          "version": "0.2.2-rc.5",
+          "meta": {
+            "title": { "en": "Demo Bundle", "zh": "示例扩展包" },
+            "description": { "en": "Demo bundle desc", "zh": "示例扩展包说明" }
+          },
+          "enabled": true,
+          "installed": true,
+          "optional": false,
+          "removable": true,
+          "rows": [
+            {
+              "rowId": "demo",
+              "moduleName": "@deepseek-ai/dsh-demo",
+              "entryId": "localized-entry"
+            }
+          ],
+          "overrides": []
+        }
+      ]
+    }
+  },
+  "pluginBundleDetail": {
+    "type": "server-response",
+    "rpcId": "g-13",
+    "result": {
+      "ok": true,
+      "value": {
+        "status": "found",
+        "origin": "locale",
+        "path": "locale/zh.md",
+        "markdown": "# 示例插件\n\n提供演示能力。"
+      }
+    }
+  },
+  "settingsDescribe": {
+    "type": "server-response",
+    "rpcId": "g-14",
+    "result": {
+      "ok": true,
+      "value": {
+        "writable": true,
+        "hasDocument": true,
+        "namespaces": [
+          {
+            "autoGenerate": true,
+            "ns": "localized-entry",
+            "schema": {
+              "type": "object",
+              "dict": {
+                "enabledFlag": {
+                  "type": "boolean",
+                  "meta": { "description": { "zh": "启用开关", "en": "Enable flag" } }
+                },
+                "apiToken": {
+                  "type": "string",
+                  "meta": { "role": "secret", "description": { "zh": "访问令牌", "en": "API token" } }
+                }
+              }
+            },
+            "value": { "enabledFlag": true },
+            "base": { "enabledFlag": false },
+            "user": { "enabledFlag": true },
+            "applies": "live",
+            "secrets": [
+              { "path": ["apiToken"], "set": true }
+            ],
+            "revision": 7
+          }
+        ]
+      }
     }
   }
 }

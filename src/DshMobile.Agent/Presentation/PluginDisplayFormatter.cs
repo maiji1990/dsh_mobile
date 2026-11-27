@@ -14,9 +14,18 @@ public static class PluginDisplayFormatter
         ArgumentNullException.ThrowIfNull(entry);
 
         var shortTitle = ExtractShortTitle(entry.ModuleName, entry.PackageName, entry.EntryId);
+        var explicitDescription = entry.Description?.Trim() ?? string.Empty;
         var displayName = entry.DisplayName?.Trim() ?? string.Empty;
         string? description = null;
-        if (displayName.Length > 0
+        if (explicitDescription.Length > 0
+            && !string.Equals(explicitDescription, entry.ModuleName, StringComparison.Ordinal)
+            && !string.Equals(explicitDescription, entry.PackageName, StringComparison.Ordinal)
+            && !string.Equals(explicitDescription, entry.EntryId, StringComparison.Ordinal)
+            && !string.Equals(explicitDescription, shortTitle, StringComparison.Ordinal))
+        {
+            description = explicitDescription;
+        }
+        else if (displayName.Length > 0
             && !string.Equals(displayName, entry.ModuleName, StringComparison.Ordinal)
             && !string.Equals(displayName, entry.PackageName, StringComparison.Ordinal)
             && !string.Equals(displayName, entry.EntryId, StringComparison.Ordinal)

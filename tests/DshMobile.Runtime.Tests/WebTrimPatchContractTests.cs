@@ -1,4 +1,5 @@
 using System.Text.RegularExpressions;
+using DshMobile.Runtime.Plugins;
 
 namespace DshMobile.Runtime.Tests;
 
@@ -111,5 +112,16 @@ public sealed class WebTrimPatchContractTests
         // 插件管理器本身（而非 hot-reload 服务）必须保持可用。
         Assert.DoesNotContain("plugin-manager", disabled);
         Assert.DoesNotContain("plugin-inventory", disabled);
+    }
+
+    /// <summary>ADR-0034：运行时暴露的 <see cref="WebTrimPatchInventory"/> 必须与内嵌 YAML 文件逐条一致，零漂移。</summary>
+    [Fact]
+    public void WebTrimPatchInventory_ExactlyMatchesDiskPatchFile()
+    {
+        var expected = DisabledIds().ToHashSet(StringComparer.Ordinal);
+        var actual = WebTrimPatchInventory.TrimmedEntryIds;
+
+        Assert.Equal(expected.Count, actual.Count);
+        Assert.True(expected.SetEquals(actual));
     }
 }

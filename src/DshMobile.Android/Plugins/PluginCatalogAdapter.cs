@@ -9,11 +9,13 @@ using Google.Android.Material.Button;
 namespace DshMobile.App.Plugins;
 
 /// <summary>
-/// 远端插件发现列表适配器：
+/// 远端插件发现列表适配器（ADR-0034 增强）：
 /// 绑定 <c>item_plugin_catalog_entry.xml</c>，展示短标题、版本、官方/已安装状态胶囊、描述、
-/// 完整包名与发布者/关键词元信息，并提供受控安装按钮触发安全确认弹窗。
+/// 完整包名与发布者/关键词元信息，支持点击整卡进入详情页并提供受控快捷安装按钮。
 /// </summary>
-internal sealed class PluginCatalogAdapter(Action<PluginCatalogEntryView> onInstallRequested) : RecyclerView.Adapter
+internal sealed class PluginCatalogAdapter(
+    Action<PluginCatalogEntryView> onOpenDetail,
+    Action<PluginCatalogEntryView> onInstallRequested) : RecyclerView.Adapter
 {
     private IReadOnlyList<PluginCatalogEntryView> _items = [];
     private bool _hostReady;
@@ -32,7 +34,7 @@ internal sealed class PluginCatalogAdapter(Action<PluginCatalogEntryView> onInst
     public override RecyclerView.ViewHolder OnCreateViewHolder(ViewGroup parent, int viewType)
     {
         var view = LayoutInflater.From(parent.Context)!.Inflate(Resource.Layout.item_plugin_catalog_entry, parent, false)!;
-        return new CatalogEntryHolder(view, onInstallRequested);
+        return new CatalogEntryHolder(view, onOpenDetail, onInstallRequested);
     }
 
     public override void OnBindViewHolder(RecyclerView.ViewHolder holder, int position)
@@ -55,7 +57,10 @@ internal sealed class PluginCatalogAdapter(Action<PluginCatalogEntryView> onInst
         private PluginCatalogEntryView? _boundEntry;
         private bool _canInvokeInstall;
 
-        public CatalogEntryHolder(View itemView, Action<PluginCatalogEntryView> onInstallRequested) : base(itemView)
+        public CatalogEntryHolder(
+            View itemView,
+            Action<PluginCatalogEntryView> onOpenDetail,
+            Action<PluginCatalogEntryView> onInstallRequested) : base(itemView)
         {
             _titleView = itemView.FindViewById<TextView>(Resource.Id.catalog_item_title)!;
             _versionBadge = itemView.FindViewById<TextView>(Resource.Id.catalog_item_version)!;
@@ -66,6 +71,14 @@ internal sealed class PluginCatalogAdapter(Action<PluginCatalogEntryView> onInst
             _installHintView = itemView.FindViewById<TextView>(Resource.Id.catalog_item_install_hint)!;
             _spacerView = itemView.FindViewById(Resource.Id.catalog_item_spacer)!;
             _installButton = itemView.FindViewById<MaterialButton>(Resource.Id.catalog_item_install_btn)!;
+
+            itemView.Click += (_, _) =>
+            {
+                if (_boundEntry is { } entry)
+                {
+                    onOpenDetail(entry);
+                }
+            };
 
             _installButton.Click += (_, _) =>
             {

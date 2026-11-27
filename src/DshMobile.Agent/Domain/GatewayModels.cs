@@ -180,11 +180,94 @@ public sealed record PluginInventoryEntryView(
     bool Enabled,
     string? FiberPhase,
     string? DisplayName = null,
-    string? Diagnostic = null);
+    string? Diagnostic = null,
+    string? Description = null);
 
 public sealed record PluginInventoryView(
     bool ManagementAvailable,
     IReadOnlyList<PluginInventoryEntryView> Entries);
+
+/// <summary>DSH 插件 Bundle 声明的单条配置行信息（<c>pluginManager/listBundles</c>）。</summary>
+public sealed record PluginBundleRowView(
+    string RowId,
+    string ModuleName,
+    string? DisplayName = null,
+    string? Description = null,
+    string? EntryId = null);
+
+/// <summary>DSH 插件 Bundle 概要视图（<c>pluginManager/listBundles</c>）。</summary>
+public sealed record PluginBundleInfoView(
+    string Name,
+    bool Official,
+    string Availability,
+    string? Version,
+    string? DisplayName,
+    string? Description,
+    bool Enabled,
+    bool Installed,
+    bool Optional,
+    bool Removable,
+    IReadOnlyList<PluginBundleRowView> Rows,
+    IReadOnlyList<string> Overrides,
+    string? ReadOnlyReason = null,
+    string? ErrorCode = null,
+    string? ErrorDiagnostic = null);
+
+/// <summary>DSH 插件 Bundle 详情 Markdown 文档视图（<c>pluginManager/readBundleDetail</c>）。</summary>
+public sealed record PluginBundleDetailView(
+    bool Found,
+    string? Origin = null,
+    string? Path = null,
+    string? Markdown = null);
+
+/// <summary>官方 <c>settings/*</c> 脱敏密钥槽状态（绝不回传明文）。</summary>
+public sealed record SettingsSecretSlotView(
+    IReadOnlyList<string> Path,
+    bool IsSet);
+
+/// <summary>官方 <c>settings/describe</c> / <c>mutate</c> / <c>replace</c> 返回的命名空间实时配置视图。</summary>
+public sealed record SettingsNamespaceView(
+    string Namespace,
+    bool AutoGenerate,
+    JsonElement Schema,
+    JsonElement Value,
+    JsonElement? Base,
+    JsonElement? User,
+    string Applies,
+    IReadOnlyList<SettingsSecretSlotView> Secrets,
+    long Revision);
+
+/// <summary>官方 <c>settings/describe</c> 返回的全局配置描述快照。</summary>
+public sealed record SettingsDescribeSnapshotView(
+    bool Writable,
+    bool HasDocument,
+    IReadOnlyList<SettingsNamespaceView> Namespaces);
+
+/// <summary>官方 <c>settings/mutate</c> 路径操作类型。</summary>
+public enum SettingsPathOpKind
+{
+    Set,
+    Unset,
+}
+
+/// <summary>官方 <c>settings/mutate</c> 单条路径变更指令。</summary>
+public sealed record SettingsPathOp(
+    SettingsPathOpKind Op,
+    IReadOnlyList<string> Path,
+    JsonElement? Value = null)
+{
+    public static SettingsPathOp Set(IReadOnlyList<string> path, JsonElement value)
+    {
+        ArgumentNullException.ThrowIfNull(path);
+        return new(SettingsPathOpKind.Set, path, value.Clone());
+    }
+
+    public static SettingsPathOp Unset(IReadOnlyList<string> path)
+    {
+        ArgumentNullException.ThrowIfNull(path);
+        return new(SettingsPathOpKind.Unset, path);
+    }
+}
 
 public sealed record ApprovalRequestView(
     string EventId,

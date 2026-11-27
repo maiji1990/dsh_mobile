@@ -16,6 +16,16 @@ internal sealed class FakeDshHost(List<string> calls) : IDshHost
 
     public bool? UiToolsAtStart { get; private set; }
 
+    public bool? TrimmedWebAtStart { get; private set; }
+
+    public Func<bool>? UseTrimmedWeb { get; set; }
+
+    public bool IsTrimmedWebActive => TrimmedWebAtStart ?? (UseTrimmedWeb?.Invoke() ?? true);
+
+    public int Port { get; set; } = DshMobile.Runtime.RuntimeConstants.DshPort;
+
+    public string? LaunchToken { get; set; }
+
     public bool OwnsProcesses => State is DshHostState.Starting or DshHostState.Ready or DshHostState.Stopping || _kept || _orphans;
 
     public Func<DshHostResult>? OnStart { get; set; }
@@ -26,11 +36,21 @@ internal sealed class FakeDshHost(List<string> calls) : IDshHost
 
     public event EventHandler? StateChanged;
 
+    public Uri? TryBuildBrowserLaunchUri()
+    {
+        if (State != DshHostState.Ready || IsTrimmedWebActive || Port is <= 0 or > 65535 || string.IsNullOrWhiteSpace(LaunchToken))
+        {
+            return null;
+        }
+        return new Uri($"http://127.0.0.1:{Port}/?token={Uri.EscapeDataString(LaunchToken)}");
+    }
+
     public Task<DshHostResult> StartAsync(CancellationToken ct, StartupTrace? trace = null)
     {
         calls.Add("host.start");
         var r = OnStart?.Invoke() ?? new DshHostResult(true, "OK", null);
         UiToolsAtStart = r.Ok ? true : null;
+        TrimmedWebAtStart = r.Ok ? (UseTrimmedWeb?.Invoke() ?? true) : null;
         Set(r.Ok ? DshHostState.Ready : DshHostState.Failed);
         return Task.FromResult(r);
     }
@@ -42,6 +62,7 @@ internal sealed class FakeDshHost(List<string> calls) : IDshHost
         _kept = false;
         _orphans = !r.Ok;
         UiToolsAtStart = null;
+        TrimmedWebAtStart = null;
         Set(DshHostState.Stopped);
         return Task.FromResult(r);
     }

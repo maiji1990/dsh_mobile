@@ -254,10 +254,81 @@ public sealed record PluginCatalogSearchResult(
     int TotalCount,
     string? DiagnosticWarning = null);
 
-/// <summary>纯托管远端插件目录搜索接口（默认对接 npm Registry HTTPS Search API）。</summary>
+/// <summary>远端插件包完整详情与 README 视图模型（npm Registry）。</summary>
+public sealed record PluginCatalogDetailView(
+    string PackageName,
+    string LatestVersion,
+    string Description,
+    string? ReadmeMarkdown,
+    IReadOnlyList<string> Keywords,
+    string? License,
+    string? Author,
+    string? HomepageUrl,
+    string? RepositoryUrl,
+    string? NpmUrl,
+    IReadOnlyList<string> AvailableVersions,
+    bool IsOfficialScope,
+    bool HasBundleManifest,
+    bool HasCustomWebUi,
+    string RecommendedInstallSpec);
+
+/// <summary>本地已安装包在安全边界内读取的详情文档与元信息。</summary>
+public sealed record PluginLocalPackageDetailView(
+    string PackageName,
+    string? Version = null,
+    string? Title = null,
+    string? Description = null,
+    string? Markdown = null,
+    string? DocumentOrigin = null,
+    string? DocumentPath = null,
+    string? Author = null,
+    string? License = null,
+    string? HomepageUrl = null,
+    string? RepositoryUrl = null,
+    bool HasBundleManifest = false,
+    bool HasCustomWebUi = false);
+
+/// <summary>官方 Schemastery 配置字段映射类型（受控 L2，绝不自创专有 Schema）。</summary>
+public enum PluginConfigFieldKind
+{
+    Boolean,
+    Number,
+    SingleSelect,
+    Secret,
+    Text,
+    JsonFallback,
+}
+
+/// <summary>官方 Schemastery <c>union(const)</c> 单选字段候选项。</summary>
+public sealed record PluginConfigSelectOptionView(
+    string RawValueJson,
+    string DisplayLabel,
+    string? Description = null);
+
+/// <summary>官方 <c>settings/*</c> 解析后的强类型配置字段视图。</summary>
+public sealed record PluginConfigFieldView(
+    IReadOnlyList<string> Path,
+    string KeyDisplay,
+    string Label,
+    string? Description,
+    PluginConfigFieldKind Kind,
+    string? CurrentValueJson,
+    string? BaseValueJson,
+    bool HasUserOverride,
+    bool IsSecretSet,
+    IReadOnlyList<PluginConfigSelectOptionView> Options,
+    double? Min = null,
+    double? Max = null,
+    double? Step = null,
+    bool ReadOnly = false);
+
+/// <summary>纯托管远端插件目录搜索与详情接口（默认对接 npm Registry HTTPS API）。</summary>
 public interface IPluginCatalogSearch
 {
     Task<Outcome<PluginCatalogSearchResult>> SearchAsync(string query, int limit = 25, CancellationToken ct = default);
+
+    Task<Outcome<PluginCatalogDetailView>> GetPackageDetailAsync(string packageName, CancellationToken ct = default) =>
+        Task.FromResult(Outcome<PluginCatalogDetailView>.Fail(DshFailureCode.Unsupported, "plugins.catalog_detail_unavailable"));
 }
 
 /// <summary>默认 fail-closed 占位实现（未注入远端搜索服务时返回 <see cref="DshFailureCode.Unsupported"/>）。</summary>
@@ -269,16 +340,25 @@ public sealed class NoopPluginCatalogSearch : IPluginCatalogSearch
 
     public Task<Outcome<PluginCatalogSearchResult>> SearchAsync(string query, int limit = 25, CancellationToken ct = default) =>
         Task.FromResult(Outcome<PluginCatalogSearchResult>.Fail(DshFailureCode.Unsupported, "plugins.catalog_search_unavailable"));
+
+    public Task<Outcome<PluginCatalogDetailView>> GetPackageDetailAsync(string packageName, CancellationToken ct = default) =>
+        Task.FromResult(Outcome<PluginCatalogDetailView>.Fail(DshFailureCode.Unsupported, "plugins.catalog_detail_unavailable"));
 }
 
-/// <summary>来自 <c>dsh plugin --profile web list --json</c> 的已安装 npm 包信息。</summary>
+/// <summary>来自 <c>dsh plugin --profile web list --json</c> 与本地 package manifest 的已安装 npm 包信息。</summary>
 public sealed record PluginInstalledPackageView(
     string Name,
     string Version,
     bool HasCustomWebUi = false,
-    bool IsProtected = false);
+    bool IsProtected = false,
+    bool HasBundleManifest = true,
+    string? Description = null,
+    string? Author = null,
+    string? License = null,
+    string? HomepageUrl = null,
+    string? RepositoryUrl = null);
 
-/// <summary>原生插件目录单条展示项（L0 融合视图 + L1 权限标记，无 L2 动态表单）。</summary>
+/// <summary>原生插件目录单条展示项（L0 融合视图 + L1 权限标记 + 官方 <c>settings/*</c> 实时配置能力标注）。</summary>
 public sealed record PluginEntryView(
     string EntryId,
     string ModuleName,
@@ -292,7 +372,16 @@ public sealed record PluginEntryView(
     bool IsInstalledInProfile,
     bool IsProtected,
     bool CanToggle,
-    bool CanUninstall);
+    bool CanUninstall,
+    string? Description = null,
+    bool HasBundleManifest = true,
+    bool IsTrimmedByNativeMode = false,
+    bool HasConfigurableSettings = false,
+    string? SettingsNamespace = null,
+    string? Author = null,
+    string? License = null,
+    string? HomepageUrl = null,
+    string? RepositoryUrl = null);
 
 /// <summary>L0 插件目录聚合快照。</summary>
 public sealed record PluginInventorySnapshotResult(
@@ -314,11 +403,20 @@ public sealed record PluginMutationResult(
 /// </summary>
 public interface IPluginOperations
 {
+    private static readonly IReadOnlySet<string> EmptyStringSet = new HashSet<string>(StringComparer.Ordinal);
+
     Task<Outcome<IReadOnlyList<PluginInstalledPackageView>>> ListInstalledPackagesAsync(CancellationToken ct = default);
     Task<Outcome<Unit>> InstallPackageAsync(string packageSpec, CancellationToken ct = default);
     Task<Outcome<Unit>> UninstallPackageAsync(string packageName, CancellationToken ct = default);
     Task<Outcome<Unit>> SetPluginEnabledAsync(string entryId, string moduleName, bool enabled, CancellationToken ct = default);
     Task<Outcome<Unit>> RestartDshHostAsync(CancellationToken ct = default);
+
+    Task<Outcome<PluginLocalPackageDetailView>> ReadLocalPackageDetailAsync(string packageName, string language, CancellationToken ct = default) =>
+        Task.FromResult(Outcome<PluginLocalPackageDetailView>.Fail(DshFailureCode.Unsupported, "plugins.local_detail_unavailable"));
+
+    IReadOnlySet<string> GetNativeTrimmedEntryIds() => EmptyStringSet;
+
+    bool IsFullWebUiCompatEnabled => false;
 }
 
 /// <summary>默认 fail-closed 占位实现（未注入运行时操作时返回 <see cref="DshFailureCode.Unsupported"/>）。</summary>

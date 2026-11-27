@@ -52,10 +52,12 @@ public sealed class BridgeHost : IDisposable, IDiagnosticsLog
         UpdateInstaller = _services.GetRequiredService<DshMobile.Application.Updates.UpdateCoordinator>();
         Governance = new SystemGovernanceMonitor(_context, Append);
         Agent = new AgentConnectionScope(_context, Runtime, Layout, Append, RunRestartForPluginsAsync, Governance.Leases);
-        // 生产宿主启用受控裁剪：只禁用浏览器前端插件行，保留全部后端控制器与 ui_* 工具（ADR-0033）。
+        // 生产宿主默认启用受控裁剪：只禁用浏览器前端插件行，保留全部后端控制器与 ui_* 工具（ADR-0033）；
+        // 当用户显式开启「完整 WebUI 兼容模式」时（ADR-0034），按需动态切换为非精简模式并在下次启动/重启时生效。
         runtimeOptions.HostOptions = new DshMobile.Runtime.Hosting.DshHostOptions(
             TrimmedWeb: true,
-            ProtocolHandshakeAsync: Agent.PerformStartupHandshakeAsync);
+            ProtocolHandshakeAsync: Agent.PerformStartupHandshakeAsync,
+            UseTrimmedWeb: ShouldUseTrimmedWeb);
         // An update the previous process did not finish is reported once (its layer was already restored by recovery).
         if (UpdateInstaller.SettleInterrupted() is { } interrupted)
         {
@@ -149,6 +151,17 @@ public sealed class BridgeHost : IDisposable, IDiagnosticsLog
 
     /// <summary>ADR-0031: the C# host's live start/stop milestone (null when no host exists yet).</summary>
     public DshMobile.Runtime.Hosting.DshHostPhase? HostPhase => Runtime.HostPhase;
+
+    /// <summary>当前已就绪的 DSH 进程是否正以「完整 WebUI 兼容模式」运行（ADR-0034）。</summary>
+    public bool IsFullWebUiCompatActive => Runtime.IsFullWebUiActive;
+
+    /// <summary>
+    /// 受控获取本机回环完整 WebUI 的系统浏览器打开地址（ADR-0034）；
+    /// 严禁写入日志、剪贴板或持久化存储。
+    /// </summary>
+    public Uri? TryGetLocalWebUiBrowserUri() => Runtime.TryGetLocalWebUiBrowserUri();
+
+    private bool ShouldUseTrimmedWeb() => !UiPrefs.FullWebUiCompatEnabled(_context);
 
     private int _warmup;
     private int _userStopped;

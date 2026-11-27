@@ -24,7 +24,8 @@ public sealed record PluginsUiState(
     bool CanSearchCatalog = false,
     int CatalogTotalCount = 0,
     DshFailureCode? CatalogFailureCode = null,
-    string? CatalogDiagnosticSummary = null)
+    string? CatalogDiagnosticSummary = null,
+    bool IsFullWebUiCompatEnabled = false)
 {
     /// <summary>远端发现页搜索到的插件条目（已实时对齐本地已安装状态）。</summary>
     public IReadOnlyList<PluginCatalogEntryView> CatalogEntries { get; init; } = [];
@@ -101,7 +102,8 @@ public sealed class PluginsViewModel : IPluginsActions, IAsyncDisposable
             CanSearchCatalog: _canSearchCatalog,
             CatalogTotalCount: 0,
             CatalogFailureCode: null,
-            CatalogDiagnosticSummary: null);
+            CatalogDiagnosticSummary: null,
+            IsFullWebUiCompatEnabled: service.IsFullWebUiCompatEnabled);
     }
 
     public PluginsUiState State
@@ -135,6 +137,7 @@ public sealed class PluginsViewModel : IPluginsActions, IAsyncDisposable
         {
             IsHostReady = true,
             RequiresDshRestart = _service.RequiresDshRestart,
+            IsFullWebUiCompatEnabled = _service.IsFullWebUiCompatEnabled,
         });
     }
 
@@ -655,6 +658,7 @@ public sealed class PluginsViewModel : IPluginsActions, IAsyncDisposable
                 FailureCode = failureCode,
                 DiagnosticSummary = diagnosticSummary,
                 StatusKey = statusKey,
+                IsFullWebUiCompatEnabled = _service.IsFullWebUiCompatEnabled,
             };
             _state = snapshot;
         }
@@ -775,7 +779,8 @@ public sealed class PluginsViewModel : IPluginsActions, IAsyncDisposable
             return 40;
         }
 
-        if (ContainsIgnoreCase(entry.DisplayName, token))
+        if (ContainsIgnoreCase(entry.DisplayName, token) ||
+            ContainsIgnoreCase(entry.Description, token))
         {
             return 25;
         }
