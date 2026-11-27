@@ -83,8 +83,8 @@ public sealed class AgentConnectionScope : IDisposable
         _pluginOperations = new RuntimePluginOperations(
             runtime,
             restartHostAsync ?? (ct => runtime.RestartWebHostAsync(ct)));
-        _pluginInventoryService = new PluginInventoryService(_gateway, _pluginOperations);
         _pluginCatalogSearch = new NpmRegistryPluginSearchService();
+        _pluginInventoryService = new PluginInventoryService(_gateway, _pluginOperations, _pluginCatalogSearch);
         Plugins = new PluginsViewModel(_gateway, _pluginInventoryService, _pluginCatalogSearch);
         Inbox = new InboxViewModel(_requests, ResolveSessionTitle);
         RequestNotifications = new BackgroundRequestNotificationCoordinator(

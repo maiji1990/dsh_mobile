@@ -56,6 +56,7 @@ public sealed class PluginDetailFragment : Fragment
     private TextView _webUiBadge = null!;
     private TextView _notBundleBadge = null!;
     private TextView _trimmedBadge = null!;
+    private TextView _updateBadge = null!;
 
     private TextView _metaInfoView = null!;
     private View _linksRow = null!;
@@ -67,7 +68,9 @@ public sealed class PluginDetailFragment : Fragment
     private MaterialButton _installButton = null!;
     private MaterialButton _toggleButton = null!;
     private MaterialButton _uninstallButton = null!;
+    private MaterialButton _upgradeButton = null!;
     private TextView _installHintView = null!;
+    private TextView _updateHintView = null!;
     private TextView _feedbackView = null!;
 
     private View _webUiCard = null!;
@@ -151,6 +154,7 @@ public sealed class PluginDetailFragment : Fragment
         _webUiBadge = view.FindViewById<TextView>(Resource.Id.plugin_detail_badge_webui)!;
         _notBundleBadge = view.FindViewById<TextView>(Resource.Id.plugin_detail_badge_not_bundle)!;
         _trimmedBadge = view.FindViewById<TextView>(Resource.Id.plugin_detail_badge_trimmed)!;
+        _updateBadge = view.FindViewById<TextView>(Resource.Id.plugin_detail_badge_update)!;
 
         _metaInfoView = view.FindViewById<TextView>(Resource.Id.plugin_detail_meta_info)!;
         _linksRow = view.FindViewById(Resource.Id.plugin_detail_links_row)!;
@@ -162,7 +166,9 @@ public sealed class PluginDetailFragment : Fragment
         _installButton = view.FindViewById<MaterialButton>(Resource.Id.plugin_detail_install_btn)!;
         _toggleButton = view.FindViewById<MaterialButton>(Resource.Id.plugin_detail_toggle_btn)!;
         _uninstallButton = view.FindViewById<MaterialButton>(Resource.Id.plugin_detail_uninstall_btn)!;
+        _upgradeButton = view.FindViewById<MaterialButton>(Resource.Id.plugin_detail_upgrade_btn)!;
         _installHintView = view.FindViewById<TextView>(Resource.Id.plugin_detail_install_hint)!;
+        _updateHintView = view.FindViewById<TextView>(Resource.Id.plugin_detail_update_hint)!;
         _feedbackView = view.FindViewById<TextView>(Resource.Id.plugin_detail_feedback)!;
 
         _webUiCard = view.FindViewById(Resource.Id.plugin_detail_webui_card)!;
@@ -194,6 +200,7 @@ public sealed class PluginDetailFragment : Fragment
         _installButton.Click += (_, _) => ConfirmInstallCurrentPlugin();
         _toggleButton.Click += (_, _) => ConfirmToggleCurrentPlugin();
         _uninstallButton.Click += (_, _) => ConfirmUninstallCurrentPlugin();
+        _upgradeButton.Click += (_, _) => ConfirmUpgradeCurrentPlugin();
         _webUiActionButton.Click += (_, _) => HandleWebUiGuideAction();
         _configResetAllButton.Click += (_, _) => ConfirmResetAllSettings();
 
@@ -329,7 +336,7 @@ public sealed class PluginDetailFragment : Fragment
 
         RenderBadges(context, state);
         RenderMetadataAndLinks(context, state);
-        RenderActionButtons(state, hostReady, busy);
+        RenderActionButtons(context, state, hostReady, busy);
         RenderFeedbackBanner(context, state);
 
         // 3. 页面修改插件生效引导卡
@@ -403,6 +410,20 @@ public sealed class PluginDetailFragment : Fragment
         _webUiBadge.Visibility = state.HasCustomWebUi ? ViewStates.Visible : ViewStates.Gone;
         _notBundleBadge.Visibility = state.IsInstalled && !state.HasBundleManifest ? ViewStates.Visible : ViewStates.Gone;
         _trimmedBadge.Visibility = state.IsTrimmedByNativeMode ? ViewStates.Visible : ViewStates.Gone;
+
+        // 可更新胶囊：只有拿到明确的最新版本时才展示，避免出现没有目标版本的“可更新”。
+        if (state.HasUpdate && !string.IsNullOrWhiteSpace(state.LatestCatalogVersion))
+        {
+            _updateBadge.Visibility = ViewStates.Visible;
+            _updateBadge.Text = Rows.Fmt(
+                context,
+                Resource.String.plugins_update_badge_fmt,
+                state.LatestCatalogVersion!.Trim());
+        }
+        else
+        {
+            _updateBadge.Visibility = ViewStates.Gone;
+        }
     }
 
     private void RenderMetadataAndLinks(Context context, PluginDetailUiState state)
@@ -436,7 +457,7 @@ public sealed class PluginDetailFragment : Fragment
         _linksRow.Visibility = hasHomepage || hasRepo || hasNpm ? ViewStates.Visible : ViewStates.Gone;
     }
 
-    private void RenderActionButtons(PluginDetailUiState state, bool hostReady, bool busy)
+    private void RenderActionButtons(Context context, PluginDetailUiState state, bool hostReady, bool busy)
     {
         if (!state.IsInstalled)
         {
@@ -446,6 +467,8 @@ public sealed class PluginDetailFragment : Fragment
             _installButton.Enabled = showInstall && state.CanInstall && hostReady && !busy;
             _toggleButton.Visibility = ViewStates.Gone;
             _uninstallButton.Visibility = ViewStates.Gone;
+            _upgradeButton.Visibility = ViewStates.Gone;
+            _updateHintView.Visibility = ViewStates.Gone;
             _actionsRow.Visibility = showInstall ? ViewStates.Visible : ViewStates.Gone;
             _installHintView.Visibility = showInstall && !hostReady ? ViewStates.Visible : ViewStates.Gone;
             return;
@@ -453,6 +476,15 @@ public sealed class PluginDetailFragment : Fragment
 
         _installButton.Visibility = ViewStates.Gone;
         _installHintView.Visibility = ViewStates.Gone;
+
+        var latestVersion = state.LatestCatalogVersion?.Trim();
+        var showUpgrade = state.CanUpgrade && !string.IsNullOrWhiteSpace(latestVersion);
+        _upgradeButton.Visibility = showUpgrade ? ViewStates.Visible : ViewStates.Gone;
+        if (showUpgrade)
+        {
+            _upgradeButton.Text = Rows.Fmt(context, Resource.String.plugins_upgrade_to_fmt, latestVersion!);
+            _upgradeButton.Enabled = hostReady && !busy;
+        }
 
         var showToggle = !state.IsProtected && !state.IsTrimmedByNativeMode && state.CanToggle;
         _toggleButton.Visibility = showToggle ? ViewStates.Visible : ViewStates.Gone;
@@ -466,7 +498,26 @@ public sealed class PluginDetailFragment : Fragment
         _uninstallButton.Visibility = showUninstall ? ViewStates.Visible : ViewStates.Gone;
         _uninstallButton.Enabled = hostReady && !busy;
 
-        _actionsRow.Visibility = showToggle || showUninstall ? ViewStates.Visible : ViewStates.Gone;
+        _actionsRow.Visibility = showUpgrade || showToggle || showUninstall ? ViewStates.Visible : ViewStates.Gone;
+
+        // 内置、核心保护或官方按需插件不能通过 npm 单独更新时，给出明确的 DSH 层更新引导。
+        var isInstallationShipped = string.Equals(state.Availability, "installation", StringComparison.OrdinalIgnoreCase);
+        var isOfficialScope = !string.IsNullOrWhiteSpace(state.PackageName) &&
+                              state.PackageName.StartsWith("@deepseek-ai/", StringComparison.Ordinal);
+        if (isInstallationShipped || state.IsProtected)
+        {
+            _updateHintView.Visibility = ViewStates.Visible;
+            _updateHintView.SetText(Resource.String.plugins_update_requires_dsh_layer);
+        }
+        else if (isOfficialScope && !showUpgrade)
+        {
+            _updateHintView.Visibility = ViewStates.Visible;
+            _updateHintView.SetText(Resource.String.plugins_update_official_requires_dsh_layer);
+        }
+        else
+        {
+            _updateHintView.Visibility = ViewStates.Gone;
+        }
     }
 
     private void RenderFeedbackBanner(Context context, PluginDetailUiState state)
@@ -511,7 +562,7 @@ public sealed class PluginDetailFragment : Fragment
 
         _webUiCard.Visibility = ViewStates.Visible;
         var prefEnabled = UiPrefs.FullWebUiCompatEnabled(context);
-        var activeAndReady = _bridge.IsFullWebUiCompatActive && _bridge.TryGetLocalWebUiBrowserUri() is not null;
+        var activeAndReady = _bridge.CanOpenLocalWebUiPortal;
 
         if (!prefEnabled)
         {
@@ -657,7 +708,7 @@ public sealed class PluginDetailFragment : Fragment
     {
         var context = RequireContext();
         var prefEnabled = UiPrefs.FullWebUiCompatEnabled(context);
-        var activeAndReady = _bridge.IsFullWebUiCompatActive && _bridge.TryGetLocalWebUiBrowserUri() is not null;
+        var activeAndReady = _bridge.CanOpenLocalWebUiPortal;
 
         if (!prefEnabled)
         {
@@ -673,7 +724,7 @@ public sealed class PluginDetailFragment : Fragment
 
         if (activeAndReady)
         {
-            PluginBrowserDialogs.ConfirmAndOpenLocalWebUi(context, View, _bridge);
+            PluginBrowserDialogs.ConfirmAndOpenLocalWebUi(Activity ?? RequireContext(), View, _bridge);
             return;
         }
 
@@ -717,6 +768,43 @@ public sealed class PluginDetailFragment : Fragment
             .SetPositiveButton(Resource.String.plugins_install_confirm_action, (_, _) =>
             {
                 _ = _viewModel.InstallAsync(installSpec);
+            })!
+            .Show();
+    }
+
+    /// <summary>详情页升级确认：展示当前版本与目标版本，确认后走受控升级并保留重启提示。</summary>
+    private void ConfirmUpgradeCurrentPlugin()
+    {
+        var context = RequireContext();
+        var state = _viewModel.State;
+        if (_bridge.Runtime.Host?.State != DshHostState.Ready)
+        {
+            if (View is { } root)
+            {
+                Snackbar.Make(root, Resource.String.plugins_host_required, Snackbar.LengthLong).Show();
+            }
+            return;
+        }
+
+        var targetVersion = state.LatestCatalogVersion?.Trim();
+        if (!state.CanUpgrade || string.IsNullOrWhiteSpace(targetVersion))
+        {
+            return;
+        }
+
+        var displayTitle = string.IsNullOrWhiteSpace(state.Title) ? state.PackageName : state.Title;
+        new MaterialAlertDialogBuilder(context)
+            .SetTitle(Resource.String.plugins_upgrade_confirm_title)!
+            .SetMessage(Rows.Fmt(
+                context,
+                Resource.String.plugins_upgrade_confirm_msg,
+                displayTitle,
+                state.Version?.Trim() ?? string.Empty,
+                targetVersion!))!
+            .SetNegativeButton(Android.Resource.String.Cancel, (_, _) => { })!
+            .SetPositiveButton(Resource.String.plugins_upgrade_confirm_action, (_, _) =>
+            {
+                _ = _viewModel.UpgradeAsync();
             })!
             .Show();
     }
@@ -949,6 +1037,7 @@ public sealed class PluginDetailFragment : Fragment
             "plugins.status.enabled" => Resource.String.plugins_status_enabled,
             "plugins.status.disabled" => Resource.String.plugins_status_disabled_toast,
             "plugins.status.restarted" => Resource.String.plugins_status_restarted,
+            "plugins.status.upgraded" => Resource.String.plugins_status_upgraded,
             _ => 0,
         };
         return messageRes != 0;

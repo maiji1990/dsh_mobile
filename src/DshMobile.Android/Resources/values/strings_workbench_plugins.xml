@@ -55,22 +55,22 @@
     <!-- 插件页顶栏完整 WebUI 兼容模式菜单 -->
     <string name="plugins_menu_webui_compat_on">完整 WebUI 兼容模式：已开启</string>
     <string name="plugins_menu_webui_compat_off">完整 WebUI 兼容模式：已关闭</string>
-    <string name="plugins_menu_open_webui">在系统浏览器打开 WebUI</string>
+    <string name="plugins_menu_open_webui">在应用内浏览器打开 WebUI</string>
 
-    <!-- 完整 WebUI 兼容模式与系统浏览器安全确认弹窗 -->
+    <!-- 完整 WebUI 兼容模式与应用内浏览器（Custom Tabs）安全确认弹窗 -->
     <string name="plugins_webui_compat_enable_title">开启完整 WebUI 兼容模式？</string>
-    <string name="plugins_webui_compat_enable_msg">开启并重启 DSH 后，将加载官方浏览器前端与页面扩展模块，使 dsh.client 页面修改类插件在系统浏览器中完整生效。\n\n该模式会增加一定的内存占用与启动耗时；随时可在插件页顶栏菜单切回精简原生模式。</string>
+    <string name="plugins_webui_compat_enable_msg">开启并重启 DSH 后，将加载官方浏览器前端与页面扩展模块，使 dsh.client 页面修改类插件在应用内浏览器中完整生效。\n\n该模式会增加一定的内存占用与启动耗时；随时可在插件页顶栏菜单切回精简原生模式。</string>
     <string name="plugins_webui_compat_enable_confirm">开启并重启 DSH</string>
     <string name="plugins_webui_compat_enable_start_confirm">开启并启动 DSH</string>
     <string name="plugins_webui_compat_disable_title">切回精简原生模式？</string>
-    <string name="plugins_webui_compat_disable_msg">关闭完整 WebUI 兼容模式并重启 DSH 后，将重新裁剪浏览器前端模块以降低内存占用并加快启动；系统浏览器中已打开的本机 WebUI 会话将立即失效。</string>
+    <string name="plugins_webui_compat_disable_msg">关闭完整 WebUI 兼容模式并重启 DSH 后，将重新裁剪浏览器前端模块以降低内存占用并加快启动；应用内浏览器中已打开的本机 WebUI 会话将立即失效。</string>
     <string name="plugins_webui_compat_disable_confirm">关闭并重启 DSH</string>
     <string name="plugins_webui_compat_disable_saved">已关闭完整 WebUI 兼容模式，下次启动 DSH 时生效</string>
-    <string name="plugins_webui_browser_confirm_title">在系统浏览器中打开完整 WebUI？</string>
-    <string name="plugins_webui_browser_confirm_msg">仅访问本机回环地址（127.0.0.1），不会经过外部网络。\n\n确认后将通过系统浏览器 Intent 临时传递本次启动的一次性会话令牌以换取本机 Cookie；停止 DSH 或切回精简原生模式后令牌立即失效。</string>
+    <string name="plugins_webui_browser_confirm_title">在应用内浏览器（Custom Tabs）中打开完整 WebUI？</string>
+    <string name="plugins_webui_browser_confirm_msg">仅访问本机回环地址（127.0.0.1），不会经过外部网络。\n\n确认后应用内浏览器只会拿到一张短时、单次有效的回环一次性票据（nonce）；启动令牌与登录 Cookie 由应用进程内的一次性票据安全回环代理兑换并持有，绝不经 URL 暴露启动令牌，也不写入日志、剪贴板或持久化存储。停止 DSH 或切回精简原生模式后票据立即失效。</string>
     <string name="plugins_webui_browser_confirm_open">安全打开</string>
     <string name="plugins_webui_browser_unavailable">完整 WebUI 尚未就绪，请先确认兼容模式已生效且 DSH 正在运行</string>
-    <string name="plugins_browser_not_found">未找到可打开网页的系统浏览器应用</string>
+    <string name="plugins_browser_not_found">未找到可打开网页的浏览器应用</string>
 
     <!-- 原生插件详情页与官方实时配置表单（ADR-0034） -->
     <string name="plugin_detail_title">插件详情</string>
@@ -87,11 +87,11 @@
     <string name="plugin_detail_link_npm">npm</string>
     <string name="plugin_detail_host_needed_install">需先启动 DSH 后才能安装此插件</string>
     <string name="plugin_detail_webui_card_title">浏览器页面扩展说明</string>
-    <string name="plugin_detail_webui_card_body">该插件包含 dsh.client 浏览器前端页面扩展，纯原生界面下不会修改原生布局；如需让其页面修改生效，请启用「完整 WebUI 兼容模式」并在系统浏览器中打开本机官方 WebUI。</string>
+    <string name="plugin_detail_webui_card_body">该插件包含 dsh.client 浏览器前端页面扩展，纯原生界面下不会修改原生布局；如需让其页面修改生效，请启用「完整 WebUI 兼容模式」，再通过应用内浏览器（Custom Tabs）经一次性票据安全回环代理打开本机官方 WebUI（启动令牌不经 URL 暴露）。</string>
     <string name="plugin_detail_webui_action_enable">开启完整 WebUI 兼容模式并重启 DSH</string>
     <string name="plugin_detail_webui_action_restart">重启 DSH 使完整 WebUI 生效</string>
     <string name="plugin_detail_webui_action_start">启动 DSH 使完整 WebUI 生效</string>
-    <string name="plugin_detail_webui_action_open_browser">在系统浏览器中打开完整 WebUI</string>
+    <string name="plugin_detail_webui_action_open_browser">在应用内浏览器（Custom Tabs）中打开完整 WebUI</string>
 
     <!-- 官方实时配置区块 -->
     <string name="plugin_detail_config_title">实时配置</string>
@@ -135,4 +135,28 @@
     <!-- 详情文档卡 -->
     <string name="plugin_detail_doc_title">插件说明文档</string>
     <string name="plugin_detail_doc_empty">暂无插件详情文档</string>
+
+    <!-- 插件检查更新与受控升级 -->
+    <string name="plugins_action_check_updates">检查更新</string>
+    <string name="plugins_action_upgrade">更新</string>
+    <string name="plugins_action_checking_updates">正在检查更新…</string>
+    <string name="plugins_filter_updatable">可更新</string>
+    <string name="plugins_update_badge">可更新</string>
+    <string name="plugins_update_badge_fmt">可更新 v%1$s</string>
+    <string name="plugins_update_found_fmt">发现 %1$d 个插件可更新</string>
+    <string name="plugins_update_none">全部插件已是最新</string>
+    <string name="plugins_update_no_candidates">暂无可检查更新的第三方插件</string>
+    <string name="plugins_upgrade_to_fmt">更新到 v%1$s</string>
+    <string name="plugins_upgrade_confirm_title">更新插件？</string>
+    <string name="plugins_upgrade_confirm_msg">将把「%1$s」从 v%2$s 更新到 v%3$s。更新需要联网从 npm 公共仓库下载，完成后需重启 DSH 生效。</string>
+    <string name="plugins_upgrade_confirm_action">确认更新</string>
+    <string name="plugins_catalog_update_fmt">已装 v%1$s → 最新 v%2$s</string>
+    <string name="plugins_update_requires_dsh_layer">该插件随 DSH 运行层提供，请通过「运行环境 → 在线更新」升级 DSH 层，而不是在插件页单独更新。</string>
+    <string name="plugins_update_official_requires_dsh_layer">官方按需插件需与 DSH 版本保持一致，请通过「运行环境 → 在线更新」升级 DSH 层。</string>
+    <string name="plugins_update_check_failed_fmt">检查更新失败（%1$s）</string>
+    <string name="plugins_update_check_unavailable">当前无法检查插件更新</string>
+    <string name="plugins_status_checking_updates">正在检查插件更新…</string>
+    <string name="plugins_status_updates_checked">插件更新检查完成</string>
+    <string name="plugins_status_updates_partial">部分插件检查失败，已保留可确认的结果</string>
+    <string name="plugins_status_upgraded">插件已更新，重启 DSH 后生效</string>
 </resources>

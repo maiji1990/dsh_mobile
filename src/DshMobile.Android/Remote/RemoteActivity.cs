@@ -4,6 +4,7 @@ using Android.Views;
 using DshMobile.App.Bridge;
 using DshMobile.App.Chat;
 using DshMobile.App.LocalNetwork;
+using DshMobile.App.Plugins;
 using DshMobile.App.Ui;
 using DshMobile.Application.LocalNetwork;
 using DshMobile.Core.Contracts;
@@ -33,7 +34,7 @@ public sealed class RemoteActivity : DshActivity
     private TextView _statusText = null!;
     private LinearProgressIndicator _progress = null!;
     private EditText _label = null!, _host = null!, _port = null!, _user = null!, _dshPort = null!;
-    private MaterialButton _connect = null!, _disconnect = null!, _start = null!, _stop = null!, _openChat = null!, _remove = null!;
+    private MaterialButton _connect = null!, _disconnect = null!, _start = null!, _stop = null!, _openChat = null!, _openWebUi = null!, _remove = null!;
     private View _connectedActions = null!;
     private Button[] _buttons = [];
     private RemoteHost? _selected;
@@ -62,6 +63,7 @@ public sealed class RemoteActivity : DshActivity
         _start = Wire(Resource.Id.remote_start, StartDsh);
         _stop = Wire(Resource.Id.remote_stop, StopDsh);
         _openChat = Wire(Resource.Id.remote_open_chat, OpenRemoteNativeChat);
+        _openWebUi = Wire(Resource.Id.remote_open_webui, OpenRemoteWebUi);
         _disconnect = Wire(Resource.Id.remote_disconnect, () =>
         {
             _bridge.Agent.DetachRemoteHost();
@@ -70,7 +72,7 @@ public sealed class RemoteActivity : DshActivity
             _bridge.Note("remote disconnect");
         });
         _remove = Wire(Resource.Id.remote_remove, ConfirmRemove);
-        _buttons = [copy, save, _connect, _start, _stop, _openChat, _disconnect, _remove];
+        _buttons = [copy, save, _connect, _start, _stop, _openChat, _openWebUi, _disconnect, _remove];
         ShowConnection();
     }
 
@@ -97,8 +99,20 @@ public sealed class RemoteActivity : DshActivity
         _start.Visibility = connected ? ViewStates.Visible : ViewStates.Gone;
         _stop.Visibility = connected ? ViewStates.Visible : ViewStates.Gone;
         _openChat.Visibility = ready ? ViewStates.Visible : ViewStates.Gone;
+        _openWebUi.Visibility = ready ? ViewStates.Visible : ViewStates.Gone;
         _remove.Visibility = _selected is null ? ViewStates.Gone : ViewStates.Visible;
     }
+
+    /// <summary>
+    /// 经一次性回环票据在应用内浏览器打开远程完整 WebUI（ADR-0036）：确认后即时签发，远程启动令牌与
+    /// 代理 Cookie 绝不进入浏览器 URL。不可用时通过状态行提示。
+    /// </summary>
+    private void OpenRemoteWebUi() => PluginBrowserDialogs.ConfirmAndOpenRemoteWebUi(
+        this,
+        _openWebUi,
+        () => CsRemoteConnection.CanOpenRemoteWebUiPortal,
+        () => CsRemoteConnection.TryIssueRemoteWebUiPortalUri(),
+        () => SetStatus(GetString(Resource.String.remote_webui_unavailable)));
 
     private void OpenRemoteNativeChat()
     {
@@ -283,6 +297,11 @@ public sealed class RemoteActivity : DshActivity
         try
         {
             var d = await Task.Run(() => start ? session.StartDshAsync() : session.StopDshAsync());
+            if (!start)
+            {
+                // 停止远端 DSH 即失效：立即吊销一次性票据与全部代理会话。
+                CsRemoteConnection.RevokeRemoteWebUiPortal();
+            }
             _bridge.Note($"remote {(start ? "start" : "stop")}: state={d.State} code={d.Code} http={d.HttpUnauthenticated?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "-"} still={d.RemoteDshStillRunning?.ToString() ?? "-"} token={d.HasLaunchToken}");
             if (CsRemoteConnection.Status(d) is { } st)
             {

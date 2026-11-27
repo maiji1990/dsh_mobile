@@ -11,6 +11,12 @@
         android:icon="@drawable/ic_refresh"
         android:title="@string/plugins_action_refresh"
         app:showAsAction="ifRoom" />
+    <!-- 检查用户第三方插件是否有可升级的新版本 -->
+    <item
+        android:id="@+id/plugins_action_check_updates"
+        android:icon="@drawable/ic_system_update"
+        android:title="@string/plugins_action_check_updates"
+        app:showAsAction="ifRoom" />
     <item
         android:id="@+id/plugins_action_webui_compat"
         android:title="@string/plugins_menu_webui_compat_off"

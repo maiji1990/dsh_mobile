@@ -168,7 +168,7 @@
             android:layout_marginTop="10dp"
             android:layout_marginEnd="@dimen/dshm_page_padding_horizontal" />
 
-        <!-- 已安装模式 5 枚上下文筛选芯片 -->
+        <!-- 已安装模式 6 枚上下文筛选芯片 -->
         <HorizontalScrollView
             android:id="@+id/plugins_filter_scroll"
             android:layout_width="match_parent"
@@ -224,6 +224,14 @@
                     android:layout_width="wrap_content"
                     android:layout_height="36dp"
                     android:text="@string/plugins_filter_issues" />
+
+                <!-- 仅显示存在可升级新版本的第三方插件 -->
+                <com.google.android.material.chip.Chip
+                    android:id="@+id/plugins_filter_updatable"
+                    style="@style/Widget.DshMobile.Chip.Filter"
+                    android:layout_width="wrap_content"
+                    android:layout_height="36dp"
+                    android:text="@string/plugins_filter_updatable" />
             </com.google.android.material.chip.ChipGroup>
         </HorizontalScrollView>
 

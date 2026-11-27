@@ -91,6 +91,16 @@
                 android:text="@string/plugins_configurable_badge"
                 android:visibility="gone" />
 
+            <!-- 可更新胶囊：显示「可更新 v1.2.0」，由列表适配器按最新版本填文案 -->
+            <TextView
+                android:id="@+id/plugin_item_update_badge"
+                style="@style/Widget.DshMobile.Badge.Primary"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="6dp"
+                android:text="@string/plugins_update_badge"
+                android:visibility="gone" />
+
             <TextView
                 android:id="@+id/plugin_item_version"
                 android:layout_width="wrap_content"
@@ -181,6 +191,18 @@
             android:gravity="end"
             android:orientation="horizontal"
             android:visibility="gone">
+
+            <!-- 升级按钮：仅用户第三方插件存在更高版本时显示 -->
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/plugin_item_upgrade"
+                style="@style/Widget.Material3.Button.TonalButton"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginEnd="8dp"
+                android:text="@string/plugins_action_upgrade"
+                android:visibility="gone"
+                app:icon="@drawable/ic_arrow_upward"
+                app:iconSize="16dp" />
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/plugin_item_uninstall"

@@ -900,4 +900,11 @@
     <string name="chats_remove_active_confirm">停止并删除</string>
     <string name="chat_archived_banner_text">此对话已归档</string>
     <string name="chat_jump_bottom_label">回到最新消息</string>
+
+    <!-- ADR-0036：远程完整 WebUI 经本机 SSH 回环隧道与一次性票据安全代理在应用内浏览器打开 -->
+    <string name="remote_open_webui">打开远程完整 WebUI（含插件页面）</string>
+    <string name="remote_webui_confirm_title">在应用内浏览器（Custom Tabs）中打开远程完整 WebUI？</string>
+    <string name="remote_webui_confirm_msg">流量经本机 SSH 回环隧道（127.0.0.1）与一次性票据安全代理转发，远程启动令牌与代理 Cookie 仅保留在应用进程内存中，不会经 URL 或日志暴露。\n\n断开 SSH 连接或停止远端 DSH 后，代理链接与已打开页面会话立即失效。</string>
+    <string name="remote_webui_confirm_open">安全打开</string>
+    <string name="remote_webui_unavailable">远程完整 WebUI 尚未就绪，请先确认 SSH 已连接且远端 DSH 正在运行</string>
 </resources>

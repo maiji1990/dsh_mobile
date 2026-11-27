@@ -158,9 +158,122 @@ public sealed class PluginDetailViewModelTests
         Assert.True(vm.State.RequiresDshRestart);
     }
 
+    [Fact]
+    public async Task LoadInstalledAsync_LocalDocumentPresent_StillFetchesLatestVersionAndFlagsUpdate()
+    {
+        var gateway = new FakeDetailGateway
+        {
+            // 本地详情命中 README（markdown 非空），复现曾被“已有文档”短路的 L740 场景。
+            BundleDetailResult = new PluginBundleDetailView(Found: false),
+        };
+        var operations = new FakeDetailOperations
+        {
+            LocalDetailMarkdown = "# 本地 README 文档",
+        };
+        var catalogSearch = new FakeDetailCatalogSearch();
+        var inventoryService = new PluginInventoryService(gateway, operations, catalogSearch);
+        await using var viewModel = new PluginDetailViewModel(gateway, inventoryService, operations, catalogSearch);
+
+        await viewModel.LoadInstalledAsync("include:demo-plugin", "zh-CN");
+
+        // 本地 README 必须原样保留，同时仍要检出远端最新版本与可升级状态。
+        Assert.Equal("# 本地 README 文档", viewModel.State.MarkdownDocument);
+        Assert.Equal("local-readme", viewModel.State.DocumentOrigin);
+        Assert.Equal("2.0.0", viewModel.State.LatestCatalogVersion);
+        Assert.True(viewModel.State.HasUpdate);
+        Assert.True(viewModel.State.CanUpgrade);
+        Assert.Equal("profile", viewModel.State.Availability);
+        Assert.True(catalogSearch.DetailCalls >= 1);
+    }
+
+    [Fact]
+    public async Task LoadInstalledAsync_OfflineCatalogFailure_KeepsLocalDocumentWithoutUpdate()
+    {
+        var gateway = new FakeDetailGateway
+        {
+            BundleDetailResult = new PluginBundleDetailView(
+                Found: true, Origin: "locale", Path: "locale/zh.md", Markdown: "# 离线可用文档"),
+        };
+        var operations = new FakeDetailOperations();
+        var catalogSearch = new FakeDetailCatalogSearch
+        {
+            DetailOutcome = Outcome<PluginCatalogDetailView>.Fail(
+                DshFailureCode.TransportLost, "plugins.catalog_detail_timeout"),
+        };
+        var inventoryService = new PluginInventoryService(gateway, operations, catalogSearch);
+        await using var viewModel = new PluginDetailViewModel(gateway, inventoryService, operations, catalogSearch);
+
+        await viewModel.LoadInstalledAsync("include:demo-plugin", "zh-CN");
+
+        Assert.Equal("# 离线可用文档", viewModel.State.MarkdownDocument);
+        Assert.Null(viewModel.State.LatestCatalogVersion);
+        Assert.False(viewModel.State.HasUpdate);
+        Assert.False(viewModel.State.CanUpgrade);
+    }
+
+    [Fact]
+    public async Task LoadInstalledAsync_InstallationShippedPackage_NeverOffersUpgrade()
+    {
+        var gateway = new FakeDetailGateway
+        {
+            Bundles = [CreateBundle("@thirdparty/demo-plugin", "installation", removable: false)],
+        };
+        var operations = new FakeDetailOperations();
+        var catalogSearch = new FakeDetailCatalogSearch();
+        var inventoryService = new PluginInventoryService(gateway, operations, catalogSearch);
+        await using var viewModel = new PluginDetailViewModel(gateway, inventoryService, operations, catalogSearch);
+
+        await viewModel.LoadInstalledAsync("include:demo-plugin", "zh-CN");
+
+        Assert.Equal("installation", viewModel.State.Availability);
+        Assert.True(viewModel.State.HasUpdate);
+        Assert.False(viewModel.State.CanUpgrade);
+    }
+
+    [Fact]
+    public async Task UpgradeAsync_WhenCanUpgrade_UpgradesAndKeepsRestartBanner()
+    {
+        var gateway = new FakeDetailGateway
+        {
+            BundleDetailResult = new PluginBundleDetailView(
+                Found: true, Origin: "locale", Path: "locale/zh.md", Markdown: "# 文档"),
+        };
+        var operations = new FakeDetailOperations();
+        var catalogSearch = new FakeDetailCatalogSearch();
+        var inventoryService = new PluginInventoryService(gateway, operations, catalogSearch);
+        await using var viewModel = new PluginDetailViewModel(gateway, inventoryService, operations, catalogSearch);
+        await viewModel.LoadInstalledAsync("include:demo-plugin", "zh-CN");
+        Assert.True(viewModel.State.CanUpgrade);
+
+        var result = await viewModel.UpgradeAsync();
+
+        Assert.True(result.IsOk);
+        Assert.Equal(1, operations.UpgradeCalls);
+        Assert.Equal("@thirdparty/demo-plugin", operations.LastUpgradePackageName);
+        Assert.Equal("2.0.0", operations.LastUpgradeTargetVersion);
+        Assert.True(viewModel.State.RequiresDshRestart);
+        Assert.Equal("plugins.status.upgraded", viewModel.State.StatusKey);
+        Assert.False(viewModel.State.IsMutating);
+    }
+
+    private static PluginBundleInfoView CreateBundle(string name, string availability, bool removable) => new(
+        Name: name,
+        Official: false,
+        Availability: availability,
+        Version: "1.0.0",
+        DisplayName: null,
+        Description: null,
+        Enabled: true,
+        Installed: true,
+        Optional: false,
+        Removable: removable,
+        Rows: [],
+        Overrides: []);
+
     private sealed class FakeDetailGateway : DefaultDshGateway
     {
         public PluginBundleDetailView BundleDetailResult { get; set; } = new(Found: false);
+        public IReadOnlyList<PluginBundleInfoView> Bundles { get; init; } = [];
         public bool IncludeSecretSlot { get; set; } = true;
         public bool NextMutateConflict { get; set; }
         public long CurrentRevision { get; set; } = 5;
@@ -203,6 +316,11 @@ public sealed class PluginDetailViewModelTests
 
         public override Task<Outcome<IReadOnlyList<PluginBundleInfoView>>> ListPluginBundlesAsync(CancellationToken ct = default)
         {
+            if (Bundles.Count > 0)
+            {
+                return Task.FromResult(Outcome<IReadOnlyList<PluginBundleInfoView>>.Ok(Bundles));
+            }
+
             var bundles = new PluginBundleInfoView[]
             {
                 new(
@@ -336,6 +454,9 @@ public sealed class PluginDetailViewModelTests
         public string? LocalDetailMarkdown { get; set; }
         public int InstallCalls { get; private set; }
         public int RestartCalls { get; private set; }
+        public int UpgradeCalls { get; private set; }
+        public string? LastUpgradePackageName { get; private set; }
+        public string? LastUpgradeTargetVersion { get; private set; }
 
         public Task<Outcome<IReadOnlyList<PluginInstalledPackageView>>> ListInstalledPackagesAsync(CancellationToken ct = default) =>
             Task.FromResult(Outcome<IReadOnlyList<PluginInstalledPackageView>>.Ok([
@@ -373,6 +494,14 @@ public sealed class PluginDetailViewModelTests
             RestartCalls++;
             return Task.FromResult(Outcome<Unit>.Ok(Unit.Value));
         }
+
+        public Task<Outcome<Unit>> UpgradePackageAsync(string packageName, string targetVersion, CancellationToken ct = default)
+        {
+            UpgradeCalls++;
+            LastUpgradePackageName = packageName;
+            LastUpgradeTargetVersion = targetVersion;
+            return Task.FromResult(Outcome<Unit>.Ok(Unit.Value));
+        }
     }
 
     private sealed class FakeDetailCatalogSearch : IPluginCatalogSearch
@@ -380,8 +509,17 @@ public sealed class PluginDetailViewModelTests
         public Task<Outcome<PluginCatalogSearchResult>> SearchAsync(string query, int limit = 25, CancellationToken ct = default) =>
             Task.FromResult(Outcome<PluginCatalogSearchResult>.Ok(new PluginCatalogSearchResult([], 0)));
 
+        public Outcome<PluginCatalogDetailView>? DetailOutcome { get; set; }
+        public int DetailCalls { get; private set; }
+
         public Task<Outcome<PluginCatalogDetailView>> GetPackageDetailAsync(string packageName, CancellationToken ct = default)
         {
+            DetailCalls++;
+            if (DetailOutcome is { } predefined)
+            {
+                return Task.FromResult(predefined);
+            }
+
             if (packageName == "@thirdparty/demo-plugin")
             {
                 return Task.FromResult(Outcome<PluginCatalogDetailView>.Ok(new PluginCatalogDetailView(

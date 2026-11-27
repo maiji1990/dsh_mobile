@@ -225,6 +225,17 @@ public enum PluginFilterMode
     Enabled,
     Protected,
     Issues,
+    Updatable,
+}
+
+/// <summary>插件受控变更的类型，用于区分安装、卸载、启停、重启与升级的结果语义。</summary>
+public enum PluginMutationKind
+{
+    Install,
+    Uninstall,
+    Toggle,
+    Restart,
+    Upgrade,
 }
 
 /// <summary>插件管理页标签模式（已安装 / 发现远端插件）。</summary>
@@ -246,7 +257,8 @@ public sealed record PluginCatalogEntryView(
     bool IsOfficialScope,
     bool IsInstalled,
     string? InstalledVersion,
-    string RecommendedInstallSpec);
+    string RecommendedInstallSpec,
+    bool HasUpdate = false);
 
 /// <summary>远端插件目录搜索结果快照。</summary>
 public sealed record PluginCatalogSearchResult(
@@ -271,6 +283,17 @@ public sealed record PluginCatalogDetailView(
     bool HasBundleManifest,
     bool HasCustomWebUi,
     string RecommendedInstallSpec);
+
+/// <summary>
+/// 单个 npm 包的最新版本查询结果（由宿主侧 registry 探测返回）。
+/// <see cref="LatestVersion"/> 为 <see langword="null"/> 表示该包本次查询失败或没有可用的 <c>latest</c> 标签，
+/// <see cref="DiagnosticCode"/> 给出经脱敏的稳定原因，供调用方统计失败数并在诊断摘要中如实展示。
+/// </summary>
+public sealed record PluginLatestVersionView(
+    string PackageName,
+    string? LatestVersion,
+    IReadOnlyList<string>? AvailableVersions = null,
+    string? DiagnosticCode = null);
 
 /// <summary>本地已安装包在安全边界内读取的详情文档与元信息。</summary>
 public sealed record PluginLocalPackageDetailView(
@@ -329,6 +352,16 @@ public interface IPluginCatalogSearch
 
     Task<Outcome<PluginCatalogDetailView>> GetPackageDetailAsync(string packageName, CancellationToken ct = default) =>
         Task.FromResult(Outcome<PluginCatalogDetailView>.Fail(DshFailureCode.Unsupported, "plugins.catalog_detail_unavailable"));
+
+    /// <summary>
+    /// 批量查询多个 npm 包的最新版本。默认实现 fail-closed，由宿主侧 registry 探测服务覆盖；
+    /// 调用方必须在返回 <see cref="DshFailureCode.Unsupported"/> 时如实提示“检查更新暂不可用”，不得伪造结果。
+    /// </summary>
+    Task<Outcome<IReadOnlyList<PluginLatestVersionView>>> GetLatestVersionsAsync(
+        IReadOnlyList<string> packageNames,
+        CancellationToken ct = default) =>
+        Task.FromResult(Outcome<IReadOnlyList<PluginLatestVersionView>>.Fail(
+            DshFailureCode.Unsupported, "plugins.catalog_versions_unavailable"));
 }
 
 /// <summary>默认 fail-closed 占位实现（未注入远端搜索服务时返回 <see cref="DshFailureCode.Unsupported"/>）。</summary>
@@ -381,7 +414,11 @@ public sealed record PluginEntryView(
     string? Author = null,
     string? License = null,
     string? HomepageUrl = null,
-    string? RepositoryUrl = null);
+    string? RepositoryUrl = null,
+    string? Availability = null,
+    string? LatestVersion = null,
+    bool HasUpdate = false,
+    bool CanUpgrade = false);
 
 /// <summary>L0 插件目录聚合快照。</summary>
 public sealed record PluginInventorySnapshotResult(
@@ -390,13 +427,26 @@ public sealed record PluginInventorySnapshotResult(
     IReadOnlyList<PluginInstalledPackageView> InstalledPackages,
     string? DiagnosticWarning = null);
 
+/// <summary>
+/// 一次“检查插件更新”的结果：<see cref="Entries"/> 已回填 <c>Availability</c>/<c>LatestVersion</c>/
+/// <c>HasUpdate</c>/<c>CanUpgrade</c>，调用方可直接替换本地列表。
+/// </summary>
+public sealed record PluginUpdateCheckResult(
+    IReadOnlyList<PluginEntryView> Entries,
+    int CheckedCount,
+    int FailedCount,
+    string? DiagnosticWarning = null);
+
 /// <summary>L1 受控插件变更结果（任意变更成功后标记 <see cref="RequiresDshRestart"/> = true）。</summary>
 public sealed record PluginMutationResult(
     bool Succeeded,
     bool RequiresDshRestart,
     string Target,
     string? FailureCode = null,
-    string? DiagnosticSummary = null);
+    string? DiagnosticSummary = null,
+    PluginMutationKind Kind = PluginMutationKind.Install,
+    string? FromVersion = null,
+    string? ToVersion = null);
 
 /// <summary>
 /// 宿主侧受控插件操作桥接接口（由 <c>DshMobile.Runtime</c>/<c>Application</c> 实现并通过组合根注入）。
@@ -410,6 +460,13 @@ public interface IPluginOperations
     Task<Outcome<Unit>> UninstallPackageAsync(string packageName, CancellationToken ct = default);
     Task<Outcome<Unit>> SetPluginEnabledAsync(string entryId, string moduleName, bool enabled, CancellationToken ct = default);
     Task<Outcome<Unit>> RestartDshHostAsync(CancellationToken ct = default);
+
+    /// <summary>
+    /// 受控升级到精确版本。默认实现 fail-closed（不猜测安装语义），由运行时桥接层覆盖为
+    /// <c>dsh plugin --profile web add &lt;包名&gt;@&lt;精确版本&gt;</c>。
+    /// </summary>
+    Task<Outcome<Unit>> UpgradePackageAsync(string packageName, string targetVersion, CancellationToken ct = default) =>
+        Task.FromResult(Outcome<Unit>.Fail(DshFailureCode.Unsupported, "plugins.upgrade_unavailable"));
 
     Task<Outcome<PluginLocalPackageDetailView>> ReadLocalPackageDetailAsync(string packageName, string language, CancellationToken ct = default) =>
         Task.FromResult(Outcome<PluginLocalPackageDetailView>.Fail(DshFailureCode.Unsupported, "plugins.local_detail_unavailable"));
@@ -440,4 +497,7 @@ public sealed class NoopPluginOperations : IPluginOperations
 
     public Task<Outcome<Unit>> RestartDshHostAsync(CancellationToken ct = default) =>
         Task.FromResult(Outcome<Unit>.Fail(DshFailureCode.Unsupported, "plugins.restart_unavailable"));
+
+    public Task<Outcome<Unit>> UpgradePackageAsync(string packageName, string targetVersion, CancellationToken ct = default) =>
+        Task.FromResult(Outcome<Unit>.Fail(DshFailureCode.Unsupported, "plugins.upgrade_unavailable"));
 }

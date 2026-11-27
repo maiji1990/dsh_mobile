@@ -24,6 +24,7 @@ public sealed class NpmRegistryPluginSearchService : IPluginCatalogSearch, IDisp
     private const int MaxDescriptionLength = 240;
     private const int MaxReadmeLength = 64 * 1024;
     private const int MaxAvailableVersions = 15;
+    private const int MaxConcurrentVersionLookups = 4;
     private static readonly TimeSpan DefaultTimeout = TimeSpan.FromSeconds(12);
 
     private readonly HttpClient _httpClient;
@@ -349,6 +350,175 @@ public sealed class NpmRegistryPluginSearchService : IPluginCatalogSearch, IDisp
             _httpClient.Dispose();
         }
     }
+
+    /// <summary>
+    /// 批量查询多个 npm 包的最新版本：先去重并校验包名，再以受控并发（最多 4 个）请求
+    /// <c>https://registry.npmjs.org/&lt;包名&gt;</c> 的轻量缩写元数据，只读取 <c>dist-tags.latest</c>。
+    /// 单个包的 404、超时、网络或 JSON 失败不会拖垮整批，而是以 <see cref="PluginLatestVersionView.DiagnosticCode"/>
+    /// 如实记录；调用方的取消则原样抛出，绝不被吞掉。
+    /// </summary>
+    public async Task<Outcome<IReadOnlyList<PluginLatestVersionView>>> GetLatestVersionsAsync(
+        IReadOnlyList<string> packageNames,
+        CancellationToken ct = default)
+    {
+        ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
+        ArgumentNullException.ThrowIfNull(packageNames);
+        ct.ThrowIfCancellationRequested();
+
+        var distinctPackageNames = new List<string>(packageNames.Count);
+        var seenPackageNames = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var rawPackageName in packageNames)
+        {
+            var packageName = rawPackageName?.Trim();
+            if (!PluginPackageValidator.IsValidPackageName(packageName))
+            {
+                continue;
+            }
+            if (seenPackageNames.Add(packageName!))
+            {
+                distinctPackageNames.Add(packageName!);
+            }
+        }
+
+        if (distinctPackageNames.Count == 0)
+        {
+            return Outcome<IReadOnlyList<PluginLatestVersionView>>.Ok([]);
+        }
+
+        using var concurrencyGate = new SemaphoreSlim(MaxConcurrentVersionLookups, MaxConcurrentVersionLookups);
+        var lookupTasks = new Task<PluginLatestVersionView>[distinctPackageNames.Count];
+        for (var index = 0; index < distinctPackageNames.Count; index++)
+        {
+            lookupTasks[index] = FetchLatestVersionAsync(distinctPackageNames[index], concurrencyGate, ct);
+        }
+
+        var results = await Task.WhenAll(lookupTasks).ConfigureAwait(false);
+        return Outcome<IReadOnlyList<PluginLatestVersionView>>.Ok(results);
+    }
+
+    /// <summary>
+    /// 查询单个包的最新版本。任何失败都返回带稳定诊断码的结果（不抛给整批），但调用方取消必须原样抛出。
+    /// </summary>
+    private async Task<PluginLatestVersionView> FetchLatestVersionAsync(
+        string packageName,
+        SemaphoreSlim concurrencyGate,
+        CancellationToken ct)
+    {
+        await concurrencyGate.WaitAsync(ct).ConfigureAwait(false);
+        try
+        {
+            var escapedPackageName = Uri.EscapeDataString(packageName);
+            var requestUri = new Uri($"{PackageEndpointBase}/{escapedPackageName}", UriKind.Absolute);
+            if (!IsTrustedRegistryUri(requestUri))
+            {
+                return new PluginLatestVersionView(packageName, null, null, "plugins.update_check_invalid_endpoint");
+            }
+
+            using var request = new HttpRequestMessage(HttpMethod.Get, requestUri);
+            // npm 的轻量缩写元数据：只含 dist-tags/versions 的安装所需字段，避免下载 README 等大字段。
+            request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/vnd.npm.install-v1+json"));
+            request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json", 0.8));
+            request.Headers.UserAgent.ParseAdd("DshMobile/1.0");
+
+            using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            timeoutCts.CancelAfter(_requestTimeout);
+
+            HttpResponseMessage response;
+            try
+            {
+                response = await _httpClient
+                    .SendAsync(request, HttpCompletionOption.ResponseHeadersRead, timeoutCts.Token)
+                    .ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (!ct.IsCancellationRequested && timeoutCts.IsCancellationRequested)
+            {
+                return new PluginLatestVersionView(packageName, null, null, "plugins.update_check_timeout");
+            }
+            catch (OperationCanceledException)
+            {
+                // 调用方主动取消：必须原样抛出，绝不降级为单包失败。
+                throw;
+            }
+            catch (HttpRequestException)
+            {
+                return new PluginLatestVersionView(packageName, null, null, "plugins.update_check_http_error");
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                var diagnostic = SecretRedactor.RedactAndTruncate(
+                    $"plugins.update_check_transport:{ex.GetType().Name}", 160);
+                return new PluginLatestVersionView(packageName, null, null, diagnostic);
+            }
+
+            using (response)
+            {
+                if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
+                {
+                    return new PluginLatestVersionView(packageName, null, null, "plugins.update_check_not_found");
+                }
+                if (!response.IsSuccessStatusCode)
+                {
+                    return new PluginLatestVersionView(
+                        packageName, null, null, $"plugins.update_check_http_{(int)response.StatusCode}");
+                }
+
+                NpmPackageVersionMetadataDto? metadata;
+                try
+                {
+                    await using var responseStream = await response.Content
+                        .ReadAsStreamAsync(timeoutCts.Token)
+                        .ConfigureAwait(false);
+                    metadata = await JsonSerializer
+                        .DeserializeAsync(
+                            responseStream,
+                            NpmRegistrySearchJsonContext.Default.NpmPackageVersionMetadataDto,
+                            timeoutCts.Token)
+                        .ConfigureAwait(false);
+                }
+                catch (OperationCanceledException) when (!ct.IsCancellationRequested && timeoutCts.IsCancellationRequested)
+                {
+                    return new PluginLatestVersionView(packageName, null, null, "plugins.update_check_timeout");
+                }
+                catch (OperationCanceledException)
+                {
+                    throw;
+                }
+                catch (JsonException)
+                {
+                    return new PluginLatestVersionView(packageName, null, null, "plugins.update_check_invalid_json");
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    var diagnostic = SecretRedactor.RedactAndTruncate(
+                        $"plugins.update_check_read_failed:{ex.GetType().Name}", 160);
+                    return new PluginLatestVersionView(packageName, null, null, diagnostic);
+                }
+
+                var latestVersion = metadata?.DistTags is { } distTags &&
+                                    distTags.TryGetValue("latest", out var taggedLatest)
+                    ? taggedLatest?.Trim()
+                    : null;
+                if (string.IsNullOrEmpty(latestVersion))
+                {
+                    return new PluginLatestVersionView(packageName, null, null, "plugins.update_check_no_latest");
+                }
+                if (!PluginVersionComparer.IsValidVersion(latestVersion))
+                {
+                    return new PluginLatestVersionView(packageName, null, null, "plugins.update_check_invalid_version");
+                }
+                return new PluginLatestVersionView(packageName, latestVersion);
+            }
+        }
+        finally
+        {
+            concurrencyGate.Release();
+        }
+    }
+
+    /// <summary>固定只允许 HTTPS 的 <c>registry.npmjs.org</c> 主机，杜绝任何非官方端点。</summary>
+    private static bool IsTrustedRegistryUri(Uri requestUri) =>
+        string.Equals(requestUri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase) &&
+        string.Equals(requestUri.Host, RegistryHost, StringComparison.OrdinalIgnoreCase);
 
     private static List<PluginCatalogEntryView> MapValidEntries(List<NpmSearchObjectDto> objects)
     {
@@ -746,7 +916,12 @@ internal sealed record NpmPackageDetailDto(
     [property: JsonPropertyName("versions")] Dictionary<string, NpmPackageVersionManifestDto>? Versions = null,
     [property: JsonPropertyName("time")] Dictionary<string, string>? Time = null);
 
+/// <summary>轻量缩写元数据：只解析 <c>dist-tags</c>，供批量检查最新版本使用。</summary>
+internal sealed record NpmPackageVersionMetadataDto(
+    [property: JsonPropertyName("dist-tags")] Dictionary<string, string>? DistTags = null);
+
 [JsonSourceGenerationOptions(PropertyNameCaseInsensitive = true)]
 [JsonSerializable(typeof(NpmSearchResponseDto))]
 [JsonSerializable(typeof(NpmPackageDetailDto))]
+[JsonSerializable(typeof(NpmPackageVersionMetadataDto))]
 internal sealed partial class NpmRegistrySearchJsonContext : JsonSerializerContext;

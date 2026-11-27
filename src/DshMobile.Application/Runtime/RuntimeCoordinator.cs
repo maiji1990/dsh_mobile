@@ -58,6 +58,9 @@ public sealed class RuntimeCoordinator : IDisposable
 
     private IDshHost? _host;
 
+    /// <summary>面向浏览器回环代理的稳定令牌视图（宿主尚未创建时也能安全转发）。</summary>
+    private readonly HostTokenSourceAdapter _hostTokenSource;
+
     public RuntimeCoordinator(
         RuntimeLayout layout,
         RuntimeStateMachine state,
@@ -79,6 +82,7 @@ public sealed class RuntimeCoordinator : IDisposable
         _time = time ?? TimeProvider.System;
         _assets = bundledAssets;
         _hostFactory = hostFactory ?? ((l, note, t) => new DshHost(l, note, t, terminator: null, gracefulStopTimeout: null, options: _options.HostOptions));
+        _hostTokenSource = new HostTokenSourceAdapter(this);
     }
 
     public RuntimeLayout Layout => _layout;
@@ -135,6 +139,28 @@ public sealed class RuntimeCoordinator : IDisposable
 
     /// <summary>The C# host (created on the first start); exposes the in-memory launch token to native clients.</summary>
     public DshHost? Host => _host as DshHost;
+
+    /// <summary>
+    /// 稳定的启动令牌来源（ADR-0036）：宿主尚未创建或已被替换时也返回同一个实例，
+    /// 使本机回环一次性票据代理可以在 <see cref="Host"/> 就绪前完成订阅。
+    /// </summary>
+    public IDshTokenSource HostTokenSource => _hostTokenSource;
+
+    /// <summary>
+    /// 把 <see cref="_host"/> 的令牌读取与变更事件转发给代理；宿主实例按需创建一次，
+    /// 因而订阅只建立一次，避免遗漏后续实例的 <see cref="IDshTokenSource.TokenChanged"/>。
+    /// </summary>
+    private sealed class HostTokenSourceAdapter(RuntimeCoordinator owner) : IDshTokenSource
+    {
+        public string? Token => owner._host is IDshTokenSource source ? source.Token : null;
+
+        public long? TokenRevision => owner._host is IDshTokenSource source ? source.TokenRevision : null;
+
+        public event EventHandler? TokenChanged;
+
+        /// <summary>转发宿主的令牌变更，触发代理吊销全部票据与会话。</summary>
+        internal void RaiseChanged() => TokenChanged?.Invoke(this, EventArgs.Empty);
+    }
 
     /// <summary>State of the C# host, or null before its first start.</summary>
     public DshHostState? HostState => _host?.State;
@@ -435,6 +461,11 @@ public sealed class RuntimeCoordinator : IDisposable
     {
         var host = _hostFactory(_layout, _log.Note, _time);
         host.StateChanged += (_, _) => OnHostStateChanged(host);
+        // ADR-0036：把宿主令牌变更转给稳定的令牌视图，回环代理据此立即吊销一次性票据与代理会话。
+        if (host is IDshTokenSource tokenSource)
+        {
+            tokenSource.TokenChanged += (_, _) => _hostTokenSource.RaiseChanged();
+        }
         // ADR-0031: start/stop milestones for the UI (DshHost only; the test seam stays untouched).
         if (host is DshHost concrete)
         {
@@ -1096,6 +1127,49 @@ public sealed class RuntimeCoordinator : IDisposable
                     ? $"plugins add {trimmed}: ok (restart required)"
                     : $"plugins add {trimmed}: ok (no dsh.bundle manifest; dependency only)")
                 : $"plugins add {trimmed} FAILED {result.Code}");
+            return result;
+        }
+        finally
+        {
+            _op.Release();
+        }
+    }
+
+    /// <summary>
+    /// 受控升级第三方插件到精确版本（前置白名单、核心包保护与精确 SemVer 校验，非法参数零进程启动）：
+    /// 复用 <see cref="GuestPluginService.UpgradeAsync"/>，成功后由上层提示需要重启 DSH 生效。
+    /// </summary>
+    public async Task<GuestPluginChangeResult> UpgradeProfilePluginAsync(
+        string packageName,
+        string targetVersion,
+        CancellationToken ct)
+    {
+        var trimmedPackage = packageName?.Trim(' ');
+        var trimmedVersion = targetVersion?.Trim(' ');
+        if (!PluginCommandRules.IsValidPackageName(trimmedPackage))
+        {
+            return new GuestPluginChangeResult(false, RuntimeErrorCodes.BadRequest, "package name must be a valid npm package name");
+        }
+        if (PluginCommandRules.IsProtectedPackage(trimmedPackage!))
+        {
+            return new GuestPluginChangeResult(false, RuntimeErrorCodes.BadRequest, "protected core package cannot be upgraded");
+        }
+        if (!PluginCommandRules.IsValidExactVersion(trimmedVersion))
+        {
+            return new GuestPluginChangeResult(false, RuntimeErrorCodes.BadRequest, "version must be an exact SemVer (no ranges, tags, paths or flags)");
+        }
+
+        await _op.WaitAsync(ct).ConfigureAwait(false);
+        try
+        {
+            await EnsureGuestAssetsAsync(ct).ConfigureAwait(false);
+            var svc = CreateGuestPluginService();
+            var result = await svc.UpgradeAsync(trimmedPackage!, trimmedVersion!, ct).ConfigureAwait(false);
+            _log.Note(result.Ok
+                ? (result.DeclaredBundleManifest
+                    ? $"plugins upgrade {trimmedPackage} -> {trimmedVersion}: ok (restart required)"
+                    : $"plugins upgrade {trimmedPackage} -> {trimmedVersion}: ok (no dsh.bundle manifest; dependency only)")
+                : $"plugins upgrade {trimmedPackage} -> {trimmedVersion} FAILED {result.Code}");
             return result;
         }
         finally

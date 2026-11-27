@@ -70,6 +70,7 @@ public sealed class PluginsFragment : Fragment
     private int _renderPosted;
     private string? _lastShownStatusKey;
     private string? _lastShownFailure;
+    private string? _lastShownUpdateFailure;
     private bool _returnedFromDetail;
 
     public override View OnCreateView(LayoutInflater inflater, ViewGroup? container, Bundle? savedInstanceState)
@@ -114,12 +115,12 @@ public sealed class PluginsFragment : Fragment
 
         _installedList = view.FindViewById<RecyclerView>(Resource.Id.plugins_list)!;
         _installedList.SetLayoutManager(new LinearLayoutManager(RequireContext()));
-        _installedAdapter = new PluginsAdapter(OpenInstalledPluginDetail, ConfirmTogglePlugin, ConfirmUninstallPlugin);
+        _installedAdapter = new PluginsAdapter(OpenInstalledPluginDetail, ConfirmTogglePlugin, ConfirmUninstallPlugin, ConfirmUpgradePlugin);
         _installedList.SetAdapter(_installedAdapter);
 
         _catalogList = view.FindViewById<RecyclerView>(Resource.Id.plugins_catalog_list)!;
         _catalogList.SetLayoutManager(new LinearLayoutManager(RequireContext()));
-        _catalogAdapter = new PluginCatalogAdapter(OpenCatalogPluginDetail, ConfirmInstallCatalogPlugin);
+        _catalogAdapter = new PluginCatalogAdapter(OpenCatalogPluginDetail, ConfirmInstallCatalogPlugin, ConfirmUpgradeCatalogPlugin);
         _catalogList.SetAdapter(_catalogAdapter);
 
         _startDshButton.Click += (_, _) => _ = _bridge.RunStartAsync();
@@ -211,6 +212,20 @@ public sealed class PluginsFragment : Fragment
             return;
         }
 
+        if (itemId == Resource.Id.plugins_action_check_updates)
+        {
+            if (_bridge.Runtime.Host?.State != DshHostState.Ready)
+            {
+                if (View is { } root)
+                {
+                    Snackbar.Make(root, Resource.String.plugins_host_required, Snackbar.LengthLong).Show();
+                }
+                return;
+            }
+            _ = _vm.CheckUpdatesAsync();
+            return;
+        }
+
         if (itemId == Resource.Id.plugins_action_refresh)
         {
             if (_vm.State.ActiveTab == PluginTabMode.Discover)
@@ -244,7 +259,7 @@ public sealed class PluginsFragment : Fragment
 
         if (itemId == Resource.Id.plugins_action_open_webui)
         {
-            PluginBrowserDialogs.ConfirmAndOpenLocalWebUi(RequireContext(), View, _bridge);
+            PluginBrowserDialogs.ConfirmAndOpenLocalWebUi(Activity ?? RequireContext(), View, _bridge);
         }
     }
 
@@ -312,6 +327,7 @@ public sealed class PluginsFragment : Fragment
             Resource.Id.plugins_filter_enabled => PluginFilterMode.Enabled,
             Resource.Id.plugins_filter_protected => PluginFilterMode.Protected,
             Resource.Id.plugins_filter_issues => PluginFilterMode.Issues,
+            Resource.Id.plugins_filter_updatable => PluginFilterMode.Updatable,
             _ => PluginFilterMode.All,
         };
         _vm.SetFilterMode(filterMode);
@@ -463,7 +479,7 @@ public sealed class PluginsFragment : Fragment
         var context = RequireContext();
         var hostReady = _bridge.Runtime.Host?.State == DshHostState.Ready;
         var isDiscover = state.ActiveTab == PluginTabMode.Discover;
-        var busy = state.IsLoading || state.IsMutating || state.IsRestarting || _bridge.IsBusy;
+        var busy = state.IsLoading || state.IsMutating || state.IsRestarting || state.IsCheckingUpdates || _bridge.IsBusy;
         var showProgress = busy || (isDiscover && state.IsSearchingCatalog);
 
         _progress.Visibility = showProgress ? ViewStates.Visible : ViewStates.Gone;
@@ -477,13 +493,15 @@ public sealed class PluginsFragment : Fragment
         installMenuItem?.SetEnabled(hostReady && !busy);
         var refreshMenuItem = _toolbar.Menu?.FindItem(Resource.Id.plugins_action_refresh);
         refreshMenuItem?.SetEnabled(isDiscover ? (!state.IsSearchingCatalog && state.CanSearchCatalog) : (hostReady && !busy));
+        var checkUpdatesMenuItem = _toolbar.Menu?.FindItem(Resource.Id.plugins_action_check_updates);
+        checkUpdatesMenuItem?.SetEnabled(hostReady && !busy && state.CanCheckUpdates);
         var webUiCompatMenuItem = _toolbar.Menu?.FindItem(Resource.Id.plugins_action_webui_compat);
         webUiCompatMenuItem?.SetTitle(UiPrefs.FullWebUiCompatEnabled(context)
             ? Resource.String.plugins_menu_webui_compat_on
             : Resource.String.plugins_menu_webui_compat_off);
         webUiCompatMenuItem?.SetEnabled(!busy);
         var openWebUiMenuItem = _toolbar.Menu?.FindItem(Resource.Id.plugins_action_open_webui);
-        var webUiReady = _bridge.IsFullWebUiCompatActive && _bridge.TryGetLocalWebUiBrowserUri() is not null;
+        var webUiReady = _bridge.CanOpenLocalWebUiPortal;
         openWebUiMenuItem?.SetVisible(webUiReady);
         openWebUiMenuItem?.SetEnabled(webUiReady && !busy);
 
@@ -642,18 +660,59 @@ public sealed class PluginsFragment : Fragment
             _lastShownFailure = null;
         }
 
-        if (state.StatusKey is not null && !string.Equals(state.StatusKey, _lastShownStatusKey, StringComparison.Ordinal))
+        // 检查更新失败单独提示，避免与列表/变更失败共用同一条去重键。
+        if (!string.IsNullOrWhiteSpace(state.UpdateCheckFailureCode))
         {
-            _lastShownStatusKey = state.StatusKey;
-            var msgRes = state.StatusKey switch
+            var updateFailureKey = $"update:{state.UpdateCheckFailureCode}:{state.UpdateCheckDiagnostic}";
+            if (!string.Equals(updateFailureKey, _lastShownUpdateFailure, StringComparison.Ordinal))
             {
-                "plugins.status.installed" => Resource.String.plugins_status_installed,
-                "plugins.status.uninstalled" => Resource.String.plugins_status_uninstalled,
-                "plugins.status.enabled" => Resource.String.plugins_status_enabled,
-                "plugins.status.disabled" => Resource.String.plugins_status_disabled_toast,
-                _ => Resource.String.plugins_status_restarted,
-            };
-            Snackbar.Make(root, msgRes, Snackbar.LengthShort).Show();
+                _lastShownUpdateFailure = updateFailureKey;
+                var detail = string.IsNullOrWhiteSpace(state.UpdateCheckDiagnostic)
+                    ? state.UpdateCheckFailureCode
+                    : state.UpdateCheckDiagnostic;
+                Snackbar.Make(
+                    root,
+                    Rows.Fmt(context, Resource.String.plugins_update_check_failed_fmt, detail),
+                    Snackbar.LengthLong).Show();
+            }
+        }
+        else
+        {
+            _lastShownUpdateFailure = null;
+        }
+
+        // “检查完成”的文案取决于本轮发现数量，因此把数量与时间并入去重键，连续两次检查也能各自提示。
+        var effectiveStatusKey = state.StatusKey == "plugins.status.updates_checked"
+            ? $"{state.StatusKey}:{state.UpdatableCount}:{state.LastUpdateCheckAtUnixMs}"
+            : state.StatusKey;
+        if (effectiveStatusKey is not null &&
+            !string.Equals(effectiveStatusKey, _lastShownStatusKey, StringComparison.Ordinal))
+        {
+            _lastShownStatusKey = effectiveStatusKey;
+            if (state.StatusKey == "plugins.status.updates_checked")
+            {
+                var message = state.UpdatableCount > 0
+                    ? Rows.Fmt(context, Resource.String.plugins_update_found_fmt, state.UpdatableCount)
+                    : (state.TotalInstalledCount > 0
+                        ? GetString(Resource.String.plugins_update_none)
+                        : GetString(Resource.String.plugins_update_no_candidates));
+                Snackbar.Make(root, message, Snackbar.LengthShort).Show();
+            }
+            else
+            {
+                var msgRes = state.StatusKey switch
+                {
+                    "plugins.status.installed" => Resource.String.plugins_status_installed,
+                    "plugins.status.uninstalled" => Resource.String.plugins_status_uninstalled,
+                    "plugins.status.enabled" => Resource.String.plugins_status_enabled,
+                    "plugins.status.disabled" => Resource.String.plugins_status_disabled_toast,
+                    "plugins.status.upgraded" => Resource.String.plugins_status_upgraded,
+                    "plugins.status.updates_partial" => Resource.String.plugins_status_updates_partial,
+                    "plugins.status.checking_updates" => Resource.String.plugins_status_checking_updates,
+                    _ => Resource.String.plugins_status_restarted,
+                };
+                Snackbar.Make(root, msgRes, Snackbar.LengthShort).Show();
+            }
         }
         else if (state.StatusKey is null)
         {
@@ -687,6 +746,7 @@ public sealed class PluginsFragment : Fragment
             PluginFilterMode.Enabled => Resource.Id.plugins_filter_enabled,
             PluginFilterMode.Protected => Resource.Id.plugins_filter_protected,
             PluginFilterMode.Issues => Resource.Id.plugins_filter_issues,
+            PluginFilterMode.Updatable => Resource.Id.plugins_filter_updatable,
             _ => Resource.Id.plugins_filter_all,
         };
         if (_filterChips.CheckedChipId == targetChipId)
@@ -807,6 +867,71 @@ public sealed class PluginsFragment : Fragment
             .SetPositiveButton(Resource.String.plugins_install_confirm_action, (_, _) =>
             {
                 _ = _vm.InstallPluginAsync(installSpec);
+            })!
+            .Show();
+    }
+
+    /// <summary>已安装列表条目请求升级：校验目标版本后弹出升级确认框。</summary>
+    private void ConfirmUpgradePlugin(PluginEntryView entry)
+    {
+        ConfirmUpgrade(
+            entry.PackageName,
+            PluginDisplayFormatter.Format(entry).ShortTitle,
+            entry.Version,
+            entry.LatestVersion);
+    }
+
+    /// <summary>发现页已安装且存在更新时请求升级：目标版本取 registry 返回的版本。</summary>
+    private void ConfirmUpgradeCatalogPlugin(PluginCatalogEntryView entry)
+    {
+        ConfirmUpgrade(
+            entry.PackageName,
+            PluginDisplayFormatter.FormatCatalog(entry).ShortTitle,
+            entry.InstalledVersion,
+            entry.Version);
+    }
+
+    /// <summary>统一的升级确认弹窗：说明来源、当前版本与目标版本，确认后走受控升级并提示需要重启。</summary>
+    private void ConfirmUpgrade(
+        string packageName,
+        string displayName,
+        string? installedVersion,
+        string? targetVersion)
+    {
+        var ctx = RequireContext();
+        if (_bridge.Runtime.Host?.State != DshHostState.Ready)
+        {
+            if (View is { } root)
+            {
+                Snackbar.Make(root, Resource.String.plugins_host_required, Snackbar.LengthLong).Show();
+            }
+            return;
+        }
+
+        var trimmedTargetVersion = targetVersion?.Trim();
+        if (string.IsNullOrWhiteSpace(trimmedTargetVersion) ||
+            !PluginPackageValidator.IsValidInstallSpec($"{packageName}@{trimmedTargetVersion}"))
+        {
+            if (View is { } root)
+            {
+                Snackbar.Make(root, Resource.String.plugins_invalid_spec, Snackbar.LengthLong).Show();
+            }
+            return;
+        }
+
+        var currentVersion = installedVersion?.Trim() ?? string.Empty;
+        new MaterialAlertDialogBuilder(ctx)
+            .SetTitle(Resource.String.plugins_upgrade_confirm_title)!
+            .SetMessage(Rows.Fmt(
+                ctx,
+                Resource.String.plugins_upgrade_confirm_msg,
+                string.IsNullOrWhiteSpace(displayName) ? packageName : displayName,
+                currentVersion,
+                trimmedTargetVersion!))!
+            .SetNegativeButton(Android.Resource.String.Cancel, (_, _) => { })!
+            .SetPositiveButton(Resource.String.plugins_upgrade_confirm_action, (_, _) =>
+            {
+                _ = _vm.UpgradePluginAsync(packageName, trimmedTargetVersion!);
             })!
             .Show();
     }

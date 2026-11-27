@@ -202,6 +202,15 @@
                             android:text="@string/plugins_catalog_installed_badge"
                             android:visibility="gone" />
 
+                        <!-- 可更新胶囊：存在更高版本时显示 -->
+                        <TextView
+                            android:id="@+id/plugin_detail_badge_update"
+                            style="@style/Widget.DshMobile.Badge.Primary"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="@string/plugins_update_badge"
+                            android:visibility="gone" />
+
                         <TextView
                             android:id="@+id/plugin_detail_badge_configurable"
                             style="@style/Widget.DshMobile.Badge.Success"
@@ -324,6 +333,18 @@
                             android:text="@string/plugins_action_install"
                             android:visibility="gone" />
 
+                        <!-- 升级按钮：文案由详情页按最新版本动态填「更新到 vX」 -->
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/plugin_detail_upgrade_btn"
+                            style="@style/Widget.Material3.Button"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginEnd="8dp"
+                            android:text="@string/plugins_action_upgrade"
+                            android:visibility="gone"
+                            app:icon="@drawable/ic_arrow_upward"
+                            app:iconSize="16dp" />
+
                         <com.google.android.material.button.MaterialButton
                             android:id="@+id/plugin_detail_toggle_btn"
                             style="@style/Widget.Material3.Button.TonalButton"
@@ -348,6 +369,17 @@
                         android:layout_height="wrap_content"
                         android:layout_marginTop="6dp"
                         android:text="@string/plugin_detail_host_needed_install"
+                        android:textAppearance="?attr/textAppearanceBodySmall"
+                        android:textColor="?attr/colorOnSurfaceVariant"
+                        android:visibility="gone" />
+
+                    <!-- 内置插件不可单独 npm 更新的说明（引导到运行环境更新 DSH 层） -->
+                    <TextView
+                        android:id="@+id/plugin_detail_update_hint"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="6dp"
+                        android:text="@string/plugins_update_requires_dsh_layer"
                         android:textAppearance="?attr/textAppearanceBodySmall"
                         android:textColor="?attr/colorOnSurfaceVariant"
                         android:visibility="gone" />

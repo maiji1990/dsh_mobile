@@ -15,7 +15,8 @@ namespace DshMobile.App.Plugins;
 /// </summary>
 internal sealed class PluginCatalogAdapter(
     Action<PluginCatalogEntryView> onOpenDetail,
-    Action<PluginCatalogEntryView> onInstallRequested) : RecyclerView.Adapter
+    Action<PluginCatalogEntryView> onInstallRequested,
+    Action<PluginCatalogEntryView> onUpgradeRequested) : RecyclerView.Adapter
 {
     private IReadOnlyList<PluginCatalogEntryView> _items = [];
     private bool _hostReady;
@@ -34,7 +35,7 @@ internal sealed class PluginCatalogAdapter(
     public override RecyclerView.ViewHolder OnCreateViewHolder(ViewGroup parent, int viewType)
     {
         var view = LayoutInflater.From(parent.Context)!.Inflate(Resource.Layout.item_plugin_catalog_entry, parent, false)!;
-        return new CatalogEntryHolder(view, onOpenDetail, onInstallRequested);
+        return new CatalogEntryHolder(view, onOpenDetail, onInstallRequested, onUpgradeRequested);
     }
 
     public override void OnBindViewHolder(RecyclerView.ViewHolder holder, int position)
@@ -56,11 +57,13 @@ internal sealed class PluginCatalogAdapter(
 
         private PluginCatalogEntryView? _boundEntry;
         private bool _canInvokeInstall;
+        private bool _canInvokeUpgrade;
 
         public CatalogEntryHolder(
             View itemView,
             Action<PluginCatalogEntryView> onOpenDetail,
-            Action<PluginCatalogEntryView> onInstallRequested) : base(itemView)
+            Action<PluginCatalogEntryView> onInstallRequested,
+            Action<PluginCatalogEntryView> onUpgradeRequested) : base(itemView)
         {
             _titleView = itemView.FindViewById<TextView>(Resource.Id.catalog_item_title)!;
             _versionBadge = itemView.FindViewById<TextView>(Resource.Id.catalog_item_version)!;
@@ -82,7 +85,15 @@ internal sealed class PluginCatalogAdapter(
 
             _installButton.Click += (_, _) =>
             {
-                if (_boundEntry is { } entry && _canInvokeInstall)
+                if (_boundEntry is not { } entry)
+                {
+                    return;
+                }
+                if (_canInvokeUpgrade)
+                {
+                    onUpgradeRequested(entry);
+                }
+                else if (_canInvokeInstall)
                 {
                     onInstallRequested(entry);
                 }
@@ -118,12 +129,31 @@ internal sealed class PluginCatalogAdapter(
 
             if (entry.IsInstalled)
             {
+                var installedVersion = entry.InstalledVersion?.Trim();
+                var targetVersion = entry.Version?.Trim();
+                var canUpgrade = entry.HasUpdate &&
+                                 hostReady &&
+                                 !string.IsNullOrWhiteSpace(targetVersion) &&
+                                 PluginPackageValidator.IsValidInstallSpec(entry.RecommendedInstallSpec);
+                if (canUpgrade)
+                {
+                    _canInvokeInstall = false;
+                    _canInvokeUpgrade = !isBusy;
+                    _installButton.SetText(Resource.String.plugins_action_upgrade);
+                    _installButton.Enabled = _canInvokeUpgrade;
+                    SetInstallHint(!string.IsNullOrWhiteSpace(installedVersion)
+                        ? Rows.Fmt(context, Resource.String.plugins_catalog_update_fmt, installedVersion, targetVersion!)
+                        : null);
+                    return;
+                }
+
                 _canInvokeInstall = false;
+                _canInvokeUpgrade = false;
                 _installButton.SetText(Resource.String.plugins_catalog_action_installed);
                 _installButton.Enabled = false;
-                if (!string.IsNullOrWhiteSpace(entry.InstalledVersion))
+                if (!string.IsNullOrWhiteSpace(installedVersion))
                 {
-                    SetInstallHint(Rows.Fmt(context, Resource.String.plugins_catalog_installed_version_fmt, entry.InstalledVersion.Trim()));
+                    SetInstallHint(Rows.Fmt(context, Resource.String.plugins_catalog_installed_version_fmt, installedVersion));
                 }
                 else
                 {
@@ -132,6 +162,7 @@ internal sealed class PluginCatalogAdapter(
                 return;
             }
 
+            _canInvokeUpgrade = false;
             if (!hostReady)
             {
                 _canInvokeInstall = false;

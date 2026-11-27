@@ -1,3 +1,4 @@
+using System.Text.Json;
 using System.Text.RegularExpressions;
 using DshMobile.Runtime.Guest;
 
@@ -51,6 +52,7 @@ public static partial class PluginCommandRules
 
     private const int MaxPackageNameLength = 214;
     private const int MaxEntryIdLength = 256;
+    private const long MaxDshManifestBytes = 4L * 1024 * 1024;
 
     [GeneratedRegex(@"^(@[a-z0-9][a-z0-9._-]{0,213}/)?[a-z0-9][a-z0-9._-]{0,213}$", RegexOptions.CultureInvariant)]
     private static partial Regex PackageNameRegex();
@@ -60,6 +62,9 @@ public static partial class PluginCommandRules
 
     [GeneratedRegex(@"^[A-Za-z0-9._:/@-]{1,256}$", RegexOptions.CultureInvariant)]
     private static partial Regex EntryIdRegex();
+
+    [GeneratedRegex(@"^[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$", RegexOptions.CultureInvariant)]
+    private static partial Regex ExactVersionRegex();
 
     /// <summary>校验是否为合法且无注入风险的 npm 包名（不含版本号、路径、flag 或 shell 元字符）。</summary>
     public static bool IsValidPackageName(string? candidate)
@@ -105,6 +110,23 @@ public static partial class PluginCommandRules
         return true;
     }
 
+    /// <summary>
+    /// 校验是否为严格的精确 SemVer 版本号（不含前导 <c>v</c>、范围符、tag、路径、flag 或 shell 元字符）：
+    /// 保证 <c>$"{packageName}@{version}"</c> 能通过 <see cref="IsValidInstallSpec"/>。
+    /// </summary>
+    public static bool IsValidExactVersion(string? version)
+    {
+        if (string.IsNullOrEmpty(version) || version.Length > 128)
+        {
+            return false;
+        }
+        if (HasForbiddenControlOrTraversal(version))
+        {
+            return false;
+        }
+        return IsFullMatch(ExactVersionRegex(), version);
+    }
+
     /// <summary>校验 Cordis 插件入口 ID 是否安全合法。</summary>
     public static bool IsValidEntryId(string? entryId)
     {
@@ -144,6 +166,58 @@ public static partial class PluginCommandRules
     /// <summary>判断包名是否为系统核心包（不可卸载）。</summary>
     public static bool IsProtectedPackage(string packageName) =>
         ProtectedPackageNames.Contains(packageName);
+
+    /// <summary>
+    /// 安全只读判断包是否随 DSH 层内置发布（读取 <c>node_modules/@deepseek-ai/dsh/package.json</c> 的
+    /// <c>dependencies</c>）。用于拦截对内置宿主包的覆盖升级；任何读取失败、路径越界或符号链接逃逸均安全返回
+    /// <see langword="false"/>。该方法只读，绝不修改层内容。
+    /// </summary>
+    public static bool IsInstallationShippedPackage(string dshLayerDir, string packageName)
+    {
+        if (string.IsNullOrWhiteSpace(dshLayerDir) || !IsValidPackageName(packageName))
+        {
+            return false;
+        }
+
+        try
+        {
+            var boundary = Path.GetFullPath(dshLayerDir);
+            if (boundary.Length == 0)
+            {
+                return false;
+            }
+            var manifestPath = Path.GetFullPath(Path.Combine(
+                boundary, "node_modules", "@deepseek-ai", "dsh", "package.json"));
+            if (!IsWithinBoundary(manifestPath, boundary))
+            {
+                return false;
+            }
+
+            var manifestFile = new FileInfo(manifestPath);
+            if (!manifestFile.Exists || manifestFile.LinkTarget is not null || manifestFile.Length > MaxDshManifestBytes)
+            {
+                return false;
+            }
+            if (HasSymlinkedAncestor(manifestPath, boundary))
+            {
+                return false;
+            }
+
+            using var document = JsonDocument.Parse(File.ReadAllText(manifestPath));
+            if (document.RootElement.ValueKind != JsonValueKind.Object ||
+                !document.RootElement.TryGetProperty("dependencies", out var dependencies) ||
+                dependencies.ValueKind != JsonValueKind.Object)
+            {
+                return false;
+            }
+            return dependencies.TryGetProperty(packageName, out _);
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or JsonException
+            or ArgumentException or NotSupportedException or System.Security.SecurityException)
+        {
+            return false;
+        }
+    }
 
     /// <summary>从模块名（如 <c>@scope/pkg/subpath</c>）中提取基础 npm 包名。</summary>
     public static string ExtractPackageNameFromModule(string? moduleName)
@@ -203,6 +277,46 @@ public static partial class PluginCommandRules
         return true;
     }
 
+    /// <summary>
+    /// 构建受控升级命令 <c>dsh plugin --profile web add &lt;包名&gt;@&lt;精确版本&gt;</c>：
+    /// 逐项校验 profile 白名单、包名、精确 SemVer 与核心包保护，任一不满足即零进程拒绝；
+    /// 命令行始终由 <see cref="BuildShellLine"/> 逐 token 单引号转义生成。
+    /// </summary>
+    public static bool TryBuildUpgradeCommand(
+        string profile,
+        string? packageName,
+        string? exactVersion,
+        out string shellLine,
+        out string? error)
+    {
+        shellLine = string.Empty;
+        error = null;
+        if (!AllowedProfiles.Contains(profile))
+        {
+            error = $"profile must be one of [{string.Join(", ", AllowedProfiles)}]";
+            return false;
+        }
+        if (!IsValidPackageName(packageName))
+        {
+            error = "package name must be a valid npm package name";
+            return false;
+        }
+        if (IsProtectedPackage(packageName!))
+        {
+            error = "protected core package cannot be upgraded";
+            return false;
+        }
+        if (!IsValidExactVersion(exactVersion))
+        {
+            error = "version must be an exact SemVer (no ranges, tags, paths or flags)";
+            return false;
+        }
+
+        IReadOnlyList<string> argv = ["plugin", "--profile", profile, "add", $"{packageName}@{exactVersion}"];
+        shellLine = BuildShellLine(argv);
+        return true;
+    }
+
     internal static bool TryBuildArgv(string verb, string profile, string? operand, out IReadOnlyList<string> argv, out string? error)
     {
         argv = [];
@@ -244,6 +358,44 @@ public static partial class PluginCommandRules
     /// <summary>使用 <see cref="GuestCommandLine"/> 对每个 argv token 单引号转义并拼接 guest shell 行。</summary>
     internal static string BuildShellLine(IReadOnlyList<string> argv) =>
         $"{GuestPathExport}; cd {RuntimeConstants.SandboxWorkspace} && {GuestCommandLine.Quote(GuestDshWrapper)} {GuestCommandLine.Join(argv)}";
+
+    /// <summary>判断目标绝对路径是否严格位于边界目录内（含边界目录本身）。</summary>
+    private static bool IsWithinBoundary(string candidateFullPath, string boundaryFullDir)
+    {
+        var comparison = OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
+        var normalizedBoundary = boundaryFullDir.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        if (normalizedBoundary.Length == 0)
+        {
+            return false;
+        }
+        return string.Equals(candidateFullPath, normalizedBoundary, comparison) ||
+            candidateFullPath.StartsWith(normalizedBoundary + Path.DirectorySeparatorChar, comparison);
+    }
+
+    /// <summary>判断文件与边界目录之间的任一级目录是否为符号链接，防止通过目录链接逃逸出 DSH 层边界。</summary>
+    private static bool HasSymlinkedAncestor(string fileFullPath, string boundaryFullDir)
+    {
+        var comparison = OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
+        var boundary = boundaryFullDir.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        if (new DirectoryInfo(boundary).LinkTarget is not null)
+        {
+            return true;
+        }
+        var current = Path.GetDirectoryName(fileFullPath);
+        while (!string.IsNullOrEmpty(current) && !string.Equals(current, boundary, comparison))
+        {
+            if (!IsWithinBoundary(current, boundary))
+            {
+                return true;
+            }
+            if (new DirectoryInfo(current).LinkTarget is not null)
+            {
+                return true;
+            }
+            current = Path.GetDirectoryName(current);
+        }
+        return false;
+    }
 
     private static bool HasForbiddenControlOrTraversal(string value)
     {

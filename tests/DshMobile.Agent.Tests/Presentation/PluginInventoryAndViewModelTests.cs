@@ -537,8 +537,217 @@ public sealed class PluginInventoryAndViewModelTests
             return idx >= 0 ? line[..idx] : line;
         }));
 
+    [Fact]
+    public async Task CheckUpdatesAsync_MarksUpdatableAndFiltersByUpdatableMode()
+    {
+        var gateway = new StubPluginGateway
+        {
+            Bundles =
+            [
+                CreateBundle("@thirdparty/my-ui-plugin", "profile", removable: true),
+                CreateBundle("@deepseek-ai/dsh-client-connection", "installation", removable: false),
+            ],
+        };
+        var operations = new StubPluginOperations
+        {
+            InstalledPackages = [new PluginInstalledPackageView("@thirdparty/my-ui-plugin", "1.0.0")],
+        };
+        var catalogSearch = new UpdateCatalogSearch();
+        catalogSearch.LatestVersions["@thirdparty/my-ui-plugin"] = "2.0.0";
+        var service = new PluginInventoryService(gateway, operations, catalogSearch);
+        await using var viewModel = new PluginsViewModel(gateway, service, catalogSearch);
+
+        await viewModel.RefreshAsync();
+        await viewModel.CheckUpdatesAsync();
+
+        Assert.False(viewModel.State.IsCheckingUpdates);
+        Assert.Equal(1, viewModel.State.UpdatableCount);
+        Assert.NotNull(viewModel.State.LastUpdateCheckAtUnixMs);
+        var updatable = Assert.Single(viewModel.State.Entries, entry => entry.PackageName == "@thirdparty/my-ui-plugin");
+        Assert.Equal("2.0.0", updatable.LatestVersion);
+        Assert.True(updatable.HasUpdate);
+        Assert.True(updatable.CanUpgrade);
+
+        viewModel.SetFilterMode(PluginFilterMode.Updatable);
+
+        var filtered = Assert.Single(viewModel.State.Entries);
+        Assert.Equal("@thirdparty/my-ui-plugin", filtered.PackageName);
+        Assert.Equal(PluginFilterMode.Updatable, viewModel.State.FilterMode);
+    }
+
+    [Fact]
+    public async Task CheckUpdatesAsync_FailureKeepsExistingEntries_AndRecordsRedactedDiagnostic()
+    {
+        var gateway = new StubPluginGateway
+        {
+            Bundles = [CreateBundle("@thirdparty/my-ui-plugin", "profile", removable: true)],
+        };
+        var operations = new StubPluginOperations
+        {
+            InstalledPackages = [new PluginInstalledPackageView("@thirdparty/my-ui-plugin", "1.0.0")],
+        };
+        var catalogSearch = new UpdateCatalogSearch
+        {
+            LatestVersionsOutcome = Outcome<IReadOnlyList<PluginLatestVersionView>>.Fail(
+                DshFailureCode.TransportLost,
+                "plugins.update_check_failed:sk-live-secret-999999"),
+        };
+        var service = new PluginInventoryService(gateway, operations, catalogSearch);
+        await using var viewModel = new PluginsViewModel(gateway, service, catalogSearch);
+        await viewModel.RefreshAsync();
+        var entryCountBeforeCheck = viewModel.State.Entries.Count;
+
+        await viewModel.CheckUpdatesAsync();
+
+        Assert.Equal(entryCountBeforeCheck, viewModel.State.Entries.Count);
+        Assert.Equal(DshFailureCode.TransportLost.ToString(), viewModel.State.UpdateCheckFailureCode);
+        Assert.DoesNotContain("sk-live-secret-999999", viewModel.State.UpdateCheckDiagnostic ?? string.Empty, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task SearchCatalogAsync_AlignsHasUpdate_FromInstalledVersionAndRegistryVersion()
+    {
+        var gateway = new StubPluginGateway
+        {
+            Bundles = [CreateBundle("@thirdparty/my-ui-plugin", "profile", removable: true)],
+        };
+        var operations = new StubPluginOperations
+        {
+            InstalledPackages = [new PluginInstalledPackageView("@thirdparty/my-ui-plugin", "1.0.0")],
+        };
+        var catalogSearch = new UpdateCatalogSearch
+        {
+            SearchResult = new PluginCatalogSearchResult(
+                [
+                    new PluginCatalogEntryView(
+                        PackageName: "@thirdparty/my-ui-plugin",
+                        Version: "2.0.0",
+                        Description: "演示插件",
+                        Keywords: ["dsh"],
+                        Publisher: "tester",
+                        PublishedAtUnixMs: null,
+                        NpmUrl: "https://www.npmjs.com/package/@thirdparty/my-ui-plugin",
+                        IsOfficialScope: false,
+                        IsInstalled: false,
+                        InstalledVersion: null,
+                        RecommendedInstallSpec: "@thirdparty/my-ui-plugin@2.0.0"),
+                ],
+                1),
+        };
+        var service = new PluginInventoryService(gateway, operations, catalogSearch);
+        await using var viewModel = new PluginsViewModel(gateway, service, catalogSearch);
+        await viewModel.RefreshAsync();
+
+        await viewModel.SearchCatalogAsync("demo");
+
+        var catalogEntry = Assert.Single(viewModel.State.CatalogEntries);
+        Assert.True(catalogEntry.IsInstalled);
+        Assert.Equal("1.0.0", catalogEntry.InstalledVersion);
+        Assert.True(catalogEntry.HasUpdate);
+    }
+
+    [Fact]
+    public async Task UpgradePluginAsync_ValidEntry_UpgradesAndKeepsRestartBanner()
+    {
+        var gateway = new StubPluginGateway
+        {
+            Bundles = [CreateBundle("@thirdparty/my-ui-plugin", "profile", removable: true)],
+        };
+        var operations = new StubPluginOperations
+        {
+            InstalledPackages = [new PluginInstalledPackageView("@thirdparty/my-ui-plugin", "1.0.0")],
+        };
+        var catalogSearch = new UpdateCatalogSearch();
+        catalogSearch.LatestVersions["@thirdparty/my-ui-plugin"] = "2.0.0";
+        var service = new PluginInventoryService(gateway, operations, catalogSearch);
+        await using var viewModel = new PluginsViewModel(gateway, service, catalogSearch);
+        await viewModel.RefreshAsync();
+        await viewModel.CheckUpdatesAsync();
+        var entry = Assert.Single(viewModel.State.Entries, item => item.CanUpgrade);
+
+        var result = await viewModel.UpgradePluginAsync(entry.PackageName, entry.LatestVersion!);
+
+        Assert.True(result.IsOk);
+        Assert.Equal(1, operations.UpgradeCalls);
+        Assert.Equal("@thirdparty/my-ui-plugin", operations.LastUpgradePackageName);
+        Assert.Equal("2.0.0", operations.LastUpgradeTargetVersion);
+        Assert.True(viewModel.State.RequiresDshRestart);
+        Assert.Equal("plugins.status.upgraded", viewModel.State.StatusKey);
+        Assert.False(viewModel.State.IsMutating);
+    }
+
+    [Fact]
+    public async Task UpgradePluginAsync_InstallationShippedEntry_RejectedWithZeroUpgradeCalls()
+    {
+        var gateway = new StubPluginGateway
+        {
+            Bundles = [CreateBundle("@deepseek-ai/dsh-client-connection", "installation", removable: false)],
+        };
+        var operations = new StubPluginOperations();
+        var catalogSearch = new UpdateCatalogSearch();
+        var service = new PluginInventoryService(gateway, operations, catalogSearch);
+        await using var viewModel = new PluginsViewModel(gateway, service, catalogSearch);
+        await viewModel.RefreshAsync();
+
+        var result = await viewModel.UpgradePluginAsync("@deepseek-ai/dsh-client-connection", "2.0.0");
+
+        Assert.False(result.IsOk);
+        Assert.Equal(DshFailureCode.InvalidState, result.Error!.Code);
+        Assert.Equal(0, operations.UpgradeCalls);
+    }
+
+    private static PluginBundleInfoView CreateBundle(string name, string availability, bool removable) => new(
+        Name: name,
+        Official: false,
+        Availability: availability,
+        Version: "1.0.0",
+        DisplayName: null,
+        Description: null,
+        Enabled: true,
+        Installed: true,
+        Optional: false,
+        Removable: removable,
+        Rows: [],
+        Overrides: []);
+
+    private sealed class UpdateCatalogSearch : IPluginCatalogSearch
+    {
+        public Dictionary<string, string?> LatestVersions { get; } = new(StringComparer.Ordinal);
+        public Outcome<IReadOnlyList<PluginLatestVersionView>>? LatestVersionsOutcome { get; init; }
+        public PluginCatalogSearchResult SearchResult { get; init; } = new([], 0);
+
+        public Task<Outcome<PluginCatalogSearchResult>> SearchAsync(
+            string query,
+            int limit = 25,
+            CancellationToken ct = default) =>
+            Task.FromResult(Outcome<PluginCatalogSearchResult>.Ok(SearchResult));
+
+        public Task<Outcome<PluginCatalogDetailView>> GetPackageDetailAsync(
+            string packageName,
+            CancellationToken ct = default) =>
+            Task.FromResult(Outcome<PluginCatalogDetailView>.Fail(DshFailureCode.Unsupported));
+
+        public Task<Outcome<IReadOnlyList<PluginLatestVersionView>>> GetLatestVersionsAsync(
+            IReadOnlyList<string> packageNames,
+            CancellationToken ct = default)
+        {
+            if (LatestVersionsOutcome is { } predefined)
+            {
+                return Task.FromResult(predefined);
+            }
+            IReadOnlyList<PluginLatestVersionView> results = packageNames
+                .Select(packageName => new PluginLatestVersionView(
+                    packageName,
+                    LatestVersions.GetValueOrDefault(packageName)))
+                .ToArray();
+            return Task.FromResult(Outcome<IReadOnlyList<PluginLatestVersionView>>.Ok(results));
+        }
+    }
+
     private sealed class StubPluginGateway : DefaultDshGateway
     {
+        public IReadOnlyList<PluginBundleInfoView> Bundles { get; init; } = [];
+
         public override DshCapabilities Capabilities => new(
             Prompt: true,
             PromptImages: true,
@@ -559,6 +768,9 @@ public sealed class PluginInventoryAndViewModelTests
 
         public override Task<Outcome<DshCapabilities>> ProbeCapabilitiesAsync(CancellationToken ct = default) =>
             Task.FromResult(Outcome<DshCapabilities>.Ok(Capabilities));
+
+        public override Task<Outcome<IReadOnlyList<PluginBundleInfoView>>> ListPluginBundlesAsync(CancellationToken ct = default) =>
+            Task.FromResult(Outcome<IReadOnlyList<PluginBundleInfoView>>.Ok(Bundles));
 
         public override Task<Outcome<PluginInventoryView>> GetPluginInventoryAsync(CancellationToken ct = default)
         {
@@ -582,6 +794,9 @@ public sealed class PluginInventoryAndViewModelTests
         public int UninstallCalls { get; private set; }
         public int ToggleCalls { get; private set; }
         public int RestartCalls { get; private set; }
+        public int UpgradeCalls { get; private set; }
+        public string? LastUpgradePackageName { get; private set; }
+        public string? LastUpgradeTargetVersion { get; private set; }
 
         public Task<Outcome<IReadOnlyList<PluginInstalledPackageView>>> ListInstalledPackagesAsync(CancellationToken ct = default) =>
             Task.FromResult(Outcome<IReadOnlyList<PluginInstalledPackageView>>.Ok(InstalledPackages));
@@ -607,6 +822,14 @@ public sealed class PluginInventoryAndViewModelTests
         public Task<Outcome<Unit>> RestartDshHostAsync(CancellationToken ct = default)
         {
             RestartCalls++;
+            return Task.FromResult(Outcome<Unit>.Ok(Unit.Value));
+        }
+
+        public Task<Outcome<Unit>> UpgradePackageAsync(string packageName, string targetVersion, CancellationToken ct = default)
+        {
+            UpgradeCalls++;
+            LastUpgradePackageName = packageName;
+            LastUpgradeTargetVersion = targetVersion;
             return Task.FromResult(Outcome<Unit>.Ok(Unit.Value));
         }
     }

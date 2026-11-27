@@ -25,7 +25,14 @@ public sealed record PluginsUiState(
     int CatalogTotalCount = 0,
     DshFailureCode? CatalogFailureCode = null,
     string? CatalogDiagnosticSummary = null,
-    bool IsFullWebUiCompatEnabled = false)
+    bool IsFullWebUiCompatEnabled = false,
+    bool IsCheckingUpdates = false,
+    int UpdatableCount = 0,
+    long? LastUpdateCheckAtUnixMs = null,
+    string? UpdateCheckStatusKey = null,
+    string? UpdateCheckFailureCode = null,
+    string? UpdateCheckDiagnostic = null,
+    bool CanCheckUpdates = false)
 {
     /// <summary>远端发现页搜索到的插件条目（已实时对齐本地已安装状态）。</summary>
     public IReadOnlyList<PluginCatalogEntryView> CatalogEntries { get; init; } = [];
@@ -44,6 +51,13 @@ public interface IPluginsActions
     Task<Outcome<PluginMutationResult>> UninstallPluginAsync(string packageName, CancellationToken ct = default);
     Task<Outcome<PluginMutationResult>> SetPluginEnabledAsync(string entryId, string moduleName, bool enabled, CancellationToken ct = default);
     Task<Outcome<Unit>> RestartDshAsync(CancellationToken ct = default);
+
+    /// <summary>检查用户第三方插件是否有新版本；失败时保留既有列表并记录脱敏诊断。</summary>
+    Task CheckUpdatesAsync(CancellationToken ct = default);
+
+    /// <summary>将指定插件升级到精确版本；成功后保留“需要重启 DSH 生效”提示。</summary>
+    Task<Outcome<PluginMutationResult>> UpgradePluginAsync(string packageName, string targetVersion, CancellationToken ct = default);
+
     void ClearFeedback();
 }
 
@@ -63,13 +77,18 @@ public sealed class PluginsViewModel : IPluginsActions, IAsyncDisposable
     private readonly PluginInventoryService _service;
     private readonly IPluginCatalogSearch _catalogSearch;
     private readonly bool _canSearchCatalog;
+    private readonly bool _canCheckUpdates;
     private readonly Lock _stateLock = new();
     private readonly SemaphoreSlim _opGate = new(1, 1);
+    private readonly SemaphoreSlim _updateGate = new(1, 1);
 
     private IReadOnlyList<PluginEntryView> _allEntries = [];
     private IReadOnlyList<PluginCatalogEntryView> _rawCatalogEntries = [];
+    private readonly Dictionary<string, string> _latestVersionsByPackage = new(StringComparer.Ordinal);
     private CancellationTokenSource? _catalogSearchCts;
+    private CancellationTokenSource? _updateCts;
     private long _catalogSearchSequence;
+    private long _updateSequence;
     private PluginsUiState _state;
     private int _disposed;
 
@@ -82,6 +101,7 @@ public sealed class PluginsViewModel : IPluginsActions, IAsyncDisposable
         _service = service ?? throw new ArgumentNullException(nameof(service));
         _catalogSearch = catalogSearch ?? NoopPluginCatalogSearch.Instance;
         _canSearchCatalog = _catalogSearch is not NoopPluginCatalogSearch;
+        _canCheckUpdates = _canSearchCatalog;
         _state = new PluginsUiState(
             IsLoading: false,
             IsMutating: false,
@@ -103,7 +123,8 @@ public sealed class PluginsViewModel : IPluginsActions, IAsyncDisposable
             CatalogTotalCount: 0,
             CatalogFailureCode: null,
             CatalogDiagnosticSummary: null,
-            IsFullWebUiCompatEnabled: service.IsFullWebUiCompatEnabled);
+            IsFullWebUiCompatEnabled: service.IsFullWebUiCompatEnabled,
+            CanCheckUpdates: _canCheckUpdates);
     }
 
     public PluginsUiState State
@@ -509,6 +530,238 @@ public sealed class PluginsViewModel : IPluginsActions, IAsyncDisposable
         }
     }
 
+    /// <summary>
+    /// 检查用户第三方插件是否有新版本：并发防重入、取消上一轮检查，成功后更新最新版本缓存并重建列表；
+    /// 失败时保留既有列表，只记录经脱敏的稳定失败码与诊断；调用方取消必须原样抛出。
+    /// </summary>
+    public async Task CheckUpdatesAsync(CancellationToken ct = default)
+    {
+        ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
+        ct.ThrowIfCancellationRequested();
+
+        if (!_canCheckUpdates)
+        {
+            PublishState(s => s with
+            {
+                IsCheckingUpdates = false,
+                UpdatableCount = 0,
+                UpdateCheckStatusKey = null,
+                UpdateCheckFailureCode = DshFailureCode.Unsupported.ToString(),
+                UpdateCheckDiagnostic = "plugins.update_check_unavailable",
+            });
+            return;
+        }
+
+        CancellationTokenSource currentCts;
+        CancellationTokenSource? previousCts;
+        long requestSequence;
+        lock (_stateLock)
+        {
+            requestSequence = ++_updateSequence;
+            previousCts = _updateCts;
+            currentCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            _updateCts = currentCts;
+        }
+        CancelAndDisposeCts(previousCts);
+
+        try
+        {
+            await _updateGate.WaitAsync(ct).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            // 等待门锁期间被调用方取消：没有取得门锁，但必须释放本轮创建的 CTS 后原样抛出。
+            ReleaseUpdateCts(currentCts);
+            throw;
+        }
+
+        try
+        {
+            if (requestSequence != Volatile.Read(ref _updateSequence))
+            {
+                // 已有更新的一轮检查接管，本轮不再发布任何结果。
+                return;
+            }
+
+            PublishState(s => s with
+            {
+                IsCheckingUpdates = true,
+                UpdateCheckStatusKey = "plugins.status.checking_updates",
+                UpdateCheckFailureCode = null,
+                UpdateCheckDiagnostic = null,
+            });
+
+            PluginEntryView[] sourceEntries;
+            lock (_stateLock)
+            {
+                sourceEntries = _allEntries as PluginEntryView[] ?? [.. _allEntries];
+            }
+
+            var outcome = await _service.CheckForUpdatesAsync(sourceEntries, currentCts.Token).ConfigureAwait(false);
+            if (requestSequence != Volatile.Read(ref _updateSequence))
+            {
+                return;
+            }
+            if (!outcome.IsOk)
+            {
+                var failure = outcome.Error!;
+                PublishState(s => s with
+                {
+                    IsCheckingUpdates = false,
+                    UpdateCheckStatusKey = null,
+                    UpdateCheckFailureCode = failure.Code.ToString(),
+                    UpdateCheckDiagnostic = string.IsNullOrWhiteSpace(failure.DiagnosticKey)
+                        ? null
+                        : SecretRedactor.RedactAndTruncate(failure.DiagnosticKey!, 240),
+                });
+                return;
+            }
+
+            var result = outcome.Value!;
+            lock (_stateLock)
+            {
+                _allEntries = result.Entries;
+                // 每轮检查都以本轮结果为准重建缓存，避免上一轮的最新版在查询失败后残留为“可更新”。
+                _latestVersionsByPackage.Clear();
+                foreach (var entry in result.Entries)
+                {
+                    if (!string.IsNullOrWhiteSpace(entry.LatestVersion))
+                    {
+                        _latestVersionsByPackage[entry.PackageName] = entry.LatestVersion;
+                    }
+                }
+            }
+            PublishState(s => s with
+            {
+                IsCheckingUpdates = false,
+                LastUpdateCheckAtUnixMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+                UpdateCheckStatusKey = result.FailedCount > 0
+                    ? "plugins.status.updates_partial"
+                    : "plugins.status.updates_checked",
+                UpdateCheckFailureCode = null,
+                UpdateCheckDiagnostic = result.DiagnosticWarning,
+            });
+            RebuildFilteredState(
+                isLoading: State.IsLoading,
+                isMutating: State.IsMutating,
+                isRestarting: State.IsRestarting,
+                isHostReady: State.IsHostReady,
+                canList: State.CanListPlugins,
+                failureCode: State.FailureCode,
+                diagnosticSummary: State.DiagnosticSummary,
+                statusKey: State.UpdateCheckStatusKey);
+        }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested && currentCts.IsCancellationRequested)
+        {
+            // 被更新一轮检查主动取消：保留最新一轮的状态，不覆盖结果。
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            var diagnostic = SecretRedactor.RedactAndTruncate($"plugins.update_check_failed:{ex.GetType().Name}", 160);
+            PublishState(s => s with
+            {
+                IsCheckingUpdates = false,
+                UpdateCheckStatusKey = null,
+                UpdateCheckFailureCode = DshFailureCode.TransportLost.ToString(),
+                UpdateCheckDiagnostic = diagnostic,
+            });
+        }
+        finally
+        {
+            _updateGate.Release();
+            ReleaseUpdateCts(currentCts);
+        }
+    }
+
+    /// <summary>
+    /// 将指定插件升级到精确版本：前置校验包名、精确 SemVer 与内置/核心保护限制，与安装/卸载共用
+    /// <see cref="_opGate"/> 串行执行；成功后刷新列表并保留“需要重启 DSH 生效”提示。
+    /// </summary>
+    public async Task<Outcome<PluginMutationResult>> UpgradePluginAsync(
+        string packageName,
+        string targetVersion,
+        CancellationToken ct = default)
+    {
+        ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
+        ct.ThrowIfCancellationRequested();
+
+        var trimmedPackageName = packageName?.Trim(' ');
+        var trimmedTargetVersion = targetVersion?.Trim(' ');
+        if (!PluginPackageValidator.IsValidPackageName(trimmedPackageName) ||
+            string.IsNullOrEmpty(trimmedTargetVersion) ||
+            !PluginPackageValidator.IsValidInstallSpec($"{trimmedPackageName}@{trimmedTargetVersion}"))
+        {
+            PublishState(s => s with
+            {
+                FailureCode = DshFailureCode.InvalidState.ToString(),
+                DiagnosticSummary = "plugin.invalid_upgrade_spec",
+                StatusKey = null,
+            });
+            return Outcome<PluginMutationResult>.Fail(DshFailureCode.InvalidState, "plugin.invalid_upgrade_spec");
+        }
+
+        PluginEntryView? knownEntry;
+        lock (_stateLock)
+        {
+            knownEntry = _allEntries.FirstOrDefault(entry =>
+                string.Equals(entry.PackageName, trimmedPackageName, StringComparison.Ordinal));
+        }
+        if (knownEntry is not null &&
+            (knownEntry.IsProtected ||
+             string.Equals(knownEntry.Availability, "installation", StringComparison.OrdinalIgnoreCase)))
+        {
+            PublishState(s => s with
+            {
+                FailureCode = DshFailureCode.InvalidState.ToString(),
+                DiagnosticSummary = "plugin.upgrade_requires_dsh_layer",
+                StatusKey = null,
+            });
+            return Outcome<PluginMutationResult>.Fail(DshFailureCode.InvalidState, "plugin.upgrade_requires_dsh_layer");
+        }
+
+        await _opGate.WaitAsync(ct).ConfigureAwait(false);
+        try
+        {
+            PublishState(s => s with
+            {
+                IsMutating = true,
+                FailureCode = null,
+                DiagnosticSummary = null,
+                StatusKey = null,
+            });
+
+            var result = await _service
+                .UpgradePluginAsync(trimmedPackageName, trimmedTargetVersion, ct)
+                .ConfigureAwait(false);
+            if (!result.IsOk)
+            {
+                var failure = result.Error!;
+                PublishState(s => s with
+                {
+                    IsMutating = false,
+                    RequiresDshRestart = _service.RequiresDshRestart,
+                    FailureCode = failure.Code.ToString(),
+                    DiagnosticSummary = string.IsNullOrWhiteSpace(failure.DiagnosticKey)
+                        ? null
+                        : SecretRedactor.RedactAndTruncate(failure.DiagnosticKey!, 240),
+                    StatusKey = null,
+                });
+                return result;
+            }
+
+            await RefreshCoreAsync(
+                includeCliPackages: true,
+                statusKeyOnSuccess: "plugins.status.upgraded",
+                ct).ConfigureAwait(false);
+            return result;
+        }
+        finally
+        {
+            PublishState(s => s.IsMutating ? s with { IsMutating = false } : s);
+            _opGate.Release();
+        }
+    }
+
     public async Task<Outcome<Unit>> RestartDshAsync(CancellationToken ct = default)
     {
         ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
@@ -600,6 +853,7 @@ public sealed class PluginsViewModel : IPluginsActions, IAsyncDisposable
         lock (_stateLock)
         {
             _allEntries = snapshot.Entries;
+            // 最新版本缓存统一在 RebuildFilteredState → ApplyLatestVersion 中合并，避免两处口径不一致。
         }
         RebuildFilteredState(
             isLoading: false,
@@ -639,7 +893,8 @@ public sealed class PluginsViewModel : IPluginsActions, IAsyncDisposable
         PluginsUiState snapshot;
         lock (_stateLock)
         {
-            var filtered = FilterAndRankEntries(_allEntries, _state.FilterMode, _state.SearchQuery);
+            var mergedEntries = _allEntries.Select(ApplyLatestVersion).ToArray();
+            var filtered = FilterAndRankEntries(mergedEntries, _state.FilterMode, _state.SearchQuery);
             var alignedCatalog = _rawCatalogEntries.Count == 0
                 ? _state.CatalogEntries
                 : AlignCatalogEntriesLocked(_rawCatalogEntries);
@@ -653,7 +908,8 @@ public sealed class PluginsViewModel : IPluginsActions, IAsyncDisposable
                 CanListPlugins = canList,
                 RequiresDshRestart = _service.RequiresDshRestart,
                 Entries = filtered,
-                TotalInstalledCount = _allEntries.Count,
+                TotalInstalledCount = mergedEntries.Length,
+                UpdatableCount = mergedEntries.Count(entry => entry.HasUpdate || entry.CanUpgrade),
                 CatalogEntries = alignedCatalog,
                 FailureCode = failureCode,
                 DiagnosticSummary = diagnosticSummary,
@@ -665,8 +921,34 @@ public sealed class PluginsViewModel : IPluginsActions, IAsyncDisposable
         StateChanged?.Invoke(snapshot);
     }
 
+    /// <summary>
+    /// 把远端最新版本缓存合并进单条插件视图，并计算 <c>HasUpdate</c>/<c>CanUpgrade</c>：
+    /// 仅用户第三方插件（已装于 profile、非核心保护、可用性不是 installation）且规格可精确安装时才允许升级。
+    /// </summary>
+    private PluginEntryView ApplyLatestVersion(PluginEntryView entry)
+    {
+        if (!_latestVersionsByPackage.TryGetValue(entry.PackageName, out var latestVersion) ||
+            string.IsNullOrWhiteSpace(latestVersion))
+        {
+            return entry;
+        }
+
+        var hasUpdate = PluginVersionComparer.IsUpdateAvailable(entry.Version, latestVersion);
+        var canUpgrade = hasUpdate
+            && entry.IsInstalledInProfile
+            && !entry.IsProtected
+            && !string.Equals(entry.Availability, "installation", StringComparison.OrdinalIgnoreCase)
+            && PluginPackageValidator.IsValidInstallSpec($"{entry.PackageName}@{latestVersion}");
+        return entry with
+        {
+            LatestVersion = latestVersion,
+            HasUpdate = hasUpdate,
+            CanUpgrade = canUpgrade,
+        };
+    }
+
     private static IReadOnlyList<PluginEntryView> FilterAndRankEntries(
-        IReadOnlyList<PluginEntryView> sourceEntries,
+        PluginEntryView[] sourceEntries,
         PluginFilterMode filterMode,
         string rawQuery)
     {
@@ -681,7 +963,7 @@ public sealed class PluginsViewModel : IPluginsActions, IAsyncDisposable
                 return sourceEntries;
             }
 
-            var filtered = new List<PluginEntryView>(sourceEntries.Count);
+            var filtered = new List<PluginEntryView>(sourceEntries.Length);
             foreach (var entry in sourceEntries)
             {
                 if (MatchesFilterMode(entry, filterMode))
@@ -692,8 +974,8 @@ public sealed class PluginsViewModel : IPluginsActions, IAsyncDisposable
             return filtered;
         }
 
-        var scored = new List<(PluginEntryView Entry, int Score, int OriginalIndex)>(sourceEntries.Count);
-        for (var index = 0; index < sourceEntries.Count; index++)
+        var scored = new List<(PluginEntryView Entry, int Score, int OriginalIndex)>(sourceEntries.Length);
+        for (var index = 0; index < sourceEntries.Length; index++)
         {
             var entry = sourceEntries[index];
             if (!MatchesFilterMode(entry, filterMode))
@@ -729,6 +1011,7 @@ public sealed class PluginsViewModel : IPluginsActions, IAsyncDisposable
             PluginFilterMode.Enabled => entry.Enabled,
             PluginFilterMode.Protected => entry.IsProtected,
             PluginFilterMode.Issues => PluginPackageValidator.HasIssue(entry),
+            PluginFilterMode.Updatable => entry.HasUpdate || entry.CanUpgrade,
             _ => true,
         };
 
@@ -837,10 +1120,18 @@ public sealed class PluginsViewModel : IPluginsActions, IAsyncDisposable
             var item = rawCatalogEntries[i];
             if (installedMap.TryGetValue(item.PackageName, out var installedInfo))
             {
+                // 目录条目的 Version 是 registry 最新版；若缓存已有更新结果则优先使用缓存，避免两处口径漂移。
+                var latestVersion = _latestVersionsByPackage.TryGetValue(item.PackageName, out var cachedLatest) &&
+                                    !string.IsNullOrWhiteSpace(cachedLatest)
+                    ? cachedLatest
+                    : item.Version;
+                var hasUpdate = installedInfo.FromProfile &&
+                                PluginVersionComparer.IsUpdateAvailable(installedInfo.Version, latestVersion);
                 aligned[i] = item with
                 {
                     IsInstalled = true,
                     InstalledVersion = installedInfo.Version,
+                    HasUpdate = hasUpdate,
                 };
             }
             else
@@ -849,6 +1140,7 @@ public sealed class PluginsViewModel : IPluginsActions, IAsyncDisposable
                 {
                     IsInstalled = false,
                     InstalledVersion = null,
+                    HasUpdate = false,
                 };
             }
         }
@@ -878,6 +1170,23 @@ public sealed class PluginsViewModel : IPluginsActions, IAsyncDisposable
             if (ReferenceEquals(_catalogSearchCts, target))
             {
                 _catalogSearchCts = null;
+                shouldDispose = true;
+            }
+        }
+        if (shouldDispose)
+        {
+            target.Dispose();
+        }
+    }
+
+    private void ReleaseUpdateCts(CancellationTokenSource target)
+    {
+        var shouldDispose = false;
+        lock (_stateLock)
+        {
+            if (ReferenceEquals(_updateCts, target))
+            {
+                _updateCts = null;
                 shouldDispose = true;
             }
         }
@@ -925,14 +1234,20 @@ public sealed class PluginsViewModel : IPluginsActions, IAsyncDisposable
         }
 
         CancellationTokenSource? pendingSearchCts;
+        CancellationTokenSource? pendingUpdateCts;
         lock (_stateLock)
         {
             _catalogSearchSequence++;
+            _updateSequence++;
             pendingSearchCts = _catalogSearchCts;
             _catalogSearchCts = null;
+            pendingUpdateCts = _updateCts;
+            _updateCts = null;
         }
         CancelAndDisposeCts(pendingSearchCts);
+        CancelAndDisposeCts(pendingUpdateCts);
         _opGate.Dispose();
+        _updateGate.Dispose();
         return ValueTask.CompletedTask;
     }
 }
