@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Polish-P3 首页筛选胶囊文字：选中使用品牌绿，未选中使用次级文字色。 -->
+<!-- 筛选芯片文字：选中高对比主容器前景色，未选中次级石板灰文字 -->
 <selector xmlns:android="http://schemas.android.com/apk/res/android">
-    <item android:state_checked="true" android:color="?attr/colorPrimary" />
+    <item android:state_checked="true" android:color="?attr/colorOnPrimaryContainer" />
     <item android:color="?attr/colorOnSurfaceVariant" />
 </selector>

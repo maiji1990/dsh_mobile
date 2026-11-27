@@ -436,7 +436,7 @@
     <string name="chat_status_start_dsh">启动 DSH</string>
     <string name="chat_status_retry_connect">重试连接</string>
     <string name="chat_empty_title">开始原生对话</string>
-    <string name="chat_empty_subtitle">在下方输入消息，或点 + / 斜杠命令与 DSH 协作</string>
+    <string name="chat_empty_subtitle">在下方输入消息，或点 + 使用斜杠命令</string>
     <string name="chat_pane_empty_hint">从左侧选择会话，或新建会话后在右栏继续对话</string>
     <string name="chat_composer_hint">向 DSH 发送消息…</string>
     <string name="chat_composer_mode">Agent · Standard</string>
@@ -546,8 +546,11 @@
     <string name="chats_new_desc">新建会话</string>
     <string name="chats_host_stopped">DSH 尚未启动，点击下方按钮启动或安装运行环境后再创建实时会话。</string>
     <string name="chats_menu_stop_dsh">停止 DSH</string>
-    <string name="chats_empty">暂无会话，点击右下角 + 开启新对话。</string>
+    <string name="chats_empty">暂无对话，点击右上角 + 开启新对话。</string>
     <string name="chats_empty_search">未找到匹配的会话</string>
+    <string name="chats_empty_running">当前没有运行中的对话</string>
+    <string name="chats_empty_pending">当前没有待处理的对话</string>
+    <string name="chats_empty_archived">暂无已归档对话</string>
     <string name="chats_detail_empty_title">选择一个会话</string>
     <string name="chats_detail_empty_hint">从左侧列表选择会话，或新建会话后在右栏继续对话。</string>
     <string name="chats_badge_running">运行中</string>
@@ -866,4 +869,35 @@
     <string name="git_diff_review_open_desc">在全屏编辑器中打开该文件</string>
     <string name="git_diff_review_collapse_hunk_desc">折叠或展开此段差异</string>
     <string name="git_diff_open_not_file">该路径不是可打开的普通文件</string>
+
+    <!-- 深海靛蓝稳固工作台：会话归档、取消归档、删除与聊天停靠式回底条 -->
+    <string name="chats_filter_archived">已归档</string>
+    <string name="chats_filter_archived_fmt">已归档 (%1$d)</string>
+    <string name="chats_badge_archived">已归档</string>
+    <string name="chats_action_archive">归档对话</string>
+    <string name="chats_action_unarchive">取消归档</string>
+    <string name="chats_action_remove">删除对话</string>
+    <string name="chats_action_remove_cached">删除本地缓存</string>
+    <string name="chats_sheet_archive_sub">移入已归档列表，停止后续自动展示</string>
+    <string name="chats_sheet_unarchive_sub">恢复到活跃对话列表</string>
+    <string name="chats_sheet_remove_sub">移出本应用列表、清理缓存并归档停活</string>
+    <string name="chats_sheet_remove_cached_sub">永久删除此对话的本机离线缓存文件</string>
+    <string name="chats_archive_done">已归档对话</string>
+    <string name="chats_unarchive_done">已取消归档</string>
+    <string name="chats_remove_done">已从列表移除对话</string>
+    <string name="chats_remove_cached_done">已删除本地缓存</string>
+    <string name="chats_archive_active_title">对话正在运行</string>
+    <string name="chats_archive_active_msg">该对话正在运行中，是否停止当前任务并归档？</string>
+    <string name="chats_archive_active_confirm">停止并归档</string>
+    <string name="chats_remove_title">删除对话</string>
+    <string name="chats_remove_msg">将从本应用列表彻底移除此对话、清除本机离线缓存，并在 DSH 服务端将其归档停活（注：当前 DSH 内核暂不支持物理销毁远端会话文件，移除后本应用不再显示）。</string>
+    <string name="chats_remove_confirm">删除对话</string>
+    <string name="chats_remove_cached_title">删除本地缓存对话</string>
+    <string name="chats_remove_cached_msg">将永久删除此对话在本机的离线缓存文件，操作不可撤销。</string>
+    <string name="chats_remove_cached_confirm">删除本地缓存</string>
+    <string name="chats_remove_active_title">对话正在运行</string>
+    <string name="chats_remove_active_msg">该对话正在运行中，是否停止当前任务并删除？</string>
+    <string name="chats_remove_active_confirm">停止并删除</string>
+    <string name="chat_archived_banner_text">此对话已归档</string>
+    <string name="chat_jump_bottom_label">回到最新消息</string>
 </resources>

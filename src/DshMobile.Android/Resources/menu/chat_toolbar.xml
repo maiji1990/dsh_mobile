@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <menu xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto">
-    <!-- 顶栏可见动作严格 <= 2：收件箱 + ⋯ 溢出菜单；其余全部收入溢出 -->
+    <!-- 顶栏可见动作保持精简：待办收件箱（有待办时） + 溢出菜单 -->
     <item
         android:id="@+id/chat_menu_inbox"
         android:icon="@drawable/ic_inbox"
@@ -28,5 +28,23 @@
     <item
         android:id="@+id/chat_menu_cancel"
         android:title="@string/chat_menu_cancel"
+        app:showAsAction="never" />
+    <item
+        android:id="@+id/chat_menu_archive"
+        android:icon="@drawable/ic_archive"
+        android:title="@string/chats_action_archive"
+        android:visible="false"
+        app:showAsAction="never" />
+    <item
+        android:id="@+id/chat_menu_unarchive"
+        android:icon="@drawable/ic_unarchive"
+        android:title="@string/chats_action_unarchive"
+        android:visible="false"
+        app:showAsAction="never" />
+    <item
+        android:id="@+id/chat_menu_remove"
+        android:icon="@drawable/ic_delete"
+        android:title="@string/chats_action_remove"
+        android:visible="false"
         app:showAsAction="never" />
 </menu>

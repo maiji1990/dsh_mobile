@@ -52,7 +52,6 @@ public sealed class MoreFragment : Fragment, ITabRoot, HostQuickControlBottomShe
     private MaterialSwitch _warmupSwitch = null!;
     private View _developerDivider = null!;
     private View _rowDeveloper = null!;
-    private bool _isWide;
 
     private int _versionTaps;
     private Toast? _toast;
@@ -62,13 +61,11 @@ public sealed class MoreFragment : Fragment, ITabRoot, HostQuickControlBottomShe
     {
         var view = inflater.Inflate(Resource.Layout.fragment_more, container, false)!;
         _bridge = DshMobileApplication.Current.Bridge;
-        _isWide = (Activity as MainActivity)?.IsWideLayout ?? false;
 
         _toolbar = view.FindViewById<MaterialToolbar>(Resource.Id.more_toolbar)!;
+        _toolbar.NavigationIcon = null;
         _inboxMenuItem = _toolbar.Menu?.FindItem(Resource.Id.more_menu_inbox);
         _inboxMenuItem?.SetVisible(false);
-        _toolbar.NavigationClick += (_, _) => Activity?.OnBackPressedDispatcher?.OnBackPressed();
-        ApplyToolbarNavigation();
         _toolbar.MenuItemClick += (_, e) =>
         {
             if (e.Item?.ItemId == Resource.Id.more_menu_inbox)
@@ -161,35 +158,12 @@ public sealed class MoreFragment : Fragment, ITabRoot, HostQuickControlBottomShe
         base.OnResume();
         if (IsAdded && View is not null)
         {
-            _isWide = (Activity as MainActivity)?.IsWideLayout ?? false;
-            ApplyToolbarNavigation();
             _warmupSwitch.Checked = UiPrefs.EagerWarmupEnabled(RequireContext());
             Render();
         }
     }
 
-    /// <summary>Polish-P3：窄屏设置页顶栏显示 ← 返回首页；宽屏由左侧 NavigationRail 承担导航，不显示箭头。</summary>
-    public void OnShellWidthChanged(bool wide)
-    {
-        _isWide = wide;
-        if (IsAdded && View is not null)
-        {
-            ApplyToolbarNavigation();
-        }
-    }
-
-    private void ApplyToolbarNavigation()
-    {
-        if (_isWide)
-        {
-            _toolbar.NavigationIcon = null;
-            return;
-        }
-        _toolbar.SetNavigationIcon(Resource.Drawable.ic_arrow_back);
-        _toolbar.SetNavigationContentDescription(Resource.String.shell_back_home);
-    }
-
-    /// <summary>UI-S6：再次点击「更多」页签时平滑回到顶部。</summary>
+    /// <summary>再次点击「更多」页签时平滑回到顶部。</summary>
     public void OnReselected()
     {
         if (View is not null)

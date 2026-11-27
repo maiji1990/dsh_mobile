@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- UI Slice 3: 工作区工作台（统一单行 AppBar + 紧凑模式切换 + 胶囊筛选/搜索与排序 + XML 面包屑 + 发现子仓库 + 单手新建 FAB） -->
+<!-- UI Slice 3: 工作区工作台（统一单行 AppBar + 稳固分隔线 + 紧凑模式切换 + 胶囊筛选/搜索与排序 + XML 面包屑 + 发现子仓库） -->
 <androidx.coordinatorlayout.widget.CoordinatorLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
@@ -17,10 +17,14 @@
             android:id="@+id/toolbar"
             style="@style/Widget.DshMobile.Toolbar.InAppBar"
             android:layout_width="match_parent"
-            android:layout_height="72dp"
+            android:layout_height="?attr/actionBarSize"
             app:menu="@menu/files_toolbar"
-            app:title="@string/files_title"
-            app:titleTextAppearance="@style/TextAppearance.DshMobile.LargeTitle" />
+            app:title="@string/files_title" />
+
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="@dimen/dshm_hairline"
+            android:background="?attr/colorOutlineVariant" />
 
         <com.google.android.material.progressindicator.LinearProgressIndicator
             android:id="@+id/files_progress"
@@ -43,7 +47,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginStart="16dp"
-            android:layout_marginTop="2dp"
+            android:layout_marginTop="8dp"
             android:layout_marginEnd="16dp"
             android:layout_marginBottom="4dp"
             android:background="@drawable/bg_mode_toggle_track"
@@ -158,7 +162,7 @@
                     android:layout_height="match_parent"
                     android:clipToPadding="false"
                     android:paddingTop="2dp"
-                    android:paddingBottom="96dp"
+                    android:paddingBottom="16dp"
                     android:scrollbars="vertical" />
 
                 <include
@@ -331,14 +335,4 @@
             </FrameLayout>
         </LinearLayout>
     </LinearLayout>
-
-    <com.google.android.material.floatingactionbutton.ExtendedFloatingActionButton
-        android:id="@+id/files_create_fab"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_gravity="bottom|end"
-        android:layout_margin="16dp"
-        android:contentDescription="@string/files_create_fab_desc"
-        android:text="@string/files_create_short"
-        app:icon="@drawable/ic_add" />
 </androidx.coordinatorlayout.widget.CoordinatorLayout>

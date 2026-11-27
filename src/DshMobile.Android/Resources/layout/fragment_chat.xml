@@ -1,491 +1,534 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  Polish-P2 对话页：悬浮胶囊顶栏 + 通透消息流 + 一体化 Composer。
-  顶栏只承担会话身份与低频入口；模型切换、附件与发送全部收拢到底部单卡 Composer。
+  深海靛蓝稳固工作台聊天页（全锚定、零悬浮）：
+  全宽贴顶顶栏 + 状态/归档横幅 + 消息流（weight=1）+ 停靠式回到底部条 + 审批槽 + 停靠斜杠面板 + 贴底停靠输入栏。
 -->
-<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:id="@+id/chat_root"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="?attr/colorSurface">
+    android:background="?attr/colorSurface"
+    android:orientation="vertical">
 
-    <LinearLayout
-        android:id="@+id/chat_screen_content"
+    <!-- 贴顶固定全宽顶栏 + 1dp 结构底线 -->
+    <com.google.android.material.appbar.AppBarLayout
+        android:id="@+id/chat_appbar"
+        style="@style/Widget.DshMobile.AppBar"
         android:layout_width="match_parent"
-        android:layout_height="match_parent"
-        android:orientation="vertical">
-
-        <!-- 消息流从悬浮顶栏背后滚过；顶部 68dp 只作为首屏内容避让，不参与滚动裁切。 -->
-        <FrameLayout
-            android:id="@+id/chat_content_frame"
-            android:layout_width="match_parent"
-            android:layout_height="0dp"
-            android:layout_weight="1">
-
-            <androidx.recyclerview.widget.RecyclerView
-                android:id="@+id/chat_list"
-                android:layout_width="match_parent"
-                android:layout_height="match_parent"
-                android:clipToPadding="false"
-                android:paddingTop="@dimen/dshm_chat_header_pill_inset"
-                android:paddingBottom="12dp"
-                android:scrollbars="vertical" />
-
-            <!-- 状态 / UnknownSend / 加载更早统一排在胶囊顶栏下方，避免与悬浮顶栏重叠。 -->
-            <LinearLayout
-                android:id="@+id/chat_top_banners"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="@dimen/dshm_chat_header_pill_inset"
-                android:background="?attr/colorSurface"
-                android:orientation="vertical">
-
-                <!-- 运行时 / 连接 / Cache-First 状态横幅 -->
-                <LinearLayout
-                    android:id="@+id/chat_status_banner"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:background="?attr/colorSurfaceContainerHigh"
-                    android:orientation="vertical"
-                    android:visibility="gone">
-
-                    <com.google.android.material.progressindicator.LinearProgressIndicator
-                        android:id="@+id/chat_status_progress"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:indeterminate="true" />
-
-                    <LinearLayout
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:gravity="center_vertical"
-                        android:orientation="horizontal"
-                        android:paddingStart="16dp"
-                        android:paddingTop="8dp"
-                        android:paddingEnd="12dp"
-                        android:paddingBottom="8dp">
-
-                        <TextView
-                            android:id="@+id/chat_status_text"
-                            android:layout_width="0dp"
-                            android:layout_height="wrap_content"
-                            android:layout_weight="1"
-                            android:accessibilityLiveRegion="polite"
-                            android:textAppearance="?attr/textAppearanceBodySmall"
-                            android:textColor="?attr/colorOnSurface" />
-
-                        <com.google.android.material.button.MaterialButton
-                            android:id="@+id/chat_status_action"
-                            style="@style/Widget.Material3.Button.TextButton"
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:visibility="gone" />
-                    </LinearLayout>
-                </LinearLayout>
-
-                <!-- UnknownOutcome 发送状态未确认恢复条 -->
-                <com.google.android.material.card.MaterialCardView
-                    android:id="@+id/chat_unknown_send_banner"
-                    style="@style/Widget.Material3.CardView.Outlined"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginStart="16dp"
-                    android:layout_marginTop="8dp"
-                    android:layout_marginEnd="16dp"
-                    android:visibility="gone"
-                    app:cardCornerRadius="@dimen/dshm_radius_card"
-                    app:strokeColor="?attr/colorError">
-
-                    <LinearLayout
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:orientation="vertical"
-                        android:padding="12dp">
-
-                        <TextView
-                            android:id="@+id/chat_unknown_send_title"
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:text="@string/chat_send_unknown_title"
-                            android:textAppearance="?attr/textAppearanceTitleSmall"
-                            android:textColor="?attr/colorError" />
-
-                        <TextView
-                            android:id="@+id/chat_unknown_send_detail"
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:layout_marginTop="4dp"
-                            android:text="@string/chat_send_unknown_detail"
-                            android:textAppearance="?attr/textAppearanceBodySmall"
-                            android:textColor="?attr/colorOnSurfaceVariant" />
-
-                        <LinearLayout
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:layout_marginTop="8dp"
-                            android:gravity="end"
-                            android:orientation="horizontal">
-
-                            <com.google.android.material.button.MaterialButton
-                                android:id="@+id/chat_unknown_check_btn"
-                                style="@style/Widget.Material3.Button.TextButton"
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
-                                android:text="@string/chat_send_check_history" />
-
-                            <com.google.android.material.button.MaterialButton
-                                android:id="@+id/chat_unknown_resend_btn"
-                                style="@style/Widget.Material3.Button.TonalButton"
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
-                                android:layout_marginStart="8dp"
-                                android:text="@string/chat_send_confirm_resend"
-                                android:visibility="gone" />
-                        </LinearLayout>
-                    </LinearLayout>
-                </com.google.android.material.card.MaterialCardView>
-
-                <!-- 冷读分页触发按钮（N-05-03） -->
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/chat_load_older_btn"
-                    style="@style/Widget.Material3.Button.TextButton"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:text="@string/chat_load_older"
-                    android:visibility="gone" />
-            </LinearLayout>
-
-            <include
-                android:id="@+id/chat_empty"
-                layout="@layout/view_empty_state"
-                android:visibility="gone" />
-        </FrameLayout>
-
-        <!-- UI-S3：非模态固定审批 / 问答槽；有 PendingRequests 时显示，不弹窗、不抢输入焦点 -->
-        <include
-            android:id="@+id/chat_request_slot"
-            layout="@layout/view_chat_request_slot"
-            android:visibility="gone" />
-
-        <!-- 斜杠命令浮层（点击 / 按钮或键入 / 时展开，支持过滤与命令说明） -->
-        <include
-            android:id="@+id/chat_slash_panel"
-            layout="@layout/view_chat_slash_panel"
-            android:visibility="gone" />
-
-        <!-- 已选图片附件预览条：透明底、无硬描边，紧贴一体化大卡片上沿 -->
-        <HorizontalScrollView
-            android:id="@+id/chat_attachments_bar"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:scrollbars="none"
-            android:visibility="gone">
-
-            <LinearLayout
-                android:id="@+id/chat_attachments_list"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:gravity="center_vertical"
-                android:orientation="horizontal"
-                android:paddingStart="16dp"
-                android:paddingTop="6dp"
-                android:paddingEnd="16dp"
-                android:paddingBottom="4dp" />
-        </HorizontalScrollView>
-
-        <!-- 底部停靠区：只提供纸面底色与顶部呼吸距，左右 12dp / 底 8dp 由大卡片自身外边距完成。 -->
-        <LinearLayout
-            android:id="@+id/chat_composer"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:background="?attr/colorSurface"
-            android:orientation="vertical"
-            android:paddingTop="8dp">
-
-            <!-- Polish-P2：底部唯一一张 26dp 一体化大卡片，Tray / 输入 / 控制行全部内嵌。 -->
-            <com.google.android.material.card.MaterialCardView
-                android:id="@+id/chat_composer_card"
-                style="@style/Widget.Material3.CardView.Filled"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginStart="12dp"
-                android:layout_marginEnd="12dp"
-                android:layout_marginBottom="8dp"
-                app:cardBackgroundColor="?attr/colorSurfaceContainer"
-                app:cardCornerRadius="@dimen/dshm_radius_composer"
-                app:cardElevation="2dp"
-                app:strokeColor="?attr/colorOutlineVariant"
-                app:strokeWidth="@dimen/dshm_hairline">
-
-                <LinearLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="vertical">
-
-                    <!-- 融合快捷 Tray：点击 + 后在卡片顶部无缝展开，下方仅一条 1dp hairline 分隔。 -->
-                    <LinearLayout
-                        android:id="@+id/chat_composer_tray"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:orientation="vertical"
-                        android:visibility="gone">
-
-                        <LinearLayout
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:orientation="horizontal"
-                            android:paddingStart="4dp"
-                            android:paddingTop="4dp"
-                            android:paddingEnd="4dp"
-                            android:paddingBottom="4dp">
-
-                            <com.google.android.material.button.MaterialButton
-                                android:id="@+id/chat_composer_tray_images"
-                                style="@style/Widget.Material3.Button.TextButton"
-                                android:layout_width="0dp"
-                                android:layout_height="wrap_content"
-                                android:layout_weight="1"
-                                android:gravity="center"
-                                android:insetBottom="0dp"
-                                android:insetTop="0dp"
-                                android:minHeight="0dp"
-                                android:minWidth="0dp"
-                                android:paddingTop="12dp"
-                                android:paddingBottom="12dp"
-                                android:text="@string/chat_composer_tray_images"
-                                android:textAppearance="@style/TextAppearance.DshMobile.Label"
-                                android:textColor="?attr/colorOnSurface"
-                                android:textSize="12sp"
-                                app:cornerRadius="0dp"
-                                app:icon="@drawable/ic_image"
-                                app:iconGravity="top"
-                                app:iconPadding="4dp"
-                                app:iconSize="22dp"
-                                app:iconTint="?attr/colorOnSurfaceVariant"
-                                app:strokeWidth="0dp" />
-
-                            <com.google.android.material.button.MaterialButton
-                                android:id="@+id/chat_composer_tray_slash"
-                                style="@style/Widget.Material3.Button.TextButton"
-                                android:layout_width="0dp"
-                                android:layout_height="wrap_content"
-                                android:layout_weight="1"
-                                android:gravity="center"
-                                android:insetBottom="0dp"
-                                android:insetTop="0dp"
-                                android:minHeight="0dp"
-                                android:minWidth="0dp"
-                                android:paddingTop="12dp"
-                                android:paddingBottom="12dp"
-                                android:text="@string/chat_composer_tray_slash"
-                                android:textAppearance="@style/TextAppearance.DshMobile.Label"
-                                android:textColor="?attr/colorOnSurface"
-                                android:textSize="12sp"
-                                app:cornerRadius="0dp"
-                                app:icon="@drawable/ic_code"
-                                app:iconGravity="top"
-                                app:iconPadding="4dp"
-                                app:iconSize="22dp"
-                                app:iconTint="?attr/colorOnSurfaceVariant"
-                                app:strokeWidth="0dp" />
-                        </LinearLayout>
-
-                        <View
-                            android:layout_width="match_parent"
-                            android:layout_height="@dimen/dshm_hairline"
-                            android:background="?attr/colorOutlineVariant" />
-                    </LinearLayout>
-
-                    <!-- 上层文本区：全透明无框，最大 5 行，不抢控制行的拇指热区。 -->
-                    <EditText
-                        android:id="@+id/chat_input"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:background="@android:color/transparent"
-                        android:gravity="start|center_vertical"
-                        android:hint="@string/chat_composer_hint"
-                        android:imeOptions="actionNone|flagNoEnterAction|flagNoExtractUi"
-                        android:importantForAutofill="no"
-                        android:inputType="textMultiLine|textCapSentences"
-                        android:maxLines="5"
-                        android:minHeight="48dp"
-                        android:minLines="1"
-                        android:paddingStart="16dp"
-                        android:paddingTop="12dp"
-                        android:paddingEnd="16dp"
-                        android:paddingBottom="8dp"
-                        android:textAppearance="@style/TextAppearance.DshMobile.Body"
-                        android:textColor="?attr/colorOnSurface"
-                        android:textColorHint="?attr/colorOnSurfaceVariant" />
-
-                    <!-- 下层内嵌控制行：+ / 模型胶囊 / 弹簧 / 发送（运行中同位置切换停止）。 -->
-                    <LinearLayout
-                        android:id="@+id/chat_composer_controls"
-                        android:layout_width="match_parent"
-                        android:layout_height="48dp"
-                        android:layout_marginStart="8dp"
-                        android:layout_marginEnd="8dp"
-                        android:layout_marginBottom="6dp"
-                        android:gravity="center_vertical"
-                        android:orientation="horizontal">
-
-                        <com.google.android.material.button.MaterialButton
-                            android:id="@+id/chat_plus_btn"
-                            style="@style/Widget.Material3.Button.IconButton"
-                            android:layout_width="44dp"
-                            android:layout_height="44dp"
-                            android:contentDescription="@string/chat_composer_plus_desc"
-                            android:gravity="center"
-                            android:insetBottom="0dp"
-                            android:insetLeft="0dp"
-                            android:insetRight="0dp"
-                            android:insetTop="0dp"
-                            android:minHeight="0dp"
-                            android:minWidth="0dp"
-                            android:padding="0dp"
-                            android:paddingLeft="0dp"
-                            android:paddingTop="0dp"
-                            android:paddingRight="0dp"
-                            android:paddingBottom="0dp"
-                            android:paddingStart="0dp"
-                            android:paddingEnd="0dp"
-                            app:icon="@drawable/ic_add"
-                            app:iconGravity="textStart"
-                            app:iconPadding="0dp"
-                            app:iconSize="22dp"
-                            app:iconTint="?attr/colorOnSurfaceVariant" />
-
-                        <com.google.android.material.button.MaterialButton
-                            android:id="@+id/chat_model_pill"
-                            style="@style/Widget.Material3.Button.TonalButton"
-                            android:layout_width="wrap_content"
-                            android:layout_height="34dp"
-                            android:layout_marginStart="2dp"
-                            android:ellipsize="end"
-                            android:insetBottom="0dp"
-                            android:insetTop="0dp"
-                            android:maxLines="1"
-                            android:maxWidth="196dp"
-                            android:minHeight="34dp"
-                            android:minWidth="0dp"
-                            android:paddingStart="10dp"
-                            android:paddingTop="0dp"
-                            android:paddingEnd="10dp"
-                            android:paddingBottom="0dp"
-                            android:text="@string/chat_model_pill_fallback"
-                            android:textAppearance="@style/TextAppearance.DshMobile.Label"
-                            app:backgroundTint="?attr/colorSurfaceContainerHighest"
-                            app:cornerRadius="16dp"
-                            app:icon="@drawable/ic_expand_more"
-                            app:iconGravity="end"
-                            app:iconPadding="2dp"
-                            app:iconSize="16dp"
-                            app:iconTint="?attr/colorOnSurfaceVariant"
-                            app:strokeWidth="0dp" />
-
-                        <View
-                            android:layout_width="0dp"
-                            android:layout_height="0dp"
-                            android:layout_weight="1" />
-
-                        <com.google.android.material.button.MaterialButton
-                            android:id="@+id/chat_send_btn"
-                            style="@style/Widget.Material3.Button.IconButton.Filled"
-                            android:layout_width="40dp"
-                            android:layout_height="40dp"
-                            android:contentDescription="@string/chat_send_desc"
-                            android:gravity="center"
-                            android:insetBottom="0dp"
-                            android:insetLeft="0dp"
-                            android:insetRight="0dp"
-                            android:insetTop="0dp"
-                            android:minHeight="0dp"
-                            android:minWidth="0dp"
-                            android:padding="0dp"
-                            android:paddingLeft="0dp"
-                            android:paddingTop="0dp"
-                            android:paddingRight="0dp"
-                            android:paddingBottom="0dp"
-                            android:paddingStart="0dp"
-                            android:paddingEnd="0dp"
-                            app:backgroundTint="?attr/colorPrimary"
-                            app:cornerRadius="20dp"
-                            app:icon="@drawable/ic_arrow_upward"
-                            app:iconGravity="textStart"
-                            app:iconPadding="0dp"
-                            app:iconSize="20dp"
-                            app:iconTint="?attr/colorOnPrimary"
-                            app:strokeWidth="0dp" />
-                    </LinearLayout>
-                </LinearLayout>
-            </com.google.android.material.card.MaterialCardView>
-        </LinearLayout>
-    </LinearLayout>
-
-    <!-- Polish-P4 顶部遮罩：位于消息流之上、悬浮胶囊之下，纯色覆盖到胶囊中线后向下渐隐，
-         封死状态栏与悬浮顶栏之间的窄缝穿帮；不拦截触摸，深色 / 浅色由语义色自动切换。 -->
-    <View
-        android:id="@+id/chat_top_scrim"
-        android:layout_width="match_parent"
-        android:layout_height="64dp"
-        android:layout_gravity="top"
-        android:background="@drawable/bg_top_scrim"
-        android:clickable="false"
-        android:focusable="false"
-        android:importantForAccessibility="no" />
-
-    <!-- 悬浮胶囊顶栏：左右 12dp、顶 6dp、26dp 全圆角，消息流从其背后通透滚过。 -->
-    <com.google.android.material.card.MaterialCardView
-        android:id="@+id/chat_header_pill"
-        style="@style/Widget.Material3.CardView.Filled"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_gravity="top"
-        android:layout_marginStart="12dp"
-        android:layout_marginTop="6dp"
-        android:layout_marginEnd="12dp"
-        app:cardBackgroundColor="?attr/colorSurfaceContainer"
-        app:cardCornerRadius="26dp"
-        app:cardElevation="2dp"
-        app:strokeColor="?attr/colorOutlineVariant"
-        app:strokeWidth="@dimen/dshm_hairline">
+        android:layout_height="wrap_content">
 
         <com.google.android.material.appbar.MaterialToolbar
             android:id="@+id/chat_toolbar"
             style="@style/Widget.DshMobile.Toolbar.InAppBar"
             android:layout_width="match_parent"
-            android:layout_height="52dp"
+            android:layout_height="?attr/actionBarSize"
             app:menu="@menu/chat_toolbar"
             app:navigationIcon="@drawable/ic_arrow_back"
             app:subtitle="@string/chat_session_subtitle_default"
             app:title="@string/chat_session_default_title" />
-    </com.google.android.material.card.MaterialCardView>
 
-    <!-- 回底悬浮钮：44dp 圆形、88% 不透明，浅色白底表格上仍靠 1dp 柔和描边 + 2dp 抬升保持轮廓。 -->
-    <com.google.android.material.button.MaterialButton
-        android:id="@+id/chat_scroll_to_bottom"
-        style="@style/Widget.Material3.Button.IconButton.Filled"
-        android:layout_width="44dp"
-        android:layout_height="44dp"
-        android:layout_gravity="bottom|center_horizontal"
-        android:layout_marginBottom="84dp"
-        android:alpha="0.88"
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="@dimen/dshm_hairline"
+            android:background="?attr/colorOutlineVariant" />
+    </com.google.android.material.appbar.AppBarLayout>
+
+    <!-- 顶部状态与归档横幅槽（自然流式排布在顶栏下方，绝不浮压消息列表） -->
+    <LinearLayout
+        android:id="@+id/chat_top_banners"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="?attr/colorSurface"
+        android:orientation="vertical">
+
+        <!-- 已归档状态提示横幅（附一键取消归档） -->
+        <LinearLayout
+            android:id="@+id/chat_archived_banner"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:background="?attr/colorSurfaceContainer"
+            android:orientation="vertical"
+            android:visibility="gone">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:gravity="center_vertical"
+                android:orientation="horizontal"
+                android:paddingStart="16dp"
+                android:paddingTop="6dp"
+                android:paddingEnd="8dp"
+                android:paddingBottom="6dp">
+
+                <ImageView
+                    android:layout_width="18dp"
+                    android:layout_height="18dp"
+                    android:importantForAccessibility="no"
+                    android:src="@drawable/ic_archive"
+                    app:tint="?attr/colorOnSurfaceVariant" />
+
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="8dp"
+                    android:layout_weight="1"
+                    android:text="@string/chat_archived_banner_text"
+                    android:textAppearance="?attr/textAppearanceBodySmall"
+                    android:textColor="?attr/colorOnSurface" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/chat_archived_unarchive_btn"
+                    style="@style/Widget.Material3.Button.TextButton"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:minHeight="36dp"
+                    android:text="@string/chats_action_unarchive" />
+            </LinearLayout>
+
+            <View
+                android:layout_width="match_parent"
+                android:layout_height="@dimen/dshm_hairline"
+                android:background="?attr/colorOutlineVariant" />
+        </LinearLayout>
+
+        <!-- 运行时 / 连接 / Cache-First 状态横幅 -->
+        <LinearLayout
+            android:id="@+id/chat_status_banner"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:background="?attr/colorSurfaceContainerHigh"
+            android:orientation="vertical"
+            android:visibility="gone">
+
+            <com.google.android.material.progressindicator.LinearProgressIndicator
+                android:id="@+id/chat_status_progress"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:indeterminate="true" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:gravity="center_vertical"
+                android:orientation="horizontal"
+                android:paddingStart="16dp"
+                android:paddingTop="8dp"
+                android:paddingEnd="12dp"
+                android:paddingBottom="8dp">
+
+                <TextView
+                    android:id="@+id/chat_status_text"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:accessibilityLiveRegion="polite"
+                    android:textAppearance="?attr/textAppearanceBodySmall"
+                    android:textColor="?attr/colorOnSurface" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/chat_status_action"
+                    style="@style/Widget.Material3.Button.TextButton"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:visibility="gone" />
+            </LinearLayout>
+
+            <View
+                android:layout_width="match_parent"
+                android:layout_height="@dimen/dshm_hairline"
+                android:background="?attr/colorOutlineVariant" />
+        </LinearLayout>
+
+        <!-- UnknownOutcome 发送状态未确认恢复条 -->
+        <com.google.android.material.card.MaterialCardView
+            android:id="@+id/chat_unknown_send_banner"
+            style="@style/Widget.Material3.CardView.Outlined"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="16dp"
+            android:layout_marginTop="8dp"
+            android:layout_marginEnd="16dp"
+            android:layout_marginBottom="4dp"
+            android:visibility="gone"
+            app:cardCornerRadius="@dimen/dshm_radius_card"
+            app:strokeColor="?attr/colorError">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:padding="12dp">
+
+                <TextView
+                    android:id="@+id/chat_unknown_send_title"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/chat_send_unknown_title"
+                    android:textAppearance="?attr/textAppearanceTitleSmall"
+                    android:textColor="?attr/colorError" />
+
+                <TextView
+                    android:id="@+id/chat_unknown_send_detail"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="4dp"
+                    android:text="@string/chat_send_unknown_detail"
+                    android:textAppearance="?attr/textAppearanceBodySmall"
+                    android:textColor="?attr/colorOnSurfaceVariant" />
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:gravity="end"
+                    android:orientation="horizontal">
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/chat_unknown_check_btn"
+                        style="@style/Widget.Material3.Button.TextButton"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/chat_send_check_history" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/chat_unknown_resend_btn"
+                        style="@style/Widget.Material3.Button.TonalButton"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="8dp"
+                        android:text="@string/chat_send_confirm_resend"
+                        android:visibility="gone" />
+                </LinearLayout>
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
+
+        <!-- 冷读分页触发按钮 -->
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/chat_load_older_btn"
+            style="@style/Widget.Material3.Button.TextButton"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/chat_load_older"
+            android:visibility="gone" />
+    </LinearLayout>
+
+    <!-- 消息流区域：自然占满中间剩余空间，无悬浮遮挡 -->
+    <FrameLayout
+        android:id="@+id/chat_content_frame"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1">
+
+        <androidx.recyclerview.widget.RecyclerView
+            android:id="@+id/chat_list"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:clipToPadding="false"
+            android:paddingTop="8dp"
+            android:paddingBottom="12dp"
+            android:scrollbars="vertical" />
+
+        <include
+            android:id="@+id/chat_empty"
+            layout="@layout/view_empty_state"
+            android:visibility="gone" />
+    </FrameLayout>
+
+    <!-- 停靠式回到底部提示条：离开底部 >= 480dp 时平滑显示，绝不悬浮压在消息正文上 -->
+    <LinearLayout
+        android:id="@+id/chat_jump_bottom_bar"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="?attr/colorSurfaceContainer"
+        android:clickable="true"
         android:contentDescription="@string/chat_scroll_bottom_desc"
-        android:elevation="2dp"
-        android:insetTop="0dp"
-        android:insetBottom="0dp"
-        android:minWidth="0dp"
-        android:minHeight="0dp"
-        android:padding="0dp"
-        android:visibility="gone"
-        app:backgroundTint="?attr/colorSurfaceContainer"
-        app:cornerRadius="22dp"
-        app:icon="@drawable/ic_arrow_downward"
-        app:iconGravity="textStart"
-        app:iconPadding="0dp"
-        app:iconSize="20dp"
-        app:iconTint="?attr/colorOnSurface"
-        app:strokeColor="@color/dshm_scroll_button_stroke"
-        app:strokeWidth="1dp" />
-</FrameLayout>
+        android:focusable="true"
+        android:foreground="?attr/selectableItemBackground"
+        android:orientation="vertical"
+        android:visibility="gone">
+
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="@dimen/dshm_hairline"
+            android:background="?attr/colorOutlineVariant" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="36dp"
+            android:gravity="center"
+            android:orientation="horizontal"
+            android:paddingStart="16dp"
+            android:paddingEnd="16dp">
+
+            <ImageView
+                android:layout_width="16dp"
+                android:layout_height="16dp"
+                android:importantForAccessibility="no"
+                android:src="@drawable/ic_arrow_downward"
+                app:tint="?attr/colorPrimary" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="6dp"
+                android:text="@string/chat_jump_bottom_label"
+                android:textAppearance="@style/TextAppearance.DshMobile.Label"
+                android:textColor="?attr/colorPrimary" />
+        </LinearLayout>
+    </LinearLayout>
+
+    <!-- 非模态固定审批 / 问答槽；有 PendingRequests 时显示，不弹窗、不抢输入焦点 -->
+    <include
+        android:id="@+id/chat_request_slot"
+        layout="@layout/view_chat_request_slot"
+        android:visibility="gone" />
+
+    <!-- 停靠式斜杠命令面板 -->
+    <include
+        android:id="@+id/chat_slash_panel"
+        layout="@layout/view_chat_slash_panel"
+        android:visibility="gone" />
+
+    <!-- 已选图片附件预览条 -->
+    <HorizontalScrollView
+        android:id="@+id/chat_attachments_bar"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="?attr/colorSurfaceContainerLow"
+        android:scrollbars="none"
+        android:visibility="gone">
+
+        <LinearLayout
+            android:id="@+id/chat_attachments_list"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:gravity="center_vertical"
+            android:orientation="horizontal"
+            android:paddingStart="16dp"
+            android:paddingTop="8dp"
+            android:paddingEnd="16dp"
+            android:paddingBottom="4dp" />
+    </HorizontalScrollView>
+
+    <!-- 全宽贴底停靠输入栏（Docked Composer）：顶部 1dp 结构分隔线、零阴影、内部规整对齐 -->
+    <LinearLayout
+        android:id="@+id/chat_composer"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="?attr/colorSurfaceContainerLow"
+        android:orientation="vertical">
+
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="@dimen/dshm_hairline"
+            android:background="?attr/colorOutlineVariant" />
+
+        <LinearLayout
+            android:id="@+id/chat_composer_inner"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:paddingStart="12dp"
+            android:paddingTop="8dp"
+            android:paddingEnd="12dp"
+            android:paddingBottom="8dp">
+
+            <!-- 快捷 Tray：点击 + 后在输入区上方展开，下方由 1dp 分隔线清晰划分 -->
+            <LinearLayout
+                android:id="@+id/chat_composer_tray"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:visibility="gone">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:paddingStart="4dp"
+                    android:paddingTop="2dp"
+                    android:paddingEnd="4dp"
+                    android:paddingBottom="6dp">
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/chat_composer_tray_images"
+                        style="@style/Widget.Material3.Button.TextButton"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:gravity="center"
+                        android:insetTop="0dp"
+                        android:insetBottom="0dp"
+                        android:minWidth="0dp"
+                        android:minHeight="0dp"
+                        android:paddingTop="10dp"
+                        android:paddingBottom="10dp"
+                        android:text="@string/chat_composer_tray_images"
+                        android:textAppearance="@style/TextAppearance.DshMobile.Label"
+                        android:textColor="?attr/colorOnSurface"
+                        android:textSize="12sp"
+                        app:cornerRadius="8dp"
+                        app:icon="@drawable/ic_image"
+                        app:iconGravity="top"
+                        app:iconPadding="4dp"
+                        app:iconSize="22dp"
+                        app:iconTint="?attr/colorOnSurfaceVariant"
+                        app:strokeWidth="0dp" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/chat_composer_tray_slash"
+                        style="@style/Widget.Material3.Button.TextButton"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:gravity="center"
+                        android:insetTop="0dp"
+                        android:insetBottom="0dp"
+                        android:minWidth="0dp"
+                        android:minHeight="0dp"
+                        android:paddingTop="10dp"
+                        android:paddingBottom="10dp"
+                        android:text="@string/chat_composer_tray_slash"
+                        android:textAppearance="@style/TextAppearance.DshMobile.Label"
+                        android:textColor="?attr/colorOnSurface"
+                        android:textSize="12sp"
+                        app:cornerRadius="8dp"
+                        app:icon="@drawable/ic_code"
+                        app:iconGravity="top"
+                        app:iconPadding="4dp"
+                        app:iconSize="22dp"
+                        app:iconTint="?attr/colorOnSurfaceVariant"
+                        app:strokeWidth="0dp" />
+                </LinearLayout>
+
+                <View
+                    android:layout_width="match_parent"
+                    android:layout_height="@dimen/dshm_hairline"
+                    android:layout_marginBottom="6dp"
+                    android:background="?attr/colorOutlineVariant" />
+            </LinearLayout>
+
+            <!-- 停靠输入槽：12dp 工程圆角 + 1dp 结构框，横屏软键盘保留 flagNoExtractUi -->
+            <com.google.android.material.card.MaterialCardView
+                android:id="@+id/chat_composer_box"
+                style="@style/Widget.Material3.CardView.Filled"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                app:cardBackgroundColor="?attr/colorSurface"
+                app:cardCornerRadius="@dimen/dshm_radius_composer"
+                app:cardElevation="0dp"
+                app:strokeColor="?attr/colorOutlineVariant"
+                app:strokeWidth="@dimen/dshm_hairline">
+
+                <EditText
+                    android:id="@+id/chat_input"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:background="@android:color/transparent"
+                    android:gravity="start|center_vertical"
+                    android:hint="@string/chat_composer_hint"
+                    android:imeOptions="actionNone|flagNoEnterAction|flagNoExtractUi"
+                    android:importantForAutofill="no"
+                    android:inputType="textMultiLine|textCapSentences"
+                    android:maxLines="5"
+                    android:minHeight="44dp"
+                    android:minLines="1"
+                    android:paddingStart="14dp"
+                    android:paddingTop="10dp"
+                    android:paddingEnd="14dp"
+                    android:paddingBottom="10dp"
+                    android:textAppearance="@style/TextAppearance.DshMobile.Body"
+                    android:textColor="?attr/colorOnSurface"
+                    android:textColorHint="?attr/colorOnSurfaceVariant" />
+            </com.google.android.material.card.MaterialCardView>
+
+            <!-- 下层规整工具控制行：+ / 模型选择 / 弹簧 / 发送（运行中切换停止） -->
+            <LinearLayout
+                android:id="@+id/chat_composer_controls"
+                android:layout_width="match_parent"
+                android:layout_height="44dp"
+                android:layout_marginTop="6dp"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/chat_plus_btn"
+                    style="@style/Widget.Material3.Button.IconButton"
+                    android:layout_width="40dp"
+                    android:layout_height="40dp"
+                    android:contentDescription="@string/chat_composer_plus_desc"
+                    android:gravity="center"
+                    android:insetLeft="0dp"
+                    android:insetTop="0dp"
+                    android:insetRight="0dp"
+                    android:insetBottom="0dp"
+                    android:minWidth="0dp"
+                    android:minHeight="0dp"
+                    android:padding="0dp"
+                    app:icon="@drawable/ic_add"
+                    app:iconGravity="textStart"
+                    app:iconPadding="0dp"
+                    app:iconSize="22dp"
+                    app:iconTint="?attr/colorOnSurfaceVariant" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/chat_model_pill"
+                    style="@style/Widget.Material3.Button.TonalButton"
+                    android:layout_width="wrap_content"
+                    android:layout_height="34dp"
+                    android:layout_marginStart="4dp"
+                    android:ellipsize="end"
+                    android:insetTop="0dp"
+                    android:insetBottom="0dp"
+                    android:maxWidth="200dp"
+                    android:maxLines="1"
+                    android:minWidth="0dp"
+                    android:minHeight="34dp"
+                    android:paddingStart="10dp"
+                    android:paddingTop="0dp"
+                    android:paddingEnd="10dp"
+                    android:paddingBottom="0dp"
+                    android:text="@string/chat_model_pill_fallback"
+                    android:textAppearance="@style/TextAppearance.DshMobile.Label"
+                    app:backgroundTint="?attr/colorSurfaceContainerHigh"
+                    app:cornerRadius="10dp"
+                    app:icon="@drawable/ic_expand_more"
+                    app:iconGravity="end"
+                    app:iconPadding="2dp"
+                    app:iconSize="16dp"
+                    app:iconTint="?attr/colorOnSurfaceVariant"
+                    app:strokeColor="?attr/colorOutlineVariant"
+                    app:strokeWidth="@dimen/dshm_hairline" />
+
+                <View
+                    android:layout_width="0dp"
+                    android:layout_height="0dp"
+                    android:layout_weight="1" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/chat_send_btn"
+                    style="@style/Widget.Material3.Button.IconButton.Filled"
+                    android:layout_width="40dp"
+                    android:layout_height="40dp"
+                    android:contentDescription="@string/chat_send_desc"
+                    android:gravity="center"
+                    android:insetLeft="0dp"
+                    android:insetTop="0dp"
+                    android:insetRight="0dp"
+                    android:insetBottom="0dp"
+                    android:minWidth="0dp"
+                    android:minHeight="0dp"
+                    android:padding="0dp"
+                    app:backgroundTint="?attr/colorPrimary"
+                    app:cornerRadius="12dp"
+                    app:icon="@drawable/ic_arrow_upward"
+                    app:iconGravity="textStart"
+                    app:iconPadding="0dp"
+                    app:iconSize="20dp"
+                    app:iconTint="?attr/colorOnPrimary"
+                    app:strokeWidth="0dp" />
+            </LinearLayout>
+        </LinearLayout>
+    </LinearLayout>
+</LinearLayout>

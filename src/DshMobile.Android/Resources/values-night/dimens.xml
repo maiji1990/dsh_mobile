@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Polish-P1：深色分组卡也彻底去硬描边，改用纸面明度差分层 -->
-    <dimen name="dshm_card_stroke_width">0dp</dimen>
+    <!-- 深海靛蓝稳固工作台：深色卡片同样保持 1dp 精致深蓝结构线 -->
+    <dimen name="dshm_card_stroke_width">1dp</dimen>
 </resources>

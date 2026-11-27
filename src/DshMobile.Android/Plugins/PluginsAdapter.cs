@@ -9,8 +9,8 @@ using Google.Android.Material.MaterialSwitch;
 namespace DshMobile.App.Plugins;
 
 /// <summary>
-/// 原生插件目录列表适配器（PR-07 / N-07-02 / UI Slice 4）：
-/// 仅渲染 L0 状态标签、精简短模块主标题 + 中文功能副描述 + 去重包名，无 L2 动态表单与 WebView。
+/// 原生插件目录列表适配器（PR-07 / N-07-02 / ADR-0033）：
+/// 仅渲染 L0 状态标签、精简短模块主标题 + 中文功能副描述 + 去重包名，无动态配置表单与内嵌网页视图。
 /// </summary>
 internal sealed class PluginsAdapter(
     Action<PluginEntryView, bool> onToggleRequested,

@@ -2,8 +2,13 @@
 <menu xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto">
     <item
-        android:id="@+id/plugins_menu_refresh"
+        android:id="@+id/plugins_action_install"
+        android:icon="@drawable/ic_add"
+        android:title="@string/plugins_action_manual_install"
+        app:showAsAction="always" />
+    <item
+        android:id="@+id/plugins_action_refresh"
         android:icon="@drawable/ic_refresh"
         android:title="@string/plugins_action_refresh"
-        app:showAsAction="always" />
+        app:showAsAction="ifRoom" />
 </menu>

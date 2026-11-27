@@ -27,6 +27,8 @@ public sealed class AgentConnectionScope : IDisposable
     private readonly SendStateMachine _sends;
     private readonly HistoryReconciler _reconciler;
     private readonly KeptTranscriptStore _keptStore;
+    private readonly HiddenSessionStore _hiddenStore;
+    private readonly NpmRegistryPluginSearchService _pluginCatalogSearch;
     private readonly RuntimeLayout _layout;
     private readonly Action<string> _log;
     private readonly WorkLeaseManager? _leases;
@@ -68,15 +70,20 @@ public sealed class AgentConnectionScope : IDisposable
         _requests = new RequestsEngine(_gateway, _gateway, _transcripts);
         _sends = new SendStateMachine(_gateway, _gateway);
         _reconciler = new HistoryReconciler(_gateway, _gateway);
-        _keptStore = new KeptTranscriptStore(Path.Combine(layout.HostStateDir, "agent-cache"));
-        Chat = new ChatViewModel(_gateway, _transcripts, _requests, _sends, _reconciler, _keptStore);
+        var cacheDir = Path.Combine(layout.HostStateDir, "agent-cache");
+        _keptStore = new KeptTranscriptStore(cacheDir);
+        _hiddenStore = new HiddenSessionStore(cacheDir);
+        // 启动阶段即预加载本机隐藏会话表，确保首屏与离线缓存过滤一致。
+        _ = _hiddenStore.LoadAsync();
+        Chat = new ChatViewModel(_gateway, _transcripts, _requests, _sends, _reconciler, _keptStore, hiddenStore: _hiddenStore);
         Credentials = new CredentialsViewModel(_gateway, Path.Combine(layout.HostStateDir, "custom-credential-refs.txt"));
-        Sessions = new SessionsViewModel(_gateway, _requests, _keptStore);
+        Sessions = new SessionsViewModel(_gateway, _requests, _keptStore, _hiddenStore, _transcripts);
         var pluginOps = new RuntimePluginOperations(
             runtime,
             restartHostAsync ?? (ct => runtime.RestartWebHostAsync(ct)));
         var pluginService = new PluginInventoryService(_gateway, pluginOps);
-        Plugins = new PluginsViewModel(_gateway, pluginService);
+        _pluginCatalogSearch = new NpmRegistryPluginSearchService();
+        Plugins = new PluginsViewModel(_gateway, pluginService, _pluginCatalogSearch);
         Inbox = new InboxViewModel(_requests, ResolveSessionTitle);
         RequestNotifications = new BackgroundRequestNotificationCoordinator(
             _requests,
@@ -455,6 +462,7 @@ public sealed class AgentConnectionScope : IDisposable
             await remote.DisposeAsync().ConfigureAwait(false);
         }
         await Plugins.DisposeAsync().ConfigureAwait(false);
+        _pluginCatalogSearch.Dispose();
         await RequestNotifications.DisposeAsync().ConfigureAwait(false);
         await Inbox.DisposeAsync().ConfigureAwait(false);
         await Sessions.DisposeAsync().ConfigureAwait(false);

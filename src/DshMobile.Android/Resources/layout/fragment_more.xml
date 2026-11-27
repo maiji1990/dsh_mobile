@@ -17,10 +17,14 @@
             android:id="@+id/more_toolbar"
             style="@style/Widget.DshMobile.Toolbar.InAppBar"
             android:layout_width="match_parent"
-            android:layout_height="72dp"
+            android:layout_height="?attr/actionBarSize"
             app:menu="@menu/more_toolbar"
-            app:title="@string/more_title"
-            app:titleTextAppearance="@style/TextAppearance.DshMobile.LargeTitle" />
+            app:title="@string/more_title" />
+
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="@dimen/dshm_hairline"
+            android:background="?attr/colorOutlineVariant" />
 
         <com.google.android.material.progressindicator.LinearProgressIndicator
             android:id="@+id/more_progress"

@@ -10,7 +10,6 @@ using Google.Android.Material.AppBar;
 using Google.Android.Material.Button;
 using Google.Android.Material.Chip;
 using Google.Android.Material.Dialog;
-using Google.Android.Material.FloatingActionButton;
 using Google.Android.Material.ProgressIndicator;
 using Google.Android.Material.Snackbar;
 using Google.Android.Material.TextField;
@@ -23,7 +22,7 @@ namespace DshMobile.App.Files;
 /// 工作区工作台页签（TASK-007 / N-06-02 / UI Slice 3）：
 /// 全 XML 化布局（<c>fragment_files.xml</c> / <c>item_workspace_entry.xml</c> / <c>item_file_crumb.xml</c>），
 /// 单击文本/代码文件直达全屏 <see cref="WorkspaceEditorActivity"/>，行尾 <c>⋮</c> 拉起底部操作抽屉，
-/// 单手 FAB 承接新建/导入，Git 非仓库时自动扫描子仓库提供一键跳转；
+/// 顶栏固定入口承接新建/导入，Git 非仓库时自动扫描子仓库提供一键跳转；
 /// 所有路径校验、符号链接拦截、<c>.dsh</c> 保护与冲突检测严格委托 <see cref="WorkspaceProvider"/>。
 /// </summary>
 public sealed class FilesFragment : Fragment, ITabRoot, FileActionsBottomSheet.IHost, WorkspaceCreateBottomSheet.IHost
@@ -87,7 +86,6 @@ public sealed class FilesFragment : Fragment, ITabRoot, FileActionsBottomSheet.I
     private View _empty = null!;
     private View _pasteBar = null!;
     private TextView _pasteText = null!;
-    private ExtendedFloatingActionButton _createFab = null!;
     private EntryAdapter _adapter = null!;
     private IReadOnlyList<WorkspaceEntry> _entries = [];
 
@@ -102,8 +100,17 @@ public sealed class FilesFragment : Fragment, ITabRoot, FileActionsBottomSheet.I
         _toolbar = view.FindViewById<MaterialToolbar>(Resource.Id.toolbar)!;
         _toolbar.SetTitle(Resource.String.files_title);
         _toolbar.MenuItemClick += (_, e) => OnMenu(e.Item?.ItemId ?? 0);
-        // Polish-P3：统一交给 Activity 返回栈，窄屏由外壳从工作区平顺回到 ChatsFragment 首页。
-        _toolbar.NavigationClick += (_, _) => Activity?.OnBackPressedDispatcher?.OnBackPressed();
+        // 多选模式下点击关闭图标立即退出多选，其余情况交给返回栈。
+        _toolbar.NavigationClick += (_, _) =>
+        {
+            if (_selected.Count > 0)
+            {
+                _selected.Clear();
+                Show();
+                return;
+            }
+            Activity?.OnBackPressedDispatcher?.OnBackPressed();
+        };
         _filesProgress = view.FindViewById<LinearProgressIndicator>(Resource.Id.files_progress)!;
 
         _filesModeButton = view.FindViewById<MaterialButton>(Resource.Id.files_mode_files)!;
@@ -191,10 +198,6 @@ public sealed class FilesFragment : Fragment, ITabRoot, FileActionsBottomSheet.I
             UpdateChrome();
         };
 
-        _createFab = view.FindViewById<ExtendedFloatingActionButton>(Resource.Id.files_create_fab)!;
-        _createFab.Click += (_, _) => ShowCreateSheet();
-        _list.AddOnScrollListener(new FabScrollListener(_createFab));
-
         // Polish-P4：切换器自带 18dp 圆角底槽背景，必须用外边距限宽（而不是加内边距限宽），
         // 否则 ≥600dp 时底槽会被拉满整个内容宽、按钮被内边距居中，四周 3dp 留白不再均匀。
         Edges.ClampMaxWidthByMargin(view.FindViewById(Resource.Id.files_mode_toggle));
@@ -247,7 +250,7 @@ public sealed class FilesFragment : Fragment, ITabRoot, FileActionsBottomSheet.I
         }
     }
 
-    /// <summary>Polish-P3：窄屏始终显示返回首页箭头，宽屏仅在进入子目录 / 搜索 / 多选时显示向上箭头。</summary>
+    /// <summary>同步主壳宽窄屏状态（供 <see cref="MainActivity"/> 宽窄切换时调用）。</summary>
     public void OnShellWidthChanged(bool wide)
     {
         _isWide = wide;
@@ -649,20 +652,10 @@ public sealed class FilesFragment : Fragment, ITabRoot, FileActionsBottomSheet.I
         var ctx = RequireContext();
         _filesProgress.Visibility = _busy ? ViewStates.Visible : ViewStates.Gone;
 
-        var showFab = !_gitMode && _selected.Count == 0 && _provider is not null;
-        if (showFab)
-        {
-            _createFab.Show();
-        }
-        else
-        {
-            _createFab.Hide();
-        }
-
         if (_gitMode)
         {
             _toolbar.Subtitle = null;
-            // Git 页签只展示变更列表；Diff 在独立全屏审查页中查看。窄屏仍保留返回首页箭头。
+            // Git 页签只展示变更列表；Diff 在独立全屏审查页中查看。
             ApplyToolbarNavigation();
             SyncMenu(isSelection: false, isGitMode: true);
             return;
@@ -693,8 +686,8 @@ public sealed class FilesFragment : Fragment, ITabRoot, FileActionsBottomSheet.I
     }
 
     /// <summary>
-    /// Polish-P3：窄屏顶栏固定显示 ←（返回首页）；宽屏仅在工作区子目录 / 搜索 / 多选时显示向上箭头，
-    /// 顶栏不出现第二个返回箭头，点击统一交给 OnBackPressedDispatcher。
+    /// 窄屏底部导航栏与宽屏侧轨均承载一级导航切换，普通模式下顶栏不显示返回箭头；
+    /// 仅在多选模式显示关闭图标用于清除选中。
     /// </summary>
     private void ApplyToolbarNavigation()
     {
@@ -704,22 +697,7 @@ public sealed class FilesFragment : Fragment, ITabRoot, FileActionsBottomSheet.I
             _toolbar.SetNavigationContentDescription(Resource.String.files_clear_selection);
             return;
         }
-        if (!_isWide)
-        {
-            _toolbar.SetNavigationIcon(Resource.Drawable.ic_arrow_back);
-            // 根目录回首页，子目录先回上一级；无障碍描述跟随真实语义，不再一律播报「返回首页」。
-            _toolbar.SetNavigationContentDescription(_dir.Length == 0
-                ? Resource.String.shell_back_home
-                : Resource.String.files_up);
-            return;
-        }
-        if (_dir.Length == 0 && _searchQuery is null)
-        {
-            _toolbar.NavigationIcon = null;
-            return;
-        }
-        _toolbar.SetNavigationIcon(Resource.Drawable.ic_arrow_back);
-        _toolbar.SetNavigationContentDescription(Resource.String.files_up);
+        _toolbar.NavigationIcon = null;
     }
 
     private void SyncMenu(bool isSelection, bool isGitMode)
@@ -738,9 +716,11 @@ public sealed class FilesFragment : Fragment, ITabRoot, FileActionsBottomSheet.I
             var id = item.ItemId;
             if (!isSelection)
             {
-                var visible = !isGitMode
-                    || id == Resource.Id.files_menu_refresh
-                    || id == Resource.Id.files_menu_open_root;
+                var visible = id == Resource.Id.files_action_create
+                    ? !isGitMode && _provider is not null
+                    : !isGitMode
+                        || id == Resource.Id.files_menu_refresh
+                        || id == Resource.Id.files_menu_open_root;
                 item.SetVisible(visible);
                 item.SetEnabled(!_busy && (id != Resource.Id.files_menu_open_root || _dir.Length > 0));
             }
@@ -795,7 +775,11 @@ public sealed class FilesFragment : Fragment, ITabRoot, FileActionsBottomSheet.I
 
     private void OnMenu(int id)
     {
-        if (id == Resource.Id.files_menu_refresh)
+        if (id == Resource.Id.files_action_create)
+        {
+            ShowCreateSheet();
+        }
+        else if (id == Resource.Id.files_menu_refresh)
         {
             if (_gitMode)
             {
@@ -1528,26 +1512,6 @@ public sealed class FilesFragment : Fragment, ITabRoot, FileActionsBottomSheet.I
 
             public override bool AreContentsTheSame(int oldItemPosition, int newItemPosition) =>
                 old[oldItemPosition] == next[newItemPosition];
-        }
-    }
-
-    private sealed class FabScrollListener(ExtendedFloatingActionButton fab) : RecyclerView.OnScrollListener
-    {
-        public override void OnScrolled(RecyclerView recyclerView, int dx, int dy)
-        {
-            base.OnScrolled(recyclerView, dx, dy);
-            if (dy > 6 && fab.Extended)
-            {
-                fab.Shrink();
-            }
-            else if (dy < -6 && !fab.Extended)
-            {
-                fab.Extend();
-            }
-            else if (!recyclerView.CanScrollVertically(-1) && !fab.Extended)
-            {
-                fab.Extend();
-            }
         }
     }
 }

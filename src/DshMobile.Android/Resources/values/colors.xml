@@ -1,89 +1,83 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  Polish-P1 品牌色盘（Material 3 颜色角色，浅色）。
-  以纯净中性 Graphite 纸面为底、单一品牌绿为主操作色；Hairline 使用 7.8% 黑透明，避免硬描边。
+  DSH Mobile 原创视觉体系（深海靛蓝 DeepSeek Cobalt · 稳固工作台，浅色）。
+  冷静微蓝石板白画布 + DeepSeek 靛蓝主品牌色 + 清晰 1dp 结构边框 + 独立语义运行绿。
   壁纸动态取色默认关闭（UiPrefs.DynamicColorEnabled），深色模式见 values-night/colors.xml。
 -->
 <resources>
-  <!-- 品牌绿：主操作、运行态与选中态 -->
-  <color name="dshm_primary">#087F43</color>
+  <!-- 品牌主色：DeepSeek 靛蓝 -->
+  <color name="dshm_primary">#1D4ED8</color>
   <color name="dshm_on_primary">#FFFFFF</color>
-  <color name="dshm_primary_container">#E4F4EB</color>
-  <color name="dshm_on_primary_container">#043D20</color>
-  <!-- 中性次级色：仅承担低强调的容器与图标，不再引入第二种色相 -->
-  <color name="dshm_secondary">#50535A</color>
+  <color name="dshm_primary_container">#DBEAFE</color>
+  <color name="dshm_on_primary_container">#1E3A8A</color>
+  <!-- 次级色：冷静石板蓝灰，承担辅助容器与低强调控件 -->
+  <color name="dshm_secondary">#475569</color>
   <color name="dshm_on_secondary">#FFFFFF</color>
-  <color name="dshm_secondary_container">#E9E9E6</color>
-  <color name="dshm_on_secondary_container">#111214</color>
-  <!-- 三级色沿用既有值，供既有 warning / diff 辅助场景使用 -->
-  <color name="dshm_tertiary">#6B5778</color>
+  <color name="dshm_secondary_container">#E2E8F0</color>
+  <color name="dshm_on_secondary_container">#0F172A</color>
+  <!-- 三级色：柔和蓝紫，供状态过渡与辅助标签使用 -->
+  <color name="dshm_tertiary">#5B4B8A</color>
   <color name="dshm_on_tertiary">#FFFFFF</color>
-  <color name="dshm_tertiary_container">#F2DAFF</color>
-  <color name="dshm_on_tertiary_container">#251431</color>
-  <!-- 错误色保持既有语义，不与关注色混用 -->
+  <color name="dshm_tertiary_container">#EDE9FE</color>
+  <color name="dshm_on_tertiary_container">#2E1065</color>
+  <!-- 错误与危险操作语义色 -->
   <color name="dshm_error">#BA1A1A</color>
   <color name="dshm_on_error">#FFFFFF</color>
   <color name="dshm_error_container">#FFDAD6</color>
   <color name="dshm_on_error_container">#410002</color>
-  <!-- Graphite 纸面：背景与一级表面同色，浮层靠白纸面抬升 -->
-  <color name="dshm_background">#F3F3F1</color>
-  <color name="dshm_on_background">#111214</color>
-  <color name="dshm_surface">#F3F3F1</color>
-  <color name="dshm_on_surface">#111214</color>
-  <color name="dshm_surface_variant">#E9E9E6</color>
-  <color name="dshm_on_surface_variant">#50535A</color>
-  <color name="dshm_outline">#62656C</color>
-  <!-- 7.8% 黑透明 Hairline：描边只提供极淡分隔，不再形成硬边框 -->
-  <color name="dshm_outline_variant">#14000000</color>
-  <color name="dshm_inverse_surface">#2F3033</color>
-  <color name="dshm_inverse_on_surface">#F1F0F4</color>
-  <color name="dshm_inverse_primary">#9ECAFF</color>
-  <color name="dshm_surface_dim">#DAD9DD</color>
-  <color name="dshm_surface_bright">#FAF9FD</color>
-  <!-- 表面层级：浅色下越低层级越亮，一级纸面 #FAFAF8 比底 #F3F3F1 更亮 -->
+  <!-- 冷静微蓝石板白画布与高对比深靛墨文本 -->
+  <color name="dshm_background">#F5F7FB</color>
+  <color name="dshm_on_background">#0F172A</color>
+  <color name="dshm_surface">#F5F7FB</color>
+  <color name="dshm_on_surface">#0F172A</color>
+  <color name="dshm_surface_variant">#E4EBF5</color>
+  <color name="dshm_on_surface_variant">#475569</color>
+  <color name="dshm_outline">#64748B</color>
+  <!-- 清晰精致的 1dp 结构边框 -->
+  <color name="dshm_outline_variant">#D8E0EC</color>
+  <color name="dshm_inverse_surface">#1E293B</color>
+  <color name="dshm_inverse_on_surface">#F1F5F9</color>
+  <color name="dshm_inverse_primary">#93C5FD</color>
+  <color name="dshm_surface_dim">#DCE3EE</color>
+  <color name="dshm_surface_bright">#FFFFFF</color>
+  <!-- 表面容器层级：卡片纯白，工作台次级容器逐级微蓝 -->
   <color name="dshm_surface_container_lowest">#FFFFFF</color>
-  <color name="dshm_surface_container_low">#FAFAF8</color>
-  <color name="dshm_surface_container">#FFFFFF</color>
-  <color name="dshm_surface_container_high">#FFFFFF</color>
-  <color name="dshm_surface_container_highest">#E9E9E6</color>
-  <!-- 工作区「文件 / Git」槽式切换器语义色：浅色亮滑块浮于暖灰底槽之上 -->
-  <color name="dshm_segment_track_bg">#E9E9E6</color>
+  <color name="dshm_surface_container_low">#FFFFFF</color>
+  <color name="dshm_surface_container">#EEF2F8</color>
+  <color name="dshm_surface_container_high">#E4EBF5</color>
+  <color name="dshm_surface_container_highest">#DAE3F0</color>
+  <!-- 工作区「文件 / Git」槽式切换器语义色 -->
+  <color name="dshm_segment_track_bg">#E4EBF5</color>
   <color name="dshm_segment_selected_bg">#FFFFFF</color>
-  <!-- 顶部 / 底部渐隐遮罩：与 colorSurface 完全同色，避免 ?attr 在 gradient 中的兼容性问题 -->
-  <color name="dshm_scrim_surface">#FFF3F3F1</color>
-  <color name="dshm_scrim_transparent">#00F3F3F1</color>
-  <!-- 回底悬浮钮描边：浅色白底表格上仍需清晰可辨的 1dp 柔和轮廓 -->
-  <color name="dshm_scroll_button_stroke">#24111214</color>
-  <!-- 语义文本与容器色：三级文本、纯中性用户气泡、纸面代码块 -->
-  <color name="dshm_text_tertiary">#62656C</color>
-  <color name="dshm_bubble_bg">#E7E7E5</color>
-  <color name="dshm_code_bg">#EAEAE7</color>
-  <!-- 浅色代码块极淡 16% 描边 -->
-  <color name="dshm_code_stroke">#29111214</color>
-  <!-- 6% 极淡品牌绿雾：选中态只做轻微染色 -->
-  <color name="dshm_selected_tint">#10087F43</color>
-  <!-- 4% 极微弱底色：行内代码不再出现灰方块补丁 -->
-  <color name="dshm_inline_code_bg">#0B111214</color>
-  <!-- 极淡垂直时间线轨道色 -->
-  <color name="dshm_timeline_rail">#2E62656C</color>
-  <!-- 代码语法着色：浅色纸面下的柔和语义色，只用于代码块与工具详情 -->
-  <color name="dshm_syntax_comment">#62656C</color>
-  <color name="dshm_syntax_string">#2F6F4F</color>
-  <color name="dshm_syntax_keyword">#087F43</color>
-  <color name="dshm_syntax_number">#9A5700</color>
-  <color name="dshm_syntax_prompt">#087F43</color>
-  <color name="dshm_syntax_path">#3D5A80</color>
-  <!-- 运行态 / 关注态：运行绿与琥珀色在浅色纸面上保持足够对比 -->
-  <color name="dshm_running">#087F43</color>
-  <color name="dshm_attention">#9A5700</color>
-  <color name="dshm_attention_container">#FFF3DF</color>
-  <color name="dshm_on_attention_container">#3B2000</color>
-  <!-- Diff viewer 配色（N-04-02），浅色纸面下保持可读 -->
-  <color name="dshm_diff_add_bg">#E6F4EA</color>
-  <color name="dshm_diff_add_fg">#137333</color>
-  <color name="dshm_diff_del_bg">#FCE8E6</color>
-  <color name="dshm_diff_del_fg">#C5221F</color>
-  <color name="dshm_diff_hunk_bg">#E8F0FE</color>
-  <color name="dshm_diff_hunk_fg">#1967D2</color>
+  <!-- 语义文本、淡靛蓝用户气泡、工程代码块 -->
+  <color name="dshm_text_tertiary">#64748B</color>
+  <color name="dshm_bubble_bg">#E6EEF9</color>
+  <color name="dshm_code_bg">#EFF3F9</color>
+  <color name="dshm_code_stroke">#D4DFEE</color>
+  <!-- 8% 靛蓝选中态底色 -->
+  <color name="dshm_selected_tint">#141D4ED8</color>
+  <!-- 行内代码柔和底色 -->
+  <color name="dshm_inline_code_bg">#0F1E3A8A</color>
+  <!-- 垂直思考时间线轨道色 -->
+  <color name="dshm_timeline_rail">#4064748B</color>
+  <!-- 代码语法着色：浅色工作台高可读语义色 -->
+  <color name="dshm_syntax_comment">#64748B</color>
+  <color name="dshm_syntax_string">#15803D</color>
+  <color name="dshm_syntax_keyword">#1D4ED8</color>
+  <color name="dshm_syntax_number">#B45309</color>
+  <color name="dshm_syntax_prompt">#1D4ED8</color>
+  <color name="dshm_syntax_path">#334155</color>
+  <!-- 独立语义运行绿与关注琥珀色（与主品牌靛蓝彻底分离） -->
+  <color name="dshm_running">#15803D</color>
+  <color name="dshm_attention">#B45309</color>
+  <color name="dshm_attention_container">#FEF3C7</color>
+  <color name="dshm_on_attention_container">#451A03</color>
+  <!-- Diff viewer 配色（浅色） -->
+  <color name="dshm_diff_add_bg">#DCFCE7</color>
+  <color name="dshm_diff_add_fg">#15803D</color>
+  <color name="dshm_diff_del_bg">#FEE2E2</color>
+  <color name="dshm_diff_del_fg">#B91C1C</color>
+  <color name="dshm_diff_hunk_bg">#DBEAFE</color>
+  <color name="dshm_diff_hunk_fg">#1D4ED8</color>
   <bool name="dshm_light_bars">true</bool>
 </resources>
