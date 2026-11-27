@@ -779,7 +779,7 @@
     <string name="more_badge_unconfigured">未配置</string>
     <string name="more_badge_connected">已连接</string>
     <string name="more_badge_disconnected">未连接</string>
-    <string name="more_warmup_short_sub">回前台时静默预热，加快启动</string>
+    <string name="more_warmup_short_sub">静默预热加快启动；低电量或温控时自动跳过。</string>
     <string name="credentials_action_set_short">配置</string>
     <string name="plugins_filter_all">全部</string>
     <string name="plugins_filter_manageable">可管理</string>
