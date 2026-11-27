@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 工具调用分组（UI-S2 A2）：无外框轻量折叠头 + 更早步骤折叠行 + 步骤列表 + 去重文件胶囊 -->
+<!-- 工具调用分组（Polish-P2）：18dp 单色图标 + 单行汇总 + tnum 耗时 + 贯通 1dp 时间线轨道 -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
@@ -10,7 +10,7 @@
     android:paddingEnd="@dimen/dshm_page_margin"
     android:paddingBottom="4dp">
 
-    <!-- 折叠汇总头：图标 + 单行摘要 + 折叠箭头，点击展开 / 收起全部步骤 -->
+    <!-- 折叠汇总头：图标 + 单行摘要 + 真实耗时 + 折叠箭头，点击展开 / 收起全部步骤 -->
     <LinearLayout
         android:id="@+id/chat_tool_group_header"
         android:layout_width="match_parent"
@@ -24,8 +24,8 @@
 
         <ImageView
             android:id="@+id/chat_tool_group_icon"
-            android:layout_width="16dp"
-            android:layout_height="16dp"
+            android:layout_width="18dp"
+            android:layout_height="18dp"
             android:importantForAccessibility="no"
             android:src="@drawable/ic_terminal"
             app:tint="?attr/colorOnSurfaceVariant" />
@@ -37,10 +37,19 @@
             android:layout_marginStart="8dp"
             android:layout_weight="1"
             android:ellipsize="end"
-            android:fontFeatureSettings="tnum"
             android:maxLines="1"
-            android:textAppearance="?attr/textAppearanceBodySmall"
+            android:textAppearance="@style/TextAppearance.DshMobile.Secondary"
             android:textColor="?attr/colorOnSurfaceVariant" />
+
+        <TextView
+            android:id="@+id/chat_tool_group_duration"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="8dp"
+            android:fontFeatureSettings="tnum"
+            android:textAppearance="?attr/textAppearanceLabelSmall"
+            android:textColor="?attr/colorOnSurfaceVariant"
+            android:visibility="gone" />
 
         <ImageView
             android:id="@+id/chat_tool_group_chevron"
@@ -52,7 +61,7 @@
             app:tint="?attr/colorOnSurfaceVariant" />
     </LinearLayout>
 
-    <!-- 更早步骤折叠行：仅在步骤较多时由 Adapter 显示 -->
+    <!-- 更早步骤折叠行：保留兼容入口，当前产品行为由整组折叠头统一控制。 -->
     <LinearLayout
         android:id="@+id/chat_tool_group_earlier_row"
         android:layout_width="match_parent"
@@ -63,7 +72,7 @@
         android:focusable="true"
         android:gravity="center_vertical"
         android:orientation="horizontal"
-        android:paddingStart="24dp"
+        android:paddingStart="26dp"
         android:visibility="gone">
 
         <TextView
@@ -74,20 +83,38 @@
             android:textColor="?attr/colorPrimary" />
     </LinearLayout>
 
-    <!-- 步骤列表容器：由 Adapter 逐个填充 item_chat_tool_step -->
-    <LinearLayout
-        android:id="@+id/chat_tool_group_steps"
+    <!-- 子步骤共用一条与组头 18dp 图标中心对齐的 1dp 垂直轨道线。 -->
+    <FrameLayout
+        android:id="@+id/chat_tool_group_steps_wrap"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="2dp"
-        android:orientation="vertical" />
+        android:layout_marginTop="2dp">
+
+        <!-- 顶部 / 底部各收进 18dp，从首颗步骤图标中心起、到末颗图标中心止，
+             不再向上探进 18dp 图标边缘形成多余短线头。 -->
+        <View
+            android:id="@+id/chat_tool_group_rail"
+            android:layout_width="1dp"
+            android:layout_height="match_parent"
+            android:layout_gravity="top"
+            android:layout_marginStart="8dp"
+            android:layout_marginTop="18dp"
+            android:layout_marginBottom="18dp"
+            android:background="@color/dshm_timeline_rail" />
+
+        <LinearLayout
+            android:id="@+id/chat_tool_group_steps"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical" />
+    </FrameLayout>
 
     <!-- 去重后的工作区文件胶囊区：仅在存在安全相对路径时显示 -->
     <HorizontalScrollView
         android:id="@+id/chat_tool_group_files_scroll"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginStart="24dp"
+        android:layout_marginStart="26dp"
         android:layout_marginTop="4dp"
         android:clipToPadding="false"
         android:scrollbars="none"

@@ -454,13 +454,15 @@ internal sealed class ChatTimelineAdapter : RecyclerView.Adapter
                 _workspaceBar.Visibility = ViewStates.Gone;
             }
 
+            // Polish-P2：即使旧单步卡片被复用，也只允许 18dp 细线单色图标；
+            // 正常态统一 colorOnSurfaceVariant，仅失败步使用琥珀关注色，不再出现实心绿勾 / 红色圆点。
             var (phaseRes, iconRes, tintColor) = row.Phase switch
             {
-                ToolPhase.Completed => (Resource.String.chat_tool_status_completed, Resource.Drawable.ic_check_circle, new Color(ctx.GetColor(Resource.Color.dshm_running))),
-                ToolPhase.Error => (Resource.String.chat_tool_status_error, Resource.Drawable.ic_error, ResolveAttrColor(ctx, Resource.Attribute.colorError)),
-                ToolPhase.Cancelled => (Resource.String.chat_tool_status_cancelled, Resource.Drawable.ic_close, ResolveAttrColor(ctx, Resource.Attribute.colorOutline)),
-                ToolPhase.Running => (Resource.String.chat_tool_status_running, Resource.Drawable.ic_refresh, ResolveAttrColor(ctx, Resource.Attribute.colorPrimary)),
-                _ => (Resource.String.chat_tool_status_pending, Resource.Drawable.ic_history, ResolveAttrColor(ctx, Resource.Attribute.colorOutline)),
+                ToolPhase.Completed => (Resource.String.chat_tool_status_completed, Resource.Drawable.ic_check_circle, ResolveAttrColor(ctx, Resource.Attribute.colorOnSurfaceVariant)),
+                ToolPhase.Error => (Resource.String.chat_tool_status_error, Resource.Drawable.ic_error, new Color(ctx.GetColor(Resource.Color.dshm_attention))),
+                ToolPhase.Cancelled => (Resource.String.chat_tool_status_cancelled, Resource.Drawable.ic_close, ResolveAttrColor(ctx, Resource.Attribute.colorOnSurfaceVariant)),
+                ToolPhase.Running => (Resource.String.chat_tool_status_running, Resource.Drawable.ic_refresh, ResolveAttrColor(ctx, Resource.Attribute.colorOnSurfaceVariant)),
+                _ => (Resource.String.chat_tool_status_pending, Resource.Drawable.ic_history, ResolveAttrColor(ctx, Resource.Attribute.colorOnSurfaceVariant)),
             };
             _phaseText.SetText(phaseRes);
             _statusIcon.SetImageResource(iconRes);
@@ -477,28 +479,6 @@ internal sealed class ChatTimelineAdapter : RecyclerView.Adapter
             _output.Visibility = isOpen && _hasOutput ? ViewStates.Visible : ViewStates.Gone;
             _chevron.Rotation = isOpen ? 180f : 0f;
         }
-
-        private static int ResolveToolIcon(string toolName)
-        {
-            var lower = toolName.Trim().ToLowerInvariant();
-            if (lower.Contains("bash", StringComparison.Ordinal) || lower.Contains("shell", StringComparison.Ordinal) || lower.Contains("exec", StringComparison.Ordinal) || lower == "sh")
-            {
-                return Resource.Drawable.ic_terminal;
-            }
-            if (lower.Contains("read", StringComparison.Ordinal) || lower.Contains("view", StringComparison.Ordinal) || lower.Contains("cat", StringComparison.Ordinal))
-            {
-                return Resource.Drawable.ic_article;
-            }
-            if (lower.Contains("edit", StringComparison.Ordinal) || lower.Contains("write", StringComparison.Ordinal) || lower.Contains("patch", StringComparison.Ordinal))
-            {
-                return Resource.Drawable.ic_code;
-            }
-            if (lower.Contains("search", StringComparison.Ordinal) || lower.Contains("grep", StringComparison.Ordinal) || lower.Contains("glob", StringComparison.Ordinal) || lower.Contains("find", StringComparison.Ordinal))
-            {
-                return Resource.Drawable.ic_search;
-            }
-            return Resource.Drawable.ic_build;
-        }
     }
 
     /// <summary>
@@ -509,8 +489,10 @@ internal sealed class ChatTimelineAdapter : RecyclerView.Adapter
     {
         private readonly ImageView _icon;
         private readonly TextView _summary;
+        private readonly TextView _duration;
         private readonly ImageView _chevron;
         private readonly View _earlierRow;
+        private readonly View _stepsWrap;
         private readonly LinearLayout _steps;
         private readonly View _filesScroll;
         private readonly LinearLayout _filesContainer;
@@ -530,8 +512,10 @@ internal sealed class ChatTimelineAdapter : RecyclerView.Adapter
             _onOpenWorkspaceFile = onOpenWorkspaceFile;
             _icon = itemView.FindViewById<ImageView>(Resource.Id.chat_tool_group_icon)!;
             _summary = itemView.FindViewById<TextView>(Resource.Id.chat_tool_group_summary)!;
+            _duration = itemView.FindViewById<TextView>(Resource.Id.chat_tool_group_duration)!;
             _chevron = itemView.FindViewById<ImageView>(Resource.Id.chat_tool_group_chevron)!;
             _earlierRow = itemView.FindViewById(Resource.Id.chat_tool_group_earlier_row)!;
+            _stepsWrap = itemView.FindViewById(Resource.Id.chat_tool_group_steps_wrap)!;
             _steps = itemView.FindViewById<LinearLayout>(Resource.Id.chat_tool_group_steps)!;
             _filesScroll = itemView.FindViewById<View>(Resource.Id.chat_tool_group_files_scroll)!;
             _filesContainer = itemView.FindViewById<LinearLayout>(Resource.Id.chat_tool_group_files_container)!;
@@ -551,10 +535,19 @@ internal sealed class ChatTimelineAdapter : RecyclerView.Adapter
             _icon.SetImageResource(ResolveGroupIcon(group));
             var tint = group.HasError
                 ? new Color(ctx.GetColor(Resource.Color.dshm_attention))
-                : group.HasActive
-                    ? ResolveAttrColor(ctx, Resource.Attribute.colorPrimary)
-                    : ResolveAttrColor(ctx, Resource.Attribute.colorOnSurfaceVariant);
+                : ResolveAttrColor(ctx, Resource.Attribute.colorOnSurfaceVariant);
             _icon.ImageTintList = ColorStateList.ValueOf(tint);
+
+            if (ChatTimelineProjector.SumToolDurationsMs(group.Tools) is { } totalDurationMs)
+            {
+                _duration.Visibility = ViewStates.Visible;
+                _duration.Text = Rows.Fmt(ctx, Resource.String.chat_tool_duration_fmt, FormatDurationText(totalDurationMs));
+            }
+            else
+            {
+                _duration.Visibility = ViewStates.Gone;
+                _duration.Text = string.Empty;
+            }
 
             RenderFiles(group, ctx);
             ApplyGroupState();
@@ -594,6 +587,7 @@ internal sealed class ChatTimelineAdapter : RecyclerView.Adapter
                 ? !_expanded.Contains(_collapseKey)
                 : _expanded.Contains(_expandKey);
 
+            _stepsWrap.Visibility = isOpen ? ViewStates.Visible : ViewStates.Gone;
             _steps.Visibility = isOpen ? ViewStates.Visible : ViewStates.Gone;
             // 头部已统一为整组展开 / 折叠，旧的“更早步骤”分段入口不再需要。
             _earlierRow.Visibility = ViewStates.Gone;
@@ -665,14 +659,6 @@ internal sealed class ChatTimelineAdapter : RecyclerView.Adapter
 
         private static int ResolveGroupIcon(ToolGroupTimelineItem group)
         {
-            if (group.HasError)
-            {
-                return Resource.Drawable.ic_error;
-            }
-            if (group.HasActive)
-            {
-                return Resource.Drawable.ic_refresh;
-            }
             if (group.CategoryCounts.TryGetValue(ToolCategory.Edit, out var edits) && edits > 0)
             {
                 return Resource.Drawable.ic_code;
@@ -693,7 +679,10 @@ internal sealed class ChatTimelineAdapter : RecyclerView.Adapter
         }
     }
 
-    /// <summary>单个工具步骤：状态图标 + 人类可读摘要 + 真实耗时，点击展开美化参数与输出。</summary>
+    /// <summary>
+    /// 单个工具步骤：统一 18dp 单色线性图标 + 中文摘要 + 真实耗时；
+    /// 展开后把参数 / 命令与输出合并进同一张 14dp 圆角终端卡片。
+    /// </summary>
     private sealed class ToolStepView
     {
         private const int VisibleOutputLines = 12;
@@ -704,12 +693,12 @@ internal sealed class ChatTimelineAdapter : RecyclerView.Adapter
         private readonly TextView _duration;
         private readonly ImageView _chevron;
         private readonly View _detail;
-        private readonly TextView _args;
-        private readonly TextView _output;
+        private readonly TextView _detailText;
         private readonly MaterialButton _fullOutputButton;
         private readonly HashSet<string> _expanded;
         private string? _stepKey;
         private string _fullOutput = string.Empty;
+        private bool _hasDetail;
 
         public ToolStepView(View root, HashSet<string> expanded)
         {
@@ -720,8 +709,7 @@ internal sealed class ChatTimelineAdapter : RecyclerView.Adapter
             _duration = root.FindViewById<TextView>(Resource.Id.chat_tool_step_duration)!;
             _chevron = root.FindViewById<ImageView>(Resource.Id.chat_tool_step_chevron)!;
             _detail = root.FindViewById(Resource.Id.chat_tool_step_detail)!;
-            _args = root.FindViewById<TextView>(Resource.Id.chat_tool_step_args)!;
-            _output = root.FindViewById<TextView>(Resource.Id.chat_tool_step_output)!;
+            _detailText = root.FindViewById<TextView>(Resource.Id.chat_tool_step_detail_text)!;
             _fullOutputButton = root.FindViewById<MaterialButton>(Resource.Id.chat_tool_step_full_output_btn)!;
 
             root.FindViewById(Resource.Id.chat_tool_step_header)!.Click += (_, _) => ToggleExpanded();
@@ -736,9 +724,11 @@ internal sealed class ChatTimelineAdapter : RecyclerView.Adapter
             _stepKey = $"step:{callId}";
 
             var ctx = Root.Context!;
-            var (iconRes, tint) = ResolveStatus(tool, ctx);
-            _statusIcon.SetImageResource(iconRes);
-            _statusIcon.ImageTintList = ColorStateList.ValueOf(tint);
+            var isError = tool.Phase == ToolPhase.Error || tool.IsError;
+            _statusIcon.SetImageResource(ResolveToolIcon(tool.ToolName));
+            _statusIcon.ImageTintList = ColorStateList.ValueOf(isError
+                ? new Color(ctx.GetColor(Resource.Color.dshm_attention))
+                : ResolveAttrColor(ctx, Resource.Attribute.colorOnSurfaceVariant));
             _summary.Text = ChatTimelineProjector.FormatHumanReadableToolStep(tool);
 
             if (tool.DurationMs is { } durationMs && durationMs >= 100)
@@ -753,26 +743,37 @@ internal sealed class ChatTimelineAdapter : RecyclerView.Adapter
             }
 
             var args = ChatTimelineProjector.FormatBeautifiedToolArguments(tool);
-            _args.Text = args;
-            _args.Visibility = string.IsNullOrWhiteSpace(args) ? ViewStates.Gone : ViewStates.Visible;
-
             _fullOutput = tool.OutputSummary ?? string.Empty;
             var normalizedOutput = NormalizeNewLines(_fullOutput);
-            if (string.IsNullOrWhiteSpace(normalizedOutput))
+            var truncatedOutput = string.IsNullOrWhiteSpace(normalizedOutput)
+                ? string.Empty
+                : ChatTimelineProjector.TruncateLines(normalizedOutput, VisibleOutputLines);
+
+            var sections = new List<string>(2);
+            if (!string.IsNullOrWhiteSpace(args))
             {
-                _output.Text = string.Empty;
-                _output.Visibility = ViewStates.Gone;
-                _fullOutputButton.Visibility = ViewStates.Gone;
+                sections.Add(args);
+            }
+            if (!string.IsNullOrWhiteSpace(truncatedOutput))
+            {
+                sections.Add(truncatedOutput);
+            }
+            var detailText = string.Join("\n\n", sections);
+            _hasDetail = detailText.Length > 0;
+            if (_hasDetail)
+            {
+                // 终端卡片只高亮 `$ ` 命令行，stdout / stderr 保持中性原色。
+                ChatMarkdownBinder.ApplyTerminalSyntax(ctx, _detailText, detailText);
             }
             else
             {
-                var truncated = ChatTimelineProjector.TruncateLines(normalizedOutput, VisibleOutputLines);
-                _output.Text = truncated;
-                _output.Visibility = ViewStates.Visible;
-                _fullOutputButton.Visibility = string.Equals(truncated, normalizedOutput, StringComparison.Ordinal)
-                    ? ViewStates.Gone
-                    : ViewStates.Visible;
+                _detailText.Text = string.Empty;
             }
+
+            _fullOutputButton.Visibility = !string.IsNullOrWhiteSpace(normalizedOutput)
+                && !string.Equals(truncatedOutput, normalizedOutput, StringComparison.Ordinal)
+                ? ViewStates.Visible
+                : ViewStates.Gone;
 
             ApplyExpanded();
         }
@@ -794,7 +795,7 @@ internal sealed class ChatTimelineAdapter : RecyclerView.Adapter
         private void ApplyExpanded()
         {
             var isOpen = _stepKey is not null && _expanded.Contains(_stepKey);
-            _detail.Visibility = isOpen ? ViewStates.Visible : ViewStates.Gone;
+            _detail.Visibility = isOpen && _hasDetail ? ViewStates.Visible : ViewStates.Gone;
             _chevron.Rotation = isOpen ? 180f : 0f;
         }
 
@@ -808,36 +809,15 @@ internal sealed class ChatTimelineAdapter : RecyclerView.Adapter
             var ctx = Root.Context!;
             var content = LayoutInflater.From(ctx)!.Inflate(Resource.Layout.dialog_scrollable_text, null, false)!;
             var textView = content.FindViewById<TextView>(Resource.Id.dialog_scrollable_text)!;
-            textView.Text = _fullOutput;
             textView.Typeface = Typeface.Monospace;
             textView.SetTextSize(ComplexUnitType.Sp, 12f);
+            ChatMarkdownBinder.ApplyTerminalSyntax(ctx, textView, _fullOutput);
 
             new MaterialAlertDialogBuilder(ctx)
                 .SetTitle(Resource.String.chat_tool_full_output)!
                 .SetView(content)!
                 .SetPositiveButton(Android.Resource.String.Ok, (_, _) => { })!
                 .Show();
-        }
-
-        private static (int IconRes, Color Tint) ResolveStatus(ToolCallRow tool, Context ctx)
-        {
-            if (tool.Phase == ToolPhase.Error || tool.IsError)
-            {
-                return (Resource.Drawable.ic_error, new Color(ctx.GetColor(Resource.Color.dshm_attention)));
-            }
-            if (tool.Phase == ToolPhase.Completed)
-            {
-                return (Resource.Drawable.ic_check_circle, new Color(ctx.GetColor(Resource.Color.dshm_running)));
-            }
-            if (tool.Phase == ToolPhase.Running)
-            {
-                return (Resource.Drawable.ic_refresh, ResolveAttrColor(ctx, Resource.Attribute.colorPrimary));
-            }
-            if (tool.Phase == ToolPhase.Cancelled)
-            {
-                return (Resource.Drawable.ic_close, ResolveAttrColor(ctx, Resource.Attribute.colorOutline));
-            }
-            return (Resource.Drawable.ic_history, ResolveAttrColor(ctx, Resource.Attribute.colorOutline));
         }
     }
 
@@ -1053,6 +1033,39 @@ internal sealed class ChatTimelineAdapter : RecyclerView.Adapter
             _detail.Visibility = isOpen ? ViewStates.Visible : ViewStates.Gone;
             _chevron.Rotation = isOpen ? 180f : 0f;
         }
+    }
+
+    /// <summary>工具名到统一 18dp 单色线性图标的映射；仅失败步骤由调用方额外使用关注色。</summary>
+    private static int ResolveToolIcon(string toolName)
+    {
+        var lower = toolName.Trim().ToLowerInvariant();
+        if (lower.Contains("bash", StringComparison.Ordinal)
+            || lower.Contains("shell", StringComparison.Ordinal)
+            || lower.Contains("exec", StringComparison.Ordinal)
+            || lower == "sh")
+        {
+            return Resource.Drawable.ic_terminal;
+        }
+        if (lower.Contains("read", StringComparison.Ordinal)
+            || lower.Contains("view", StringComparison.Ordinal)
+            || lower.Contains("cat", StringComparison.Ordinal))
+        {
+            return Resource.Drawable.ic_article;
+        }
+        if (lower.Contains("edit", StringComparison.Ordinal)
+            || lower.Contains("write", StringComparison.Ordinal)
+            || lower.Contains("patch", StringComparison.Ordinal))
+        {
+            return Resource.Drawable.ic_code;
+        }
+        if (lower.Contains("search", StringComparison.Ordinal)
+            || lower.Contains("grep", StringComparison.Ordinal)
+            || lower.Contains("glob", StringComparison.Ordinal)
+            || lower.Contains("find", StringComparison.Ordinal))
+        {
+            return Resource.Drawable.ic_search;
+        }
+        return Resource.Drawable.ic_build;
     }
 
     /// <summary>统一换行符，保证代码 / 输出行数与截断判断一致。</summary>

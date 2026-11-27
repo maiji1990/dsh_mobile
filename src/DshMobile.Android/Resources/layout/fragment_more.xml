@@ -17,9 +17,10 @@
             android:id="@+id/more_toolbar"
             style="@style/Widget.DshMobile.Toolbar.InAppBar"
             android:layout_width="match_parent"
-            android:layout_height="?attr/actionBarSize"
+            android:layout_height="72dp"
             app:menu="@menu/more_toolbar"
-            app:title="@string/more_title" />
+            app:title="@string/more_title"
+            app:titleTextAppearance="@style/TextAppearance.DshMobile.LargeTitle" />
 
         <com.google.android.material.progressindicator.LinearProgressIndicator
             android:id="@+id/more_progress"
@@ -136,7 +137,9 @@
                     <com.google.android.material.divider.MaterialDivider
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:layout_marginStart="56dp" />
+                        app:dividerColor="?attr/colorOutlineVariant"
+                        app:dividerInsetEnd="16dp"
+                        app:dividerInsetStart="56dp" />
 
                     <include
                         android:id="@+id/more_row_plugins"
@@ -145,7 +148,9 @@
                     <com.google.android.material.divider.MaterialDivider
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:layout_marginStart="56dp" />
+                        app:dividerColor="?attr/colorOutlineVariant"
+                        app:dividerInsetEnd="16dp"
+                        app:dividerInsetStart="56dp" />
 
                     <include
                         android:id="@+id/more_row_automation"
@@ -154,7 +159,9 @@
                     <com.google.android.material.divider.MaterialDivider
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:layout_marginStart="56dp" />
+                        app:dividerColor="?attr/colorOutlineVariant"
+                        app:dividerInsetEnd="16dp"
+                        app:dividerInsetStart="56dp" />
 
                     <include
                         android:id="@+id/more_row_remote"
@@ -187,7 +194,9 @@
                     <com.google.android.material.divider.MaterialDivider
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:layout_marginStart="56dp" />
+                        app:dividerColor="?attr/colorOutlineVariant"
+                        app:dividerInsetEnd="16dp"
+                        app:dividerInsetStart="56dp" />
 
                     <include
                         android:id="@+id/more_row_warmup"
@@ -220,7 +229,21 @@
                     <com.google.android.material.divider.MaterialDivider
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:layout_marginStart="56dp" />
+                        app:dividerColor="?attr/colorOutlineVariant"
+                        app:dividerInsetEnd="16dp"
+                        app:dividerInsetStart="56dp" />
+
+                    <!-- Polish-P3 外观入口：右侧淡灰文字实时显示跟随系统 / 浅色 / 深色。 -->
+                    <include
+                        android:id="@+id/more_row_appearance"
+                        layout="@layout/view_setting_nav_row" />
+
+                    <com.google.android.material.divider.MaterialDivider
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        app:dividerColor="?attr/colorOutlineVariant"
+                        app:dividerInsetEnd="16dp"
+                        app:dividerInsetStart="56dp" />
 
                     <include
                         android:id="@+id/more_row_licenses"
@@ -230,8 +253,10 @@
                         android:id="@+id/more_developer_divider"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:layout_marginStart="56dp"
-                        android:visibility="gone" />
+                        android:visibility="gone"
+                        app:dividerColor="?attr/colorOutlineVariant"
+                        app:dividerInsetEnd="16dp"
+                        app:dividerInsetStart="56dp" />
 
                     <include
                         android:id="@+id/more_row_developer"

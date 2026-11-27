@@ -1,28 +1,32 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Markdown 表格块（UI-S1）：通栏卡片 + 横向滚动，右缘使用渐隐提示避免硬裁切 -->
+<!-- Markdown 表格块（Polish-P2）：14dp 圆角纸面卡片 + 7% hairline 描边，保留 StretchAllColumns 与 fillViewport。 -->
 <com.google.android.material.card.MaterialCardView xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
-    style="@style/Widget.Material3.CardView.Outlined"
+    style="@style/Widget.Material3.CardView.Filled"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:layout_marginTop="4dp"
     android:layout_marginBottom="8dp"
     app:cardBackgroundColor="?attr/colorSurfaceContainerLow"
-    app:cardCornerRadius="@dimen/dshm_radius_block"
-    app:strokeColor="?attr/colorOutlineVariant">
+    app:cardCornerRadius="@dimen/dshm_code_radius"
+    app:cardElevation="0dp"
+    app:strokeColor="?attr/colorOutlineVariant"
+    app:strokeWidth="@dimen/dshm_hairline">
 
+    <!-- 去掉卡片内侧 8dp 白边：极淡表头直接贴齐圆角卡片顶缘；单元格自带 10dp 内边距，
+         同时隐藏粗灰横向滚动条，避免压住卡片底边。 -->
     <HorizontalScrollView
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:fadingEdgeLength="24dp"
         android:fillViewport="true"
         android:requiresFadingEdge="horizontal"
-        android:scrollbars="horizontal">
+        android:scrollbars="none">
 
         <TableLayout
             android:id="@+id/table_block_grid"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:padding="8dp" />
+            android:padding="0dp" />
     </HorizontalScrollView>
 </com.google.android.material.card.MaterialCardView>

@@ -60,6 +60,7 @@ public sealed class ChatsFragment : Fragment, ITabRoot, SessionActionsBottomShee
     private TextView _updateBannerTitle = null!;
     private TextView _updateBannerDetail = null!;
     private IMenuItem? _stopMenuItem;
+    private IMenuItem? _inboxMenuItem;
     private View _webInvCard = null!;
     private TextView _webInvSummary = null!;
     private View _searchLayout = null!;
@@ -73,7 +74,10 @@ public sealed class ChatsFragment : Fragment, ITabRoot, SessionActionsBottomShee
     private RecyclerView _list = null!;
     private View _empty = null!;
     private TextView _emptyText = null!;
-    private ExtendedFloatingActionButton _newFab = null!;
+    private View _workspaceBar = null!;
+    private FloatingActionButton _newFab = null!;
+    private bool _hostReady;
+    private bool _fabHiddenByScroll;
     private SessionFilterMode _filterMode = SessionFilterMode.All;
     private HomeStatus? _shownStatus;
     private UpdatePlan? _bannerPlan;
@@ -91,12 +95,23 @@ public sealed class ChatsFragment : Fragment, ITabRoot, SessionActionsBottomShee
         var toolbar = view.FindViewById<MaterialToolbar>(Resource.Id.chats_toolbar)!;
         _stopMenuItem = toolbar.Menu?.FindItem(Resource.Id.chats_menu_stop_dsh);
         _stopMenuItem?.SetVisible(false);
+        _inboxMenuItem = toolbar.Menu?.FindItem(Resource.Id.chats_menu_inbox);
+        _inboxMenuItem?.SetVisible(false);
         toolbar.MenuItemClick += (_, e) =>
         {
             var id = e.Item?.ItemId ?? 0;
             if (id == Resource.Id.chats_menu_search)
             {
                 ToggleSearch();
+            }
+            else if (id == Resource.Id.chats_menu_inbox)
+            {
+                OpenInboxSheet();
+            }
+            else if (id == Resource.Id.chats_menu_settings)
+            {
+                // Polish-P3：手机端无底栏后，顶栏齿轮是进入设置页的唯一主入口。
+                (Activity as MainActivity)?.OpenTab(Resource.Id.nav_more);
             }
             else if (id == Resource.Id.chats_menu_refresh)
             {
@@ -213,6 +228,8 @@ public sealed class ChatsFragment : Fragment, ITabRoot, SessionActionsBottomShee
             OpenPendingChat,
             OpenInboxSheet);
         _list.SetAdapter(_adapter);
+        // Polish-P3：圆形 FAB 无 Extended 的收缩态，改为下滑隐藏、上滑/回顶显示。
+        _list.AddOnScrollListener(new FabScrollListener(this));
         new ItemTouchHelper(new SwipeToActionsCallback(_adapter, ShowSessionActionsSheet)).AttachToRecyclerView(_list);
 
         _empty = view.FindViewById(Resource.Id.chats_empty)!;
@@ -220,12 +237,18 @@ public sealed class ChatsFragment : Fragment, ITabRoot, SessionActionsBottomShee
         _emptyText = _empty.FindViewById<TextView>(Resource.Id.empty_text)!;
         _emptyText.SetText(Resource.String.chats_empty);
 
-        _newFab = view.FindViewById<ExtendedFloatingActionButton>(Resource.Id.chats_new_fab)!;
+        _newFab = view.FindViewById<FloatingActionButton>(Resource.Id.chats_new_fab)!;
         _newFab.Click += (_, _) => _ = CreateAndOpenSessionAsync();
-        _list.AddOnScrollListener(new FabScrollListener(_newFab));
+
+        // Polish-P3：底部工作区悬浮条直达 FilesFragment；宽屏下由 OnShellWidthChanged 自动隐藏。
+        _workspaceBar = view.FindViewById(Resource.Id.chats_workspace_bar)!;
+        _workspaceBar.Click += (_, _) => (Activity as MainActivity)?.OpenTab(Resource.Id.nav_files);
+        _workspaceBar.Visibility = IsWideShell ? ViewStates.Gone : ViewStates.Visible;
 
         Edges.ClampMaxWidth(_list, _filterBar, _cachedSubheader);
         Edges.ClampMaxWidthByMargin(_hostBanner, _failureCard, _updateBanner, _webInvCard, _searchLayout);
+        // Polish-P3：宽屏内容限宽同时作用于底部悬浮工作区条与圆形 FAB，避免两者贴到屏幕最右缘。
+        Edges.ClampMaxWidthByMargin(_workspaceBar, _newFab);
 
         return view;
     }
@@ -253,8 +276,59 @@ public sealed class ChatsFragment : Fragment, ITabRoot, SessionActionsBottomShee
         base.OnHiddenChanged(hidden);
         if (!hidden)
         {
+            UpdateWorkspaceBar();
             Render(_vm.State);
             _ = RefreshIfReadyAsync();
+        }
+    }
+
+    /// <summary>Polish-P3：宽度切换时同步底部工作区悬浮条；宽屏双栏无需该入口。</summary>
+    public void OnShellWidthChanged(bool wide) => UpdateWorkspaceBar(wide);
+
+    private bool IsWideShell => Activity is MainActivity main && main.IsWideLayout;
+
+    private void UpdateWorkspaceBar(bool? wide = null)
+    {
+        if (_workspaceBar is not null)
+        {
+            _workspaceBar.Visibility = (wide ?? IsWideShell) ? ViewStates.Gone : ViewStates.Visible;
+        }
+    }
+
+    /// <summary>Polish-P3：FAB 仅在宿主就绪时随滚动收起/展开，避免盖住列表末尾。</summary>
+    private void HideFabByScroll()
+    {
+        if (!_hostReady || _fabHiddenByScroll)
+        {
+            return;
+        }
+        _fabHiddenByScroll = true;
+        _newFab.Hide();
+    }
+
+    private void ShowFabByScroll()
+    {
+        if (!_hostReady || !_fabHiddenByScroll)
+        {
+            return;
+        }
+        _fabHiddenByScroll = false;
+        _newFab.Show();
+    }
+
+    private sealed class FabScrollListener(ChatsFragment owner) : RecyclerView.OnScrollListener
+    {
+        public override void OnScrolled(RecyclerView recyclerView, int dx, int dy)
+        {
+            base.OnScrolled(recyclerView, dx, dy);
+            if (dy > 8)
+            {
+                owner.HideFabByScroll();
+            }
+            else if (dy < -8 || !recyclerView.CanScrollVertically(-1))
+            {
+                owner.ShowFabByScroll();
+            }
         }
     }
 
@@ -309,14 +383,18 @@ public sealed class ChatsFragment : Fragment, ITabRoot, SessionActionsBottomShee
 
         _progress.Visibility = state.IsLoading ? ViewStates.Visible : ViewStates.Gone;
         _stopMenuItem?.SetVisible(hostReady && !_bridge.IsBusy);
+        var inboxTotal = _bridge.Agent.Inbox.State.TotalCount;
+        _inboxMenuItem?.SetVisible(inboxTotal > 0);
         _newFab.Enabled = hostReady;
-        if (hostReady)
+        _hostReady = hostReady;
+        if (!hostReady)
+        {
+            _fabHiddenByScroll = false;
+            _newFab.Hide();
+        }
+        else if (!_fabHiddenByScroll)
         {
             _newFab.Show();
-        }
-        else
-        {
-            _newFab.Hide();
         }
 
         RenderStatusSlot(ctx, status, hostReady);
@@ -325,24 +403,15 @@ public sealed class ChatsFragment : Fragment, ITabRoot, SessionActionsBottomShee
         var liveSessions = state.Sessions;
         var runningCount = liveSessions.Count(s => s.Running);
         var pendingTotal = liveSessions.Count(s => s.PendingRequestCount > 0);
-        var showFilters = hostReady && (runningCount > 0 || pendingTotal > 0);
-        _filterBar.Visibility = showFilters ? ViewStates.Visible : ViewStates.Gone;
-        if (showFilters)
-        {
-            _filterRunning.Visibility = runningCount > 0 ? ViewStates.Visible : ViewStates.Gone;
-            _filterPending.Visibility = pendingTotal > 0 ? ViewStates.Visible : ViewStates.Gone;
-            if (pendingTotal > 0)
-            {
-                _filterPending.Text = Rows.Fmt(ctx, Resource.String.chats_filter_pending_fmt, pendingTotal);
-            }
-            if ((_filterMode == SessionFilterMode.Running && runningCount == 0)
-                || (_filterMode == SessionFilterMode.Pending && pendingTotal == 0))
-            {
-                _filterMode = SessionFilterMode.All;
-                _filterAll.Checked = true;
-            }
-        }
-        else if (_filterMode != SessionFilterMode.All)
+        // Polish-P3：胶囊条常驻，连接状态与三个柔和筛选始终在同一行，不再随运行态整行闪现。
+        _filterBar.Visibility = ViewStates.Visible;
+        _filterRunning.Visibility = ViewStates.Visible;
+        _filterPending.Visibility = ViewStates.Visible;
+        _filterPending.Text = pendingTotal > 0
+            ? Rows.Fmt(ctx, Resource.String.chats_filter_pending_fmt, pendingTotal)
+            : GetString(Resource.String.chats_filter_pending);
+        if ((_filterMode == SessionFilterMode.Running && runningCount == 0)
+            || (_filterMode == SessionFilterMode.Pending && pendingTotal == 0))
         {
             _filterMode = SessionFilterMode.All;
             _filterAll.Checked = true;
@@ -856,26 +925,6 @@ public sealed class ChatsFragment : Fragment, ITabRoot, SessionActionsBottomShee
             if (item is not null)
             {
                 onMore(item);
-            }
-        }
-    }
-
-    private sealed class FabScrollListener(ExtendedFloatingActionButton fab) : RecyclerView.OnScrollListener
-    {
-        public override void OnScrolled(RecyclerView recyclerView, int dx, int dy)
-        {
-            base.OnScrolled(recyclerView, dx, dy);
-            if (dy > 6 && fab.Extended)
-            {
-                fab.Shrink();
-            }
-            else if (dy < -6 && !fab.Extended)
-            {
-                fab.Extend();
-            }
-            else if (!recyclerView.CanScrollVertically(-1) && !fab.Extended)
-            {
-                fab.Extend();
             }
         }
     }

@@ -70,6 +70,8 @@ public sealed class MainActivity : AppCompatActivity
     private bool _wide;
     private int _tab = Resource.Id.nav_chats;
     private int _inboxRenderPosted;
+    /// <summary>Polish-P3：程序化同步底部 / 侧轨选中态时抑制递归的 ItemSelected 回调。</summary>
+    private bool _switchingTabs;
 
     /// <summary>构造从原生聊天等页面直达工作区文件预览或 Git Diff 的 Intent（N-06-02）。</summary>
     public static Intent CreateWorkspaceIntent(Context context, string relativePath, bool openGitDiff) =>
@@ -79,8 +81,42 @@ public sealed class MainActivity : AppCompatActivity
             .PutExtra(ExtraWorkspacePath, relativePath)
             .PutExtra(ExtraOpenGitDiff, openGitDiff);
 
-    /// <summary>The navigation that is shown now.</summary>
-    private NavigationBarView Nav => _wide ? _rail : _bar;
+    /// <summary>Polish-P3：窄屏隐藏底部 3-Tab，子页据此显示返回首页箭头；宽屏保留侧轨双栏。</summary>
+    public bool IsWideLayout => _wide;
+
+    /// <summary>
+    /// Polish-P3：公开的轻量导航入口。首页设置图标切到 MoreFragment、底部工作区胶囊切到 FilesFragment，
+    /// 以及返回键/深链都走这里，保持底部占位导航与可见侧轨的选中态一致。
+    /// </summary>
+    public void OpenTab(int navId)
+    {
+        var target = Tabs.Any(t => t.Id == navId) ? navId : Resource.Id.nav_chats;
+        if (_tab != target)
+        {
+            Show(target);
+        }
+        SelectNav(target);
+    }
+
+    /// <summary>同步两个导航控件的选中态；底部栏在窄屏仅作为不可见状态载体，不参与布局高度。</summary>
+    private void SelectNav(int id)
+    {
+        _switchingTabs = true;
+        try
+        {
+            foreach (NavigationBarView nav in new NavigationBarView[] { _bar, _rail })
+            {
+                if (nav.SelectedItemId != id)
+                {
+                    nav.SelectedItemId = id;
+                }
+            }
+        }
+        finally
+        {
+            _switchingTabs = false;
+        }
+    }
 
     /// <summary>UI-S6：当前是否处于「宽屏 + 会话页签」的列表-详情双栏模式。</summary>
     public bool IsWideChatsDualPane => _wide && _tab == Resource.Id.nav_chats;
@@ -149,10 +185,11 @@ public sealed class MainActivity : AppCompatActivity
         {
             var bars = insets.GetInsets(WindowInsetsCompat.Type.SystemBars() | WindowInsetsCompat.Type.DisplayCutout())!;
             var ime = Edges.ImeVisible(insets);
-            // The bottom bar pads itself for the navigation bar; with the rail the root does. With the keyboard up the
-            // bottom bar is hidden and the tab ends at the keyboard (the rail stays: it takes no rows).
-            v.SetPadding(bars.Left, bars.Top, bars.Right, _wide && !ime ? bars.Bottom : 0);
-            _bar.Visibility = _wide || ime ? ViewStates.Gone : ViewStates.Visible;
+            // Polish-P3：窄屏不再有底部导航栏，根布局直接避让系统导航栏；宽屏仍由根布局避让。
+            // 键盘弹起时交给 tab_content 避让 IME，避免底部双重留白。
+            v.SetPadding(bars.Left, bars.Top, bars.Right, ime ? 0 : bars.Bottom);
+            // 底部 3-Tab 在窄屏彻底退出布局（Gone 不占高度），宽屏仅显示左侧 NavigationRailView。
+            _bar.Visibility = ViewStates.Gone;
             _rail.Visibility = _wide ? ViewStates.Visible : ViewStates.Gone;
             content.SetPadding(0, 0, 0, ime ? insets.GetInsets(WindowInsetsCompat.Type.Ime())!.Bottom : 0);
             return insets;
@@ -164,12 +201,17 @@ public sealed class MainActivity : AppCompatActivity
             nav.ItemSelected += (_, e) =>
             {
                 e.Handled = true;
+                if (_switchingTabs)
+                {
+                    return;
+                }
                 Show(e.Item.ItemId);
             };
             nav.ItemReselected += (_, e) => (Current() as ITabRoot)?.OnReselected();
         }
         ApplyWidth(Resources!.Configuration!);
         Show(_tab);
+        SelectNav(_tab);
         if (savedInstanceState is null)
         {
             ApplyNavigationIntent(Intent);
@@ -275,14 +317,7 @@ public sealed class MainActivity : AppCompatActivity
         var targetTab = intent.GetIntExtra(ExtraNavTab, 0);
         if (Tabs.Any(t => t.Id == targetTab))
         {
-            if (Nav.SelectedItemId != targetTab)
-            {
-                Nav.SelectedItemId = targetTab;
-            }
-            else
-            {
-                Show(targetTab);
-            }
+            OpenTab(targetTab);
         }
         var workspacePath = intent.GetStringExtra(ExtraWorkspacePath);
         if (!string.IsNullOrWhiteSpace(workspacePath) &&
@@ -328,18 +363,29 @@ public sealed class MainActivity : AppCompatActivity
         LocalNetworkAccess.OnRequestResult(requestCode, grantResults);
     }
 
-    /// <summary>Rail or bottom bar for this width; the shown one gets the current tab, then the insets are re-applied.</summary>
+    /// <summary>Rail or hidden bottom bar for this width; both stay on the current tab, then insets are re-applied.</summary>
     private void ApplyWidth(Android.Content.Res.Configuration config)
     {
         _wide = config.ScreenWidthDp >= RailMinWidthDp;
         _rail.Visibility = _wide ? ViewStates.Visible : ViewStates.Gone;
-        _bar.Visibility = _wide ? ViewStates.Gone : ViewStates.Visible;
-        if (Nav.SelectedItemId != _tab)
-        {
-            Nav.SelectedItemId = _tab;
-        }
+        // Polish-P3：底部 3-Tab 在窄屏也保持 Gone，仅保留侧轨在宽屏出现。
+        _bar.Visibility = ViewStates.Gone;
+        SelectNav(_tab);
         ApplyChatPanes();
+        NotifyShellWidth();
         ViewCompat.RequestApplyInsets(_root);
+    }
+
+    /// <summary>Polish-P3：把宽窄变化广播给已存在的页签，让子页顶栏返回箭头与会话页悬浮工作区条即时切换。</summary>
+    private void NotifyShellWidth()
+    {
+        foreach (var (_, tag) in Tabs)
+        {
+            if (SupportFragmentManager.FindFragmentByTag(tag) is ITabRoot root)
+            {
+                root.OnShellWidthChanged(_wide);
+            }
+        }
     }
 
     /// <summary>
@@ -447,14 +493,9 @@ public sealed class MainActivity : AppCompatActivity
         tx.CommitNow();
         _tab = id;
         ApplyChatPanes();
-        // Keep the hidden navigation on the same tab for the next width change (no listener runs for an equal id).
-        foreach (NavigationBarView nav in new NavigationBarView[] { _bar, _rail })
-        {
-            if (nav != Nav && nav.SelectedItemId != id)
-            {
-                nav.Menu.FindItem(id)?.SetChecked(true);
-            }
-        }
+        // 保持不可见的底部状态载体与可见侧轨同步到同一页签。
+        SelectNav(id);
+        (fm.FindFragmentByTag(Tabs.First(t => t.Id == id).Tag) as ITabRoot)?.OnShellWidthChanged(_wide);
     }
 
     private static AndroidX.Fragment.App.Fragment Create(int id) => id switch
@@ -482,7 +523,8 @@ public sealed class MainActivity : AppCompatActivity
             }
             if (owner._tab != Resource.Id.nav_chats)
             {
-                owner.Nav.SelectedItemId = Resource.Id.nav_chats;
+                // Polish-P3：窄屏子页返回首页同样走 OpenTab，保证底部状态载体与侧轨同步且无残影。
+                owner.OpenTab(Resource.Id.nav_chats);
                 return;
             }
             Enabled = false;
@@ -500,6 +542,11 @@ public interface ITabRoot
 
     /// <summary>The tab's item was tapped again (scroll to top, refresh, …).</summary>
     void OnReselected()
+    {
+    }
+
+    /// <summary>Polish-P3：窄屏 / 宽屏切换时同步子页顶栏返回箭头与首页悬浮工作区条。</summary>
+    void OnShellWidthChanged(bool wide)
     {
     }
 }

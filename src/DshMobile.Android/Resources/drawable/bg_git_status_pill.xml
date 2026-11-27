@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Polish-P3 Git 状态胶囊：完全圆角，语义底色由 GitAdapters 通过 BackgroundTintList 注入。 -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <corners android:radius="999dp" />
+    <solid android:color="@android:color/white" />
+</shape>

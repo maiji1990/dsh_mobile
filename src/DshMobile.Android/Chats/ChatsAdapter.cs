@@ -396,36 +396,42 @@ internal sealed class ChatsAdapter : RecyclerView.Adapter
         {
             _bound = item;
             var context = ItemView.Context!;
-            _title.Text = ChatDisplayFormatter.FormatShortSessionTitle(
-                item.SessionId,
-                item.DisplayTitle,
-                context.GetString(Resource.String.chats_untitled_prefix) ?? string.Empty);
+            var untitledPrefix = context.GetString(Resource.String.chats_untitled_prefix) ?? string.Empty;
+            var formatted = ChatDisplayFormatter.FormatShortSessionTitle(item.SessionId, item.DisplayTitle, untitledPrefix);
+            // Polish-P3：未命名会话不再在列表暴露 #bcce5e / #16870c 哈希后缀，统一显示「新对话」；
+            // 短 ID 仍保留在长按 SessionActionsBottomSheet 中查看。
+            var isUntitled = !string.IsNullOrWhiteSpace(untitledPrefix)
+                && formatted.StartsWith(untitledPrefix, StringComparison.Ordinal);
+            _title.Text = isUntitled
+                ? context.GetString(Resource.String.chats_untitled_short) ?? formatted
+                : formatted;
             _title.SetTextColor(new Android.Graphics.Color(Rows.Color(
                 _title,
                 isActive ? Resource.Attribute.colorPrimary : Resource.Attribute.colorOnSurface)));
 
             _runningDot.Visibility = item.Running ? ViewStates.Visible : ViewStates.Gone;
-            _time.Text = ChatDisplayFormatter.FormatRelativeSessionTime(item.UpdatedAtUnixMs, DateTimeOffset.Now);
+            var time = ChatDisplayFormatter.FormatRelativeSessionTime(item.UpdatedAtUnixMs, DateTimeOffset.Now);
+            _time.Text = time;
+            _time.Visibility = string.IsNullOrEmpty(time) ? ViewStates.Gone : ViewStates.Visible;
 
-            _meta.Text = BuildMetaLine(context, item);
+            var meta = BuildMetaLine(context, item);
+            _meta.Text = meta;
+            _meta.Visibility = string.IsNullOrEmpty(meta) ? ViewStates.Gone : ViewStates.Visible;
         }
 
+        /// <summary>
+        /// Polish-P3 净化副标题：绝不机械拼接 <c>projects · standard</c>。
+        /// 仅展示简洁目录名、运行 / 待办状态、子会话，以及非 standard/default 的自定义 AgentPreset。
+        /// </summary>
         private static string BuildMetaLine(Context context, SessionListItemView item)
         {
-            var segments = new List<string>(5);
+            var segments = new List<string>(4);
             var workspace = ChatDisplayFormatter.ExtractLastPathSegment(item.Cwd);
             if (!string.IsNullOrWhiteSpace(workspace))
             {
                 segments.Add(workspace);
             }
-            if (!string.IsNullOrWhiteSpace(item.AgentPreset))
-            {
-                segments.Add(item.AgentPreset!.Trim());
-            }
-            if (!string.IsNullOrWhiteSpace(item.Origin))
-            {
-                segments.Add(item.Origin!.Trim());
-            }
+
             if (item.PendingRequestCount > 0)
             {
                 segments.Add(Rows.Fmt(context, Resource.String.chats_badge_pending, item.PendingRequestCount));
@@ -434,12 +440,26 @@ internal sealed class ChatsAdapter : RecyclerView.Adapter
             {
                 segments.Add(context.GetString(Resource.String.chats_badge_running) ?? string.Empty);
             }
+
             if (!string.IsNullOrWhiteSpace(item.ParentSessionId))
             {
                 segments.Add(context.GetString(Resource.String.chats_badge_subagent) ?? string.Empty);
             }
 
-            return segments.Count > 0 ? string.Join(" · ", segments) : item.SessionId;
+            var preset = item.AgentPreset?.Trim();
+            if (!string.IsNullOrWhiteSpace(preset)
+                && !preset.Equals("standard", StringComparison.OrdinalIgnoreCase)
+                && !preset.Equals("default", StringComparison.OrdinalIgnoreCase))
+            {
+                segments.Add(preset);
+            }
+
+            if (!string.IsNullOrWhiteSpace(item.Origin))
+            {
+                segments.Add(item.Origin.Trim());
+            }
+
+            return string.Join(" · ", segments);
         }
     }
 }

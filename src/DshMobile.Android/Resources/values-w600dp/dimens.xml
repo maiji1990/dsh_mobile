@@ -7,7 +7,8 @@
     <dimen name="dshm_page_margin">24dp</dimen>
     <dimen name="dshm_chat_max_width">700dp</dimen>
     <dimen name="dshm_radius_sheet">28dp</dimen>
-    <dimen name="dshm_radius_composer">18dp</dimen>
+    <!-- Polish-P2：宽屏也保持 26dp 一体化 Composer 圆角，不再收窄为 18dp -->
+    <dimen name="dshm_radius_composer">26dp</dimen>
     <dimen name="dshm_radius_bubble">20dp</dimen>
     <dimen name="dshm_radius_card">16dp</dimen>
     <dimen name="dshm_radius_block">12dp</dimen>

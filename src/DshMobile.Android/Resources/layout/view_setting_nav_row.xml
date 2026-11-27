@@ -32,7 +32,7 @@
             android:id="@+id/row_title"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:textAppearance="?attr/textAppearanceBodyLarge"
+            android:textAppearance="@style/TextAppearance.DshMobile.RowTitle"
             android:textColor="?attr/colorOnSurface" />
 
         <TextView
@@ -45,12 +45,16 @@
             android:visibility="gone" />
     </LinearLayout>
 
+    <!-- Polish-P3：右侧不再使用灰底小胶囊，改为纯透明、右对齐的 Secondary 淡灰文字。 -->
     <TextView
         android:id="@+id/row_trailing_badge"
-        style="@style/Widget.DshMobile.Badge.Neutral"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_marginStart="8dp"
+        android:background="@null"
+        android:maxLines="1"
+        android:textAppearance="@style/TextAppearance.DshMobile.Secondary"
+        android:textColor="@color/dshm_text_tertiary"
         android:visibility="gone" />
 
     <ImageView

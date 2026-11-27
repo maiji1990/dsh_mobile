@@ -57,10 +57,12 @@ public sealed class FilesFragment : Fragment, ITabRoot, FileActionsBottomSheet.I
     private bool _menuIsSelection;
     private bool _searchExpanded;
     private string? _lastCrumbsKey;
+    private bool _isWide;
 
     private MaterialToolbar _toolbar = null!;
     private LinearProgressIndicator _filesProgress = null!;
-    private MaterialButtonToggleGroup _modeToggle = null!;
+    private MaterialButton _filesModeButton = null!;
+    private MaterialButton _gitModeButton = null!;
     private View _browserPane = null!;
     private View _gitPane = null!;
     private LinearProgressIndicator _gitProgress = null!;
@@ -95,14 +97,17 @@ public sealed class FilesFragment : Fragment, ITabRoot, FileActionsBottomSheet.I
         _lastCrumbsKey = null;
         _dir = savedInstanceState?.GetString("dir") ?? _dir;
         _gitMode = savedInstanceState?.GetBoolean("gitMode", false) ?? _gitMode;
+        _isWide = (Activity as MainActivity)?.IsWideLayout ?? false;
 
         _toolbar = view.FindViewById<MaterialToolbar>(Resource.Id.toolbar)!;
         _toolbar.SetTitle(Resource.String.files_title);
         _toolbar.MenuItemClick += (_, e) => OnMenu(e.Item?.ItemId ?? 0);
-        _toolbar.NavigationClick += (_, _) => OnBack();
+        // Polish-P3：统一交给 Activity 返回栈，窄屏由外壳从工作区平顺回到 ChatsFragment 首页。
+        _toolbar.NavigationClick += (_, _) => Activity?.OnBackPressedDispatcher?.OnBackPressed();
         _filesProgress = view.FindViewById<LinearProgressIndicator>(Resource.Id.files_progress)!;
 
-        _modeToggle = view.FindViewById<MaterialButtonToggleGroup>(Resource.Id.files_mode_toggle)!;
+        _filesModeButton = view.FindViewById<MaterialButton>(Resource.Id.files_mode_files)!;
+        _gitModeButton = view.FindViewById<MaterialButton>(Resource.Id.files_mode_git)!;
         _browserPane = view.FindViewById(Resource.Id.files_browser_pane)!;
         _gitPane = view.FindViewById(Resource.Id.files_git_pane)!;
         _gitProgress = view.FindViewById<LinearProgressIndicator>(Resource.Id.git_progress)!;
@@ -121,17 +126,10 @@ public sealed class FilesFragment : Fragment, ITabRoot, FileActionsBottomSheet.I
         _gitChangesAdapter = new GitChangesAdapter(OpenGitDiff);
         _gitChangesList.SetAdapter(_gitChangesAdapter);
 
-        _modeToggle.Check(_gitMode ? Resource.Id.files_mode_git : Resource.Id.files_mode_files);
-        view.FindViewById<MaterialButton>(Resource.Id.files_mode_files)!.Click += (_, _) =>
-        {
-            _modeToggle.Check(Resource.Id.files_mode_files);
-            SetGitMode(false);
-        };
-        view.FindViewById<MaterialButton>(Resource.Id.files_mode_git)!.Click += (_, _) =>
-        {
-            _modeToggle.Check(Resource.Id.files_mode_git);
-            SetGitMode(true);
-        };
+        // Polish-P4：两颗独立 MaterialButton 自行维护选中态，避免 ToggleGroup 切平内侧圆角。
+        UpdateModeSelection();
+        _filesModeButton.Click += (_, _) => SetGitMode(false);
+        _gitModeButton.Click += (_, _) => SetGitMode(true);
 
         _crumbs = view.FindViewById<LinearLayout>(Resource.Id.files_crumbs)!;
         _crumbsScroll = view.FindViewById<HorizontalScrollView>(Resource.Id.files_crumbs_scroll)!;
@@ -197,8 +195,10 @@ public sealed class FilesFragment : Fragment, ITabRoot, FileActionsBottomSheet.I
         _createFab.Click += (_, _) => ShowCreateSheet();
         _list.AddOnScrollListener(new FabScrollListener(_createFab));
 
+        // Polish-P4：切换器自带 18dp 圆角底槽背景，必须用外边距限宽（而不是加内边距限宽），
+        // 否则 ≥600dp 时底槽会被拉满整个内容宽、按钮被内边距居中，四周 3dp 留白不再均匀。
+        Edges.ClampMaxWidthByMargin(view.FindViewById(Resource.Id.files_mode_toggle));
         Edges.ClampMaxWidth(
-            view.FindViewById(Resource.Id.files_mode_toggle),
             view.FindViewById(Resource.Id.files_search_row),
             view.FindViewById(Resource.Id.files_crumbs_scroll),
             _list,
@@ -235,6 +235,7 @@ public sealed class FilesFragment : Fragment, ITabRoot, FileActionsBottomSheet.I
         base.OnHiddenChanged(hidden);
         if (!hidden)
         {
+            _isWide = (Activity as MainActivity)?.IsWideLayout ?? false;
             if (_gitMode)
             {
                 _ = LoadGitStatusAsync(_dir);
@@ -246,11 +247,20 @@ public sealed class FilesFragment : Fragment, ITabRoot, FileActionsBottomSheet.I
         }
     }
 
+    /// <summary>Polish-P3：窄屏始终显示返回首页箭头，宽屏仅在进入子目录 / 搜索 / 多选时显示向上箭头。</summary>
+    public void OnShellWidthChanged(bool wide)
+    {
+        _isWide = wide;
+        if (IsAdded && View is not null)
+        {
+            UpdateChrome();
+        }
+    }
+
     public bool OnBack()
     {
         if (_gitMode)
         {
-            _modeToggle.Check(Resource.Id.files_mode_files);
             SetGitMode(false);
             return true;
         }
@@ -342,15 +352,22 @@ public sealed class FilesFragment : Fragment, ITabRoot, FileActionsBottomSheet.I
         }
         else
         {
-            _modeToggle.Check(Resource.Id.files_mode_files);
             SetGitMode(false, triggerLoad: false);
             _ = OpenTargetFilePreviewAsync(parentDir, norm);
         }
     }
 
+    /// <summary>同步两颗独立滑块按钮的选中态；选中背景由 dshm_segment_bg 的 checked 状态驱动。</summary>
+    private void UpdateModeSelection()
+    {
+        _filesModeButton.Checked = !_gitMode;
+        _gitModeButton.Checked = _gitMode;
+    }
+
     private void SetGitMode(bool gitMode, bool triggerLoad = true)
     {
         _gitMode = gitMode;
+        UpdateModeSelection();
         ApplyModeVisibility();
         UpdateChrome();
         if (triggerLoad)
@@ -645,8 +662,8 @@ public sealed class FilesFragment : Fragment, ITabRoot, FileActionsBottomSheet.I
         if (_gitMode)
         {
             _toolbar.Subtitle = null;
-            // Git 页签只展示变更列表；Diff 在独立全屏审查页中查看，因此这里不再出现第二个返回箭头。
-            _toolbar.NavigationIcon = null;
+            // Git 页签只展示变更列表；Diff 在独立全屏审查页中查看。窄屏仍保留返回首页箭头。
+            ApplyToolbarNavigation();
             SyncMenu(isSelection: false, isGitMode: true);
             return;
         }
@@ -654,15 +671,7 @@ public sealed class FilesFragment : Fragment, ITabRoot, FileActionsBottomSheet.I
         _toolbar.Subtitle = _selected.Count > 0
             ? Rows.Fmt(ctx, Resource.String.files_selected, _selected.Count)
             : _searchQuery is { } q ? Rows.Fmt(ctx, Resource.String.files_search_title, q) : null;
-        if (_dir.Length == 0 && _searchQuery is null && _selected.Count == 0)
-        {
-            _toolbar.NavigationIcon = null;
-        }
-        else
-        {
-            _toolbar.SetNavigationIcon(_selected.Count > 0 ? Resource.Drawable.ic_close : Resource.Drawable.ic_arrow_back);
-            _toolbar.SetNavigationContentDescription(Resource.String.files_up);
-        }
+        ApplyToolbarNavigation();
 
         var sortName = GetString(_sort switch
         {
@@ -681,6 +690,36 @@ public sealed class FilesFragment : Fragment, ITabRoot, FileActionsBottomSheet.I
         {
             _pasteText.Text = Rows.Fmt(ctx, _clipCut ? Resource.String.files_clip_cut : Resource.String.files_clip_copy, _clip.Count);
         }
+    }
+
+    /// <summary>
+    /// Polish-P3：窄屏顶栏固定显示 ←（返回首页）；宽屏仅在工作区子目录 / 搜索 / 多选时显示向上箭头，
+    /// 顶栏不出现第二个返回箭头，点击统一交给 OnBackPressedDispatcher。
+    /// </summary>
+    private void ApplyToolbarNavigation()
+    {
+        if (_selected.Count > 0)
+        {
+            _toolbar.SetNavigationIcon(Resource.Drawable.ic_close);
+            _toolbar.SetNavigationContentDescription(Resource.String.files_clear_selection);
+            return;
+        }
+        if (!_isWide)
+        {
+            _toolbar.SetNavigationIcon(Resource.Drawable.ic_arrow_back);
+            // 根目录回首页，子目录先回上一级；无障碍描述跟随真实语义，不再一律播报「返回首页」。
+            _toolbar.SetNavigationContentDescription(_dir.Length == 0
+                ? Resource.String.shell_back_home
+                : Resource.String.files_up);
+            return;
+        }
+        if (_dir.Length == 0 && _searchQuery is null)
+        {
+            _toolbar.NavigationIcon = null;
+            return;
+        }
+        _toolbar.SetNavigationIcon(Resource.Drawable.ic_arrow_back);
+        _toolbar.SetNavigationContentDescription(Resource.String.files_up);
     }
 
     private void SyncMenu(bool isSelection, bool isGitMode)

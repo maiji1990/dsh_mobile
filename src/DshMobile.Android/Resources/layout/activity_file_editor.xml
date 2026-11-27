@@ -20,9 +20,7 @@
             android:layout_height="?attr/actionBarSize"
             app:menu="@menu/file_editor_toolbar"
             app:navigationIcon="@drawable/ic_arrow_back"
-            app:subtitleTextAppearance="?attr/textAppearanceBodySmall"
-            app:title="@string/files_editor_title"
-            app:titleTextAppearance="?attr/textAppearanceTitleMedium" />
+            app:title="@string/files_editor_title" />
 
         <com.google.android.material.progressindicator.LinearProgressIndicator
             android:id="@+id/editor_progress"

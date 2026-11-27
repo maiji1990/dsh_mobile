@@ -2,173 +2,222 @@
 
 <img src="docs/brand/dsh-mobile-logo.png" width="160" align="right" alt="DSH Mobile">
 
-在 Android 手机上本地运行 [DeepSeek Harness（DSH）](https://www.npmjs.com/package/@deepseek-ai/dsh) 的纯原生客户端，用 **.NET 11 for Android（C#）** 编写。
-DSH 原样运行在 App 私有目录里的 Debian 沙箱（PRoot）中。App 负责安装与启停运行环境，并通过 Material 3 原生会话界面提供流式对话、工具审批、工作区管理、手机操控与远程主机等能力。
+在 Android 设备上以纯原生体验运行官方 [DeepSeek Harness（DSH）](https://www.npmjs.com/package/@deepseek-ai/dsh) 的开源客户端，基于 **.NET 11 for Android（C#）**、**Material 3** 与 **NDK 27 自建 PRoot 沙箱** 构建，同时支持**本机沙箱**与**远程 SSH 主机**双模式。
 
-> **实验性项目**，与 DeepSeek、DSHBox 均无隶属关系，不是官方客户端。基于 .NET 11 SDK 构建。
-> 部分 C# 代码移植自 [DSHBox](https://github.com/WSK-build/DSHBox)（GPL-3.0，逐项登记于 [docs/UPSTREAMS.md](docs/UPSTREAMS.md)），不含其品牌资产。
+DSH 内核保持官方原样，不修改、不重写，通过 Cordis 插件、MCP 与官方 profile 扩展能力；全仓为纯 C# 原生实现，**零业务 WebView**（由 `NoBusinessWebViewGateTests` 永久门禁锁定），也不提供内置浏览器栈（`browser_*`）。
 
-## 功能
+> **实验性项目**：与 DeepSeek、DSHBox 均无隶属关系，非官方客户端。基于 .NET 11 SDK 构建。
+> 部分 C# 代码移植自 [DSHBox](https://github.com/WSK-build/DSHBox)（`v1.5.1`，GPL-3.0，逐项登记于 [docs/UPSTREAMS.md](docs/UPSTREAMS.md)），不包含其任何品牌资产。
 
-| | 说明 |
+---
+
+## 核心特性
+
+### 纯原生 Material 3 体验（V2 重塑）
+
+- **纯净中性 Graphite 双色盘**：默认采用低噪中性浅 / 深色体系与 `1dp` 极细分隔线；可在应用内「外观」设置切换 **跟随系统 / 浅色 / 深色**，并按需开启 Android 12+ 壁纸动态取色（默认关闭，以保持中性对比度）。
+- **自适应极简外壳**：手机端取消底部导航栏，直接以高密度「会话」首页作为主入口，顶栏可快速前往工作区与设置；平板与折叠屏（`≥600dp`）自动启用左侧 `NavigationRail` 与「会话列表 + 右栏详情」双栏布局，并在宽屏居中限宽。
+- **现代化流式对话**：
+  - 悬浮胶囊顶栏，单层承载标题、本机 / 远程连接状态与跨会话待办收件箱入口；
+  - 一体化 `26dp` 无硬描边 Composer，无缝融合图片附件、中文化斜杠命令（`/`）快捷 Tray 与内嵌模型 / 推理档位（Reasoning Effort）选择器；
+  - `16dp` 统一阅读基线、`1dp` 垂直时间线与同族工具聚合折叠（键值化参数展示，成功或失败均可整组折叠）；
+  - 非模态固定审批 / 问答底槽（支持多待办切换与 3 秒 Hold-to-undo 撤回），不挤占正文滚动；
+  - 原生轻量代码语法高亮、单元格限宽且可横向滚动的 Markdown 表格，以及 Cache-First 离线历史首屏回看。
+
+### 工作区、协作与系统能力
+
+| 能力 | 说明 |
 |---|---|
-| **本地运行 DSH 与原生会话** | 一键安装/启停沙箱内的官方 DSH，提供 Material 3 原生流式对话（Markdown/代码块/Diff、工具审批与撤销、问答、图片、斜杠命令、Cache-First 首屏、凭据与模型管理）；后台运行时通知栏常驻 |
-| **工作区与 Git** | 浏览工作区 `/root/projects`，SAF 导入导出、安全文本编辑、回收站撤销、压缩解压，以及只读 Git 状态与原生 Diff 查看器；`.dsh/` 双向受保护 |
-| **插件目录** | 原生 L0 状态清单与 L1 受控装卸/启停 |
-| **手机操控（实验）** | 让 DSH 通过 `ui_*` 工具读取和操作手机界面；每次写操作都需要你本人批准 |
-| **远程主机** | 通过 SSH 连接电脑或服务器上的 DSH：端口转发、远端 DSH 启停与原生对话 |
-| **运行环境维护与治理** | 在线签名更新/回滚、离线导入、32 幻影进程预算预警、后台租约与空闲优雅停机 |
+| **工作区与独立全屏 Diff 审查** | 浏览 `/root/projects`、自动发现一级 `.git` 子仓库；支持 SAF 按次导入导出、冲突感知安全文本编辑、回收站撤销、压缩解压与折叠式递归搜索；独立全屏 Diff 审查页提供 Hunk 折叠、等宽行号与自动换行切换；`.dsh/` 目录双向受保护 |
+| **跨会话待办收件箱与后台通知** | 顶部实时横幅、收件箱抽屉与独立后台审批 / 问答系统通知通道，支持直达对应会话并定位请求卡片 |
+| **本地运行环境与系统治理** | 支持离线 SAF 导入与签名清单在线发现 / 事务更新 / 回滚；提供前台常驻服务、后台工作租约、空闲优雅停机、32 幻影进程预算预警与温控预热抑制 |
+| **远程 SSH 主机双模** | 通过 SSH（SSH.NET）连接电脑或服务器上的 DSH，支持本地回环端口转发、远端 DSH 启停与同一套原生对话体验 |
+| **插件目录** | 原生 L0 状态清单与 L1 受控装卸 / 启停，重启 DSH 自动同步 |
+| **手机操控（实验，默认关闭）** | 沿用 `maiji1990/ui_mcp` 单一 `ui_*` 契约，经无障碍 / 悬浮窗 / Shizuku 协同操控界面；每次写操作均须人工显式批准 |
 
-界面为 Material 3，默认入口为主导航三栏：**会话 / 工作区 / 更多**（600dp 以上使用左侧导航栏）。主题跟随系统深浅色，Android 12+ 按壁纸取色。诊断、模式探测、PTY 自检与日志在
-「更多 → 开发者选项」里，默认隐藏，在「关于」上连点 7 次开启（[ADR-0021](docs/ADR/0021-product-ui-material3.md)）。启动分段计时以 `startup-perf` 行写入 Logcat；采集日志、导出 CSV 与计算各阶段 P50/P95 见 [docs/STARTUP_PERF.md](docs/STARTUP_PERF.md)。
+> 诊断、模式探测、PTY 自检与运行日志位于「开发者选项」（默认隐藏，在设置页「关于」上连点 7 次开启，见 [ADR-0021](docs/ADR/0021-product-ui-material3.md)）。启动分段计时与 P50/P95 采集分析方法见 [docs/STARTUP_PERF.md](docs/STARTUP_PERF.md)。
 
-## 安全设计
+---
 
-- **手机操控需逐次批准**：审批卡显示期间窗口禁止截屏，Agent 的点击 / 滑动 / 按键全部暂停，它按不到「允许」。无障碍服务、悬浮窗与
-  Shizuku 授权都由你本人在系统里开启，App 不会代为开启。默认关闭，停止 DSH 时自动关闭。
-- **SSH 私钥不可导出**：本机密钥在 Android Keystore 内生成；首次连接必须逐字核对主机指纹，固定后指纹变化即拒绝连接。远端 DSH 无法使用本机的手机操控。
-- **DSH 只在本机访问且零业务 WebView**：launch token 仅驻留原生进程内存，原生客户端经本地回环传输交互；外部链接经确认后交由系统浏览器。
-- **沙箱命令不拼字符串**：guest 命令一律由参数数组逐个加引号构建。
-- **不伪造成功**：系统限制以稳定错误码报告并显示在界面上。
+## 安全原则
 
-详见 [docs/SECURITY.md](docs/SECURITY.md)。
+- **手机操控逐次人工审批**：审批卡与确认页启用 `FLAG_SECURE` 防截屏并过滤被遮挡触摸，显示期间暂停 Agent 的点击、滑动与按键操作，确保 Agent 无法自行点击「允许」。无障碍服务、悬浮窗与 Shizuku 均由用户在系统界面自行授予，默认关闭且停止沙箱时自动停用。
+- **SSH 不可导出私钥与主机指纹固定**：本机 EC P-256 私钥在 Android Keystore 内生成并完成签名，永不导出到文件或内存；首次连接须逐字核对主机指纹，固定后若指纹变化立即在握手阶段拒绝连接。远端 DSH 仅走本地端口转发，无法访问本机 `ui_*` 能力。
+- **回环鉴权与零业务 WebView**：DSH 仅绑定本地回环地址，launch token 仅驻留原生进程内存、绝不落盘或写入日志；外部 `http(s)` 链接经明确确认后交由系统浏览器打开。
+- **命令与文件系统边界**：所有 guest 命令一律由参数数组（`GuestCommandLine`）逐 token 单引号转义，禁止拼接 shell 字符串；工作区操作拒绝路径穿越与符号链接跟随，`.dsh/` 不可读写、移入或解压覆盖。
+- **如实报错，不伪造成功**：所有系统限制与失败路径均返回稳定错误码并在界面可见。
 
-## 使用
+完整威胁模型与已落实控制清单见 [docs/SECURITY.md](docs/SECURITY.md)。
 
-**要求**：Android 10（API 29）及以上的 **arm64** 设备。APK 也带 x86_64 原生库，但运行层是 arm64，x86_64 模拟器上
-沙箱会立即退出（`DSH_EXITED`），只能看界面。
+---
 
-1. 安装 APK（目前需[从源码构建](#从源码构建)）。
-2. 在默认「会话」页顶部卡片点击「在线下载运行环境」，或前往「更多 → 运行环境」从本地导入 `dshmobile-runtime-debian-arm64-*.zip` 与 `<版本>.tar.zst`。
-3. 点击「启动 DSH」，就绪后在「会话」页点击 `+` 或打开最近会话进入原生对话；首次使用可在右上角菜单或「更多 → 模型与凭据配置」写入 API Key。
+## 架构概览
 
-运行环境和 DSH 层由本仓库构建并分别发布。当前锁定版本的下载地址见 [runtime-assets.lock](runtime-bundle/runtime-assets.lock)，发布流程见 [ADR-0020](docs/ADR/0020-self-built-runtime-layers.md) 和 [自动升级与发布流程](docs/RELEASE_AUTOMATION.md)。
+业务逻辑、状态机、权限策略与进程监管全部位于 C#（[ADR-0007](docs/ADR/0007-source-ownership-csharp-first.md)），原生层仅保留最小 NDK 边界，无 Gradle / Kotlin 业务桥接（[ADR-0018](docs/ADR/0018-remove-dshbox.md)）。
+
+```text
+DshMobile.Android (net11.0-android)   Material 3 原生界面（极简会话首页 / w600dp 双栏 / 聊天 / 工作区与 Diff 审查）、
+        │                             前台服务、系统治理、C# Relay 组合根与平台适配
+DshMobile.Agent (net11.0)             纯托管原生客户端层（零 Android 引用，ADR-0033）：协议 STJ 源生、
+        │                             RemoteDshGateway、Transcript/Requests 引擎、Markdig 渲染缓存、ViewModels
+DshMobile.Application (net11.0)       业务编排：RuntimeCoordinator（状态机 + journal、导入 / 更新探针 / 回滚）、
+        │                             工作租约 / 空闲停机 / 温控与预热策略、HomeStatus、DI 组装
+DshMobile.Runtime (net11.0)           层校验与事务安装、PRoot 启动、DSH 宿主与内存 token 追踪、
+        │                             Relay（ui_*）、远程 SSH（SSH.NET）、插件 L0/L1 受控命令
+DshMobile.Native (net11.0)            最小原生边界：Android 10+ W^X 可执行策略、libdshmobile_native（PTY / 进程组）P/Invoke
+DshMobile.Core (net11.0)              共享契约、StartupTrace、工作区文件系统、Provider V2 与统一 Diff 规范化
+```
+
+运行时执行链路：
+
+```text
+MainActivity ─▶ BridgeHost ─▶ RuntimeCoordinator ─▶ DshHost ─▶ exec nativeLibraryDir/libproot.so
+     │                                                  ▼
+     └─ AndroidForegroundService (specialUse)   PRoot → Debian → Node → 官方 DSH (web, 127.0.0.1)
+```
+
+| 目录 | 说明 |
+|---|---|
+| `src/` | 上述 6 个核心项目，以及仅在 `-p:DshDiagnostics=true` 时编译的诊断库 `DshMobile.Runtime.Diagnostics` |
+| `native/dshmobile-native`、`native/proot` | NDK 27 构建的最小原生库与自建 PRoot / loader / talloc / libandroid-shmem（[ADR-0014](docs/ADR/0014-in-repo-proot-build.md)） |
+| `native/link-shim` | Android 硬链接兼容垫片源码与交叉构建脚本（[ADR-0019](docs/ADR/0019-rename-dshbox-paths-data-migration.md)） |
+| `runtime-bundle/` | 运行环境与 DSH 层的版本锁定、拉取校验脚本与 Linux 自建脚本（[ADR-0020](docs/ADR/0020-self-built-runtime-layers.md)） |
+| `tests/` | 4 个 xUnit 测试项目（`Core` / `Runtime` / `Application` / `Agent`）、`tests/guest` 与 `tests/tooling` Node 测试、共享向量 `tests/TestVectors` |
+| `tooling/` | Android SDK 组件安装、净构建与 APK 门禁脚本、测试运行器与启动耗时分析脚本 |
+| `docs/` | 架构说明、ADR（`0001–0033`）、功能矩阵、迁移事实源、安全基线、真机验收报告与原始设计方案（`docs/plan/`） |
+
+详见 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)。
+
+---
+
+## 快速上手
+
+**设备要求**：Android 10（API 29）及以上的 **arm64** 设备。APK 同时包含 `x86_64` 原生库用于界面预览，但 Debian / Node / DSH 运行层仅面向 `arm64`，在 `x86_64` 模拟器上启动沙箱会立即退出（`DSH_EXITED`）。
+
+1. 按下方步骤[从源码构建](#从源码构建)并安装 APK。
+2. 首次进入「会话」首页时，可点击在线下载运行环境，或前往「设置 → 运行环境」通过系统文件选择器导入 `dshmobile-runtime-debian-arm64-*.zip` 与 DSH 层 `<版本>.tar.zst`（[ADR-0027](docs/ADR/0027-remove-bundled-dsh-import-instead.md) 起 DSH 层不内置于 APK）。
+3. 启动本机 DSH（或在「设置 → 远程主机」连接你的电脑 / 服务器），前往「模型与凭据」配置 API Key，即可开始原生对话。
+
+当前锁定运行层清单见 [runtime-bundle/runtime-assets.lock](runtime-bundle/runtime-assets.lock)，发布自动化流程见 [docs/RELEASE_AUTOMATION.md](docs/RELEASE_AUTOMATION.md)。
+
+---
 
 ## 从源码构建
 
-**前置**：
+### 1. 工具链前置（均版本锁定，无需 JDK / Gradle）
 
-- .NET SDK `11.0.100`（.NET 11 GA）与 `android` workload，workload set `11.0.100.1`（`global.json` 锁定，不自动前滚）；
-- Android SDK：`platforms;android-37.2`、`build-tools;36.0.0`（可用 `tooling/install-android-sdk-components.ps1` 安装）；
-- NDK `27.0.12077973`。
+- **.NET SDK `11.0.100`** 与 `android` workload（workload set `11.0.100.1`，由 [global.json](global.json) 锁定且禁止自动前滚）；
+- **Android SDK**：`platforms;android-37.2`、`build-tools;36.0.0`（Windows 可用管理员 PowerShell 运行 `pwsh tooling/install-android-sdk-components.ps1` 安装）；
+- **Android NDK `27.0.12077973`**；
+- 配置路径：在 `native/local.properties` 写入 `sdk.dir=<Android SDK 路径>`（或 `ndk.dir=<NDK 路径>`，Windows 请使用正斜杠 `/`），或设置环境变量 `ANDROID_HOME` / `ANDROID_NDK_HOME`。
 
-不需要 JDK / Gradle。在 `native/local.properties` 写入 `sdk.dir=<Android SDK 路径>`（或 `ndk.dir=…`，或设置 `ANDROID_NDK_HOME` / `ANDROID_HOME`）。
+### 2. 构建原生层与拉取运行层资产
 
-构建原生层（`libdshmobile_native` 与自建 PRoot，[ADR-0014](docs/ADR/0014-in-repo-proot-build.md)；源码包按 `native/proot/sources.lock` 钉住的 SHA-256 校验）：
+构建 `libdshmobile_native.so` 与自建 PRoot（源码按 `native/proot/sources.lock` 校验 SHA-256，产物输出至 `artifacts/native/`）：
 
 ```bash
+# Windows (PowerShell 7)
 pwsh native/build-native.ps1
+
+# Linux / macOS
+bash native/build-native.sh
 ```
 
-下载并校验锁定的运行环境包，为 APK 暂存其中的 `android-side` 层：
+拉取并校验锁定的运行层包，为 APK 暂存 `android-side` 层：
 
 ```bash
 pwsh runtime-bundle/fetch-runtime.ps1
 ```
 
-构建 App：
+> 如需在 Linux / WSL 上自行构建 Debian / Node / DSH 运行层（需 `mmdebstrap`；x86_64 主机另需 arm64 binfmt / qemu-user，输入锁定于 `runtime-bundle/runtime-build.lock`）：
+> ```bash
+> bash runtime-bundle/build-runtime.sh --work <Linux 目录>
+> ```
+> 对应 CI 工作流为 `.github/workflows/runtime-layers.yml`。
+
+### 3. 构建与打包 APK
+
+构建整个解决方案（Debug）：
 
 ```bash
 dotnet build DshMobile.slnx -c Debug
 ```
 
-安装到已连接的设备（多台设备时追加 `-p:AdbTarget=-s%20<序列号>`）：
+直接安装 Debug 版到已连接设备（多台设备时追加 `-p:AdbTarget=-s%20<序列号>`）：
 
 ```bash
 dotnet build src/DshMobile.Android/DshMobile.Android.csproj -c Debug -t:Install
 ```
 
-如果要用 `adb install -r` 直接覆盖安装，先构建包含 .NET 程序集的 Release APK，再安装生成的 `*-Signed.apk`。
+打包包含完整 .NET 程序集的独立真机 Release APK（用于 `adb install -r` 安装 `*-Signed.apk`）：
 
 ```bash
 dotnet build src/DshMobile.Android/DshMobile.Android.csproj -c Release -p:EmbedAssembliesIntoApk=true
 ```
 
-### 自建运行层
-
-在 Linux / WSL 上（需要 `mmdebstrap`；x86_64 主机另需 arm64 binfmt / qemu-user），输入全部钉在 `runtime-bundle/runtime-build.lock`：
+推荐使用发布前净构建与零业务 WebView 门禁脚本（自动清理 `obj/bin` 避免增量构建残留并校验最终 `*-Signed.apk`）：
 
 ```bash
-bash runtime-bundle/build-runtime.sh --work <Linux 目录>
+pwsh tooling/build-clean-release-apk.ps1
 ```
 
-CI 中对应手动触发的 `.github/workflows/runtime-layers.yml`。
-
-### 测试
+### 4. 运行测试
 
 ```bash
 dotnet test tests/DshMobile.Core.Tests
-```
-
-```bash
 dotnet test tests/DshMobile.Runtime.Tests
-```
-
-```bash
 dotnet test tests/DshMobile.Application.Tests
-```
-
-```bash
+dotnet test tests/DshMobile.Agent.Tests
 node tooling/run-node-tests.mjs tests/guest
 ```
 
-```bash
-dotnet test tests/DshMobile.Agent.Tests
-```
+核心协议与运行时行为由 `tests/TestVectors/*.json` 共享向量锁定，原样引入的上游资产由测试钉住 SHA-256。CI 工作流 [`.github/workflows/android-dotnet.yml`](.github/workflows/android-dotnet.yml) 会完整构建原生层与 App 并执行全部测试与质量门禁。
 
-行为由 `tests/TestVectors/*.json` 共享向量锁定；原样复制进仓库的上游文件由测试钉住 SHA-256。CI（`.github/workflows/android-dotnet.yml`）
-构建原生层与 App 并运行以上全部测试（含 `NoBusinessWebViewGateTests` 等 7 组质量与性能门禁）。
+### 5. 常见构建排障
 
-### 构建排障
+- **`NDK 27.0.12077973 not found`**：通过 SDK Manager 安装 `ndk;27.0.12077973`，或在 `native/local.properties` 显式配置 `ndk.dir`。
+- **`NDK path cannot contain spaces`**：将 `ndk.dir` 指向无空格的目录或目录联接。
+- **`PRoot not built in …` / `libdshmobile_native.so not built`**：先执行 `pwsh native/build-native.ps1`（或 `bash native/build-native.sh`）。
+- **原生源码包下载失败**：`native/proot/sources.lock` 支持多镜像地址回退；也可传 `-SourceCache <目录>` 或 `-Offline` 复用本地缓存。
 
-- **`NDK 27.0.12077973 not found`**：用 SDK Manager 安装 `ndk;27.0.12077973`，或在 `native/local.properties` 写 `ndk.dir`。
-- **`NDK path cannot contain spaces`**：把 `ndk.dir` 指向一个无空格的目录联接。
-- **`local.properties` 路径**：Windows 请用正斜杠，例如 `sdk.dir=C:/Program Files (x86)/Android/android-sdk`。
-- **`PRoot not built in …` / `libdshmobile_native.so not built`**：先运行 `pwsh native/build-native.ps1`（App 构建会检查这两组原生产物）。
-- **源码包下载失败**：`native/proot/sources.lock` 中每个源可列多个地址依次尝试；也可用 `-SourceCache <目录>` 指向已下载的包，或 `-Offline` 只用本地缓存。
+---
 
-## 架构
+## 文档索引
 
-```text
-DshMobile.Android      Activity / Fragment（Material 3 三栏：会话 | 工作区 | 更多）、前台服务、平台适配、Relay 组合根
-DshMobile.Agent        纯托管原生客户端（ADR-0033）：协议 STJ 源生、Transcript/Requests 引擎、Markdig 渲染缓存、ViewModel
-DshMobile.Application  编排：RuntimeCoordinator（状态机 + journal、导入 / 回滚 / 更新探针）、系统治理策略、HomeStatus、DI
-DshMobile.Runtime      层校验与安装、PRoot 启动、DSH 宿主与 token 追踪、Relay（ui_*）、远程 SSH（SSH.NET）、插件 L0/L1
-DshMobile.Native       最小原生边界：W^X 可执行策略、libdshmobile_native（PTY、进程组）P/Invoke
-DshMobile.Core         通用协议类型、StartupTrace、工作区文件系统与 Provider V2
-```
-
-业务逻辑、状态机、权限策略与进程监管都在 C#（[ADR-0007](docs/ADR/0007-source-ownership-csharp-first.md)）；必须原生的部分放在本仓库可追溯的
-最小 NDK 层；DSH 本身不修改，能力通过 Cordis 插件、MCP 与官方 profile 扩展。详见 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)。
-
-| 路径 | 内容 |
+| 文档 | 内容 |
 |---|---|
-| `src/` | 上述五个项目 |
-| `native/dshmobile-native`、`native/proot` | NDK 27 构建的原生库与自建 PRoot / loader / talloc / libandroid-shmem |
-| `native/link-shim` | guest 链接垫片的上游源码（仅追溯，不在此构建） |
-| `runtime-bundle/` | 运行层锁定、下载与自建脚本 |
-| `tests/` | 三个 xUnit 测试项目、guest 脚本测试（node）与共享向量 |
-| `tooling/` | SDK 组件安装、测试运行、向量生成等辅助脚本 |
-| `docs/` | 架构、ADR、迁移状态、功能矩阵、上游登记、安全、兼容性；原始方案在 `docs/plan/` |
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | 架构分层、运行时边界、原生传输协议与禁止模式 |
+| [docs/FEATURES.md](docs/FEATURES.md) | 引擎能力、宿主基础设施与可选模块状态矩阵（含证据时代标记） |
+| [docs/SECURITY.md](docs/SECURITY.md) | 安全基线、已落实控制清单与每个 PR 的安全约束 |
+| [docs/MIGRATION.md](docs/MIGRATION.md) | C#-first 与原生改造迁移事实源（唯一权威记录） |
+| [docs/UPSTREAMS.md](docs/UPSTREAMS.md) | 上游来源登记、固定 commit SHA、patch 清单与开源许可 |
+| [docs/RELEASE_AUTOMATION.md](docs/RELEASE_AUTOMATION.md) | 运行层构建、签名清单发布与上游自动跟踪流程 |
+| [docs/VNEXT_STATUS.md](docs/VNEXT_STATUS.md) | 基线证据核对、待复测与阻断项清单 |
+| [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md) | 设备与 Android 版本兼容性实测记录 |
+| [docs/STARTUP_PERF.md](docs/STARTUP_PERF.md) | 启动分段计时采集、CSV 导出与 P50/P95 统计指南 |
+| [docs/native/ACCEPTANCE_MATRIX.md](docs/native/ACCEPTANCE_MATRIX.md) | 原生客户端各切片 Android 真机验收总表 |
+| [docs/ADR/](docs/ADR/) | 架构决策记录（`0001–0033`） |
+| [AGENTS.md](AGENTS.md) | 项目开发红线与工程约定（人类与 AI 协作共用） |
 
-## 文档
+---
 
-- [docs/FEATURES.md](docs/FEATURES.md)：功能矩阵与真机证据
-- [docs/MIGRATION.md](docs/MIGRATION.md)：迁移状态（唯一事实源）
-- [docs/VNEXT_STATUS.md](docs/VNEXT_STATUS.md)：vNext 基线、证据核对（已通过 / 待复测 / 待测 / 阻断）与下一批 PR 门禁
-- [docs/ADR/](docs/ADR/)：架构决策记录（0001–0026）
-- [docs/UPSTREAMS.md](docs/UPSTREAMS.md)：上游来源、固定版本与许可
-- [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md)：设备兼容性
-- [AGENTS.md](AGENTS.md)：开发约束（人类与 AI 共用）
+## 现状与已知限制
 
-## 现状与限制
+- **验证边界**：原生客户端主体闭环（PR-00 ～ PR-09 与 UI 布局重构 Slice 1 ～ Slice 5）已在 Android 17 真机完成验收（详见 [docs/native/ACCEPTANCE_MATRIX.md](docs/native/ACCEPTANCE_MATRIX.md)）；最新 V2 视觉与交互打磨（去底栏极简首页、w600dp 列表-详情双栏、统一 Composer、独立全屏 Diff 审查页等）已完成桌面编译与单元测试，**真机专项验收待执行**。
+- **待测与受限项**：签名清单在线一键安装 / 回滚的真实端到端验收、手机操控写操作与通知栏审批面、真实局域网（非 `adb reverse`）远程 SSH 与 `HOST_KEY_CHANGED` 真机演练、以及 Android 10 / 16 KB 页大小设备兼容性仍待补充真机证据，详见 [docs/FEATURES.md](docs/FEATURES.md) 与 [docs/MIGRATION.md](docs/MIGRATION.md)。
+- **回滚前提**：「回滚到上一版」仅在 `runtime-current/previous/` 槽位已存在时可用。
+- **不包含的能力**：不提供内置浏览器栈（`browser_*`），也不在 C# 侧重写 DSH Agent Loop。
 
-- App 只有纯 C# 原生实现（[ADR-0018](docs/ADR/0018-remove-dshbox.md) 删除了 DSHBox 子模块、AAR 与 Kotlin 层；PR-09 切换为原生「会话 | 工作区 | 更多」三栏入口并彻底删除业务 WebView，由 `NoBusinessWebViewGateTests` 门禁锁定）。
-  各项状态与真机证据以 [docs/MIGRATION.md](docs/MIGRATION.md) 与 [docs/native/ACCEPTANCE_PR09.md](docs/native/ACCEPTANCE_PR09.md) 为准。
-- 「回滚到上一版」只有在 `runtime-current/previous/` 已存在时才有上一版可回（继承旧实现，向量锁定）。
-- 浏览器自动化（`browser_*`）不提供。
+---
 
-## 许可
+## 致谢与许可证
 
-GPL-3.0（见 [LICENSE](LICENSE) 与 [ADR-0003](docs/ADR/0003-license-route-a-gpl3.md)）。第三方组件保留各自许可（PRoot GPL-2.0-or-later、
-talloc LGPL-3.0-or-later、Material Components / Material Icons Apache-2.0 等，完整清单见 [docs/UPSTREAMS.md](docs/UPSTREAMS.md)）。
+本项目采用 **GPL-3.0** 许可发布（见 [LICENSE](LICENSE) 与 [ADR-0003](docs/ADR/0003-license-route-a-gpl3.md)）。
+
+感谢并尊重以下上游与开源项目（完整来源、固定版本与各自许可证均逐项登记于 [docs/UPSTREAMS.md](docs/UPSTREAMS.md)）：
+
+- [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) — 官方运行时内核
+- [DSHBox](https://github.com/WSK-build/DSHBox)（GPL-3.0）— 早期移植参考与已登记的 guest 垫片资产来源
+- [maiji1990/ui_mcp](https://github.com/maiji1990/ui_mcp) — `ui_*` 手机操控单一契约参考
+- [termux/proot](https://github.com/termux/proot)（GPL-2.0-or-later）、[Samba talloc](https://www.samba.org/ftp/talloc/)（LGPL-3.0-or-later）、[termux/libandroid-shmem](https://github.com/termux/libandroid-shmem)（BSD-3-Clause）
+- [Shizuku](https://github.com/RikkaApps/Shizuku-API)（MIT）、Material Components for Android / Material Icons（Apache-2.0）等第三方依赖

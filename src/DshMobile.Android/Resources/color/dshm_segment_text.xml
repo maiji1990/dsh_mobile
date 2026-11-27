@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Polish-P3 槽式切换器文字：选中高对比，未选中次级文字色。 -->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:state_checked="true" android:color="?attr/colorOnSurface" />
+    <item android:color="?attr/colorOnSurfaceVariant" />
+</selector>

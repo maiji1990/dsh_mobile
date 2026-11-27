@@ -11,12 +11,28 @@
     <dimen name="dshm_page_margin">16dp</dimen>
     <!-- 手机端 0dp 表示不额外限宽；宽屏由 values-w600dp 覆盖为 700dp 居中 -->
     <dimen name="dshm_chat_max_width">0dp</dimen>
+    <!-- Polish-P2 悬浮胶囊顶栏占位：顶栏本体 52dp + 顶 6dp + 10dp 安全间距，
+         同时作为消息流首屏避让与状态横幅起始位置，避免两处硬编码 68dp 漂移 -->
+    <dimen name="dshm_chat_header_pill_inset">68dp</dimen>
     <!-- 圆角层级：BottomSheet / 输入胶囊 / 用户气泡 / 卡片 / 代码表格块 -->
     <dimen name="dshm_radius_sheet">28dp</dimen>
     <dimen name="dshm_radius_composer">26dp</dimen>
     <dimen name="dshm_radius_bubble">20dp</dimen>
     <dimen name="dshm_radius_card">16dp</dimen>
     <dimen name="dshm_radius_block">12dp</dimen>
+    <!-- Polish-P1 严格 4dp 空间标尺：新布局只允许使用这组间距 -->
+    <dimen name="dshm_space_1">4dp</dimen>
+    <dimen name="dshm_space_2">8dp</dimen>
+    <dimen name="dshm_space_3">12dp</dimen>
+    <dimen name="dshm_space_4">16dp</dimen>
+    <dimen name="dshm_space_5">20dp</dimen>
+    <dimen name="dshm_space_6">24dp</dimen>
+    <!-- Polish-P1 语义圆角与行高：分组卡 / 代码块 / 大卡 / 单行与双行列表 -->
+    <dimen name="dshm_panel_radius">18dp</dimen>
+    <dimen name="dshm_code_radius">14dp</dimen>
+    <dimen name="dshm_card_radius">22dp</dimen>
+    <dimen name="dshm_row_height">56dp</dimen>
+    <dimen name="dshm_row_height_two">64dp</dimen>
     <!-- 最小触控靶区（视觉高度可小于该值，但可点击区域不得低于 48dp） -->
     <dimen name="dshm_touch_min">48dp</dimen>
     <!-- 列表分隔线与浅色卡片描边的极细线宽 -->

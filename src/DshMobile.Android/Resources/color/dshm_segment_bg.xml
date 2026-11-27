@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 工作区「文件 / Git」槽式切换器滑块：选中为明确的语义亮滑块，未选中完全透明，无硬边框。 -->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:state_checked="true" android:color="@color/dshm_segment_selected_bg" />
+    <item android:color="@android:color/transparent" />
+</selector>

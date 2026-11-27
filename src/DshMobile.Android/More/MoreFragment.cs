@@ -1,6 +1,7 @@
 using Android.Content;
 using Android.Content.Res;
 using Android.Views;
+using Android.Widget;
 using AndroidX.Core.Widget;
 using DshMobile.App.Automation;
 using DshMobile.App.Bridge;
@@ -18,6 +19,7 @@ using DshMobile.Runtime.Automation;
 using DshMobile.Runtime.Automation.Relay;
 using Google.Android.Material.AppBar;
 using Google.Android.Material.Button;
+using Google.Android.Material.Dialog;
 using Google.Android.Material.MaterialSwitch;
 using Google.Android.Material.ProgressIndicator;
 using Fragment = AndroidX.Fragment.App.Fragment;
@@ -46,9 +48,11 @@ public sealed class MoreFragment : Fragment, ITabRoot, HostQuickControlBottomShe
     private View _rowAutomation = null!;
     private View _rowRemote = null!;
     private View _rowRuntime = null!;
+    private View _rowAppearance = null!;
     private MaterialSwitch _warmupSwitch = null!;
     private View _developerDivider = null!;
     private View _rowDeveloper = null!;
+    private bool _isWide;
 
     private int _versionTaps;
     private Toast? _toast;
@@ -58,10 +62,13 @@ public sealed class MoreFragment : Fragment, ITabRoot, HostQuickControlBottomShe
     {
         var view = inflater.Inflate(Resource.Layout.fragment_more, container, false)!;
         _bridge = DshMobileApplication.Current.Bridge;
+        _isWide = (Activity as MainActivity)?.IsWideLayout ?? false;
 
         _toolbar = view.FindViewById<MaterialToolbar>(Resource.Id.more_toolbar)!;
         _inboxMenuItem = _toolbar.Menu?.FindItem(Resource.Id.more_menu_inbox);
         _inboxMenuItem?.SetVisible(false);
+        _toolbar.NavigationClick += (_, _) => Activity?.OnBackPressedDispatcher?.OnBackPressed();
+        ApplyToolbarNavigation();
         _toolbar.MenuItemClick += (_, e) =>
         {
             if (e.Item?.ItemId == Resource.Id.more_menu_inbox)
@@ -81,26 +88,26 @@ public sealed class MoreFragment : Fragment, ITabRoot, HostQuickControlBottomShe
         var ctx = RequireContext();
         _rowCredentials = view.FindViewById(Resource.Id.more_row_credentials)!;
         Rows.BindNavRow(_rowCredentials, Resource.Drawable.ic_key, GetString(Resource.String.more_credentials),
-            GetString(Resource.String.more_credentials_sub), () => Open(typeof(CredentialsActivity)));
+            subtitle: null, onClick: () => Open(typeof(CredentialsActivity)));
 
         var rowPlugins = view.FindViewById(Resource.Id.more_row_plugins)!;
         Rows.BindNavRow(rowPlugins, Resource.Drawable.ic_extension, GetString(Resource.String.more_plugins),
-            GetString(Resource.String.more_plugins_sub), () => Open(typeof(PluginsActivity)));
+            subtitle: null, onClick: () => Open(typeof(PluginsActivity)));
 
         _rowAutomation = view.FindViewById(Resource.Id.more_row_automation)!;
         Rows.BindNavRow(_rowAutomation, Resource.Drawable.ic_phone, GetString(Resource.String.more_automation),
-            GetString(Resource.String.more_automation_sub), () => Open(typeof(AutomationActivity)));
+            subtitle: null, onClick: () => Open(typeof(AutomationActivity)));
 
         _rowRemote = view.FindViewById(Resource.Id.more_row_remote)!;
         Rows.BindNavRow(_rowRemote, Resource.Drawable.ic_cloud, GetString(Resource.String.more_remote),
-            GetString(Resource.String.more_remote_sub), () => Open(typeof(RemoteActivity)));
+            subtitle: null, onClick: () => Open(typeof(RemoteActivity)));
 
         _rowRuntime = view.FindViewById(Resource.Id.more_row_runtime)!;
         Rows.BindNavRow(_rowRuntime, Resource.Drawable.ic_storage, GetString(Resource.String.more_runtime),
-            GetString(Resource.String.more_runtime_sub), () => Open(typeof(RuntimeActivity)));
+            subtitle: null, onClick: () => Open(typeof(RuntimeActivity)));
 
         var rowWarmup = view.FindViewById(Resource.Id.more_row_warmup)!;
-        // 5A：默认开启的后台预热；行文案说明电量/省电/温控保护与可关闭，开关仍由用户控制。
+        // 5A：默认开启的后台预热；保留一句 ≤18 字短副标题，说明可关闭与自动保护。
         _warmupSwitch = Rows.BindSwitchRow(rowWarmup, Resource.Drawable.ic_refresh, GetString(Resource.String.more_warmup),
             GetString(Resource.String.more_warmup_short_sub), UiPrefs.EagerWarmupEnabled(ctx),
             enabled => UiPrefs.SetEagerWarmupEnabled(ctx, enabled));
@@ -109,14 +116,19 @@ public sealed class MoreFragment : Fragment, ITabRoot, HostQuickControlBottomShe
         Rows.BindActionRow(rowAbout, Resource.Drawable.ic_info, GetString(Resource.String.more_about),
             Rows.Fmt(ctx, Resource.String.more_about_sub, AppVersion(ctx)), OnVersionTapped);
 
+        // Polish-P3：外观入口实时显示当前模式，点击弹出清爽对话框选择主题与动态取色。
+        _rowAppearance = view.FindViewById(Resource.Id.more_row_appearance)!;
+        Rows.BindNavRow(_rowAppearance, Resource.Drawable.ic_palette, GetString(Resource.String.more_appearance),
+            subtitle: null, ShowAppearanceDialog);
+
         var rowLicenses = view.FindViewById(Resource.Id.more_row_licenses)!;
         Rows.BindNavRow(rowLicenses, Resource.Drawable.ic_article, GetString(Resource.String.more_licenses),
-            GetString(Resource.String.more_licenses_sub), ShowLicenses);
+            subtitle: null, ShowLicenses);
 
         _developerDivider = view.FindViewById(Resource.Id.more_developer_divider)!;
         _rowDeveloper = view.FindViewById(Resource.Id.more_row_developer)!;
         Rows.BindNavRow(_rowDeveloper, Resource.Drawable.ic_code, GetString(Resource.String.developer_title),
-            GetString(Resource.String.more_developer_sub), () => Open(typeof(DeveloperActivity)));
+            subtitle: null, onClick: () => Open(typeof(DeveloperActivity)));
 
         _scroll = view.FindViewById<NestedScrollView>(Resource.Id.more_scroll)!;
         if (_scroll.ChildCount > 0)
@@ -149,9 +161,32 @@ public sealed class MoreFragment : Fragment, ITabRoot, HostQuickControlBottomShe
         base.OnResume();
         if (IsAdded && View is not null)
         {
+            _isWide = (Activity as MainActivity)?.IsWideLayout ?? false;
+            ApplyToolbarNavigation();
             _warmupSwitch.Checked = UiPrefs.EagerWarmupEnabled(RequireContext());
             Render();
         }
+    }
+
+    /// <summary>Polish-P3：窄屏设置页顶栏显示 ← 返回首页；宽屏由左侧 NavigationRail 承担导航，不显示箭头。</summary>
+    public void OnShellWidthChanged(bool wide)
+    {
+        _isWide = wide;
+        if (IsAdded && View is not null)
+        {
+            ApplyToolbarNavigation();
+        }
+    }
+
+    private void ApplyToolbarNavigation()
+    {
+        if (_isWide)
+        {
+            _toolbar.NavigationIcon = null;
+            return;
+        }
+        _toolbar.SetNavigationIcon(Resource.Drawable.ic_arrow_back);
+        _toolbar.SetNavigationContentDescription(Resource.String.shell_back_home);
     }
 
     /// <summary>UI-S6：再次点击「更多」页签时平滑回到顶部。</summary>
@@ -253,9 +288,26 @@ public sealed class MoreFragment : Fragment, ITabRoot, HostQuickControlBottomShe
             string.IsNullOrWhiteSpace(version) ? null : version,
             Rows.BadgeTone.Neutral);
 
+        RenderAppearance(ctx);
+
         var devVisible = UiPrefs.DeveloperEnabled(ctx) ? ViewStates.Visible : ViewStates.Gone;
         _developerDivider.Visibility = devVisible;
         _rowDeveloper.Visibility = devVisible;
+    }
+
+    /// <summary>Polish-P3：外观行右侧实时显示当前模式，纯淡灰文字、无胶囊底色。</summary>
+    private void RenderAppearance(Context ctx)
+    {
+        var modeRes = UiPrefs.ThemeMode(ctx) switch
+        {
+            UiPrefs.ThemeModeLight => Resource.String.appearance_light,
+            UiPrefs.ThemeModeDark => Resource.String.appearance_dark,
+            _ => Resource.String.appearance_system,
+        };
+        Rows.SetBadge(
+            _rowAppearance.FindViewById<TextView>(Resource.Id.row_trailing_badge)!,
+            GetString(modeRes),
+            Rows.BadgeTone.Neutral);
     }
 
     private void RenderInboxEntry(InboxUiState inbox)
@@ -345,6 +397,57 @@ public sealed class MoreFragment : Fragment, ITabRoot, HostQuickControlBottomShe
         _toast?.Cancel();
         _toast = Android.Widget.Toast.MakeText(RequireContext(), text, ToastLength.Short);
         _toast!.Show();
+    }
+
+    /// <summary>
+    /// Polish-P3 外观设置：清爽对话框内选择跟随系统 / 浅色 / 深色，并可开关壁纸动态取色；
+    /// 选择后立即写入 <see cref="UiPrefs"/> 并调用 <see cref="UiPrefs.ApplyThemeMode"/>。
+    /// 动态取色需要 Application 启动时应用，因此变化时明确提示重启 App 生效。
+    /// </summary>
+    private void ShowAppearanceDialog()
+    {
+        var ctx = RequireContext();
+        var content = LayoutInflater.From(ctx)!.Inflate(Resource.Layout.dialog_appearance, null, false)!;
+        var group = content.FindViewById<RadioGroup>(Resource.Id.appearance_theme_group)!;
+        group.Check(UiPrefs.ThemeMode(ctx) switch
+        {
+            UiPrefs.ThemeModeLight => Resource.Id.appearance_theme_light,
+            UiPrefs.ThemeModeDark => Resource.Id.appearance_theme_dark,
+            _ => Resource.Id.appearance_theme_system,
+        });
+        var dynamicSwitch = content.FindViewById<MaterialSwitch>(Resource.Id.appearance_dynamic_switch)!;
+        dynamicSwitch.Checked = UiPrefs.DynamicColorEnabled(ctx);
+
+        new MaterialAlertDialogBuilder(ctx)
+            .SetTitle(Resource.String.more_appearance)!
+            .SetView(content)!
+            .SetNegativeButton(Android.Resource.String.Cancel, (_, _) => { })!
+            .SetPositiveButton(Resource.String.appearance_apply, (_, _) =>
+                ApplyAppearance(group.CheckedRadioButtonId, dynamicSwitch.Checked))!
+            .Show();
+    }
+
+    private void ApplyAppearance(int checkedId, bool dynamicColor)
+    {
+        var ctx = RequireContext();
+        var mode = checkedId switch
+        {
+            Resource.Id.appearance_theme_light => UiPrefs.ThemeModeLight,
+            Resource.Id.appearance_theme_dark => UiPrefs.ThemeModeDark,
+            _ => UiPrefs.ThemeModeSystem,
+        };
+        var dynamicChanged = UiPrefs.DynamicColorEnabled(ctx) != dynamicColor;
+        UiPrefs.SetThemeMode(ctx, mode);
+        UiPrefs.SetDynamicColorEnabled(ctx, dynamicColor);
+        // 立即持久化并让 AppCompat 应用默认夜间模式（已启动页面会按系统标准自行重建）。
+        UiPrefs.ApplyThemeMode(ctx);
+        RenderAppearance(ctx);
+        if (dynamicChanged)
+        {
+            Toast(GetString(dynamicColor
+                ? Resource.String.appearance_dynamic_on_hint
+                : Resource.String.appearance_dynamic_off_hint));
+        }
     }
 
     private void ShowLicenses()

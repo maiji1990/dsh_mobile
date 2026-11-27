@@ -1,11 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 思考过程正文的 2dp 柔和引导竖线；其余区域保持透明，不额外增加卡片边框 -->
+<!-- 思考正文左侧 1dp 极淡时间线轨道；与 18dp 图标中心对齐，不再使用旧 2dp 粗线 -->
 <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
     <item
-        android:width="2dp"
+        android:width="1dp"
         android:gravity="start">
         <shape android:shape="rectangle">
-            <solid android:color="@color/dshm_outline_variant" />
+            <solid android:color="@color/dshm_timeline_rail" />
         </shape>
     </item>
 </layer-list>

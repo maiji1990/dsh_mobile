@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 对话页悬浮顶栏上方遮罩：从顶部起用 colorSurface 纯色覆盖到胶囊中线，
+     再平稳渐隐到透明，彻底封死状态栏与悬浮胶囊之间漏出的半截文字 / 图标。
+     渐变使用 values / values-night 的语义色，避免 ?attr 在 gradient drawable 中的兼容性问题。 -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <gradient
+        android:angle="270"
+        android:centerColor="@color/dshm_scrim_surface"
+        android:endColor="@color/dshm_scrim_transparent"
+        android:startColor="@color/dshm_scrim_surface" />
+</shape>
