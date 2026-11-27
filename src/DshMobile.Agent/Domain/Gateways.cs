@@ -1,3 +1,5 @@
+using System.Text.Json;
+
 namespace DshMobile.Agent.Domain;
 
 /// <summary>Session lifecycle, listing, state inspection, and history replay facet (N-02-02).</summary>
@@ -54,10 +56,15 @@ public interface ICredentialGateway
     Task<Outcome<Unit>> UnsetCredentialAsync(string credentialRef, CancellationToken ct = default);
 }
 
-/// <summary>Read-only Host plugin inventory facet.</summary>
+/// <summary>Host 插件清单、Bundle 详情与官方 <c>settings/*</c> 实时配置通道（ADR-0034）。</summary>
 public interface IPluginGateway
 {
     Task<Outcome<PluginInventoryView>> GetPluginInventoryAsync(CancellationToken ct = default);
+    Task<Outcome<IReadOnlyList<PluginBundleInfoView>>> ListPluginBundlesAsync(CancellationToken ct = default);
+    Task<Outcome<PluginBundleDetailView>> ReadBundleDetailAsync(string bundleName, string language, CancellationToken ct = default);
+    Task<Outcome<SettingsDescribeSnapshotView>> DescribeSettingsAsync(CancellationToken ct = default);
+    Task<Outcome<SettingsNamespaceView>> MutateSettingsAsync(string ns, IReadOnlyList<SettingsPathOp> ops, long? expectedRevision = null, CancellationToken ct = default);
+    Task<Outcome<SettingsNamespaceView>> ReplaceSettingsAsync(string ns, JsonElement section, long? expectedRevision = null, CancellationToken ct = default);
 }
 
 /// <summary>Live session follow stream & forwarded Host event stream facet.</summary>
@@ -126,6 +133,11 @@ public abstract class DefaultDshGateway : IDshGateway
     public virtual Task<Outcome<Unit>> SetCredentialAsync(string credentialRef, string value, CancellationToken ct = default) => Unavailable<Unit>();
     public virtual Task<Outcome<Unit>> UnsetCredentialAsync(string credentialRef, CancellationToken ct = default) => Unavailable<Unit>();
     public virtual Task<Outcome<PluginInventoryView>> GetPluginInventoryAsync(CancellationToken ct = default) => Unavailable<PluginInventoryView>();
+    public virtual Task<Outcome<IReadOnlyList<PluginBundleInfoView>>> ListPluginBundlesAsync(CancellationToken ct = default) => Unavailable<IReadOnlyList<PluginBundleInfoView>>();
+    public virtual Task<Outcome<PluginBundleDetailView>> ReadBundleDetailAsync(string bundleName, string language, CancellationToken ct = default) => Unavailable<PluginBundleDetailView>();
+    public virtual Task<Outcome<SettingsDescribeSnapshotView>> DescribeSettingsAsync(CancellationToken ct = default) => Unavailable<SettingsDescribeSnapshotView>();
+    public virtual Task<Outcome<SettingsNamespaceView>> MutateSettingsAsync(string ns, IReadOnlyList<SettingsPathOp> ops, long? expectedRevision = null, CancellationToken ct = default) => Unavailable<SettingsNamespaceView>();
+    public virtual Task<Outcome<SettingsNamespaceView>> ReplaceSettingsAsync(string ns, JsonElement section, long? expectedRevision = null, CancellationToken ct = default) => Unavailable<SettingsNamespaceView>();
     public virtual Task<Outcome<IAsyncDisposable>> FollowSessionAsync(string sessionId, Func<SessionFollowUpdate, ValueTask> onUpdate, int? maxMessages = null, bool activate = true, CancellationToken ct = default) => Unavailable<IAsyncDisposable>();
     public virtual Task<Outcome<IAsyncDisposable>> FollowWorkspaceAsync(Func<WorkspaceFollowFrame, ValueTask> onFrame, CancellationToken ct = default) => Unavailable<IAsyncDisposable>();
 }

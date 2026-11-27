@@ -40,11 +40,16 @@ public enum DshHostPhase
 }
 
 /// <summary>
-/// Optional host launch and protocol-handshake configuration for Route B native transport (PR-01, ADR-0033).
+/// Optional host launch and protocol-handshake configuration for Route B native transport (PR-01, ADR-0033; ADR-0034 扩展动态裁剪开关).
 /// </summary>
 public sealed record DshHostOptions(
     bool TrimmedWeb = false,
-    Func<IDshTokenSource, Action<DshHostPhase>, StartupTrace?, CancellationToken, Task<DshHostResult>>? ProtocolHandshakeAsync = null);
+    Func<IDshTokenSource, Action<DshHostPhase>, StartupTrace?, CancellationToken, Task<DshHostResult>>? ProtocolHandshakeAsync = null,
+    Func<bool>? UseTrimmedWeb = null)
+{
+    /// <summary>解析本次启动或原地重启实际生效的精简裁剪开关（优先读取动态委托，否则回退静态 <see cref="TrimmedWeb"/> 字段）。</summary>
+    public bool ResolveTrimmedWeb() => UseTrimmedWeb?.Invoke() ?? TrimmedWeb;
+}
 
 /// <summary>Read-only in-memory view of the launch token for native DSH clients. The token never leaves the process.</summary>
 public interface IDshTokenSource
@@ -74,6 +79,21 @@ public interface IDshHost : IAsyncDisposable
 
     /// <summary>Whether the <c>ui_*</c> layer was registered when DSH was last spawned (null: not spawned since start).</summary>
     bool? UiToolsAtStart { get; }
+
+    /// <summary>本次启动或最近一次拉起 DSH 进程时生效的精简裁剪模式标志（未拉起时为 null）。</summary>
+    bool? TrimmedWebAtStart => null;
+
+    /// <summary>当前运行的 DSH 进程是否处于精简裁剪模式（true：原生精简模式；false：完整 WebUI 兼容模式）。</summary>
+    bool IsTrimmedWebActive => true;
+
+    /// <summary>DSH 监听的本机回环端口。</summary>
+    int Port => RuntimeConstants.DshPort;
+
+    /// <summary>
+    /// 仅当宿主处于 <see cref="DshHostState.Ready"/>、非精简裁剪模式（完整 WebUI 兼容模式）、端口合法且内存中持有启动令牌时，
+    /// 构造本机回环浏览器打开地址；其余状态一律返回 <c>null</c>。严禁日志记录或持久化返回值与令牌。
+    /// </summary>
+    Uri? TryBuildBrowserLaunchUri() => null;
 
     event EventHandler? StateChanged;
 
@@ -184,6 +204,40 @@ public sealed class DshHost : IDshTokenSource, IDshHost
 
     /// <inheritdoc/>
     public bool? UiToolsAtStart { get; private set; }
+
+    /// <inheritdoc/>
+    public bool? TrimmedWebAtStart { get; private set; }
+
+    /// <inheritdoc/>
+    public bool IsTrimmedWebActive => TrimmedWebAtStart ?? _options.ResolveTrimmedWeb();
+
+    /// <inheritdoc/>
+    public int Port => RuntimeConstants.DshPort;
+
+    /// <inheritdoc/>
+    public Uri? TryBuildBrowserLaunchUri() =>
+        TryBuildBrowserLaunchUri(State, IsTrimmedWebActive, Port, Token);
+
+    /// <summary>
+    /// 本机完整 WebUI 浏览器打开地址的安全门禁（ADR-0034）：
+    /// 仅在宿主就绪、非精简裁剪模式、端口有效且启动令牌非空时返回 <c>http://127.0.0.1:&lt;port&gt;/?token=...</c>；
+    /// 绝不将返回值或令牌写入日志、异常消息或持久化状态。
+    /// </summary>
+    internal static Uri? TryBuildBrowserLaunchUri(DshHostState state, bool isTrimmedWebActive, int port, string? launchToken)
+    {
+        if (state != DshHostState.Ready || isTrimmedWebActive || port is <= 0 or > 65535 || string.IsNullOrWhiteSpace(launchToken))
+        {
+            return null;
+        }
+        var escapedToken = Uri.EscapeDataString(launchToken);
+        var rawUri = FormattableString.Invariant($"http://{RuntimeConstants.DshHost}:{port}/?token={escapedToken}");
+        return Uri.TryCreate(rawUri, UriKind.Absolute, out var uri) &&
+               uri.Scheme == Uri.UriSchemeHttp &&
+               string.Equals(uri.Host, RuntimeConstants.DshHost, StringComparison.Ordinal) &&
+               uri.Port == port
+            ? uri
+            : null;
+    }
 
     public string? Token
     {
@@ -364,6 +418,7 @@ public sealed class DshHost : IDshTokenSource, IDshHost
             var left = await KillEverythingAsync().ConfigureAwait(false);
             ReapOrphanProotLoaders();
             UiToolsAtStart = null;
+            TrimmedWebAtStart = null;
             SetState(DshHostState.Stopped);
             SetPhase(DshHostPhase.Idle);
             return left == 0
@@ -452,6 +507,7 @@ public sealed class DshHost : IDshTokenSource, IDshHost
             var left = await KillEverythingAsync().ConfigureAwait(false);
             ReapOrphanProotLoaders();
             UiToolsAtStart = null;
+            TrimmedWebAtStart = null;
             SetState(left == 0 ? DshHostState.Stopped : DshHostState.Failed);
             SetPhase(left == 0 ? DshHostPhase.Idle : DshHostPhase.Failed);
 
@@ -564,7 +620,8 @@ public sealed class DshHost : IDshTokenSource, IDshHost
     {
         _window = DshWindowState.Fresh(NowMs());
         UiToolsAtStart = DshMobile.Runtime.Automation.UiToolsRegistration.IsRegistered(_layout.UserDataDir);
-        var argv = BuildDshArgv(_builder, _options, inPlaceRestart: true);
+        var argv = BuildDshArgv(_builder, _options, inPlaceRestart: true, out var effectiveTrimmedWeb);
+        TrimmedWebAtStart = effectiveTrimmedWeb;
         var env = _builder.Environment("dsh");
         return SpawnDshProcess(argv, env, trace: null, onHintReady: null);
     }
@@ -575,7 +632,8 @@ public sealed class DshHost : IDshTokenSource, IDshHost
         // DSH reads its --patch layers once at start: this is what "loaded by DSH" means for the ui_* tools.
         UiToolsAtStart = DshMobile.Runtime.Automation.UiToolsRegistration.IsRegistered(_layout.UserDataDir);
         var commandEnv = trace?.Measure("dsh.command_env");
-        var argv = BuildDshArgv(_builder, _options, inPlaceRestart: false);
+        var argv = BuildDshArgv(_builder, _options, inPlaceRestart: false, out var effectiveTrimmedWeb);
+        TrimmedWebAtStart = effectiveTrimmedWeb;
         var env = _builder.Environment("dsh");
         commandEnv?.End();
         return SpawnDshProcess(argv, env, trace, onHintReady);
@@ -583,14 +641,23 @@ public sealed class DshHost : IDshTokenSource, IDshHost
 
     /// <summary>
     /// 统一的 DSH argv 构建入口：首次启动与健康循环的原地重启都必须使用同一个
-    /// <see cref="DshHostOptions.TrimmedWeb"/>，避免只裁剪首启、重启后又把浏览器前端插件加载回来。
+    /// <see cref="DshHostOptions.ResolveTrimmedWeb"/> 结果，避免只裁剪首启、重启后又把浏览器前端插件加载回来。
     /// 内部静态方法便于单测直接锁定两条路径，无需真的拉起 PRoot/DSH 进程。
     /// </summary>
-    internal static IReadOnlyList<string> BuildDshArgv(ProotCommandBuilder builder, DshHostOptions options, bool inPlaceRestart)
+    internal static IReadOnlyList<string> BuildDshArgv(ProotCommandBuilder builder, DshHostOptions options, bool inPlaceRestart) =>
+        BuildDshArgv(builder, options, inPlaceRestart, out _);
+
+    /// <summary>统一的 DSH argv 构建入口，同时返回本次实际生效的精简裁剪模式状态。</summary>
+    internal static IReadOnlyList<string> BuildDshArgv(
+        ProotCommandBuilder builder,
+        DshHostOptions options,
+        bool inPlaceRestart,
+        out bool effectiveTrimmedWeb)
     {
         ArgumentNullException.ThrowIfNull(builder);
         ArgumentNullException.ThrowIfNull(options);
-        return builder.DshCommand(inPlaceRestart: inPlaceRestart, trimmedWeb: options.TrimmedWeb);
+        effectiveTrimmedWeb = options.ResolveTrimmedWeb();
+        return builder.DshCommand(inPlaceRestart: inPlaceRestart, trimmedWeb: effectiveTrimmedWeb);
     }
 
     private Process SpawnDshProcess(IReadOnlyList<string> argv, IReadOnlyDictionary<string, string> env, StartupTrace? trace, Action? onHintReady)
@@ -930,6 +997,7 @@ public sealed class DshHost : IDshTokenSource, IDshHost
         _dsh?.Dispose();
         _sandbox?.Dispose();
         _dsh = _sandbox = null;
+        TrimmedWebAtStart = null;
         bool hadToken;
         lock (_gate)
         {

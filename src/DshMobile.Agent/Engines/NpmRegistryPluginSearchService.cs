@@ -17,10 +17,13 @@ public sealed class NpmRegistryPluginSearchService : IPluginCatalogSearch, IDisp
 
     private const string RegistryHost = "registry.npmjs.org";
     private const string SearchEndpointBase = "https://registry.npmjs.org/-/v1/search";
+    private const string PackageEndpointBase = "https://registry.npmjs.org";
     private const int MinLimit = 1;
     private const int MaxLimit = 30;
     private const int MaxKeywordsPerEntry = 8;
     private const int MaxDescriptionLength = 240;
+    private const int MaxReadmeLength = 64 * 1024;
+    private const int MaxAvailableVersions = 15;
     private static readonly TimeSpan DefaultTimeout = TimeSpan.FromSeconds(12);
 
     private readonly HttpClient _httpClient;
@@ -196,6 +199,145 @@ public sealed class NpmRegistryPluginSearchService : IPluginCatalogSearch, IDisp
         }
     }
 
+    /// <inheritdoc />
+    public async Task<Outcome<PluginCatalogDetailView>> GetPackageDetailAsync(
+        string packageName,
+        CancellationToken ct = default)
+    {
+        ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
+        ct.ThrowIfCancellationRequested();
+
+        var trimmedName = packageName?.Trim();
+        if (!PluginPackageValidator.IsValidPackageName(trimmedName))
+        {
+            return Outcome<PluginCatalogDetailView>.Fail(
+                DshFailureCode.InvalidState,
+                "plugins.invalid_package_name",
+                retryable: false);
+        }
+
+        var escapedName = Uri.EscapeDataString(trimmedName!);
+        var requestUri = new Uri($"{PackageEndpointBase}/{escapedName}", UriKind.Absolute);
+        if (!string.Equals(requestUri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase) ||
+            !string.Equals(requestUri.Host, RegistryHost, StringComparison.OrdinalIgnoreCase))
+        {
+            return Outcome<PluginCatalogDetailView>.Fail(
+                DshFailureCode.InvalidState,
+                "plugins.catalog_invalid_endpoint",
+                retryable: false);
+        }
+
+        using var request = new HttpRequestMessage(HttpMethod.Get, requestUri);
+        request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+        request.Headers.UserAgent.ParseAdd("DshMobile/1.0");
+
+        using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        timeoutCts.CancelAfter(_requestTimeout);
+
+        HttpResponseMessage response;
+        try
+        {
+            response = await _httpClient
+                .SendAsync(request, HttpCompletionOption.ResponseHeadersRead, timeoutCts.Token)
+                .ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested && timeoutCts.IsCancellationRequested)
+        {
+            return Outcome<PluginCatalogDetailView>.Fail(
+                DshFailureCode.Timeout,
+                "plugins.catalog_detail_timeout",
+                retryable: true);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (HttpRequestException)
+        {
+            return Outcome<PluginCatalogDetailView>.Fail(
+                DshFailureCode.TransportLost,
+                "plugins.catalog_detail_http_error",
+                retryable: true);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            var diagnostic = SecretRedactor.RedactAndTruncate($"plugins.catalog_detail_transport:{ex.GetType().Name}", 160);
+            return Outcome<PluginCatalogDetailView>.Fail(
+                DshFailureCode.TransportLost,
+                diagnostic,
+                retryable: true);
+        }
+
+        using (response)
+        {
+            if (!response.IsSuccessStatusCode)
+            {
+                var statusCode = (int)response.StatusCode;
+                var retryable = statusCode == 429 || statusCode >= 500;
+                return Outcome<PluginCatalogDetailView>.Fail(
+                    DshFailureCode.TransportLost,
+                    $"plugins.catalog_detail_http_{statusCode}",
+                    retryable);
+            }
+
+            NpmPackageDetailDto? payload;
+            try
+            {
+                await using var responseStream = await response.Content
+                    .ReadAsStreamAsync(timeoutCts.Token)
+                    .ConfigureAwait(false);
+                payload = await JsonSerializer
+                    .DeserializeAsync(responseStream, NpmRegistrySearchJsonContext.Default.NpmPackageDetailDto, timeoutCts.Token)
+                    .ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (!ct.IsCancellationRequested && timeoutCts.IsCancellationRequested)
+            {
+                return Outcome<PluginCatalogDetailView>.Fail(
+                    DshFailureCode.Timeout,
+                    "plugins.catalog_detail_timeout",
+                    retryable: true);
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (JsonException)
+            {
+                return Outcome<PluginCatalogDetailView>.Fail(
+                    DshFailureCode.ProtocolMismatch,
+                    "plugins.catalog_detail_invalid_json",
+                    retryable: false);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                var diagnostic = SecretRedactor.RedactAndTruncate($"plugins.catalog_detail_read_failed:{ex.GetType().Name}", 160);
+                return Outcome<PluginCatalogDetailView>.Fail(
+                    DshFailureCode.TransportLost,
+                    diagnostic,
+                    retryable: true);
+            }
+
+            if (payload is null)
+            {
+                return Outcome<PluginCatalogDetailView>.Fail(
+                    DshFailureCode.ProtocolMismatch,
+                    "plugins.catalog_detail_invalid_payload",
+                    retryable: false);
+            }
+
+            var resolvedName = string.IsNullOrWhiteSpace(payload.Name) ? trimmedName! : payload.Name.Trim();
+            if (!PluginPackageValidator.IsValidPackageName(resolvedName))
+            {
+                return Outcome<PluginCatalogDetailView>.Fail(
+                    DshFailureCode.ProtocolMismatch,
+                    "plugins.catalog_detail_invalid_name",
+                    retryable: false);
+            }
+
+            return Outcome<PluginCatalogDetailView>.Ok(MapPackageDetail(resolvedName, payload));
+        }
+    }
+
     public void Dispose()
     {
         if (Interlocked.Exchange(ref _disposed, 1) != 0)
@@ -302,6 +444,231 @@ public sealed class NpmRegistryPluginSearchService : IPluginCatalogSearch, IDisp
             : null;
     }
 
+    private static PluginCatalogDetailView MapPackageDetail(string packageName, NpmPackageDetailDto payload)
+    {
+        var availableVersions = ExtractAvailableVersions(packageName, payload.Versions, payload.Time);
+        string? latestVersion = null;
+        if (payload.DistTags is not null &&
+            payload.DistTags.TryGetValue("latest", out var taggedLatest) &&
+            !string.IsNullOrWhiteSpace(taggedLatest))
+        {
+            latestVersion = taggedLatest.Trim();
+        }
+        latestVersion ??= availableVersions.Count > 0 ? availableVersions[0] : string.Empty;
+
+        NpmPackageVersionManifestDto? latestManifest = null;
+        if (payload.Versions is not null && !string.IsNullOrEmpty(latestVersion))
+        {
+            payload.Versions.TryGetValue(latestVersion, out latestManifest);
+        }
+
+        var rawDescription = !string.IsNullOrWhiteSpace(latestManifest?.Description)
+            ? latestManifest!.Description
+            : payload.Description;
+        var description = string.IsNullOrWhiteSpace(rawDescription)
+            ? string.Empty
+            : SecretRedactor.RedactAndTruncate(rawDescription.Trim(), MaxDescriptionLength);
+
+        var readme = NormalizeReadme(payload.Readme);
+        var keywords = NormalizeKeywords(latestManifest?.Keywords ?? payload.Keywords);
+        var license = ExtractSimpleString(latestManifest?.License) ?? ExtractSimpleString(payload.License);
+        var author = ExtractAuthor(latestManifest?.Author) ?? ExtractAuthor(payload.Author);
+        var homepageUrl = SanitizeHttpsUrl(latestManifest?.Homepage) ?? SanitizeHttpsUrl(payload.Homepage);
+        var repositoryUrl = ExtractRepositoryHttpsUrl(latestManifest?.Repository) ?? ExtractRepositoryHttpsUrl(payload.Repository);
+        var npmUrl = $"https://www.npmjs.com/package/{packageName}";
+
+        var hasBundleManifest = IsTruthyManifestDeclaration(latestManifest?.Dsh?.Bundle);
+        var manifestDeclaresClient = IsTruthyManifestDeclaration(latestManifest?.Dsh?.Client);
+        var hasCustomWebUi = PluginPackageValidator.IsCustomWebUiPlugin(packageName, packageName, manifestDeclaresClient);
+        var isOfficialScope = packageName.StartsWith("@deepseek-ai/", StringComparison.Ordinal);
+        var recommendedSpec = PluginPackageValidator.BuildRecommendedInstallSpec(packageName, latestVersion) ?? packageName;
+
+        return new PluginCatalogDetailView(
+            PackageName: packageName,
+            LatestVersion: latestVersion,
+            Description: description,
+            ReadmeMarkdown: readme,
+            Keywords: keywords,
+            License: license,
+            Author: author,
+            HomepageUrl: homepageUrl,
+            RepositoryUrl: repositoryUrl,
+            NpmUrl: npmUrl,
+            AvailableVersions: availableVersions,
+            IsOfficialScope: isOfficialScope,
+            HasBundleManifest: hasBundleManifest,
+            HasCustomWebUi: hasCustomWebUi,
+            RecommendedInstallSpec: recommendedSpec);
+    }
+
+    private static List<string> ExtractAvailableVersions(
+        string packageName,
+        Dictionary<string, NpmPackageVersionManifestDto>? versions,
+        Dictionary<string, string>? publishTimes)
+    {
+        if (versions is null || versions.Count == 0)
+        {
+            return [];
+        }
+
+        var valid = new List<(string Version, long? PublishedAt, int Index)>(versions.Count);
+        var index = 0;
+        foreach (var key in versions.Keys)
+        {
+            var ver = key?.Trim();
+            if (string.IsNullOrEmpty(ver) ||
+                !PluginPackageValidator.IsValidInstallSpec($"{packageName}@{ver}"))
+            {
+                index++;
+                continue;
+            }
+
+            long? publishedAt = null;
+            if (publishTimes is not null && publishTimes.TryGetValue(key!, out var iso))
+            {
+                publishedAt = ParsePublishedAtUnixMs(iso);
+            }
+            valid.Add((ver, publishedAt, index++));
+        }
+
+        valid.Sort(static (left, right) =>
+        {
+            if (left.PublishedAt.HasValue && right.PublishedAt.HasValue)
+            {
+                var cmp = right.PublishedAt.Value.CompareTo(left.PublishedAt.Value);
+                if (cmp != 0)
+                {
+                    return cmp;
+                }
+            }
+            else if (left.PublishedAt.HasValue != right.PublishedAt.HasValue)
+            {
+                return left.PublishedAt.HasValue ? -1 : 1;
+            }
+            return right.Index.CompareTo(left.Index);
+        });
+
+        var takeCount = Math.Min(valid.Count, MaxAvailableVersions);
+        var result = new List<string>(takeCount);
+        for (var i = 0; i < takeCount; i++)
+        {
+            result.Add(valid[i].Version);
+        }
+        return result;
+    }
+
+    private static string? NormalizeReadme(string? rawReadme)
+    {
+        if (string.IsNullOrWhiteSpace(rawReadme))
+        {
+            return null;
+        }
+        var trimmed = rawReadme.TrimStart('\uFEFF').Trim();
+        if (trimmed.Length == 0 ||
+            string.Equals(trimmed, "ERROR: No README data found!", StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+        if (trimmed.Length > MaxReadmeLength)
+        {
+            trimmed = trimmed[..MaxReadmeLength];
+        }
+        return trimmed;
+    }
+
+    private static string? ExtractSimpleString(JsonElement? element)
+    {
+        if (element is not { } el)
+        {
+            return null;
+        }
+        if (el.ValueKind == JsonValueKind.String)
+        {
+            var s = el.GetString()?.Trim();
+            return string.IsNullOrEmpty(s) ? null : s;
+        }
+        if (el.ValueKind == JsonValueKind.Object &&
+            el.TryGetProperty("type", out var typeEl) &&
+            typeEl.ValueKind == JsonValueKind.String)
+        {
+            var s = typeEl.GetString()?.Trim();
+            return string.IsNullOrEmpty(s) ? null : s;
+        }
+        return null;
+    }
+
+    private static string? ExtractAuthor(JsonElement? element)
+    {
+        if (element is not { } el)
+        {
+            return null;
+        }
+        if (el.ValueKind == JsonValueKind.String)
+        {
+            var s = el.GetString()?.Trim();
+            return string.IsNullOrEmpty(s) ? null : SecretRedactor.RedactAndTruncate(s, 120);
+        }
+        if (el.ValueKind == JsonValueKind.Object &&
+            el.TryGetProperty("name", out var nameEl) &&
+            nameEl.ValueKind == JsonValueKind.String)
+        {
+            var s = nameEl.GetString()?.Trim();
+            return string.IsNullOrEmpty(s) ? null : SecretRedactor.RedactAndTruncate(s, 120);
+        }
+        return null;
+    }
+
+    private static string? ExtractRepositoryHttpsUrl(JsonElement? element)
+    {
+        if (element is not { } el)
+        {
+            return null;
+        }
+        string? raw = null;
+        if (el.ValueKind == JsonValueKind.String)
+        {
+            raw = el.GetString();
+        }
+        else if (el.ValueKind == JsonValueKind.Object &&
+                 el.TryGetProperty("url", out var urlEl) &&
+                 urlEl.ValueKind == JsonValueKind.String)
+        {
+            raw = urlEl.GetString();
+        }
+
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            return null;
+        }
+
+        var normalized = raw.Trim();
+        if (normalized.StartsWith("git+https://", StringComparison.OrdinalIgnoreCase))
+        {
+            normalized = normalized["git+".Length..];
+        }
+        if (normalized.EndsWith(".git", StringComparison.OrdinalIgnoreCase))
+        {
+            normalized = normalized[..^4];
+        }
+        return SanitizeHttpsUrl(normalized);
+    }
+
+    private static bool IsTruthyManifestDeclaration(JsonElement? element)
+    {
+        if (element is not { } el)
+        {
+            return false;
+        }
+        return el.ValueKind switch
+        {
+            JsonValueKind.True => true,
+            JsonValueKind.String => !string.IsNullOrWhiteSpace(el.GetString()),
+            JsonValueKind.Object => true,
+            JsonValueKind.Array => el.GetArrayLength() > 0,
+            _ => false,
+        };
+    }
+
     private static string? SanitizeHttpsUrl(string? rawUrl)
     {
         if (string.IsNullOrWhiteSpace(rawUrl))
@@ -352,6 +719,34 @@ internal sealed record NpmSearchLinksDto(
 internal sealed record NpmSearchPublisherDto(
     [property: JsonPropertyName("username")] string? Username);
 
+internal sealed record NpmPackageDshManifestDto(
+    [property: JsonPropertyName("bundle")] JsonElement? Bundle = null,
+    [property: JsonPropertyName("client")] JsonElement? Client = null);
+
+internal sealed record NpmPackageVersionManifestDto(
+    [property: JsonPropertyName("version")] string? Version = null,
+    [property: JsonPropertyName("description")] string? Description = null,
+    [property: JsonPropertyName("keywords")] List<string>? Keywords = null,
+    [property: JsonPropertyName("license")] JsonElement? License = null,
+    [property: JsonPropertyName("author")] JsonElement? Author = null,
+    [property: JsonPropertyName("homepage")] string? Homepage = null,
+    [property: JsonPropertyName("repository")] JsonElement? Repository = null,
+    [property: JsonPropertyName("dsh")] NpmPackageDshManifestDto? Dsh = null);
+
+internal sealed record NpmPackageDetailDto(
+    [property: JsonPropertyName("name")] string? Name = null,
+    [property: JsonPropertyName("description")] string? Description = null,
+    [property: JsonPropertyName("readme")] string? Readme = null,
+    [property: JsonPropertyName("keywords")] List<string>? Keywords = null,
+    [property: JsonPropertyName("license")] JsonElement? License = null,
+    [property: JsonPropertyName("author")] JsonElement? Author = null,
+    [property: JsonPropertyName("homepage")] string? Homepage = null,
+    [property: JsonPropertyName("repository")] JsonElement? Repository = null,
+    [property: JsonPropertyName("dist-tags")] Dictionary<string, string>? DistTags = null,
+    [property: JsonPropertyName("versions")] Dictionary<string, NpmPackageVersionManifestDto>? Versions = null,
+    [property: JsonPropertyName("time")] Dictionary<string, string>? Time = null);
+
 [JsonSourceGenerationOptions(PropertyNameCaseInsensitive = true)]
 [JsonSerializable(typeof(NpmSearchResponseDto))]
+[JsonSerializable(typeof(NpmPackageDetailDto))]
 internal sealed partial class NpmRegistrySearchJsonContext : JsonSerializerContext;

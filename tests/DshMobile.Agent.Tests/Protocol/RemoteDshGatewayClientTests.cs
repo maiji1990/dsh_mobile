@@ -83,7 +83,25 @@ public sealed class RemoteDshGatewayClientTests
             .Deserialize(AgentProtocolJsonContext.Default.WirePluginInventorySnapshot);
         Assert.Equal(2, plugins!.Entries.Count);
         Assert.Null(RemoteProtocolCodec.ResolveLocalizedText(plugins.Entries[0].Meta?.Description));
+        Assert.Equal("示例插件标题", RemoteProtocolCodec.ResolveLocalizedText(plugins.Entries[1].Meta?.Title));
         Assert.Equal("示例插件", RemoteProtocolCodec.ResolveLocalizedText(plugins.Entries[1].Meta?.Description));
+        Assert.Equal("data:image/png;base64,iVBORw0KGgo=", plugins.Entries[1].Meta?.Icon);
+
+        var bundles = root.GetProperty("pluginBundlesList").GetProperty("result").GetProperty("value")
+            .Deserialize(AgentProtocolJsonContext.Default.WirePluginBundleInfoArray);
+        Assert.Single(bundles!);
+        Assert.Equal("@deepseek-ai/dsh-demo", bundles![0].Name);
+
+        var bundleDetail = root.GetProperty("pluginBundleDetail").GetProperty("result").GetProperty("value")
+            .Deserialize(AgentProtocolJsonContext.Default.WirePluginBundleDetailValue);
+        Assert.Equal("found", bundleDetail!.Status);
+        Assert.Equal("locale", bundleDetail.Origin);
+
+        var settingsDescribe = root.GetProperty("settingsDescribe").GetProperty("result").GetProperty("value")
+            .Deserialize(AgentProtocolJsonContext.Default.WireSettingsDescribeValue);
+        Assert.True(settingsDescribe!.Writable);
+        Assert.Single(settingsDescribe.Namespaces);
+        Assert.Equal(7, settingsDescribe.Namespaces[0].Revision);
 
         var variants = root.GetProperty("turnEndVariants").EnumerateArray().ToList();
         Assert.Equal(TurnEndReasonKind.Completed, RemoteProtocolCodec.ParseTurnEndReason(variants[0]).Kind);
@@ -591,5 +609,179 @@ public sealed class RemoteDshGatewayClientTests
         Assert.True(caps.IsOk);
         Assert.True(caps.Value!.ListSessions);
         Assert.False(caps.Value.ArchiveSessions);
+        Assert.False(caps.Value.PluginBundles);
+        Assert.False(caps.Value.PluginSettings);
+    }
+
+    [Fact]
+    public async Task GatewayClient_PluginBundles_LocalizedMeta_AndSettingsMutateReplaceContracts()
+    {
+        using var fixtureDoc = JsonDocument.Parse(File.ReadAllText(FixturePath()));
+        var fx = fixtureDoc.RootElement;
+
+        await using var server = new FakeRemoteServer();
+        string? capturedBundleDetailJson = null;
+        string? capturedMutateJson = null;
+        string? capturedReplaceJson = null;
+        var mutateAttempt = 0;
+
+        server.OnHttpRequest = req =>
+        {
+            if (req.Path == "/connect")
+            {
+                return Task.FromResult(new FakeRemoteServer.HttpResponseData(
+                    302, "Found", [("Location", "/"), ("Set-Cookie", $"dsh-auth-{server.Port}=ck-plug; HttpOnly")], []));
+            }
+
+            var rpcId = ParseRpcId(req.Body);
+            switch (req.Path)
+            {
+                case "/api/session/list":
+                    return Task.FromResult(FakeRemoteServer.HttpResponseData.Json(200, WrapOk(rpcId, """{"items":[]}""")));
+                case "/api/session/modelCatalog":
+                    return Task.FromResult(FakeRemoteServer.HttpResponseData.Json(200, WrapOk(rpcId, """{"default":{"provider":"p","model":"m"},"routableProviders":[],"groups":[],"failures":[]}""")));
+                case "/api/credentials/describe":
+                    return Task.FromResult(FakeRemoteServer.HttpResponseData.Json(200, WrapOk(rpcId, "{}")));
+                case "/api/pluginInventory/list":
+                    return Task.FromResult(FakeRemoteServer.HttpResponseData.Json(200,
+                        WrapServerResponse(rpcId, fx.GetProperty("pluginInventory").GetProperty("result"))));
+                case "/api/pluginManager/listBundles":
+                    return Task.FromResult(FakeRemoteServer.HttpResponseData.Json(200,
+                        WrapServerResponse(rpcId, fx.GetProperty("pluginBundlesList").GetProperty("result"))));
+                case "/api/pluginManager/readBundleDetail":
+                    capturedBundleDetailJson = Encoding.UTF8.GetString(req.Body);
+                    return Task.FromResult(FakeRemoteServer.HttpResponseData.Json(200,
+                        WrapServerResponse(rpcId, fx.GetProperty("pluginBundleDetail").GetProperty("result"))));
+                case "/api/settings/describe":
+                    return Task.FromResult(FakeRemoteServer.HttpResponseData.Json(200,
+                        WrapServerResponse(rpcId, fx.GetProperty("settingsDescribe").GetProperty("result"))));
+                case "/api/settings/mutate":
+                    capturedMutateJson = Encoding.UTF8.GetString(req.Body);
+                    mutateAttempt++;
+                    if (mutateAttempt == 1)
+                    {
+                        return Task.FromResult(FakeRemoteServer.HttpResponseData.Json(200,
+                            WrapErr(rpcId, "settings/conflict", "revision mismatch")));
+                    }
+                    return Task.FromResult(FakeRemoteServer.HttpResponseData.Json(200,
+                        WrapOk(rpcId, """{"autoGenerate":true,"ns":"localized-entry","schema":{"type":"object","dict":{}},"value":{"enabledFlag":false},"base":{"enabledFlag":false},"user":{},"applies":"live","secrets":[{"path":["apiToken"],"set":true}],"revision":8}""")));
+                case "/api/settings/replace":
+                    capturedReplaceJson = Encoding.UTF8.GetString(req.Body);
+                    return Task.FromResult(FakeRemoteServer.HttpResponseData.Json(200,
+                        WrapOk(rpcId, """{"autoGenerate":true,"ns":"localized-entry","schema":{"type":"object","dict":{}},"value":{"enabledFlag":false},"base":{"enabledFlag":false},"user":{},"applies":"live","secrets":[],"revision":9}""")));
+                default:
+                    return Task.FromResult(FakeRemoteServer.HttpResponseData.Json(404, "{}"));
+            }
+        };
+
+        server.OnWebSocketConnected = async (_, ws, ct) =>
+        {
+            var openEv = await FakeRemoteServer.ReceiveTextAsync(ws, ct);
+            using var evDoc = JsonDocument.Parse(openEv!);
+            await FakeRemoteServer.SendTextAsync(ws, ReadyFrame(evDoc.RootElement.GetProperty("streamId").GetString()!, "c-plug"), ct);
+            while (ws.State == WebSocketState.Open && !ct.IsCancellationRequested)
+            {
+                var raw = await FakeRemoteServer.ReceiveTextAsync(ws, ct);
+                if (raw is null)
+                {
+                    break;
+                }
+            }
+        };
+
+        await using var conn = new DshRemoteConnection(new RemoteConnectionOptions(server.BaseUri), () => DummyToken);
+        using var gw = new RemoteDshGatewayClient(conn);
+
+        // 1. ProbeCapabilitiesAsync 探测 PluginBundles & PluginSettings 为 true
+        var caps = await gw.ProbeCapabilitiesAsync();
+        Assert.True(caps.IsOk);
+        Assert.True(caps.Value!.PluginInventory);
+        Assert.True(caps.Value.PluginBundles);
+        Assert.True(caps.Value.PluginSettings);
+
+        // 2. GetPluginInventoryAsync 分别解析 title 与 description
+        var inv = await gw.GetPluginInventoryAsync();
+        Assert.True(inv.IsOk);
+        var localized = Assert.Single(inv.Value!.Entries, e => e.EntryId == "localized-entry");
+        Assert.Equal("示例插件标题", localized.DisplayName);
+        Assert.Equal("示例插件", localized.Description);
+
+        // 3. ListPluginBundlesAsync & ReadBundleDetailAsync 扁平参数
+        var bundles = await gw.ListPluginBundlesAsync();
+        Assert.True(bundles.IsOk);
+        var demoBundle = Assert.Single(bundles.Value!);
+        Assert.Equal("@deepseek-ai/dsh-demo", demoBundle.Name);
+        Assert.Equal("示例扩展包", demoBundle.DisplayName);
+        Assert.Equal("示例扩展包说明", demoBundle.Description);
+        Assert.Single(demoBundle.Rows);
+
+        var detail = await gw.ReadBundleDetailAsync("@deepseek-ai/dsh-demo", "zh-CN");
+        Assert.True(detail.IsOk);
+        Assert.True(detail.Value!.Found);
+        Assert.Equal("locale", detail.Value.Origin);
+        Assert.Contains("# 示例插件", detail.Value.Markdown!, StringComparison.Ordinal);
+        using (var bdDoc = JsonDocument.Parse(capturedBundleDetailJson!))
+        {
+            var argsEl = bdDoc.RootElement.GetProperty("payload").GetProperty("args");
+            Assert.Equal("@deepseek-ai/dsh-demo", argsEl.GetProperty("name").GetString());
+            Assert.Equal("zh-CN", argsEl.GetProperty("language").GetString());
+        }
+
+        // 4. DescribeSettingsAsync
+        var described = await gw.DescribeSettingsAsync();
+        Assert.True(described.IsOk);
+        Assert.True(described.Value!.Writable);
+        var ns = Assert.Single(described.Value.Namespaces);
+        Assert.Equal("localized-entry", ns.Namespace);
+        Assert.Equal(7, ns.Revision);
+        Assert.Single(ns.Secrets);
+        Assert.True(ns.Secrets[0].IsSet);
+
+        // 5. MutateSettingsAsync: 第一次命中 settings/conflict → SettingsConflict
+        using var falseDoc = JsonDocument.Parse("false");
+        var conflictOutcome = await gw.MutateSettingsAsync(
+            "localized-entry",
+            [
+                SettingsPathOp.Set(["enabledFlag"], falseDoc.RootElement),
+                SettingsPathOp.Unset(["optionalField"]),
+            ],
+            expectedRevision: 6);
+        Assert.False(conflictOutcome.IsOk);
+        Assert.Equal(DshFailureCode.SettingsConflict, conflictOutcome.Error!.Code);
+
+        // 验证线协议严格扁平封装且 unset 不带 value 字段
+        using (var mutDoc = JsonDocument.Parse(capturedMutateJson!))
+        {
+            var argsEl = mutDoc.RootElement.GetProperty("payload").GetProperty("args");
+            Assert.Equal("localized-entry", argsEl.GetProperty("ns").GetString());
+            Assert.Equal(6, argsEl.GetProperty("expectedRevision").GetInt64());
+            var opsEl = argsEl.GetProperty("ops");
+            Assert.Equal(2, opsEl.GetArrayLength());
+            Assert.Equal("set", opsEl[0].GetProperty("op").GetString());
+            Assert.False(opsEl[0].GetProperty("value").GetBoolean());
+            Assert.Equal("unset", opsEl[1].GetProperty("op").GetString());
+            Assert.False(opsEl[1].TryGetProperty("value", out _));
+        }
+
+        // 第二次写入成功，revision 推进到 8
+        var mutateOk = await gw.MutateSettingsAsync(
+            "localized-entry",
+            [SettingsPathOp.Unset(["enabledFlag"])],
+            expectedRevision: 7);
+        Assert.True(mutateOk.IsOk);
+        Assert.Equal(8, mutateOk.Value!.Revision);
+
+        // 6. ReplaceSettingsAsync
+        using var emptySection = JsonDocument.Parse("{}");
+        var replaceOk = await gw.ReplaceSettingsAsync("localized-entry", emptySection.RootElement, expectedRevision: 8);
+        Assert.True(replaceOk.IsOk);
+        Assert.Equal(9, replaceOk.Value!.Revision);
+        using (var repDoc = JsonDocument.Parse(capturedReplaceJson!))
+        {
+            var argsEl = repDoc.RootElement.GetProperty("payload").GetProperty("args");
+            Assert.Equal("localized-entry", argsEl.GetProperty("ns").GetString());
+            Assert.Equal(JsonValueKind.Object, argsEl.GetProperty("section").ValueKind);
+            Assert.Equal(8, argsEl.GetProperty("expectedRevision").GetInt64());
+        }
     }
 }

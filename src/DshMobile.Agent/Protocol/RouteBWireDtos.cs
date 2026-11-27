@@ -273,8 +273,11 @@ public sealed record WireCredentialsUnsetArgs(
     [property: JsonPropertyName("ref")] string Ref);
 
 public sealed record WirePluginLocalizedMeta(
+    [property: JsonPropertyName("title")] JsonElement? Title = null,
     [property: JsonPropertyName("name")] JsonElement? Name = null,
-    [property: JsonPropertyName("description")] JsonElement? Description = null);
+    [property: JsonPropertyName("description")] JsonElement? Description = null,
+    [property: JsonPropertyName("icon")] string? Icon = null,
+    [property: JsonPropertyName("error")] string? Error = null);
 
 public sealed record WirePluginInventoryEntry(
     [property: JsonPropertyName("entryId")] string EntryId,
@@ -287,6 +290,79 @@ public sealed record WirePluginInventoryEntry(
 public sealed record WirePluginInventorySnapshot(
     [property: JsonPropertyName("managementAvailable")] bool? ManagementAvailable,
     [property: JsonPropertyName("entries")] IReadOnlyList<WirePluginInventoryEntry> Entries);
+
+// Plugin Manager Bundle 与详情 DTO（@deepseek-ai/dsh-plugin-manager）
+public sealed record WirePluginManagementError(
+    [property: JsonPropertyName("code")] string Code,
+    [property: JsonPropertyName("diagnostic")] string? Diagnostic = null);
+
+public sealed record WirePluginBundleRowInfo(
+    [property: JsonPropertyName("rowId")] string RowId,
+    [property: JsonPropertyName("moduleName")] string ModuleName,
+    [property: JsonPropertyName("meta")] WirePluginLocalizedMeta? Meta = null,
+    [property: JsonPropertyName("entryId")] string? EntryId = null);
+
+public sealed record WirePluginBundleInfo(
+    [property: JsonPropertyName("name")] string Name,
+    [property: JsonPropertyName("official")] bool Official = false,
+    [property: JsonPropertyName("availability")] string Availability = "missing",
+    [property: JsonPropertyName("version")] string? Version = null,
+    [property: JsonPropertyName("meta")] WirePluginLocalizedMeta? Meta = null,
+    [property: JsonPropertyName("description")] string? Description = null,
+    [property: JsonPropertyName("enabled")] bool Enabled = false,
+    [property: JsonPropertyName("installed")] bool Installed = false,
+    [property: JsonPropertyName("optional")] bool Optional = false,
+    [property: JsonPropertyName("removable")] bool Removable = false,
+    [property: JsonPropertyName("readOnlyReason")] string? ReadOnlyReason = null,
+    [property: JsonPropertyName("error")] WirePluginManagementError? Error = null,
+    [property: JsonPropertyName("rows")] IReadOnlyList<WirePluginBundleRowInfo>? Rows = null,
+    [property: JsonPropertyName("overrides")] IReadOnlyList<string>? Overrides = null);
+
+public sealed record WirePluginReadBundleDetailArgs(
+    [property: JsonPropertyName("name")] string Name,
+    [property: JsonPropertyName("language")] string Language);
+
+public sealed record WirePluginBundleDetailValue(
+    [property: JsonPropertyName("status")] string Status,
+    [property: JsonPropertyName("origin")] string? Origin = null,
+    [property: JsonPropertyName("path")] string? Path = null,
+    [property: JsonPropertyName("markdown")] string? Markdown = null);
+
+// 官方 Settings Controller DTO（@deepseek-ai/dsh-api-settings-controller）
+public sealed record WireSettingsSecretView(
+    [property: JsonPropertyName("path")] IReadOnlyList<string> Path,
+    [property: JsonPropertyName("set")] bool Set);
+
+public sealed record WireSettingsNamespaceView(
+    [property: JsonPropertyName("ns")] string Ns,
+    [property: JsonPropertyName("schema")] JsonElement Schema,
+    [property: JsonPropertyName("value")] JsonElement Value,
+    [property: JsonPropertyName("autoGenerate")] bool AutoGenerate = false,
+    [property: JsonPropertyName("base")] JsonElement? Base = null,
+    [property: JsonPropertyName("user")] JsonElement? User = null,
+    [property: JsonPropertyName("applies")] string Applies = "live",
+    [property: JsonPropertyName("secrets")] IReadOnlyList<WireSettingsSecretView>? Secrets = null,
+    [property: JsonPropertyName("revision")] long Revision = 0);
+
+public sealed record WireSettingsDescribeValue(
+    [property: JsonPropertyName("writable")] bool Writable,
+    [property: JsonPropertyName("hasDocument")] bool HasDocument,
+    [property: JsonPropertyName("namespaces")] IReadOnlyList<WireSettingsNamespaceView> Namespaces);
+
+public sealed record WireSettingsPathOp(
+    [property: JsonPropertyName("op")] string Op,
+    [property: JsonPropertyName("path")] IReadOnlyList<string> Path,
+    [property: JsonPropertyName("value")] JsonElement? Value = null);
+
+public sealed record WireSettingsMutateArgs(
+    [property: JsonPropertyName("ns")] string Ns,
+    [property: JsonPropertyName("ops")] IReadOnlyList<WireSettingsPathOp> Ops,
+    [property: JsonPropertyName("expectedRevision")] long? ExpectedRevision = null);
+
+public sealed record WireSettingsReplaceArgs(
+    [property: JsonPropertyName("ns")] string Ns,
+    [property: JsonPropertyName("section")] JsonElement Section,
+    [property: JsonPropertyName("expectedRevision")] long? ExpectedRevision = null);
 
 public sealed record WireAskUserQuestionOption(
     [property: JsonPropertyName("label")] string Label,

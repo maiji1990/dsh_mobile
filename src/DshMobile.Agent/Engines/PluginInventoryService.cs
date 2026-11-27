@@ -22,6 +22,9 @@ public sealed class PluginInventoryService
         _operations = operations ?? NoopPluginOperations.Instance;
     }
 
+    /// <summary>当前宿主是否已启用「完整 WebUI 与页面插件兼容模式」（ADR-0034）。</summary>
+    public bool IsFullWebUiCompatEnabled => _operations.IsFullWebUiCompatEnabled;
+
     /// <summary>当前是否存在尚未通过重启 DSH 生效的 L1 插件变更。</summary>
     public bool RequiresDshRestart
     {
@@ -78,6 +81,13 @@ public sealed class PluginInventoryService
             installedByName[pkg.Name] = pkg;
         }
 
+        // 尝试拉取官方 settings/describe 标注可实时配置的插件命名空间（失败或不支持时静默忽略，不阻断清单加载）。
+        var configurableNamespaces = await TryLoadConfigurableNamespacesAsync(ct).ConfigureAwait(false);
+        var fullWebUiCompat = _operations.IsFullWebUiCompatEnabled;
+        var nativeTrimmedEntryIds = fullWebUiCompat
+            ? null
+            : _operations.GetNativeTrimmedEntryIds();
+
         var matchedPackages = new HashSet<string>(StringComparer.Ordinal);
         var merged = new List<PluginEntryView>(inventory.Entries.Count + installed.Count);
 
@@ -92,6 +102,7 @@ public sealed class PluginInventoryService
 
             var isProtected = PluginPackageValidator.IsProtectedEntry(entry.EntryId, entry.ModuleName)
                 || (pkgInfo?.IsProtected ?? false);
+            var isTrimmedByNativeMode = !fullWebUiCompat && IsTrimmedEntry(entry.EntryId, nativeTrimmedEntryIds);
             var hasCustomUi = PluginPackageValidator.IsCustomWebUiPlugin(
                 entry.ModuleName,
                 entry.EntryId,
@@ -99,9 +110,16 @@ public sealed class PluginInventoryService
             var displayName = !string.IsNullOrWhiteSpace(entry.DisplayName)
                 ? entry.DisplayName!
                 : entry.ModuleName;
+            var rawDescription = !string.IsNullOrWhiteSpace(entry.Description)
+                ? entry.Description
+                : pkgInfo?.Description;
+            var redactedDescription = string.IsNullOrWhiteSpace(rawDescription)
+                ? null
+                : SecretRedactor.RedactAndTruncate(rawDescription.Trim(), 240);
             var redactedDiagnostic = string.IsNullOrWhiteSpace(entry.Diagnostic)
                 ? null
                 : SecretRedactor.RedactAndTruncate(entry.Diagnostic!, 240);
+            var settingsNamespace = ResolveSettingsNamespace(entry.EntryId, configurableNamespaces);
 
             merged.Add(new PluginEntryView(
                 EntryId: entry.EntryId,
@@ -115,8 +133,17 @@ public sealed class PluginInventoryService
                 HasCustomWebUi: hasCustomUi,
                 IsInstalledInProfile: pkgInfo is not null,
                 IsProtected: isProtected,
-                CanToggle: !isProtected && PluginPackageValidator.IsValidEntryId(entry.EntryId),
-                CanUninstall: pkgInfo is not null && !isProtected && PluginPackageValidator.IsValidPackageName(pkgName)));
+                CanToggle: !isProtected && !isTrimmedByNativeMode && PluginPackageValidator.IsValidEntryId(entry.EntryId),
+                CanUninstall: pkgInfo is not null && !isProtected && PluginPackageValidator.IsValidPackageName(pkgName),
+                Description: redactedDescription,
+                HasBundleManifest: pkgInfo?.HasBundleManifest ?? true,
+                IsTrimmedByNativeMode: isTrimmedByNativeMode,
+                HasConfigurableSettings: settingsNamespace is not null,
+                SettingsNamespace: settingsNamespace,
+                Author: pkgInfo?.Author,
+                License: pkgInfo?.License,
+                HomepageUrl: pkgInfo?.HomepageUrl,
+                RepositoryUrl: pkgInfo?.RepositoryUrl));
         }
 
         // 将已写入 profile 但尚未随当前 DSH 进程加载的新装/未挂载包也合并进清单，便于用户在重启前看到并可卸载。
@@ -128,6 +155,10 @@ public sealed class PluginInventoryService
             }
             var isProtected = pkg.IsProtected || PluginPackageValidator.IsProtectedPackage(pkg.Name);
             var hasCustomUi = PluginPackageValidator.IsCustomWebUiPlugin(pkg.Name, pkg.Name, pkg.HasCustomWebUi);
+            var redactedDescription = string.IsNullOrWhiteSpace(pkg.Description)
+                ? null
+                : SecretRedactor.RedactAndTruncate(pkg.Description.Trim(), 240);
+            var phase = pkg.HasBundleManifest ? "pending-restart" : "not-bundle";
             merged.Add(new PluginEntryView(
                 EntryId: pkg.Name,
                 ModuleName: pkg.Name,
@@ -135,13 +166,22 @@ public sealed class PluginInventoryService
                 DisplayName: pkg.Name,
                 Version: pkg.Version,
                 Enabled: false,
-                FiberPhase: "pending-restart",
+                FiberPhase: phase,
                 DiagnosticSummary: null,
                 HasCustomWebUi: hasCustomUi,
                 IsInstalledInProfile: true,
                 IsProtected: isProtected,
                 CanToggle: false,
-                CanUninstall: !isProtected && PluginPackageValidator.IsValidPackageName(pkg.Name)));
+                CanUninstall: !isProtected && PluginPackageValidator.IsValidPackageName(pkg.Name),
+                Description: redactedDescription,
+                HasBundleManifest: pkg.HasBundleManifest,
+                IsTrimmedByNativeMode: false,
+                HasConfigurableSettings: false,
+                SettingsNamespace: null,
+                Author: pkg.Author,
+                License: pkg.License,
+                HomepageUrl: pkg.HomepageUrl,
+                RepositoryUrl: pkg.RepositoryUrl));
         }
 
         return Outcome<PluginInventorySnapshotResult>.Ok(new PluginInventorySnapshotResult(
@@ -241,6 +281,76 @@ public sealed class PluginInventoryService
 
         NotifyHostRestarted();
         return Outcome<Unit>.Ok(Unit.Value);
+    }
+
+    private async Task<HashSet<string>> TryLoadConfigurableNamespacesAsync(CancellationToken ct)
+    {
+        var namespaces = new HashSet<string>(StringComparer.Ordinal);
+        var describeOutcome = await _pluginGateway.DescribeSettingsAsync(ct).ConfigureAwait(false);
+        if (!describeOutcome.IsOk || describeOutcome.Value is null)
+        {
+            return namespaces;
+        }
+
+        foreach (var nsView in describeOutcome.Value.Namespaces)
+        {
+            if (string.IsNullOrWhiteSpace(nsView.Namespace))
+            {
+                continue;
+            }
+            if (PluginSettingsSchemaParser.HasConfigurableFields(nsView))
+            {
+                namespaces.Add(nsView.Namespace);
+            }
+        }
+        return namespaces;
+    }
+
+    private static bool IsTrimmedEntry(string entryId, IReadOnlySet<string>? trimmedEntryIds)
+    {
+        if (trimmedEntryIds is null || trimmedEntryIds.Count == 0 || string.IsNullOrEmpty(entryId))
+        {
+            return false;
+        }
+        if (trimmedEntryIds.Contains(entryId))
+        {
+            return true;
+        }
+        if (entryId.StartsWith("include:", StringComparison.Ordinal))
+        {
+            return trimmedEntryIds.Contains(entryId["include:".Length..]);
+        }
+        return false;
+    }
+
+    private static string? ResolveSettingsNamespace(string entryId, HashSet<string> configurableNamespaces)
+    {
+        if (configurableNamespaces.Count == 0 || string.IsNullOrEmpty(entryId))
+        {
+            return null;
+        }
+        if (configurableNamespaces.Contains(entryId))
+        {
+            return entryId;
+        }
+        if (entryId.StartsWith("include:", StringComparison.Ordinal))
+        {
+            var stripped = entryId["include:".Length..];
+            if (configurableNamespaces.Contains(stripped))
+            {
+                return stripped;
+            }
+        }
+        var lastColon = entryId.LastIndexOf(':');
+        if (lastColon >= 0 && lastColon + 1 < entryId.Length)
+        {
+            var leafId = entryId[(lastColon + 1)..];
+            if (configurableNamespaces.Contains(leafId))
+            {
+                return leafId;
+            }
+        }
+        return null;
     }
 
     private void MarkRestartRequired()

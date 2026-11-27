@@ -148,6 +148,21 @@ public sealed class RuntimeCoordinator : IDisposable
     /// <summary>Whether the running DSH was spawned with the <c>ui_*</c> layer registered (null: unknown / not hosted).</summary>
     public bool? HostUiToolsAtStart => HostOwnsProcesses ? _host!.UiToolsAtStart : null;
 
+    /// <summary>当前正在运行的 DSH 进程是否以精简裁剪模式启动（未运行或尚未创建宿主时为 null）。</summary>
+    public bool? HostTrimmedWebAtStart => HostOwnsProcesses ? _host!.TrimmedWebAtStart : null;
+
+    /// <summary>当前已就绪的 DSH 进程是否正以精简原生模式运行（未就绪或完整 WebUI 兼容模式下为 false）。</summary>
+    public bool IsTrimmedWebActive => _host is { State: DshHostState.Ready, IsTrimmedWebActive: true };
+
+    /// <summary>当前已就绪的 DSH 进程是否已启用「完整 WebUI 与页面插件兼容模式」（ADR-0034）。</summary>
+    public bool IsFullWebUiActive => _host is { State: DshHostState.Ready, IsTrimmedWebActive: false };
+
+    /// <summary>
+    /// 受控获取本机回环完整 WebUI 的系统浏览器打开地址（ADR-0034）。
+    /// 仅当宿主已就绪、处于完整 WebUI 兼容模式且内存中持有有效启动令牌时返回非空 URI；严禁日志记录或持久化返回值。
+    /// </summary>
+    public Uri? TryGetLocalWebUiBrowserUri() => _host?.TryBuildBrowserLaunchUri();
+
     private void NotifySandboxStopping()
     {
         try
@@ -482,7 +497,8 @@ public sealed class RuntimeCoordinator : IDisposable
         {
             $"host: {host.State} · journal {snap.State}/{snap.Harness} gen={snap.Generation}"
                 + (snap.ErrorCode is { } e ? $" last error {e}" : "")
-                + $" · ui_* at DSH start={(host.UiToolsAtStart is { } u ? (u ? "registered" : "off") : "-")}",
+                + $" · ui_* at DSH start={(host.UiToolsAtStart is { } u ? (u ? "registered" : "off") : "-")}"
+                + $" · webMode={(host.TrimmedWebAtStart is { } trimmed ? (trimmed ? "trimmed" : "full") : "-")}",
         };
         var health = await DshMobile.Runtime.Supervision.HttpHealthProbe.CheckAsync(ct: ct).ConfigureAwait(false);
         lines.Add($"host health: webUi={health.WebUiReady} http={health.HttpStatus?.ToString(inv) ?? "-"}");
@@ -1076,7 +1092,9 @@ public sealed class RuntimeCoordinator : IDisposable
             var svc = CreateGuestPluginService();
             var result = await svc.InstallAsync(trimmed!, ct).ConfigureAwait(false);
             _log.Note(result.Ok
-                ? $"plugins add {trimmed}: ok (restart required)"
+                ? (result.DeclaredBundleManifest
+                    ? $"plugins add {trimmed}: ok (restart required)"
+                    : $"plugins add {trimmed}: ok (no dsh.bundle manifest; dependency only)")
                 : $"plugins add {trimmed} FAILED {result.Code}");
             return result;
         }
@@ -1138,6 +1156,18 @@ public sealed class RuntimeCoordinator : IDisposable
         {
             _op.Release();
         }
+    }
+
+    /// <summary>
+    /// ADR-0034：在安全路径边界内只读本地已安装包（profile 或只读 DSH 层）的元信息与详情文档，不启动 guest 进程。
+    /// </summary>
+    public Task<GuestLocalPackageDetail> ReadLocalPluginDetailAsync(
+        string packageName,
+        string? language = null,
+        CancellationToken ct = default)
+    {
+        var svc = CreateGuestPluginService();
+        return svc.ReadLocalPackageDetailAsync(packageName, language ?? string.Empty, ct);
     }
 
     private GuestPluginService CreateGuestPluginService() => new(_layout, _options.GuestShellRunner);
