@@ -187,6 +187,7 @@ public sealed class PluginInventoryAndViewModelTests
         {
             Path.Combine(repoRoot, "src/DshMobile.Agent/Domain/PluginModels.cs"),
             Path.Combine(repoRoot, "src/DshMobile.Agent/Engines/PluginInventoryService.cs"),
+            Path.Combine(repoRoot, "src/DshMobile.Agent/Engines/NpmRegistryPluginSearchService.cs"),
             Path.Combine(repoRoot, "src/DshMobile.Agent/Presentation/PluginsViewModel.cs"),
         };
         foreach (var file in agentPluginFiles)
@@ -196,6 +197,288 @@ public sealed class PluginInventoryAndViewModelTests
             Assert.DoesNotContain("JsonSchema", codeOnly, StringComparison.Ordinal);
             Assert.DoesNotContain("SchemaForm", codeOnly, StringComparison.Ordinal);
         }
+    }
+
+    [Fact]
+    public async Task LocalFilterModes_AndTotalInstalledCount_WorkAccurately()
+    {
+        var gw = new StubPluginGateway();
+        var ops = new StubPluginOperations
+        {
+            InstalledPackages =
+            [
+                new("@thirdparty/my-ui-plugin", "1.2.3", HasCustomWebUi: true),
+                new("pending-restart-plugin", "0.5.0", HasCustomWebUi: false),
+            ],
+        };
+        var service = new PluginInventoryService(gw, ops);
+        await using var vm = new PluginsViewModel(gw, service);
+
+        await vm.RefreshAsync(includeCliPackages: true);
+        Assert.Equal(4, vm.State.TotalInstalledCount);
+        Assert.Equal(4, vm.State.Entries.Count);
+
+        vm.SetFilterMode(PluginFilterMode.Manageable);
+        Assert.Equal(4, vm.State.TotalInstalledCount);
+        Assert.Equal(3, vm.State.Entries.Count);
+        Assert.DoesNotContain(vm.State.Entries, e => e.IsProtected);
+
+        vm.SetFilterMode(PluginFilterMode.Enabled);
+        Assert.Equal(3, vm.State.Entries.Count);
+        Assert.All(vm.State.Entries, e => Assert.True(e.Enabled));
+
+        vm.SetFilterMode(PluginFilterMode.Protected);
+        var protectedOnly = Assert.Single(vm.State.Entries);
+        Assert.Equal("connection", protectedOnly.EntryId);
+
+        vm.SetFilterMode(PluginFilterMode.Issues);
+        Assert.Equal(2, vm.State.Entries.Count);
+        Assert.Contains(vm.State.Entries, e => e.EntryId == "include:broken-plugin");
+        Assert.Contains(vm.State.Entries, e => e.PackageName == "pending-restart-plugin");
+
+        // 搜索无结果时 TotalInstalledCount 仍保留未过滤总数，防止 UI 误判为空列表重复刷新
+        vm.SetFilterMode(PluginFilterMode.All);
+        vm.SetSearchQuery("definitely-not-matching-anything");
+        Assert.Empty(vm.State.Entries);
+        Assert.Equal(4, vm.State.TotalInstalledCount);
+    }
+
+    [Fact]
+    public async Task LocalMultiTokenSearch_MatchesAcrossFields_AndRanksByRelevanceWithStableTieBreak()
+    {
+        var gw = new RichSearchPluginGateway();
+        var ops = new StubPluginOperations
+        {
+            InstalledPackages =
+            [
+                new("@community/extra-notes", "2.4.1"),
+                new("@deepseek-ai/dsh-timer", "1.0.0"),
+                new("@thirdparty/timer-runner", "3.1.0"),
+                new("@deepseek-ai/dsh-hmr", "1.2.0"),
+            ],
+        };
+        var service = new PluginInventoryService(gw, ops);
+        await using var vm = new PluginsViewModel(gw, service);
+
+        await vm.RefreshAsync(includeCliPackages: true);
+
+        // 1. 多关键词空格分词 AND 匹配（跨短标题与中文描述）
+        vm.SetSearchQuery("timer 延时");
+        Assert.Equal(2, vm.State.Entries.Count);
+        // 短标题前缀命中 (timer-runner) > 短标题包含命中 (dsh-timer)
+        Assert.Equal("@thirdparty/timer-runner", vm.State.Entries[0].PackageName);
+        Assert.Equal("@deepseek-ai/dsh-timer", vm.State.Entries[1].PackageName);
+
+        // 2. 多关键词匹配范围包 + 短标题
+        vm.SetSearchQuery("dsh hmr");
+        var hmr = Assert.Single(vm.State.Entries);
+        Assert.Equal("@deepseek-ai/dsh-hmr", hmr.PackageName);
+
+        // 3. 相关性排序：短标题精确/前缀 > 包名/模块名 > 描述/诊断
+        vm.SetSearchQuery("timer");
+        Assert.Equal(3, vm.State.Entries.Count);
+        Assert.Equal("@thirdparty/timer-runner", vm.State.Entries[0].PackageName); // 短标题前缀 timer-runner (90)
+        Assert.Equal("@deepseek-ai/dsh-timer", vm.State.Entries[1].PackageName);   // 短标题包含 dsh-timer (70)
+        Assert.Equal("@community/extra-notes", vm.State.Entries[2].PackageName);   // 描述/诊断命中 timer (25)
+
+        // 4. 版本号与诊断阶段字段也可检索
+        vm.SetSearchQuery("2.4.1");
+        Assert.Equal("@community/extra-notes", Assert.Single(vm.State.Entries).PackageName);
+
+        vm.SetSearchQuery("degraded");
+        Assert.Equal("@community/extra-notes", Assert.Single(vm.State.Entries).PackageName);
+    }
+
+    [Fact]
+    public async Task CatalogSearch_AlignsInstalledState_UpdatesOnInstallAndUninstall_AndSupportsDefaultDiscovery()
+    {
+        var gw = new StubPluginGateway();
+        var ops = new StubPluginOperations
+        {
+            InstalledPackages =
+            [
+                new("@thirdparty/my-ui-plugin", "1.2.3", HasCustomWebUi: true),
+            ],
+        };
+        var catalogSearch = new StubPluginCatalogSearch((query, _, _) =>
+        {
+            IReadOnlyList<PluginCatalogEntryView> items =
+            [
+                new(
+                    PackageName: "@thirdparty/my-ui-plugin",
+                    Version: "1.5.0",
+                    Description: "UI 扩展",
+                    Keywords: ["ui"],
+                    Publisher: "thirdparty",
+                    PublishedAtUnixMs: 1_700_000_000_000,
+                    NpmUrl: "https://www.npmjs.com/package/@thirdparty/my-ui-plugin",
+                    IsOfficialScope: false,
+                    IsInstalled: false,
+                    InstalledVersion: null,
+                    RecommendedInstallSpec: "@thirdparty/my-ui-plugin@1.5.0"),
+                new(
+                    PackageName: "@deepseek-ai/dsh-timer",
+                    Version: "0.9.0",
+                    Description: "官方定时器插件",
+                    Keywords: ["dsh", "timer"],
+                    Publisher: "deepseek",
+                    PublishedAtUnixMs: 1_700_000_100_000,
+                    NpmUrl: "https://www.npmjs.com/package/@deepseek-ai/dsh-timer",
+                    IsOfficialScope: true,
+                    IsInstalled: false,
+                    InstalledVersion: null,
+                    RecommendedInstallSpec: "@deepseek-ai/dsh-timer@0.9.0"),
+            ];
+            return Task.FromResult(Outcome<PluginCatalogSearchResult>.Ok(new PluginCatalogSearchResult(items, TotalCount: 2)));
+        });
+
+        var service = new PluginInventoryService(gw, ops);
+        await using var vm = new PluginsViewModel(gw, service, catalogSearch);
+
+        Assert.True(vm.State.CanSearchCatalog);
+        vm.SetActiveTab(PluginTabMode.Discover);
+        Assert.Equal(PluginTabMode.Discover, vm.State.ActiveTab);
+
+        await vm.RefreshAsync(includeCliPackages: true);
+
+        // 空关键词自动使用默认推荐发现词
+        await vm.SearchCatalogAsync(string.Empty);
+        Assert.Equal(PluginsViewModel.DefaultCatalogDiscoveryQuery, catalogSearch.LastQuery);
+        Assert.Equal(2, vm.State.CatalogEntries.Count);
+        Assert.Equal(2, vm.State.CatalogTotalCount);
+        Assert.False(vm.State.IsSearchingCatalog);
+
+        // 首次对齐：my-ui-plugin 已装 v1.2.3，dsh-timer 未装
+        var installedItem = Assert.Single(vm.State.CatalogEntries, e => e.PackageName == "@thirdparty/my-ui-plugin");
+        Assert.True(installedItem.IsInstalled);
+        Assert.Equal("1.2.3", installedItem.InstalledVersion);
+
+        var notInstalledItem = Assert.Single(vm.State.CatalogEntries, e => e.PackageName == "@deepseek-ai/dsh-timer");
+        Assert.False(notInstalledItem.IsInstalled);
+        Assert.Null(notInstalledItem.InstalledVersion);
+
+        // 安装 dsh-timer 后，CatalogEntries 自动同步变为已装
+        ops.InstalledPackages =
+        [
+            new("@thirdparty/my-ui-plugin", "1.2.3", HasCustomWebUi: true),
+            new("@deepseek-ai/dsh-timer", "0.9.0"),
+        ];
+        var installOutcome = await vm.InstallPluginAsync("@deepseek-ai/dsh-timer@0.9.0");
+        Assert.True(installOutcome.IsOk);
+
+        var syncedInstalled = Assert.Single(vm.State.CatalogEntries, e => e.PackageName == "@deepseek-ai/dsh-timer");
+        Assert.True(syncedInstalled.IsInstalled);
+        Assert.Equal("0.9.0", syncedInstalled.InstalledVersion);
+
+        // 卸载 dsh-timer 后，CatalogEntries 自动同步恢复未装
+        ops.InstalledPackages =
+        [
+            new("@thirdparty/my-ui-plugin", "1.2.3", HasCustomWebUi: true),
+        ];
+        var uninstallOutcome = await vm.UninstallPluginAsync("@deepseek-ai/dsh-timer");
+        Assert.True(uninstallOutcome.IsOk);
+
+        var syncedUninstalled = Assert.Single(vm.State.CatalogEntries, e => e.PackageName == "@deepseek-ai/dsh-timer");
+        Assert.False(syncedUninstalled.IsInstalled);
+        Assert.Null(syncedUninstalled.InstalledVersion);
+    }
+
+    [Fact]
+    public async Task CatalogSearch_CancelsPreviousInFlightRequest_AndRedactsFailures()
+    {
+        var gw = new StubPluginGateway();
+        var ops = new StubPluginOperations();
+        var firstStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var firstCancelled = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        var catalogSearch = new StubPluginCatalogSearch(async (query, _, ct) =>
+        {
+            if (query == "first")
+            {
+                firstStarted.TrySetResult();
+                try
+                {
+                    await Task.Delay(TimeSpan.FromSeconds(10), ct);
+                }
+                catch (OperationCanceledException)
+                {
+                    firstCancelled.TrySetResult();
+                    throw;
+                }
+            }
+
+            if (query == "fail-secret")
+            {
+                return Outcome<PluginCatalogSearchResult>.Fail(
+                    DshFailureCode.TransportLost,
+                    "registry failed with Bearer secret-token-999");
+            }
+
+            return Outcome<PluginCatalogSearchResult>.Ok(new PluginCatalogSearchResult(
+                Items:
+                [
+                    new(
+                        PackageName: "second-plugin",
+                        Version: "2.0.0",
+                        Description: "第二次搜索命中",
+                        Keywords: [],
+                        Publisher: "bob",
+                        PublishedAtUnixMs: null,
+                        NpmUrl: null,
+                        IsOfficialScope: false,
+                        IsInstalled: false,
+                        InstalledVersion: null,
+                        RecommendedInstallSpec: "second-plugin@2.0.0"),
+                ],
+                TotalCount: 1));
+        });
+
+        var service = new PluginInventoryService(gw, ops);
+        await using var vm = new PluginsViewModel(gw, service, catalogSearch);
+
+        var firstTask = vm.SearchCatalogAsync("first");
+        await firstStarted.Task.WaitAsync(TimeSpan.FromSeconds(2));
+
+        // 发起新搜索应自动取消第一次在途搜索，且最终状态仅反映第二次结果
+        await vm.SearchCatalogAsync("second");
+        await firstCancelled.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        await firstTask.WaitAsync(TimeSpan.FromSeconds(2));
+
+        Assert.False(vm.State.IsSearchingCatalog);
+        Assert.Equal("second", vm.State.CatalogQuery);
+        Assert.Equal("second-plugin", Assert.Single(vm.State.CatalogEntries).PackageName);
+
+        // 搜索失败时脱敏诊断文本且保留既有结果
+        await vm.SearchCatalogAsync("fail-secret");
+        Assert.False(vm.State.IsSearchingCatalog);
+        Assert.Equal(DshFailureCode.TransportLost, vm.State.CatalogFailureCode);
+        Assert.DoesNotContain("secret-token-999", vm.State.CatalogDiagnosticSummary ?? string.Empty, StringComparison.Ordinal);
+        Assert.Single(vm.State.CatalogEntries);
+
+        // 默认 Noop 构造下 CanSearchCatalog 为 false，且返回 Unsupported
+        await using var noopVm = new PluginsViewModel(gw, service);
+        Assert.False(noopVm.State.CanSearchCatalog);
+        await noopVm.SearchCatalogAsync("anything");
+        Assert.Equal(DshFailureCode.Unsupported, noopVm.State.CatalogFailureCode);
+    }
+
+    [Fact]
+    public async Task CatalogSearch_CallerCancellationPropagatesOperationCanceledException()
+    {
+        var gw = new StubPluginGateway();
+        var ops = new StubPluginOperations();
+        var catalogSearch = new StubPluginCatalogSearch(async (_, _, ct) =>
+        {
+            await Task.Delay(TimeSpan.FromSeconds(10), ct);
+            return Outcome<PluginCatalogSearchResult>.Ok(new PluginCatalogSearchResult([], 0));
+        });
+
+        var service = new PluginInventoryService(gw, ops);
+        await using var vm = new PluginsViewModel(gw, service, catalogSearch);
+
+        using var callerCts = new CancellationTokenSource(TimeSpan.FromMilliseconds(30));
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => vm.SearchCatalogAsync("slow", callerCts.Token));
+        Assert.False(vm.State.IsSearchingCatalog);
     }
 
     private static string StripCSharpSingleLineComments(string source) =>
@@ -276,6 +559,55 @@ public sealed class PluginInventoryAndViewModelTests
         {
             RestartCalls++;
             return Task.FromResult(Outcome<Unit>.Ok(Unit.Value));
+        }
+    }
+
+    private sealed class RichSearchPluginGateway : DefaultDshGateway
+    {
+        public override DshCapabilities Capabilities => new(
+            Prompt: true,
+            PromptImages: true,
+            SlashCommands: true,
+            StreamingEvents: true,
+            Approvals: true,
+            UserQuestions: true,
+            ResumeKnownSession: true,
+            ListSessions: true,
+            HistoryReplay: true,
+            CancelSession: true,
+            SwitchModelInSession: true,
+            ManageCredentials: true,
+            ServerPromptIdempotency: true,
+            PluginInventory: true,
+            PluginMutation: false,
+            GitOperations: false);
+
+        public override Task<Outcome<DshCapabilities>> ProbeCapabilitiesAsync(CancellationToken ct = default) =>
+            Task.FromResult(Outcome<DshCapabilities>.Ok(Capabilities));
+
+        public override Task<Outcome<PluginInventoryView>> GetPluginInventoryAsync(CancellationToken ct = default)
+        {
+            var entries = new PluginInventoryEntryView[]
+            {
+                new("include:notes", "@community/extra-notes", true, "degraded", "附带 timer 提醒的笔记插件", "timer sync lag"),
+                new("include:dsh-timer", "@deepseek-ai/dsh-timer", true, "active", "官方延时触发服务"),
+                new("include:timer-runner", "@thirdparty/timer-runner", true, "active", "支持延时调度"),
+                new("include:hmr", "@deepseek-ai/dsh-hmr", true, "active", "热重载服务"),
+            };
+            return Task.FromResult(Outcome<PluginInventoryView>.Ok(new PluginInventoryView(false, entries)));
+        }
+    }
+
+    private sealed class StubPluginCatalogSearch(
+        Func<string, int, CancellationToken, Task<Outcome<PluginCatalogSearchResult>>> handler)
+        : IPluginCatalogSearch
+    {
+        public string? LastQuery { get; private set; }
+
+        public Task<Outcome<PluginCatalogSearchResult>> SearchAsync(string query, int limit = 25, CancellationToken ct = default)
+        {
+            LastQuery = query;
+            return handler(query, limit, ct);
         }
     }
 }

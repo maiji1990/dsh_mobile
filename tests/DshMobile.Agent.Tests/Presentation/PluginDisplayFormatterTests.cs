@@ -52,4 +52,26 @@ public sealed class PluginDisplayFormatterTests
         Assert.Null(formatted.Description);
         Assert.Equal("@example/plugin/client", formatted.Meta);
     }
+
+    [Fact]
+    public void FormatCatalog_ExtractsShortTitle_VersionMeta_AndOptionalDescription()
+    {
+        var catalogEntry = new PluginCatalogEntryView(
+            PackageName: "@deepseek-ai/dsh-timer",
+            Version: "1.4.0",
+            Description: "  定时提醒与延时触发  ",
+            Keywords: ["timer"],
+            Publisher: "deepseek",
+            PublishedAtUnixMs: 1_700_000_000_000,
+            NpmUrl: "https://www.npmjs.com/package/@deepseek-ai/dsh-timer",
+            IsOfficialScope: true,
+            IsInstalled: false,
+            InstalledVersion: null,
+            RecommendedInstallSpec: "@deepseek-ai/dsh-timer@1.4.0");
+
+        var formatted = PluginDisplayFormatter.FormatCatalog(catalogEntry);
+        Assert.Equal("dsh-timer", formatted.ShortTitle);
+        Assert.Equal("定时提醒与延时触发", formatted.Description);
+        Assert.Equal("@deepseek-ai/dsh-timer · v1.4.0", formatted.Meta);
+    }
 }

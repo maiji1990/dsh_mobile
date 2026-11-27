@@ -10,6 +10,9 @@ public interface ISessionGateway
     Task<Outcome<SessionWaitResultView>> WaitForSessionAsync(string sessionId, TimeSpan? timeout = null, long? afterSeq = null, CancellationToken ct = default);
     Task<Outcome<string>> RenameSessionAsync(string sessionId, string title, CancellationToken ct = default);
     Task<Outcome<string>> ForkSessionAsync(string sessionId, long? atSeq = null, CancellationToken ct = default);
+    Task<Outcome<IReadOnlyList<string>>> ArchiveSessionAsync(string sessionId, bool stopActivity = false, CancellationToken ct = default);
+    Task<Outcome<IReadOnlyList<string>>> UnarchiveSessionAsync(string sessionId, CancellationToken ct = default);
+    Task<Outcome<IReadOnlyList<string>>> GetArchivedSessionIdsAsync(CancellationToken ct = default);
 }
 
 /// <summary>Prompt dispatch, native slash commands, queue control, and active turn cancellation facet (N-02-02).</summary>
@@ -62,6 +65,7 @@ public interface IEventGateway
 {
     event Action<ForwardedGatewayEvent>? ForwardedEvent;
     Task<Outcome<IAsyncDisposable>> FollowSessionAsync(string sessionId, Func<SessionFollowUpdate, ValueTask> onUpdate, int? maxMessages = null, bool activate = true, CancellationToken ct = default);
+    Task<Outcome<IAsyncDisposable>> FollowWorkspaceAsync(Func<WorkspaceFollowFrame, ValueTask> onFrame, CancellationToken ct = default);
 }
 
 /// <summary>Composite protocol-agnostic gateway exposing capabilities and all 8 Facets.</summary>
@@ -104,6 +108,9 @@ public abstract class DefaultDshGateway : IDshGateway
     public virtual Task<Outcome<SessionWaitResultView>> WaitForSessionAsync(string sessionId, TimeSpan? timeout = null, long? afterSeq = null, CancellationToken ct = default) => Unavailable<SessionWaitResultView>();
     public virtual Task<Outcome<string>> RenameSessionAsync(string sessionId, string title, CancellationToken ct = default) => Unavailable<string>();
     public virtual Task<Outcome<string>> ForkSessionAsync(string sessionId, long? atSeq = null, CancellationToken ct = default) => Unavailable<string>();
+    public virtual Task<Outcome<IReadOnlyList<string>>> ArchiveSessionAsync(string sessionId, bool stopActivity = false, CancellationToken ct = default) => Unavailable<IReadOnlyList<string>>();
+    public virtual Task<Outcome<IReadOnlyList<string>>> UnarchiveSessionAsync(string sessionId, CancellationToken ct = default) => Unavailable<IReadOnlyList<string>>();
+    public virtual Task<Outcome<IReadOnlyList<string>>> GetArchivedSessionIdsAsync(CancellationToken ct = default) => Unavailable<IReadOnlyList<string>>();
     public virtual Task<Outcome<Unit>> SendPromptAsync(PromptSendRequest request, CancellationToken ct = default) => Unavailable<Unit>();
     public virtual Task<Outcome<IReadOnlyList<SlashCommandDescriptorView>>> ListCommandsAsync(string sessionId, CancellationToken ct = default) => Unavailable<IReadOnlyList<SlashCommandDescriptorView>>();
     public virtual Task<Outcome<SlashCommandExecutionView?>> ExecuteCommandAsync(string sessionId, string commandLine, IReadOnlyList<PromptAttachmentImage>? images = null, CancellationToken ct = default) => Unavailable<SlashCommandExecutionView?>();
@@ -120,4 +127,5 @@ public abstract class DefaultDshGateway : IDshGateway
     public virtual Task<Outcome<Unit>> UnsetCredentialAsync(string credentialRef, CancellationToken ct = default) => Unavailable<Unit>();
     public virtual Task<Outcome<PluginInventoryView>> GetPluginInventoryAsync(CancellationToken ct = default) => Unavailable<PluginInventoryView>();
     public virtual Task<Outcome<IAsyncDisposable>> FollowSessionAsync(string sessionId, Func<SessionFollowUpdate, ValueTask> onUpdate, int? maxMessages = null, bool activate = true, CancellationToken ct = default) => Unavailable<IAsyncDisposable>();
+    public virtual Task<Outcome<IAsyncDisposable>> FollowWorkspaceAsync(Func<WorkspaceFollowFrame, ValueTask> onFrame, CancellationToken ct = default) => Unavailable<IAsyncDisposable>();
 }

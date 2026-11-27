@@ -239,6 +239,73 @@ public sealed class KeptTranscriptStore
         return res.Status == KeptTranscriptLoadStatus.Loaded ? res.Record : null;
     }
 
+    /// <summary>删除指定作用域会话对应的本地快照缓存文件；不存在时安全返回 false。</summary>
+    public Task<bool> DeleteAsync(SessionKey key, CancellationToken ct = default)
+    {
+        ct.ThrowIfCancellationRequested();
+        var filePath = FilePathFor(key);
+        if (!File.Exists(filePath))
+        {
+            return Task.FromResult(false);
+        }
+
+        try
+        {
+            File.Delete(filePath);
+            return Task.FromResult(true);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _ = ex;
+            return Task.FromResult(false);
+        }
+    }
+
+    /// <summary>按会话 ID 安全删除目录下所有匹配的本地快照缓存文件，返回实际删除的文件数。</summary>
+    public async Task<int> DeleteBySessionIdAsync(string sessionId, CancellationToken ct = default)
+    {
+        ct.ThrowIfCancellationRequested();
+        if (string.IsNullOrWhiteSpace(sessionId) || !Directory.Exists(_directory))
+        {
+            return 0;
+        }
+
+        var normalizedId = sessionId.Trim();
+        var deletedCount = 0;
+        foreach (var filePath in Directory.EnumerateFiles(_directory, "*.kept.json"))
+        {
+            ct.ThrowIfCancellationRequested();
+            var parsed = await TryReadRecordAsync(filePath, ct).ConfigureAwait(false);
+            if (parsed is null || !string.Equals(parsed.Scope.SessionId, normalizedId, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            try
+            {
+                if (File.Exists(filePath))
+                {
+                    File.Delete(filePath);
+                    deletedCount++;
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                _ = ex;
+            }
+        }
+
+        return deletedCount;
+    }
+
     public static IReadOnlyList<ChatRow> ToDetachedChatRows(KeptTranscriptRecord record)
     {
         ArgumentNullException.ThrowIfNull(record);

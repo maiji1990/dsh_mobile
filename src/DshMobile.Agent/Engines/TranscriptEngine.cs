@@ -27,6 +27,9 @@ public sealed class TranscriptEngine : IAsyncDisposable
 
     public event Action<SessionKey, ToolInvocationSummary>? ToolInvocationRecorded;
 
+    /// <summary>当某个会话的内存句柄从引擎中移除（卸载或 LRU 淘汰）前触发，供订阅方同步解绑悬空引用。</summary>
+    public event Action<SessionKey>? SessionRemoved;
+
     public TranscriptHandle GetOrCreateSession(SessionKey scope, int maxDeferredParts = TranscriptReducer.DefaultMaxDeferredParts)
     {
         ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
@@ -57,6 +60,7 @@ public sealed class TranscriptEngine : IAsyncDisposable
             }
             if (evictedKey is not null && evictedHandle is not null)
             {
+                SessionRemoved?.Invoke(evictedKey.Value);
                 _ = evictedHandle.DisposeAsync().AsTask();
             }
         }
@@ -65,6 +69,49 @@ public sealed class TranscriptEngine : IAsyncDisposable
 
     public bool TryGetSession(SessionKey scope, out TranscriptHandle? handle) =>
         _handles.TryGetValue(scope, out handle);
+
+    /// <summary>卸载指定作用域的内存会话句柄并释放底层管道资源，不存在时返回 false。</summary>
+    public async Task<bool> RemoveSessionAsync(SessionKey key, CancellationToken ct = default)
+    {
+        ct.ThrowIfCancellationRequested();
+        if (!_handles.TryRemove(key, out var handle))
+        {
+            return false;
+        }
+
+        SessionRemoved?.Invoke(key);
+        await handle.DisposeAsync().ConfigureAwait(false);
+        return true;
+    }
+
+    /// <summary>按会话 ID 卸载所有匹配的内存会话句柄并释放资源，返回卸载数量。</summary>
+    public async Task<int> RemoveSessionsByIdAsync(string sessionId, CancellationToken ct = default)
+    {
+        ct.ThrowIfCancellationRequested();
+        if (string.IsNullOrWhiteSpace(sessionId))
+        {
+            return 0;
+        }
+
+        var normalizedId = sessionId.Trim();
+        var matchingKeys = _handles.Keys
+            .Where(scope => string.Equals(scope.SessionId, normalizedId, StringComparison.Ordinal))
+            .ToArray();
+
+        var removedCount = 0;
+        foreach (var scope in matchingKeys)
+        {
+            ct.ThrowIfCancellationRequested();
+            if (_handles.TryRemove(scope, out var handle))
+            {
+                SessionRemoved?.Invoke(scope);
+                await handle.DisposeAsync().ConfigureAwait(false);
+                removedCount++;
+            }
+        }
+
+        return removedCount;
+    }
 
     /// <summary>
     /// Creates and hydrates a detached offline handle using the same reducer pipeline (`N-03-05`).
@@ -149,6 +196,9 @@ public sealed class TranscriptHandle : IAsyncDisposable
     }
 
     public SessionKey Scope { get; }
+
+    /// <summary>当前句柄是否已进入释放态；用于订阅方避免向已卸载句柄重新挂载订阅。</summary>
+    public bool IsDisposed => Volatile.Read(ref _disposed) != 0;
 
     public bool HasActiveSubscribers => _publisher.SubscriberCount > 0;
 

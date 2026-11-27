@@ -69,6 +69,7 @@ public sealed class RemoteDshGatewayClient : DefaultDshGateway, IDisposable
                 JsonSerializer.SerializeToElement(new WireCredentialsDescribeArgs([]), AgentProtocolJsonContext.Default.WireCredentialsDescribeArgs),
                 ct).ConfigureAwait(false);
             var pluginProbe = await _connection.CallAsync("pluginInventory/list", RemoteWireCodec.EmptyArgs, ct).ConfigureAwait(false);
+            var archiveSupported = hasGen && await ProbeWorkspaceArchiveAsync(ct).ConfigureAwait(false);
 
             var caps = new DshCapabilities(
                 Prompt: hasGen,
@@ -86,7 +87,8 @@ public sealed class RemoteDshGatewayClient : DefaultDshGateway, IDisposable
                 ServerPromptIdempotency: hasGen,
                 PluginInventory: pluginProbe.Ok,
                 PluginMutation: false,
-                GitOperations: false);
+                GitOperations: false,
+                ArchiveSessions: archiveSupported);
 
             lock (_capLock)
             {
@@ -284,6 +286,120 @@ public sealed class RemoteDshGatewayClient : DefaultDshGateway, IDisposable
         return string.IsNullOrEmpty(dtoOutcome.Value!.SessionId)
             ? Outcome<string>.Fail(DshFailureCode.ProtocolMismatch, "session_fork.missing_id")
             : Outcome<string>.Ok(dtoOutcome.Value.SessionId);
+    }
+
+    /// <summary>归档指定会话，返回服务端最新已归档会话 ID 列表。</summary>
+    public override async Task<Outcome<IReadOnlyList<string>>> ArchiveSessionAsync(
+        string sessionId,
+        bool stopActivity = false,
+        CancellationToken ct = default)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(sessionId);
+        var args = RemoteProtocolCodec.SerializeWorkspaceArchive(sessionId, stopActivity);
+        var rpc = await CallRawAsync("workspace/archiveSession", args, ct).ConfigureAwait(false);
+        if (!rpc.IsOk)
+        {
+            return Outcome<IReadOnlyList<string>>.Fail(rpc.Error!);
+        }
+
+        var dtoOutcome = DeserializeValue(rpc.Value, AgentProtocolJsonContext.Default.WireWorkspaceArchivedValue, "workspace_archive.decode");
+        return dtoOutcome.Map(dto => dto.ArchivedSessionIds);
+    }
+
+    /// <summary>取消归档指定会话，返回服务端最新已归档会话 ID 列表。</summary>
+    public override async Task<Outcome<IReadOnlyList<string>>> UnarchiveSessionAsync(
+        string sessionId,
+        CancellationToken ct = default)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(sessionId);
+        var args = RemoteProtocolCodec.SerializeWorkspaceUnarchive(sessionId);
+        var rpc = await CallRawAsync("workspace/unarchiveSession", args, ct).ConfigureAwait(false);
+        if (!rpc.IsOk)
+        {
+            return Outcome<IReadOnlyList<string>>.Fail(rpc.Error!);
+        }
+
+        var dtoOutcome = DeserializeValue(rpc.Value, AgentProtocolJsonContext.Default.WireWorkspaceArchivedValue, "workspace_unarchive.decode");
+        return dtoOutcome.Map(dto => dto.ArchivedSessionIds);
+    }
+
+    /// <summary>通过 workspace/follow 读取首帧基线后立即释放流，返回当前服务端已归档会话 ID 列表。</summary>
+    public override async Task<Outcome<IReadOnlyList<string>>> GetArchivedSessionIdsAsync(CancellationToken ct = default)
+    {
+        ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
+        using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        timeoutCts.CancelAfter(TimeSpan.FromSeconds(5));
+        var baselineTcs = new TaskCompletionSource<Outcome<IReadOnlyList<string>>>(TaskCreationOptions.RunContinuationsAsynchronously);
+        IRemoteStreamHandle? handle = null;
+        try
+        {
+            handle = await _connection.OpenStreamAsync(
+                "workspace/follow",
+                RemoteWireCodec.EmptyArgs,
+                frame =>
+                {
+                    if (frame.Type == "item" && frame.Value is { } val)
+                    {
+                        var decoded = RemoteProtocolCodec.DecodeWorkspaceFollowFrame(val);
+                        switch (decoded)
+                        {
+                            case WorkspaceBaselineFrame baseline:
+                                baselineTcs.TrySetResult(Outcome<IReadOnlyList<string>>.Ok(baseline.ArchivedSessionIds));
+                                break;
+                            case WorkspaceReplacedFrame replaced:
+                                baselineTcs.TrySetResult(Outcome<IReadOnlyList<string>>.Ok(replaced.ArchivedSessionIds));
+                                break;
+                            case WorkspaceArchivedChangedFrame archived:
+                                baselineTcs.TrySetResult(Outcome<IReadOnlyList<string>>.Ok(archived.ArchivedSessionIds));
+                                break;
+                        }
+                    }
+                    else if (frame.Type == "error")
+                    {
+                        baselineTcs.TrySetResult(Outcome<IReadOnlyList<string>>.Fail(DshFailureMapper.FromRpcError(frame.Error)));
+                    }
+                    else if (frame.Type == "end")
+                    {
+                        baselineTcs.TrySetResult(Outcome<IReadOnlyList<string>>.Fail(
+                            DshFailureCode.ProtocolMismatch,
+                            "workspace_follow.ended_without_baseline"));
+                    }
+                    return ValueTask.CompletedTask;
+                },
+                timeoutCts.Token).ConfigureAwait(false);
+
+            return await baselineTcs.Task.WaitAsync(timeoutCts.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+        {
+            return Outcome<IReadOnlyList<string>>.Fail(DshFailureCode.Timeout, "workspace_follow.baseline_timeout", retryable: true);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            return Outcome<IReadOnlyList<string>>.Fail(DshFailureMapper.FromException(ex));
+        }
+        finally
+        {
+            if (handle is not null)
+            {
+                try
+                {
+                    await handle.DisposeAsync().ConfigureAwait(false);
+                }
+                catch (OperationCanceledException)
+                {
+                    throw;
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    _ = ex;
+                }
+            }
+        }
     }
 
     public override async Task<Outcome<Unit>> SendPromptAsync(PromptSendRequest request, CancellationToken ct = default)
@@ -790,6 +906,105 @@ public sealed class RemoteDshGatewayClient : DefaultDshGateway, IDisposable
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             return Outcome<IAsyncDisposable>.Fail(DshFailureMapper.FromException(ex));
+        }
+    }
+
+    /// <summary>订阅 workspace/follow 实时工作区流，接收基线与归档变更帧。</summary>
+    public override async Task<Outcome<IAsyncDisposable>> FollowWorkspaceAsync(
+        Func<WorkspaceFollowFrame, ValueTask> onFrame,
+        CancellationToken ct = default)
+    {
+        ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
+        ArgumentNullException.ThrowIfNull(onFrame);
+        try
+        {
+            var handle = await _connection.OpenStreamAsync(
+                "workspace/follow",
+                RemoteWireCodec.EmptyArgs,
+                async frame =>
+                {
+                    if (frame.Type == "item" && frame.Value is { } val)
+                    {
+                        var decoded = RemoteProtocolCodec.DecodeWorkspaceFollowFrame(val);
+                        await onFrame(decoded).ConfigureAwait(false);
+                    }
+                },
+                ct).ConfigureAwait(false);
+
+            return Outcome<IAsyncDisposable>.Ok(handle);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            return Outcome<IAsyncDisposable>.Fail(DshFailureMapper.FromException(ex));
+        }
+    }
+
+    /// <summary>无副作用探测服务端是否支持 workspace/follow（进而判定归档能力），不支持或超时安静返回 false。</summary>
+    private async Task<bool> ProbeWorkspaceArchiveAsync(CancellationToken ct)
+    {
+        using var probeCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        probeCts.CancelAfter(TimeSpan.FromMilliseconds(350));
+        var baselineTcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        IRemoteStreamHandle? handle = null;
+        try
+        {
+            handle = await _connection.OpenStreamAsync(
+                "workspace/follow",
+                RemoteWireCodec.EmptyArgs,
+                frame =>
+                {
+                    if (frame.Type == "item" && frame.Value is { } val)
+                    {
+                        var decoded = RemoteProtocolCodec.DecodeWorkspaceFollowFrame(val);
+                        if (decoded is WorkspaceBaselineFrame or WorkspaceReplacedFrame or WorkspaceArchivedChangedFrame)
+                        {
+                            baselineTcs.TrySetResult(true);
+                        }
+                    }
+                    else if (frame.Type is "error" or "end")
+                    {
+                        baselineTcs.TrySetResult(false);
+                    }
+                    return ValueTask.CompletedTask;
+                },
+                probeCts.Token).ConfigureAwait(false);
+
+            return await baselineTcs.Task.WaitAsync(probeCts.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+        {
+            return false;
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _ = ex;
+            return false;
+        }
+        finally
+        {
+            if (handle is not null)
+            {
+                try
+                {
+                    await handle.DisposeAsync().ConfigureAwait(false);
+                }
+                catch (OperationCanceledException)
+                {
+                    throw;
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    _ = ex;
+                }
+            }
         }
     }
 

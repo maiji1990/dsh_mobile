@@ -284,5 +284,72 @@
     { "turn": 4, "reason": { "kind": "max-tokens" } },
     { "turn": 5, "reason": { "kind": "interrupted" } },
     { "turn": 6, "reason": { "kind": "future-reason-v99" } }
-  ]
+  ],
+  "workspaceArchiveSession": {
+    "type": "server-response",
+    "rpcId": "g-10",
+    "result": {
+      "ok": true,
+      "value": {
+        "archivedSessionIds": [
+          "session-00000000-0000-4000-8000-000000000010"
+        ]
+      }
+    }
+  },
+  "workspaceUnarchiveSession": {
+    "type": "server-response",
+    "rpcId": "g-11",
+    "result": {
+      "ok": true,
+      "value": {
+        "archivedSessionIds": []
+      }
+    }
+  },
+  "workspaceFollowBaseline": {
+    "type": "item",
+    "streamId": "ws-1",
+    "value": {
+      "type": "baseline",
+      "value": {
+        "archivedSessionIds": [
+          "session-00000000-0000-4000-8000-000000000010"
+        ],
+        "pinnedSessionIds": []
+      }
+    }
+  },
+  "workspaceFollowArchived": {
+    "type": "item",
+    "streamId": "ws-1",
+    "value": {
+      "type": "archived",
+      "archivedSessionIds": [
+        "session-00000000-0000-4000-8000-000000000010",
+        "session-00000000-0000-4000-8000-000000000011"
+      ]
+    }
+  },
+  "workspaceFollowReplace": {
+    "type": "item",
+    "streamId": "ws-1",
+    "value": {
+      "type": "replace",
+      "value": {
+        "archivedSessionIds": [],
+        "pinnedSessionIds": [
+          "session-00000000-0000-4000-8000-000000000010"
+        ]
+      }
+    }
+  },
+  "workspaceFollowUnknown": {
+    "type": "item",
+    "streamId": "ws-1",
+    "value": {
+      "type": "future-frame-v2",
+      "extra": true
+    }
+  }
 }
