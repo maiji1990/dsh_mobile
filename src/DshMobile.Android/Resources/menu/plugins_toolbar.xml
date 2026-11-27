@@ -11,4 +11,13 @@
         android:icon="@drawable/ic_refresh"
         android:title="@string/plugins_action_refresh"
         app:showAsAction="ifRoom" />
+    <item
+        android:id="@+id/plugins_action_webui_compat"
+        android:title="@string/plugins_menu_webui_compat_off"
+        app:showAsAction="never" />
+    <item
+        android:id="@+id/plugins_action_open_webui"
+        android:title="@string/plugins_menu_open_webui"
+        android:visible="false"
+        app:showAsAction="never" />
 </menu>

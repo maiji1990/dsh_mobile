@@ -9,20 +9,23 @@ using Google.Android.Material.MaterialSwitch;
 namespace DshMobile.App.Plugins;
 
 /// <summary>
-/// 原生插件目录列表适配器（PR-07 / N-07-02 / ADR-0033）：
-/// 仅渲染 L0 状态标签、精简短模块主标题 + 中文功能副描述 + 去重包名，无动态配置表单与内嵌网页视图。
+/// 原生插件目录列表适配器（PR-07 / N-07-02 / ADR-0034）：
+/// 渲染运行状态标签、核心保护与可配置胶囊、精简裁剪/非 Bundle/页面扩展提示条，支持点击卡片直达详情页。
 /// </summary>
 internal sealed class PluginsAdapter(
+    Action<PluginEntryView> onOpenDetail,
     Action<PluginEntryView, bool> onToggleRequested,
     Action<PluginEntryView> onUninstallRequested) : RecyclerView.Adapter
 {
     private IReadOnlyList<PluginEntryView> _items = [];
     private bool _isBusy;
+    private bool _isFullWebUiCompatActive;
 
-    public void Submit(IReadOnlyList<PluginEntryView> items, bool isBusy)
+    public void Submit(IReadOnlyList<PluginEntryView> items, bool isBusy, bool isFullWebUiCompatActive = false)
     {
         _items = items;
         _isBusy = isBusy;
+        _isFullWebUiCompatActive = isFullWebUiCompatActive;
         NotifyDataSetChanged();
     }
 
@@ -31,12 +34,12 @@ internal sealed class PluginsAdapter(
     public override RecyclerView.ViewHolder OnCreateViewHolder(ViewGroup parent, int viewType)
     {
         var view = LayoutInflater.From(parent.Context)!.Inflate(Resource.Layout.item_plugin_entry, parent, false)!;
-        return new Holder(view, onToggleRequested, onUninstallRequested);
+        return new Holder(view, onOpenDetail, onToggleRequested, onUninstallRequested);
     }
 
     public override void OnBindViewHolder(RecyclerView.ViewHolder holder, int position)
     {
-        ((Holder)holder).Bind(_items[position], _isBusy);
+        ((Holder)holder).Bind(_items[position], _isBusy, _isFullWebUiCompatActive);
     }
 
     private sealed class Holder : RecyclerView.ViewHolder
@@ -46,7 +49,10 @@ internal sealed class PluginsAdapter(
         private readonly TextView _status;
         private readonly TextView _version;
         private readonly TextView _protectedBadge;
+        private readonly TextView _configurableBadge;
         private readonly TextView _module;
+        private readonly TextView _trimmedNotice;
+        private readonly TextView _nonBundleNotice;
         private readonly TextView _webUiNotice;
         private readonly TextView _diagnostic;
         private readonly View _actionsRow;
@@ -57,6 +63,7 @@ internal sealed class PluginsAdapter(
 
         public Holder(
             View itemView,
+            Action<PluginEntryView> onOpenDetail,
             Action<PluginEntryView, bool> onToggleRequested,
             Action<PluginEntryView> onUninstallRequested) : base(itemView)
         {
@@ -65,16 +72,27 @@ internal sealed class PluginsAdapter(
             _status = itemView.FindViewById<TextView>(Resource.Id.plugin_item_status)!;
             _version = itemView.FindViewById<TextView>(Resource.Id.plugin_item_version)!;
             _protectedBadge = itemView.FindViewById<TextView>(Resource.Id.plugin_item_protected)!;
+            _configurableBadge = itemView.FindViewById<TextView>(Resource.Id.plugin_item_configurable)!;
             _module = itemView.FindViewById<TextView>(Resource.Id.plugin_item_module)!;
+            _trimmedNotice = itemView.FindViewById<TextView>(Resource.Id.plugin_item_trimmed_notice)!;
+            _nonBundleNotice = itemView.FindViewById<TextView>(Resource.Id.plugin_item_non_bundle_notice)!;
             _webUiNotice = itemView.FindViewById<TextView>(Resource.Id.plugin_item_webui_notice)!;
             _diagnostic = itemView.FindViewById<TextView>(Resource.Id.plugin_item_diagnostic)!;
             _actionsRow = itemView.FindViewById(Resource.Id.plugin_item_actions)!;
             _uninstallBtn = itemView.FindViewById<MaterialButton>(Resource.Id.plugin_item_uninstall)!;
             _toggleSwitch = itemView.FindViewById<MaterialSwitch>(Resource.Id.plugin_item_switch)!;
 
+            itemView.Click += (_, _) =>
+            {
+                if (_bound is { } entry)
+                {
+                    onOpenDetail(entry);
+                }
+            };
+
             _toggleSwitch.Click += (_, _) =>
             {
-                if (_bound is not { } entry || _isBusy || !entry.CanToggle)
+                if (_bound is not { } entry || _isBusy || !entry.CanToggle || entry.IsTrimmedByNativeMode)
                 {
                     if (_bound is not null)
                     {
@@ -97,7 +115,7 @@ internal sealed class PluginsAdapter(
             };
         }
 
-        public void Bind(PluginEntryView entry, bool isBusy)
+        public void Bind(PluginEntryView entry, bool isBusy, bool isFullWebUiCompatActive)
         {
             _bound = entry;
             _isBusy = isBusy;
@@ -127,14 +145,26 @@ internal sealed class PluginsAdapter(
             }
 
             _protectedBadge.Visibility = entry.IsProtected ? ViewStates.Visible : ViewStates.Gone;
+            _configurableBadge.Visibility = entry.HasConfigurableSettings ? ViewStates.Visible : ViewStates.Gone;
             BindStatus(ctx, entry);
 
+            var showSwitch = !entry.IsProtected && (entry.CanToggle || entry.IsTrimmedByNativeMode);
             _toggleSwitch.Checked = entry.Enabled;
-            _toggleSwitch.Enabled = entry.CanToggle && !isBusy;
-            _toggleSwitch.Visibility = entry.CanToggle ? ViewStates.Visible : ViewStates.Gone;
+            _toggleSwitch.Enabled = entry.CanToggle && !entry.IsTrimmedByNativeMode && !isBusy;
+            _toggleSwitch.Visibility = showSwitch ? ViewStates.Visible : ViewStates.Gone;
             _toggleSwitch.ContentDescription = display.ShortTitle;
 
+            _trimmedNotice.Visibility = entry.IsTrimmedByNativeMode ? ViewStates.Visible : ViewStates.Gone;
+            _nonBundleNotice.Visibility = entry.IsInstalledInProfile && !entry.HasBundleManifest
+                ? ViewStates.Visible
+                : ViewStates.Gone;
             _webUiNotice.Visibility = entry.HasCustomWebUi ? ViewStates.Visible : ViewStates.Gone;
+            if (entry.HasCustomWebUi)
+            {
+                _webUiNotice.SetText(isFullWebUiCompatActive
+                    ? Resource.String.plugins_custom_webui_compat_active_hint
+                    : Resource.String.plugins_custom_webui_compat_hint);
+            }
 
             if (!string.IsNullOrWhiteSpace(entry.DiagnosticSummary))
             {
@@ -152,9 +182,12 @@ internal sealed class PluginsAdapter(
 
         private void BindStatus(Android.Content.Context ctx, PluginEntryView entry)
         {
+            var isNonBundle = string.Equals(entry.FiberPhase, "not-bundle", StringComparison.Ordinal) ||
+                              (entry.IsInstalledInProfile && !entry.HasBundleManifest);
             var (textRes, tone) = entry.FiberPhase switch
             {
                 "failed" => (Resource.String.plugins_status_failed, Rows.BadgeTone.Error),
+                _ when isNonBundle => (Resource.String.plugins_status_not_bundle, Rows.BadgeTone.Warning),
                 "pending-restart" => (Resource.String.plugins_status_pending_restart, Rows.BadgeTone.Primary),
                 "loading" or "pending" when entry.Enabled => (Resource.String.plugins_status_loading, Rows.BadgeTone.Primary),
                 "active" when entry.Enabled => (Resource.String.plugins_status_active, Rows.BadgeTone.Success),

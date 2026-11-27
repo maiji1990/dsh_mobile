@@ -28,6 +28,8 @@ public sealed class AgentConnectionScope : IDisposable
     private readonly HistoryReconciler _reconciler;
     private readonly KeptTranscriptStore _keptStore;
     private readonly HiddenSessionStore _hiddenStore;
+    private readonly RuntimePluginOperations _pluginOperations;
+    private readonly PluginInventoryService _pluginInventoryService;
     private readonly NpmRegistryPluginSearchService _pluginCatalogSearch;
     private readonly RuntimeLayout _layout;
     private readonly Action<string> _log;
@@ -78,12 +80,12 @@ public sealed class AgentConnectionScope : IDisposable
         Chat = new ChatViewModel(_gateway, _transcripts, _requests, _sends, _reconciler, _keptStore, hiddenStore: _hiddenStore);
         Credentials = new CredentialsViewModel(_gateway, Path.Combine(layout.HostStateDir, "custom-credential-refs.txt"));
         Sessions = new SessionsViewModel(_gateway, _requests, _keptStore, _hiddenStore, _transcripts);
-        var pluginOps = new RuntimePluginOperations(
+        _pluginOperations = new RuntimePluginOperations(
             runtime,
             restartHostAsync ?? (ct => runtime.RestartWebHostAsync(ct)));
-        var pluginService = new PluginInventoryService(_gateway, pluginOps);
+        _pluginInventoryService = new PluginInventoryService(_gateway, _pluginOperations);
         _pluginCatalogSearch = new NpmRegistryPluginSearchService();
-        Plugins = new PluginsViewModel(_gateway, pluginService, _pluginCatalogSearch);
+        Plugins = new PluginsViewModel(_gateway, _pluginInventoryService, _pluginCatalogSearch);
         Inbox = new InboxViewModel(_requests, ResolveSessionTitle);
         RequestNotifications = new BackgroundRequestNotificationCoordinator(
             _requests,
@@ -104,6 +106,10 @@ public sealed class AgentConnectionScope : IDisposable
     public SessionsViewModel Sessions { get; }
 
     public PluginsViewModel Plugins { get; }
+
+    /// <summary>按页面作用域创建插件详情与官方 <c>settings/*</c> 实时配置 ViewModel（ADR-0034）。</summary>
+    public PluginDetailViewModel CreatePluginDetailViewModel() =>
+        new(_gateway, _pluginInventoryService, _pluginOperations, _pluginCatalogSearch);
 
     public InboxViewModel Inbox { get; }
 

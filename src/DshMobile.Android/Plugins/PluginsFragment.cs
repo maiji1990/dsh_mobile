@@ -23,8 +23,8 @@ using Runnable = Java.Lang.Runnable;
 namespace DshMobile.App.Plugins;
 
 /// <summary>
-/// PR-07 原生插件工作台 Fragment（N-07-02 / ADR-0033）：
-/// 100% 绑定 XML 布局，提供「已安装筛选 + 远端发现搜索」双模式能力，无悬浮 FAB、无内嵌网页视图与动态配置表单。
+/// PR-07 原生插件工作台 Fragment（N-07-02 / ADR-0034）：
+/// 100% 绑定 XML 布局，提供「已安装筛选 + 远端发现搜索」双模式能力、详情页跳转与按需完整 WebUI 兼容入口。
 /// </summary>
 public sealed class PluginsFragment : Fragment
 {
@@ -70,6 +70,7 @@ public sealed class PluginsFragment : Fragment
     private int _renderPosted;
     private string? _lastShownStatusKey;
     private string? _lastShownFailure;
+    private bool _returnedFromDetail;
 
     public override View OnCreateView(LayoutInflater inflater, ViewGroup? container, Bundle? savedInstanceState)
     {
@@ -113,12 +114,12 @@ public sealed class PluginsFragment : Fragment
 
         _installedList = view.FindViewById<RecyclerView>(Resource.Id.plugins_list)!;
         _installedList.SetLayoutManager(new LinearLayoutManager(RequireContext()));
-        _installedAdapter = new PluginsAdapter(ConfirmTogglePlugin, ConfirmUninstallPlugin);
+        _installedAdapter = new PluginsAdapter(OpenInstalledPluginDetail, ConfirmTogglePlugin, ConfirmUninstallPlugin);
         _installedList.SetAdapter(_installedAdapter);
 
         _catalogList = view.FindViewById<RecyclerView>(Resource.Id.plugins_catalog_list)!;
         _catalogList.SetLayoutManager(new LinearLayoutManager(RequireContext()));
-        _catalogAdapter = new PluginCatalogAdapter(ConfirmInstallCatalogPlugin);
+        _catalogAdapter = new PluginCatalogAdapter(OpenCatalogPluginDetail, ConfirmInstallCatalogPlugin);
         _catalogList.SetAdapter(_catalogAdapter);
 
         _startDshButton.Click += (_, _) => _ = _bridge.RunStartAsync();
@@ -159,6 +160,17 @@ public sealed class PluginsFragment : Fragment
             && currentState.CanSearchCatalog)
         {
             TriggerCatalogSearchImmediate(currentState.CatalogQuery);
+        }
+    }
+
+    public override void OnResume()
+    {
+        base.OnResume();
+        if (_returnedFromDetail)
+        {
+            _returnedFromDetail = false;
+            ScheduleRender();
+            _ = RefreshWhenReadyAsync();
         }
     }
 
@@ -213,7 +225,42 @@ public sealed class PluginsFragment : Fragment
             {
                 _ = RefreshWhenReadyAsync();
             }
+            return;
         }
+
+        if (itemId == Resource.Id.plugins_action_webui_compat)
+        {
+            var context = RequireContext();
+            var desiredEnabled = !UiPrefs.FullWebUiCompatEnabled(context);
+            PluginBrowserDialogs.ConfirmToggleFullWebUiCompat(
+                context,
+                View,
+                _bridge,
+                desiredEnabled,
+                restartHostAsync: () => _vm.RestartDshAsync(),
+                onPreferenceChanged: ScheduleRender);
+            return;
+        }
+
+        if (itemId == Resource.Id.plugins_action_open_webui)
+        {
+            PluginBrowserDialogs.ConfirmAndOpenLocalWebUi(RequireContext(), View, _bridge);
+        }
+    }
+
+    private void OpenInstalledPluginDetail(PluginEntryView entry)
+    {
+        var target = !string.IsNullOrWhiteSpace(entry.EntryId) ? entry.EntryId : entry.PackageName;
+        var title = PluginDisplayFormatter.Format(entry).ShortTitle;
+        _returnedFromDetail = true;
+        StartActivity(PluginDetailActivity.CreateInstalledIntent(RequireContext(), target, title));
+    }
+
+    private void OpenCatalogPluginDetail(PluginCatalogEntryView entry)
+    {
+        var title = PluginDisplayFormatter.FormatCatalog(entry).ShortTitle;
+        _returnedFromDetail = true;
+        StartActivity(PluginDetailActivity.CreateCatalogIntent(RequireContext(), entry.PackageName, title));
     }
 
     private void SwitchToInstalledTab()
@@ -430,6 +477,15 @@ public sealed class PluginsFragment : Fragment
         installMenuItem?.SetEnabled(hostReady && !busy);
         var refreshMenuItem = _toolbar.Menu?.FindItem(Resource.Id.plugins_action_refresh);
         refreshMenuItem?.SetEnabled(isDiscover ? (!state.IsSearchingCatalog && state.CanSearchCatalog) : (hostReady && !busy));
+        var webUiCompatMenuItem = _toolbar.Menu?.FindItem(Resource.Id.plugins_action_webui_compat);
+        webUiCompatMenuItem?.SetTitle(UiPrefs.FullWebUiCompatEnabled(context)
+            ? Resource.String.plugins_menu_webui_compat_on
+            : Resource.String.plugins_menu_webui_compat_off);
+        webUiCompatMenuItem?.SetEnabled(!busy);
+        var openWebUiMenuItem = _toolbar.Menu?.FindItem(Resource.Id.plugins_action_open_webui);
+        var webUiReady = _bridge.IsFullWebUiCompatActive && _bridge.TryGetLocalWebUiBrowserUri() is not null;
+        openWebUiMenuItem?.SetVisible(webUiReady);
+        openWebUiMenuItem?.SetEnabled(webUiReady && !busy);
 
         // 同步分段切换器选中态与已安装总数标签
         _installedTabButton.Checked = !isDiscover;
@@ -468,7 +524,7 @@ public sealed class PluginsFragment : Fragment
     private void RenderInstalledSection(Context context, PluginsUiState state, bool hostReady, bool busy)
     {
         SyncFilterChipSelection(state.FilterMode);
-        _installedAdapter.Submit(state.Entries, busy);
+        _installedAdapter.Submit(state.Entries, busy, _bridge.IsFullWebUiCompatActive);
 
         _retrySearchButton.Visibility = ViewStates.Gone;
         if (state.TotalInstalledCount > 0)

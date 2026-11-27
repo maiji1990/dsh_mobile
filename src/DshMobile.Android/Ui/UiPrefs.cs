@@ -195,6 +195,23 @@ public static class UiPrefs
     }
 
     /// <summary>
+    /// 是否启用「完整 WebUI 与页面插件兼容模式」（ADR-0034，默认关闭）。
+    /// 开启并重启 DSH 后宿主以非精简模式启动，释放 <c>modules</c> 与 <c>ui-*</c> 前端模块，
+    /// 使 <c>dsh.client</c> 页面修改类插件可通过系统浏览器在本机官方 WebUI 中生效。
+    /// </summary>
+    private const string FullWebUiCompatKey = "full_webui_compat_enabled";
+
+    public static bool FullWebUiCompatEnabled(Context context) =>
+        context.GetSharedPreferences(File, FileCreationMode.Private)!.GetBoolean(FullWebUiCompatKey, false);
+
+    public static void SetFullWebUiCompatEnabled(Context context, bool enabled)
+    {
+        var editor = context.GetSharedPreferences(File, FileCreationMode.Private)!.Edit()!;
+        editor.PutBoolean(FullWebUiCompatKey, enabled);
+        editor.Apply();
+    }
+
+    /// <summary>
     /// 把外观模式偏好映射到 AppCompat 的默认夜间模式。Application 启动时调用一次即可覆盖后续 Activity。
     /// </summary>
     public static void ApplyThemeMode(Context context)

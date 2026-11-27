@@ -43,4 +43,96 @@
     <string name="plugins_catalog_no_desc">暂无插件描述</string>
     <string name="plugins_catalog_install_confirm_title">确认安装远端插件？</string>
     <string name="plugins_catalog_install_confirm_msg">来源：npm 公共仓库\n安装规格：%1$s\n\n第三方插件代码将在沙箱内运行，请确认包名与来源可信；安装成功后需重启 DSH 生效。</string>
+
+    <!-- 已安装卡片语义标注升级（ADR-0034） -->
+    <string name="plugins_configurable_badge">可配置</string>
+    <string name="plugins_status_not_bundle">非 Bundle 依赖</string>
+    <string name="plugins_trimmed_notice">精简模式已裁剪（点击进入详情开启完整 WebUI 兼容模式后可用）</string>
+    <string name="plugins_non_bundle_notice">非 DSH Bundle（未自动挂载到 Cordis，作为普通 npm 依赖安装）</string>
+    <string name="plugins_custom_webui_compat_hint">含 Web 页面扩展（点进详情开启兼容模式）</string>
+    <string name="plugins_custom_webui_compat_active_hint">含 Web 页面扩展（兼容模式已就绪，点进详情打开）</string>
+
+    <!-- 插件页顶栏完整 WebUI 兼容模式菜单 -->
+    <string name="plugins_menu_webui_compat_on">完整 WebUI 兼容模式：已开启</string>
+    <string name="plugins_menu_webui_compat_off">完整 WebUI 兼容模式：已关闭</string>
+    <string name="plugins_menu_open_webui">在系统浏览器打开 WebUI</string>
+
+    <!-- 完整 WebUI 兼容模式与系统浏览器安全确认弹窗 -->
+    <string name="plugins_webui_compat_enable_title">开启完整 WebUI 兼容模式？</string>
+    <string name="plugins_webui_compat_enable_msg">开启并重启 DSH 后，将加载官方浏览器前端与页面扩展模块，使 dsh.client 页面修改类插件在系统浏览器中完整生效。\n\n该模式会增加一定的内存占用与启动耗时；随时可在插件页顶栏菜单切回精简原生模式。</string>
+    <string name="plugins_webui_compat_enable_confirm">开启并重启 DSH</string>
+    <string name="plugins_webui_compat_enable_start_confirm">开启并启动 DSH</string>
+    <string name="plugins_webui_compat_disable_title">切回精简原生模式？</string>
+    <string name="plugins_webui_compat_disable_msg">关闭完整 WebUI 兼容模式并重启 DSH 后，将重新裁剪浏览器前端模块以降低内存占用并加快启动；系统浏览器中已打开的本机 WebUI 会话将立即失效。</string>
+    <string name="plugins_webui_compat_disable_confirm">关闭并重启 DSH</string>
+    <string name="plugins_webui_compat_disable_saved">已关闭完整 WebUI 兼容模式，下次启动 DSH 时生效</string>
+    <string name="plugins_webui_browser_confirm_title">在系统浏览器中打开完整 WebUI？</string>
+    <string name="plugins_webui_browser_confirm_msg">仅访问本机回环地址（127.0.0.1），不会经过外部网络。\n\n确认后将通过系统浏览器 Intent 临时传递本次启动的一次性会话令牌以换取本机 Cookie；停止 DSH 或切回精简原生模式后令牌立即失效。</string>
+    <string name="plugins_webui_browser_confirm_open">安全打开</string>
+    <string name="plugins_webui_browser_unavailable">完整 WebUI 尚未就绪，请先确认兼容模式已生效且 DSH 正在运行</string>
+    <string name="plugins_browser_not_found">未找到可打开网页的系统浏览器应用</string>
+
+    <!-- 原生插件详情页与官方实时配置表单（ADR-0034） -->
+    <string name="plugin_detail_title">插件详情</string>
+    <string name="plugin_detail_action_refresh">刷新详情</string>
+    <string name="plugin_detail_version_fmt">v%1$s</string>
+    <string name="plugin_detail_version_update_fmt">v%1$s · 最新 v%2$s</string>
+    <string name="plugin_detail_badge_webui">含 Web 页面扩展</string>
+    <string name="plugin_detail_badge_not_bundle">非 DSH Bundle</string>
+    <string name="plugin_detail_badge_trimmed">精简模式已裁剪</string>
+    <string name="plugin_detail_meta_author_fmt">作者：%1$s</string>
+    <string name="plugin_detail_meta_license_fmt">许可证：%1$s</string>
+    <string name="plugin_detail_link_homepage">主页</string>
+    <string name="plugin_detail_link_repo">代码仓库</string>
+    <string name="plugin_detail_link_npm">npm</string>
+    <string name="plugin_detail_host_needed_install">需先启动 DSH 后才能安装此插件</string>
+    <string name="plugin_detail_webui_card_title">浏览器页面扩展说明</string>
+    <string name="plugin_detail_webui_card_body">该插件包含 dsh.client 浏览器前端页面扩展，纯原生界面下不会修改原生布局；如需让其页面修改生效，请启用「完整 WebUI 兼容模式」并在系统浏览器中打开本机官方 WebUI。</string>
+    <string name="plugin_detail_webui_action_enable">开启完整 WebUI 兼容模式并重启 DSH</string>
+    <string name="plugin_detail_webui_action_restart">重启 DSH 使完整 WebUI 生效</string>
+    <string name="plugin_detail_webui_action_start">启动 DSH 使完整 WebUI 生效</string>
+    <string name="plugin_detail_webui_action_open_browser">在系统浏览器中打开完整 WebUI</string>
+
+    <!-- 官方实时配置区块 -->
+    <string name="plugin_detail_config_title">实时配置</string>
+    <string name="plugin_detail_config_live_badge">修改后自动热生效</string>
+    <string name="plugin_detail_config_reset_all">恢复默认</string>
+    <string name="plugin_detail_config_readonly_banner">当前配置不可写（仅只读展示）</string>
+    <string name="plugin_detail_config_none">此插件未向 DSH 注册在线配置项</string>
+    <string name="plugin_detail_config_override_badge">已修改</string>
+    <string name="plugin_detail_config_readonly_badge">只读</string>
+    <string name="plugin_detail_config_action_edit">编辑</string>
+    <string name="plugin_detail_config_action_select">选择</string>
+    <string name="plugin_detail_config_action_set">设置</string>
+    <string name="plugin_detail_config_action_clear">清除</string>
+    <string name="plugin_detail_config_action_reset">重置</string>
+    <string name="plugin_detail_config_empty_value">未设置</string>
+    <string name="plugin_detail_config_secret_set">已配置（不回显明文）</string>
+    <string name="plugin_detail_config_secret_unset">未配置</string>
+    <string name="plugin_detail_config_secret_input_hint">输入新密钥（单向写入，保存后不回显）</string>
+    <string name="plugin_detail_config_number_range_fmt">范围：%1$s</string>
+    <string name="plugin_detail_config_save">保存</string>
+    <string name="plugin_detail_config_reset_all_title">恢复默认配置？</string>
+    <string name="plugin_detail_config_reset_all_msg">将把此插件的全部配置项恢复为默认值并立即热生效。</string>
+    <string name="plugin_detail_config_reset_all_secret_msg">将把此插件的所有非密钥配置项恢复为默认值并立即热生效；已配置的密钥不会被清除。</string>
+    <string name="plugin_detail_config_reset_all_confirm">确认恢复默认</string>
+    <string name="plugin_detail_config_secret_clear_title">清除已配置密钥？</string>
+    <string name="plugin_detail_config_secret_clear_msg">将移除「%1$s」的已保存密钥值并立即生效。</string>
+    <string name="plugin_detail_config_secret_clear_confirm">确认清除</string>
+    <string name="plugin_detail_config_saved_live">配置已保存并实时生效</string>
+    <string name="plugin_detail_config_field_reset">已恢复该项默认值并实时生效</string>
+    <string name="plugin_detail_config_reset_all_done">已恢复默认配置并实时生效</string>
+    <string name="plugin_detail_config_reset_preserving_secrets">已恢复非密钥配置（已保留已配置密钥）</string>
+    <string name="plugin_detail_config_no_non_secret_overrides">当前无待重置的非密钥配置项</string>
+    <string name="plugin_detail_config_conflict_refreshed">配置已被其他端更新，已自动刷新最新值，请重新提交</string>
+    <string name="plugin_detail_config_err_invalid_number">请输入有效的有限数值</string>
+    <string name="plugin_detail_config_err_number_below_min">输入值小于允许的最小值</string>
+    <string name="plugin_detail_config_err_number_above_max">输入值大于允许的最大值</string>
+    <string name="plugin_detail_config_err_invalid_json">请输入合法的 JSON 内容</string>
+    <string name="plugin_detail_config_err_secret_empty">密钥不能为空</string>
+    <string name="plugin_detail_config_err_invalid_value">配置值格式不合法</string>
+
+    <!-- 详情文档卡 -->
+    <string name="plugin_detail_doc_title">插件说明文档</string>
+    <string name="plugin_detail_doc_empty">暂无插件详情文档</string>
 </resources>
