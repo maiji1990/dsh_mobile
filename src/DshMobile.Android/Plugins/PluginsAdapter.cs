@@ -15,7 +15,8 @@ namespace DshMobile.App.Plugins;
 internal sealed class PluginsAdapter(
     Action<PluginEntryView> onOpenDetail,
     Action<PluginEntryView, bool> onToggleRequested,
-    Action<PluginEntryView> onUninstallRequested) : RecyclerView.Adapter
+    Action<PluginEntryView> onUninstallRequested,
+    Action<PluginEntryView> onUpgradeRequested) : RecyclerView.Adapter
 {
     private IReadOnlyList<PluginEntryView> _items = [];
     private bool _isBusy;
@@ -34,7 +35,7 @@ internal sealed class PluginsAdapter(
     public override RecyclerView.ViewHolder OnCreateViewHolder(ViewGroup parent, int viewType)
     {
         var view = LayoutInflater.From(parent.Context)!.Inflate(Resource.Layout.item_plugin_entry, parent, false)!;
-        return new Holder(view, onOpenDetail, onToggleRequested, onUninstallRequested);
+        return new Holder(view, onOpenDetail, onToggleRequested, onUninstallRequested, onUpgradeRequested);
     }
 
     public override void OnBindViewHolder(RecyclerView.ViewHolder holder, int position)
@@ -50,6 +51,7 @@ internal sealed class PluginsAdapter(
         private readonly TextView _version;
         private readonly TextView _protectedBadge;
         private readonly TextView _configurableBadge;
+        private readonly TextView _updateBadge;
         private readonly TextView _module;
         private readonly TextView _trimmedNotice;
         private readonly TextView _nonBundleNotice;
@@ -57,6 +59,7 @@ internal sealed class PluginsAdapter(
         private readonly TextView _diagnostic;
         private readonly View _actionsRow;
         private readonly MaterialButton _uninstallBtn;
+        private readonly MaterialButton _upgradeBtn;
         private readonly MaterialSwitch _toggleSwitch;
         private PluginEntryView? _bound;
         private bool _isBusy;
@@ -65,7 +68,8 @@ internal sealed class PluginsAdapter(
             View itemView,
             Action<PluginEntryView> onOpenDetail,
             Action<PluginEntryView, bool> onToggleRequested,
-            Action<PluginEntryView> onUninstallRequested) : base(itemView)
+            Action<PluginEntryView> onUninstallRequested,
+            Action<PluginEntryView> onUpgradeRequested) : base(itemView)
         {
             _name = itemView.FindViewById<TextView>(Resource.Id.plugin_item_name)!;
             _desc = itemView.FindViewById<TextView>(Resource.Id.plugin_item_desc)!;
@@ -73,6 +77,7 @@ internal sealed class PluginsAdapter(
             _version = itemView.FindViewById<TextView>(Resource.Id.plugin_item_version)!;
             _protectedBadge = itemView.FindViewById<TextView>(Resource.Id.plugin_item_protected)!;
             _configurableBadge = itemView.FindViewById<TextView>(Resource.Id.plugin_item_configurable)!;
+            _updateBadge = itemView.FindViewById<TextView>(Resource.Id.plugin_item_update_badge)!;
             _module = itemView.FindViewById<TextView>(Resource.Id.plugin_item_module)!;
             _trimmedNotice = itemView.FindViewById<TextView>(Resource.Id.plugin_item_trimmed_notice)!;
             _nonBundleNotice = itemView.FindViewById<TextView>(Resource.Id.plugin_item_non_bundle_notice)!;
@@ -80,6 +85,7 @@ internal sealed class PluginsAdapter(
             _diagnostic = itemView.FindViewById<TextView>(Resource.Id.plugin_item_diagnostic)!;
             _actionsRow = itemView.FindViewById(Resource.Id.plugin_item_actions)!;
             _uninstallBtn = itemView.FindViewById<MaterialButton>(Resource.Id.plugin_item_uninstall)!;
+            _upgradeBtn = itemView.FindViewById<MaterialButton>(Resource.Id.plugin_item_upgrade)!;
             _toggleSwitch = itemView.FindViewById<MaterialSwitch>(Resource.Id.plugin_item_switch)!;
 
             itemView.Click += (_, _) =>
@@ -111,6 +117,14 @@ internal sealed class PluginsAdapter(
                 if (_bound is { } entry && !_isBusy && entry.CanUninstall)
                 {
                     onUninstallRequested(entry);
+                }
+            };
+
+            _upgradeBtn.Click += (_, _) =>
+            {
+                if (_bound is { } entry && !_isBusy && entry.CanUpgrade)
+                {
+                    onUpgradeRequested(entry);
                 }
             };
         }
@@ -146,6 +160,18 @@ internal sealed class PluginsAdapter(
 
             _protectedBadge.Visibility = entry.IsProtected ? ViewStates.Visible : ViewStates.Gone;
             _configurableBadge.Visibility = entry.HasConfigurableSettings ? ViewStates.Visible : ViewStates.Gone;
+
+            // 可更新胶囊只在拿到明确的最新版本时显示，避免展示没有目标版本的“可更新”。
+            var hasLatestVersion = !string.IsNullOrWhiteSpace(entry.LatestVersion);
+            if (entry.HasUpdate && hasLatestVersion)
+            {
+                _updateBadge.Visibility = ViewStates.Visible;
+                _updateBadge.Text = Rows.Fmt(ctx, Resource.String.plugins_update_badge_fmt, entry.LatestVersion!.Trim());
+            }
+            else
+            {
+                _updateBadge.Visibility = ViewStates.Gone;
+            }
             BindStatus(ctx, entry);
 
             var showSwitch = !entry.IsProtected && (entry.CanToggle || entry.IsTrimmedByNativeMode);
@@ -176,7 +202,11 @@ internal sealed class PluginsAdapter(
                 _diagnostic.Visibility = ViewStates.Gone;
             }
 
-            _actionsRow.Visibility = entry.CanUninstall ? ViewStates.Visible : ViewStates.Gone;
+            var showUpgrade = entry.CanUpgrade && hasLatestVersion;
+            _upgradeBtn.Visibility = showUpgrade ? ViewStates.Visible : ViewStates.Gone;
+            _upgradeBtn.Enabled = showUpgrade && !isBusy;
+
+            _actionsRow.Visibility = entry.CanUninstall || showUpgrade ? ViewStates.Visible : ViewStates.Gone;
             _uninstallBtn.Enabled = entry.CanUninstall && !isBusy;
         }
 

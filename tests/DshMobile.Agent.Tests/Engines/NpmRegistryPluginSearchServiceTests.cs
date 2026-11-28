@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Net;
+using System.Net.Http.Headers;
 using System.Text;
 using DshMobile.Agent.Domain;
 using DshMobile.Agent.Engines;
@@ -340,6 +341,158 @@ public sealed class NpmRegistryPluginSearchServiceTests
         Assert.Null(okOutcome.Value.RepositoryUrl);
         Assert.False(okOutcome.Value.HasBundleManifest);
         Assert.False(okOutcome.Value.HasCustomWebUi);
+    }
+
+    [Fact]
+    public async Task GetLatestVersionsAsync_UsesLightweightAcceptHeader_DeduplicatesAndToleratesFailures()
+    {
+        var requestedPackages = new List<string>();
+        var acceptHeaders = new List<string>();
+        using var handler = new StubHttpMessageHandler((request, _) =>
+        {
+            var packageName = request.RequestUri!.AbsolutePath.TrimStart('/');
+            lock (requestedPackages)
+            {
+                requestedPackages.Add(packageName);
+                acceptHeaders.Add(request.Headers.Accept.ToString());
+            }
+
+            if (packageName == "missing-plugin")
+            {
+                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.NotFound));
+            }
+            if (packageName == "broken-plugin")
+            {
+                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.InternalServerError));
+            }
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent("""{"dist-tags":{"latest":"2.0.0"}}""", Encoding.UTF8, "application/json"),
+            });
+        });
+        using var service = new NpmRegistryPluginSearchService(handler);
+
+        var outcome = await service.GetLatestVersionsAsync(
+            ["good-plugin", "good-plugin", "missing-plugin", "broken-plugin", "../evil"]);
+
+        Assert.True(outcome.IsOk);
+        Assert.Equal(3, outcome.Value!.Count);
+        Assert.Equal(3, requestedPackages.Count);
+
+        var good = Assert.Single(outcome.Value!, item => item.PackageName == "good-plugin");
+        Assert.Equal("2.0.0", good.LatestVersion);
+        Assert.Null(good.DiagnosticCode);
+
+        var missing = Assert.Single(outcome.Value!, item => item.PackageName == "missing-plugin");
+        Assert.Null(missing.LatestVersion);
+        Assert.Equal("plugins.update_check_not_found", missing.DiagnosticCode);
+
+        var broken = Assert.Single(outcome.Value!, item => item.PackageName == "broken-plugin");
+        Assert.Null(broken.LatestVersion);
+        Assert.Equal("plugins.update_check_http_500", broken.DiagnosticCode);
+
+        Assert.All(
+            acceptHeaders.Select(header => header
+                .Split(',', StringSplitOptions.RemoveEmptyEntries)
+                .Select(token => MediaTypeWithQualityHeaderValue.Parse(token.Trim()))
+                .ToList()),
+            accept =>
+            {
+                var lightweight = Assert.Single(accept, mediaType => mediaType.MediaType == "application/vnd.npm.install-v1+json");
+                // 省略 q 等价于 q=1（RFC 9110 §12.5.1），但 .NET 解析结果为 null 而非 1.0。
+                Assert.True(
+                    lightweight.Quality is null or 1.0,
+                    $"install-v1+json 的 Quality 应为 null 或 1.0，实际为 {lightweight.Quality?.ToString(CultureInfo.InvariantCulture) ?? "null"}");
+
+                var full = Assert.Single(accept, mediaType => mediaType.MediaType == "application/json");
+                Assert.Equal(0.8, full.Quality);
+
+                // 同时钉住实际线上格式（分号后带空格的 "application/json; q=0.8"），结构断言与格式断言互为兜底。
+                Assert.Equal(2, accept.Count);
+                Assert.StartsWith("application/vnd.npm.install-v1+json", accept[0].ToString(), StringComparison.Ordinal);
+                Assert.False(accept[0].ToString().Contains("; q=", StringComparison.Ordinal));
+                Assert.Equal("application/json; q=0.8", accept[1].ToString());
+            });
+    }
+
+    /// <summary>
+    /// 记录原始 <see cref="HttpRequestHeaders.Accept"/> 文本，验证其真实格式（分号后带空格），
+    /// 并确认收窄空格的写法同样匹配——避免后人误以为字符串必须写成 <c>application/json;q=0.8</c>。
+    /// </summary>
+    [Fact]
+    public async Task GetLatestVersionsAsync_AcceptHeaderWireFormat_IsSpaceAfterSemicolonWhileWhitespaceInsensitiveMatchAlsoHolds()
+    {
+        var acceptHeaders = new List<string>();
+        using var handler = new StubHttpMessageHandler((request, _) =>
+        {
+            acceptHeaders.Add(request.Headers.Accept.ToString());
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent("""{"dist-tags":{"latest":"2.0.0"}}""", Encoding.UTF8, "application/json"),
+            });
+        });
+        using var service = new NpmRegistryPluginSearchService(handler);
+
+        var outcome = await service.GetLatestVersionsAsync(["good-plugin"]);
+
+        Assert.True(outcome.IsOk);
+        var header = Assert.Single(acceptHeaders);
+        Assert.Equal("application/vnd.npm.install-v1+json, application/json; q=0.8", header);
+        Assert.DoesNotContain("application/json;q=0.8", header, StringComparison.Ordinal);
+        var normalized = header.Replace(" ", string.Empty, StringComparison.Ordinal);
+        Assert.Contains("application/vnd.npm.install-v1+json", normalized, StringComparison.Ordinal);
+        Assert.Contains("application/json;q=0.8", normalized, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task GetLatestVersionsAsync_InvalidLatestTag_ReturnsStableDiagnostic()
+    {
+        using var handler = new StubHttpMessageHandler((_, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent("""{"dist-tags":{"latest":"latest"}}""", Encoding.UTF8, "application/json"),
+        }));
+        using var service = new NpmRegistryPluginSearchService(handler);
+
+        var outcome = await service.GetLatestVersionsAsync(["tagged-plugin"]);
+
+        Assert.True(outcome.IsOk);
+        var item = Assert.Single(outcome.Value!);
+        Assert.Null(item.LatestVersion);
+        Assert.Equal("plugins.update_check_invalid_version", item.DiagnosticCode);
+    }
+
+    [Fact]
+    public async Task GetLatestVersionsAsync_EmptyOrInvalidNames_DoNotCallHttp()
+    {
+        var httpCalls = 0;
+        using var handler = new StubHttpMessageHandler((_, _) =>
+        {
+            httpCalls++;
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK));
+        });
+        using var service = new NpmRegistryPluginSearchService(handler);
+
+        var emptyOutcome = await service.GetLatestVersionsAsync([]);
+        Assert.True(emptyOutcome.IsOk);
+        Assert.Empty(emptyOutcome.Value!);
+
+        var invalidOutcome = await service.GetLatestVersionsAsync(["../evil", "Bad Name", ""]);
+        Assert.True(invalidOutcome.IsOk);
+        Assert.Empty(invalidOutcome.Value!);
+        Assert.Equal(0, httpCalls);
+    }
+
+    [Fact]
+    public async Task GetLatestVersionsAsync_CallerCancellation_PropagatesOperationCanceled()
+    {
+        using var handler = new StubHttpMessageHandler((_, _) =>
+            Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)));
+        using var service = new NpmRegistryPluginSearchService(handler);
+        using var cancellation = new CancellationTokenSource();
+        cancellation.Cancel();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => service.GetLatestVersionsAsync(["any-plugin"], cancellation.Token));
     }
 
     private sealed class StubHttpMessageHandler(Func<HttpRequestMessage, CancellationToken, Task<HttpResponseMessage>> handler)

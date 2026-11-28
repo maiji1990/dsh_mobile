@@ -10,6 +10,7 @@ using DshMobile.Core.Diagnostics;
 using DshMobile.Core.Files;
 using DshMobile.Native;
 using DshMobile.Runtime;
+using DshMobile.Runtime.Hosting;
 using DshMobile.Runtime.Layers;
 using Microsoft.Extensions.DependencyInjection;
 using Log = Android.Util.Log;
@@ -26,9 +27,14 @@ public sealed class BridgeHost : IDisposable, IDiagnosticsLog
     public const string LogTag = "DshMobile";
     private const int MaxLogLines = 400;
 
+    /// <summary>代理最近仍在使用本机 WebUI 的判定窗口（ADR-0036）；窗口内不触发空闲自动停机。</summary>
+    private static readonly TimeSpan PortalIdleProtectionWindow = TimeSpan.FromMinutes(3);
+
     private readonly Android.Content.Context _context;
     private readonly object _logGate = new();
     private readonly LinkedList<string> _log = new();
+    /// <summary>本机回环一次性票据代理（ADR-0036）：启动令牌与 Cookie 只驻留内存，绝不进入 URL。</summary>
+    private readonly LoopbackPortalProxy _localPortalProxy;
     private int _busy;
     private string? _operation;
     private OperationOutcome? _lastOutcome;
@@ -48,6 +54,11 @@ public sealed class BridgeHost : IDisposable, IDiagnosticsLog
             .AddDshMobileUpdateInstall(_downloadHttp)
             .BuildServiceProvider();
         Runtime = _services.GetRequiredService<RuntimeCoordinator>();
+        _localPortalProxy = new LoopbackPortalProxy(
+            () => Runtime.Host?.Port,
+            Runtime.HostTokenSource,
+            () => IsFullWebUiCompatActive,
+            log: Append);
         Updates = _services.GetRequiredService<DshMobile.Application.Updates.UpdateChecker>();
         UpdateInstaller = _services.GetRequiredService<DshMobile.Application.Updates.UpdateCoordinator>();
         Governance = new SystemGovernanceMonitor(_context, Append);
@@ -156,10 +167,33 @@ public sealed class BridgeHost : IDisposable, IDiagnosticsLog
     public bool IsFullWebUiCompatActive => Runtime.IsFullWebUiActive;
 
     /// <summary>
-    /// 受控获取本机回环完整 WebUI 的系统浏览器打开地址（ADR-0034）；
-    /// 严禁写入日志、剪贴板或持久化存储。
+    /// 当前是否具备安全打开本机完整 WebUI 的条件（ADR-0036）：完整 WebUI 兼容模式已生效、宿主就绪、
+    /// 端口合法且内存中持有启动令牌。不签发任何票据，仅用于按钮可用性判断。
     /// </summary>
-    public Uri? TryGetLocalWebUiBrowserUri() => Runtime.TryGetLocalWebUiBrowserUri();
+    public bool CanOpenLocalWebUiPortal
+    {
+        get
+        {
+            var host = Runtime.Host;
+            return IsFullWebUiCompatActive &&
+                   host is { State: DshHostState.Ready, Port: > 0 and <= 65535 } &&
+                   !string.IsNullOrWhiteSpace(host.Token);
+        }
+    }
+
+    /// <summary>
+    /// 签发一次性回环票据，返回浏览器可直接打开的代理地址（不含启动令牌）；条件不满足时返回 <c>null</c>。
+    /// 严禁将返回值或票据写入日志、剪贴板或持久化存储。
+    /// </summary>
+    public Uri? TryIssueLocalWebUiPortalUri() =>
+        CanOpenLocalWebUiPortal ? _localPortalProxy.TryIssueLaunchUri() : null;
+
+    /// <summary>立即吊销全部一次性票据与代理会话（停止 / 重启 / 关闭兼容模式时调用）。</summary>
+    public void RevokeLocalWebUiPortal() => _localPortalProxy.RevokeAll();
+
+    /// <summary>浏览器是否仍在（或刚在窗口内）使用本机回环代理，用于保护空闲自动停机。</summary>
+    private bool IsLocalWebUiPortalBusy() =>
+        IsFullWebUiCompatActive && _localPortalProxy.HasActiveOrRecentClients(PortalIdleProtectionWindow);
 
     private bool ShouldUseTrimmedWeb() => !UiPrefs.FullWebUiCompatEnabled(_context);
 
@@ -206,7 +240,7 @@ public sealed class BridgeHost : IDisposable, IDiagnosticsLog
             while (await timer.WaitForNextTickAsync(ct).ConfigureAwait(false))
             {
                 var hostRunning = Runtime.Host is { State: DshMobile.Runtime.Hosting.DshHostState.Ready } or { OwnsProcesses: true };
-                var decision = Governance.EvaluateIdleStop(hostRunning, Agent.IsAgentIdleForIdleStop);
+                var decision = Governance.EvaluateIdleStop(hostRunning, Agent.IsAgentIdleForIdleStop && !IsLocalWebUiPortalBusy());
                 if (decision == DshMobile.Application.Runtime.IdleStopDecision.Stop)
                 {
                     // 瞬态 busy 等失败不应让空闲回收永久退出：只有真正停机成功才结束循环，否则下一 tick 重试。
@@ -230,12 +264,13 @@ public sealed class BridgeHost : IDisposable, IDiagnosticsLog
             // 空闲自动停机不置位 _userStopped，以便下次回到前台仍按 WarmupPolicy 自动预热（5C 闭环）。
             var decision = Governance.EvaluateIdleStop(
                 Runtime.Host is { State: DshMobile.Runtime.Hosting.DshHostState.Ready } or { OwnsProcesses: true },
-                Agent.IsAgentIdleForIdleStop);
+                Agent.IsAgentIdleForIdleStop && !IsLocalWebUiPortalBusy());
             if (decision != DshMobile.Application.Runtime.IdleStopDecision.Stop)
             {
                 Append($"idle-stop: skipped ({decision})");
                 return;
             }
+            RevokeLocalWebUiPortal();
             var r = await Runtime.StopAsync(CancellationToken.None).ConfigureAwait(false);
             stopped = r.Ok;
             Append(r.Ok ? $"idle-stop: graceful ok ({r.Snapshot.State})" : $"idle-stop FAILED {r.Code}: {r.Message}");
@@ -510,6 +545,7 @@ public sealed class BridgeHost : IDisposable, IDiagnosticsLog
 
     public Task RunStopAsync() => RunExclusive("stop", async () =>
     {
+        RevokeLocalWebUiPortal();
         var r = await Runtime.StopAsync(CancellationToken.None).ConfigureAwait(false);
         Report(r.Ok, r.Code, r.Message);
         if (r.Ok)
@@ -526,6 +562,7 @@ public sealed class BridgeHost : IDisposable, IDiagnosticsLog
         RuntimeStartResult? result = null;
         await RunExclusive("restart", async () =>
         {
+            RevokeLocalWebUiPortal();
             var r = await Runtime.RestartWebHostAsync(ct).ConfigureAwait(false);
             result = r;
             Report(r.Ok, r.Code, r.Message);
@@ -853,6 +890,7 @@ public sealed class BridgeHost : IDisposable, IDiagnosticsLog
     public void Dispose()
     {
         OnAppBackgroundChanged(false);
+        _localPortalProxy.Dispose();
         Governance.Dispose();
         Agent.Dispose();
         _services.Dispose();

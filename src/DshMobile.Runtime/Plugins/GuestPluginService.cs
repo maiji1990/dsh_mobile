@@ -86,6 +86,9 @@ public sealed class GuestPluginService
     /// <summary>本地详情查询未定位到目标包时的稳定错误码。</summary>
     public const string PackageNotFoundCode = "PLUGIN_NOT_FOUND";
 
+    /// <summary>目标包随 DSH 层内置发布、不得在 web profile 中覆盖升级时的稳定错误码。</summary>
+    public const string ShippedPackageCode = "PLUGIN_SHIPPED_PACKAGE";
+
     private static readonly string[] ReadmeCandidateNames =
     [
         "README.md",
@@ -192,17 +195,50 @@ public sealed class GuestPluginService
             return ToChangeResult(res);
         }
 
-        var outputWarnsNoBundle = res.Output.Contains("declares no dsh.bundle", StringComparison.OrdinalIgnoreCase);
-        var manifestFoundWithoutBundle = false;
-        if (PluginCommandRules.TryExtractPackageNameFromInstallSpec(trimmed, out var installedPackageName))
+        if (!PluginCommandRules.TryExtractPackageNameFromInstallSpec(trimmed, out var installedPackageName))
         {
-            var metadata = ReadPackageManifestMetadata(WebProfileNodeModulesHostDir(_layout), installedPackageName);
-            if (metadata.Found && !metadata.HasBundleManifest)
-            {
-                manifestFoundWithoutBundle = true;
-            }
+            return new GuestPluginChangeResult(true, RuntimeErrorCodes.Ok);
+        }
+        return CompleteBundleChange(res, installedPackageName);
+    }
+
+    /// <summary>
+    /// 执行受控升级：<c>dsh plugin --profile web add &lt;包名&gt;@&lt;精确版本&gt;</c>。
+    /// 参数非法、属于核心保护包或随 DSH 层内置发布时零进程直接失败；否则复用安装完成后的
+    /// <c>dsh.bundle</c> 检测与结果映射，升级成功后由上层标记需要重启 DSH 生效。
+    /// </summary>
+    public async Task<GuestPluginChangeResult> UpgradeAsync(string packageName, string exactVersion, CancellationToken ct)
+    {
+        var trimmedPackage = packageName?.Trim(' ');
+        var trimmedVersion = exactVersion?.Trim(' ');
+        if (!PluginCommandRules.TryBuildUpgradeCommand(
+                RuntimeConstants.DshWebProfile, trimmedPackage, trimmedVersion, out var shellLine, out var error))
+        {
+            return new GuestPluginChangeResult(false, RuntimeErrorCodes.BadRequest, error);
+        }
+        if (PluginCommandRules.IsInstallationShippedPackage(_layout.LayerDir("dsh"), trimmedPackage!))
+        {
+            return new GuestPluginChangeResult(
+                false,
+                ShippedPackageCode,
+                "package ships with the DSH layer and cannot be upgraded in the web profile");
         }
 
+        var res = await _runner(shellLine, new GuestExecutionOptions(Timeout: ChangeTimeout, MaxOutputLines: 2000), ct)
+            .ConfigureAwait(false);
+        if (!res.Ok)
+        {
+            return ToChangeResult(res);
+        }
+        return CompleteBundleChange(res, trimmedPackage!);
+    }
+
+    /// <summary>安装/升级成功后的 <c>dsh.bundle</c> 声明检测，返回一致的结构化警告结果。</summary>
+    private GuestPluginChangeResult CompleteBundleChange(GuestProcessResult res, string packageName)
+    {
+        var outputWarnsNoBundle = res.Output.Contains("declares no dsh.bundle", StringComparison.OrdinalIgnoreCase);
+        var metadata = ReadPackageManifestMetadata(WebProfileNodeModulesHostDir(_layout), packageName);
+        var manifestFoundWithoutBundle = metadata.Found && !metadata.HasBundleManifest;
         if (outputWarnsNoBundle || manifestFoundWithoutBundle)
         {
             return new GuestPluginChangeResult(
@@ -212,7 +248,6 @@ public sealed class GuestPluginService
                 DeclaredBundleManifest: false,
                 WarningSummary: NoBundleWarningSummary);
         }
-
         return new GuestPluginChangeResult(true, RuntimeErrorCodes.Ok);
     }
 

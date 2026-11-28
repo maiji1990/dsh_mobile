@@ -130,6 +130,18 @@
                         app:icon="@drawable/ic_chat"
                         app:iconGravity="textStart" />
 
+                    <!-- 已连接后的第二个入口：经一次性回环票据在应用内浏览器打开远程完整 WebUI（ADR-0036） -->
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/remote_open_webui"
+                        style="@style/Widget.Material3.Button.TonalButton"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        android:text="@string/remote_open_webui"
+                        android:visibility="gone"
+                        app:icon="@drawable/ic_open_in_new"
+                        app:iconGravity="textStart" />
+
                     <!-- 已连接时的断开与启停远端 DSH 操作行 -->
                     <LinearLayout
                         android:id="@+id/remote_connected_actions"

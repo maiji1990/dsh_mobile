@@ -52,6 +52,15 @@
       <action android:name="android.intent.action.MAIN" />
       <category android:name="android.intent.category.LAUNCHER" />
     </intent>
+    <!-- 应用内浏览器（Custom Tabs，ADR-0036）：查询支持自定义标签页服务与可浏览 http 的浏览器应用。 -->
+    <intent>
+      <action android:name="android.support.customtabs.action.CustomTabsService" />
+    </intent>
+    <intent>
+      <action android:name="android.intent.action.VIEW" />
+      <category android:name="android.intent.category.BROWSABLE" />
+      <data android:scheme="http" />
+    </intent>
   </queries>
 
   <!--

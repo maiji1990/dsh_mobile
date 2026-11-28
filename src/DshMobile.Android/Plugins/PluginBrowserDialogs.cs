@@ -55,12 +55,12 @@ internal static class PluginBrowserDialogs
     }
 
     /// <summary>
-    /// 弹出明确安全二次确认弹窗后，经 <see cref="Intent.ActionView"/> + <see cref="Intent.CategoryBrowsable"/>
-    /// 在系统浏览器中打开本机回环完整 WebUI。绝不记录日志或写入剪贴板。
+    /// 弹出明确安全二次确认弹窗后，经一次性回环票据代理在应用内浏览器（Custom Tabs）打开本机完整 WebUI。
+    /// 启动令牌与 Cookie 只驻留进程内存，绝不进入浏览器 URL、日志或剪贴板。
     /// </summary>
     public static void ConfirmAndOpenLocalWebUi(Context context, View? snackbarAnchor, BridgeHost bridge)
     {
-        if (!bridge.IsFullWebUiCompatActive || bridge.TryGetLocalWebUiBrowserUri() is null)
+        if (!bridge.CanOpenLocalWebUiPortal)
         {
             ShowSnackbar(snackbarAnchor, Resource.String.plugins_webui_browser_unavailable);
             return;
@@ -72,13 +72,47 @@ internal static class PluginBrowserDialogs
             .SetNegativeButton(Android.Resource.String.Cancel, (_, _) => { })!
             .SetPositiveButton(Resource.String.plugins_webui_browser_confirm_open, (_, _) =>
             {
-                var browserUri = bridge.TryGetLocalWebUiBrowserUri();
-                if (!bridge.IsFullWebUiCompatActive || browserUri is null)
+                var portalUri = bridge.TryIssueLocalWebUiPortalUri();
+                if (portalUri is null || !CustomTabsPortalLauncher.Launch(context, snackbarAnchor, portalUri))
                 {
                     ShowSnackbar(snackbarAnchor, Resource.String.plugins_webui_browser_unavailable);
-                    return;
                 }
-                LaunchBrowsableUri(context, snackbarAnchor, browserUri.AbsoluteUri);
+            })!
+            .Show();
+    }
+
+    /// <summary>
+    /// 远程宿主共用的一次性票据确认流程：<paramref name="canOpen"/> 决定可用性，
+    /// <paramref name="issueLaunchUri"/> 在点击「安全打开」后即时签发，交给应用内浏览器打开。
+    /// </summary>
+    public static void ConfirmAndOpenRemoteWebUi(
+        Context context,
+        View? snackbarAnchor,
+        Func<bool> canOpen,
+        Func<Uri?> issueLaunchUri,
+        Action onUnavailable)
+    {
+        ArgumentNullException.ThrowIfNull(canOpen);
+        ArgumentNullException.ThrowIfNull(issueLaunchUri);
+        ArgumentNullException.ThrowIfNull(onUnavailable);
+
+        if (!canOpen())
+        {
+            onUnavailable();
+            return;
+        }
+
+        new MaterialAlertDialogBuilder(context)
+            .SetTitle(Resource.String.remote_webui_confirm_title)!
+            .SetMessage(Resource.String.remote_webui_confirm_msg)!
+            .SetNegativeButton(Android.Resource.String.Cancel, (_, _) => { })!
+            .SetPositiveButton(Resource.String.remote_webui_confirm_open, (_, _) =>
+            {
+                var portalUri = issueLaunchUri();
+                if (portalUri is null || !CustomTabsPortalLauncher.Launch(context, snackbarAnchor, portalUri))
+                {
+                    onUnavailable();
+                }
             })!
             .Show();
     }
@@ -121,6 +155,8 @@ internal static class PluginBrowserDialogs
             .SetPositiveButton(Resource.String.plugins_webui_compat_disable_confirm, (_, _) =>
             {
                 UiPrefs.SetFullWebUiCompatEnabled(context, false);
+                // 关闭兼容模式即失效：立即吊销一次性票据与全部代理会话（不再等宿主重启）。
+                bridge.RevokeLocalWebUiPortal();
                 onPreferenceChanged?.Invoke();
                 if (hostRunning)
                 {

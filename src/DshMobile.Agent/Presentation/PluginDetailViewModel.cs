@@ -45,7 +45,10 @@ public sealed record PluginDetailUiState(
     long? SettingsRevision = null,
     string? FailureCode = null,
     string? StatusKey = null,
-    string? FeedbackDiagnostic = null)
+    string? FeedbackDiagnostic = null,
+    bool HasUpdate = false,
+    bool CanUpgrade = false,
+    string? Availability = null)
 {
     public IReadOnlyList<string> Keywords { get; init; } = [];
     public IReadOnlyList<string> AvailableVersions { get; init; } = [];
@@ -569,6 +572,52 @@ public sealed class PluginDetailViewModel : IAsyncDisposable
         }
     }
 
+    /// <summary>
+    /// 将当前详情页插件升级到已确认的最新版本：前置校验 <see cref="PluginDetailUiState.CanUpgrade"/> 与精确安装规格，
+    /// 调用受控升级；成功后刷新详情并保留“需要重启 DSH 生效”提示。
+    /// </summary>
+    public async Task<Outcome<PluginMutationResult>> UpgradeAsync(CancellationToken ct = default)
+    {
+        ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
+        ct.ThrowIfCancellationRequested();
+
+        await _opGate.WaitAsync(ct).ConfigureAwait(false);
+        try
+        {
+            var current = State;
+            if (!current.CanUpgrade ||
+                string.IsNullOrWhiteSpace(current.PackageName) ||
+                string.IsNullOrWhiteSpace(current.LatestCatalogVersion) ||
+                !PluginPackageValidator.IsValidInstallSpec($"{current.PackageName}@{current.LatestCatalogVersion}"))
+            {
+                PublishState(s => s with
+                {
+                    FailureCode = DshFailureCode.InvalidState.ToString(),
+                    FeedbackDiagnostic = "plugin.upgrade_unavailable",
+                });
+                return Outcome<PluginMutationResult>.Fail(DshFailureCode.InvalidState, "plugin.upgrade_unavailable");
+            }
+
+            PublishState(s => s with { IsMutating = true, FailureCode = null, StatusKey = null, FeedbackDiagnostic = null });
+            var res = await _inventoryService
+                .UpgradePluginAsync(current.PackageName, current.LatestCatalogVersion, ct)
+                .ConfigureAwait(false);
+            if (!res.IsOk)
+            {
+                PublishMutationFailure(res.Error!);
+                return res;
+            }
+
+            await ReloadCurrentCoreAsync("plugins.status.upgraded", ct).ConfigureAwait(false);
+            return res;
+        }
+        finally
+        {
+            PublishState(s => s.IsMutating ? s with { IsMutating = false } : s);
+            _opGate.Release();
+        }
+    }
+
     /// <summary>重启 DSH 宿主使已保存的装卸/启停变更生效并刷新详情状态。</summary>
     public async Task<Outcome<Unit>> RestartDshAsync(CancellationToken ct = default)
     {
@@ -736,15 +785,30 @@ public sealed class PluginDetailViewModel : IAsyncDisposable
             }
         }
 
-        // 3. 回退：若仍无文档且可查远端，查询 npm Registry 补充 README 与版本元数据
-        if (string.IsNullOrWhiteSpace(markdown) &&
-            _catalogSearch is not NoopPluginCatalogSearch &&
+        // 3. 无论本地是否已有文档，都查询 npm Registry 获取最新版本与补充元数据：
+        //    仅当本地仍无文档时才把远端 README 作为兜底，绝不覆盖已命中的本地文档；网络失败静默降级。
+        if (_catalogSearch is not NoopPluginCatalogSearch &&
             PluginPackageValidator.IsValidPackageName(packageName))
         {
-            var catalogOutcome = await _catalogSearch.GetPackageDetailAsync(packageName, ct).ConfigureAwait(false);
-            if (catalogOutcome.IsOk && catalogOutcome.Value is { } catalogDetail)
+            Outcome<PluginCatalogDetailView>? catalogOutcome = null;
+            try
             {
-                if (!string.IsNullOrWhiteSpace(catalogDetail.ReadmeMarkdown))
+                catalogOutcome = await _catalogSearch.GetPackageDetailAsync(packageName, ct).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                // 调用方取消：必须原样抛出，绝不被降级吞掉。
+                throw;
+            }
+            catch (Exception exception) when (exception is not OperationCanceledException)
+            {
+                // 远端元数据只是增强信息：网络或解析失败时保持本地文档与既有字段不变。
+                catalogOutcome = null;
+            }
+
+            if (catalogOutcome is { IsOk: true, Value: { } catalogDetail })
+            {
+                if (string.IsNullOrWhiteSpace(markdown) && !string.IsNullOrWhiteSpace(catalogDetail.ReadmeMarkdown))
                 {
                     markdown = catalogDetail.ReadmeMarkdown;
                     docOrigin = "npm-readme";
@@ -767,6 +831,18 @@ public sealed class PluginDetailViewModel : IAsyncDisposable
 
         // 4. 加载官方 settings/describe 实时配置视图
         var settingsInfo = await TryLoadSettingsForEntryAsync(matchedEntry, language, ct).ConfigureAwait(false);
+
+        var availability = matchedEntry.Availability;
+        var hasUpdate = PluginVersionComparer.IsUpdateAvailable(version, latestCatalogVersion);
+        var upgradeTargetSpec = string.IsNullOrWhiteSpace(latestCatalogVersion)
+            ? null
+            : $"{packageName}@{latestCatalogVersion}";
+        var canUpgrade = hasUpdate
+            && matchedEntry.IsInstalledInProfile
+            && !matchedEntry.IsProtected
+            && !string.Equals(availability, "installation", StringComparison.OrdinalIgnoreCase)
+            && upgradeTargetSpec is not null
+            && PluginPackageValidator.IsValidInstallSpec(upgradeTargetSpec);
 
         PublishState(_ => new PluginDetailUiState(
             IsLoading: false,
@@ -796,6 +872,9 @@ public sealed class PluginDetailViewModel : IAsyncDisposable
             CanToggle: matchedEntry.CanToggle,
             CanUninstall: matchedEntry.CanUninstall,
             CanInstall: false,
+            HasUpdate: hasUpdate,
+            CanUpgrade: canUpgrade,
+            Availability: availability,
             RecommendedInstallSpec: PluginPackageValidator.BuildRecommendedInstallSpec(packageName, latestCatalogVersion ?? version),
             Author: author,
             License: license,
@@ -873,6 +952,15 @@ public sealed class PluginDetailViewModel : IAsyncDisposable
 
         var isInstalled = localEntry is not null;
         var canInstall = !isInstalled && PluginPackageValidator.IsValidInstallSpec(detail.RecommendedInstallSpec);
+        var availability = localEntry?.Availability ?? (isInstalled ? "profile" : null);
+        var hasUpdate = isInstalled &&
+            PluginVersionComparer.IsUpdateAvailable(localEntry?.Version, detail.LatestVersion);
+        var canUpgrade = hasUpdate
+            && localEntry is not null
+            && localEntry.IsInstalledInProfile
+            && !localEntry.IsProtected
+            && !string.Equals(availability, "installation", StringComparison.OrdinalIgnoreCase)
+            && PluginPackageValidator.IsValidInstallSpec($"{detail.PackageName}@{detail.LatestVersion}");
 
         PublishState(_ => new PluginDetailUiState(
             IsLoading: false,
@@ -902,6 +990,9 @@ public sealed class PluginDetailViewModel : IAsyncDisposable
             CanToggle: localEntry?.CanToggle ?? false,
             CanUninstall: localEntry?.CanUninstall ?? false,
             CanInstall: canInstall,
+            HasUpdate: hasUpdate,
+            CanUpgrade: canUpgrade,
+            Availability: availability,
             RecommendedInstallSpec: detail.RecommendedInstallSpec,
             Author: detail.Author ?? localEntry?.Author,
             License: detail.License ?? localEntry?.License,
@@ -1147,7 +1238,9 @@ public sealed class PluginDetailViewModel : IAsyncDisposable
             RequiresDshRestart = _inventoryService.RequiresDshRestart,
             FailureCode = failure.Code.ToString(),
             StatusKey = null,
-            FeedbackDiagnostic = failure.DiagnosticKey,
+            FeedbackDiagnostic = string.IsNullOrWhiteSpace(failure.DiagnosticKey)
+                ? null
+                : SecretRedactor.RedactAndTruncate(failure.DiagnosticKey!, 240),
         });
     }
 

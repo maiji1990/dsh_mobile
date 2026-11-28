@@ -97,6 +97,14 @@ internal sealed class RuntimePluginOperations(
             : Outcome<Unit>.Fail(MapCode(result.Code), result.Diagnostic ?? result.Code);
     }
 
+    public async Task<Outcome<Unit>> UpgradePackageAsync(string packageName, string targetVersion, CancellationToken ct = default)
+    {
+        var result = await runtime.UpgradeProfilePluginAsync(packageName, targetVersion, ct).ConfigureAwait(false);
+        return result.Ok
+            ? Outcome<Unit>.Ok(Unit.Value)
+            : Outcome<Unit>.Fail(MapCode(result.Code), result.Diagnostic ?? result.Code);
+    }
+
     public async Task<Outcome<Unit>> RestartDshHostAsync(CancellationToken ct = default)
     {
         var result = await restartHostAsync(ct).ConfigureAwait(false);
@@ -112,6 +120,7 @@ internal sealed class RuntimePluginOperations(
         RuntimeErrorCodes.NotInstalled => DshFailureCode.Unavailable,
         RuntimeErrorCodes.NotImplemented => DshFailureCode.Unsupported,
         GuestPluginService.PackageNotFoundCode => DshFailureCode.Unavailable,
+        GuestPluginService.ShippedPackageCode => DshFailureCode.InvalidState,
         _ => DshFailureCode.ProcessExited,
     };
 }

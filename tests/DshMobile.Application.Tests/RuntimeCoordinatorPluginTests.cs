@@ -239,6 +239,75 @@ public sealed class RuntimeCoordinatorPluginTests : IDisposable
         Assert.True(res.Ok);
         Assert.False(res.DeclaredBundleManifest);
         Assert.Equal(GuestPluginService.NoBundleWarningSummary, res.WarningSummary);
-        Assert.Contains(_log.Lines, l => l.Contains("no dsh.bundle", StringComparison.Ordinal));
+        Assert.Contains(_log.Lines, line => line.Contains("no dsh.bundle", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task UpgradeProfilePluginAsync_InvalidInputs_RejectWithZeroProcessSpawn()
+    {
+        var guestCalls = 0;
+        var layout = CreateLayout();
+        using var coordinator = new RuntimeCoordinator(
+            layout,
+            new RuntimeStateMachine(_journal, RuntimeCoordinator.Implementation),
+            _fg,
+            _log,
+            _log,
+            new RuntimeOptions
+            {
+                GuestShellRunner = (_, _, _) =>
+                {
+                    guestCalls++;
+                    return Task.FromResult(new GuestProcessResult(true, 0, "", null));
+                },
+            },
+            hostFactory: (_, _, _) => new FakeDshHost(_hostCalls));
+
+        var badVersion = await coordinator.UpgradeProfilePluginAsync("my-plugin", "^1.2.3", CancellationToken.None);
+        Assert.False(badVersion.Ok);
+        Assert.Equal(RuntimeErrorCodes.BadRequest, badVersion.Code);
+
+        var protectedPackage = await coordinator.UpgradeProfilePluginAsync(
+            "@deepseek-ai/dsh-web-app", "1.2.3", CancellationToken.None);
+        Assert.False(protectedPackage.Ok);
+        Assert.Equal(RuntimeErrorCodes.BadRequest, protectedPackage.Code);
+
+        Assert.Equal(0, guestCalls);
+    }
+
+    [Fact]
+    public async Task UpgradeProfilePluginAsync_ValidSpec_RunsQuotedCommandAndReportsRestartRequired()
+    {
+        var executedCommands = new List<string>();
+        var layout = CreateLayout();
+        using var coordinator = new RuntimeCoordinator(
+            layout,
+            new RuntimeStateMachine(_journal, RuntimeCoordinator.Implementation),
+            _fg,
+            _log,
+            _log,
+            new RuntimeOptions
+            {
+                GuestShellRunner = (command, _, _) =>
+                {
+                    executedCommands.Add(command);
+                    return Task.FromResult(new GuestProcessResult(true, 0, "", null));
+                },
+            },
+            hostFactory: (_, _, _) => new FakeDshHost(_hostCalls));
+
+        var result = await coordinator.UpgradeProfilePluginAsync(
+            "@scope/sample-plugin", "2.0.0", CancellationToken.None);
+
+        Assert.True(result.Ok);
+        Assert.Single(executedCommands);
+        Assert.Contains(
+            "'plugin' '--profile' 'web' 'add' '@scope/sample-plugin@2.0.0'",
+            executedCommands[0],
+            StringComparison.Ordinal);
+        Assert.Contains(
+            _log.Lines,
+            line => line.Contains("plugins upgrade @scope/sample-plugin -> 2.0.0", StringComparison.Ordinal) &&
+                    line.Contains("restart required", StringComparison.Ordinal));
     }
 }
