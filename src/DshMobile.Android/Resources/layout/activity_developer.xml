@@ -91,6 +91,16 @@
                         android:id="@+id/dev_row_pty"
                         layout="@layout/view_setting_action_row" />
 
+                    <!-- 实验开关：第三方插件原生面板（SDUI），默认关闭 -->
+                    <com.google.android.material.divider.MaterialDivider
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="56dp" />
+
+                    <include
+                        android:id="@+id/dev_row_exp_sdui"
+                        layout="@layout/view_setting_switch_row" />
+
                     <com.google.android.material.divider.MaterialDivider
                         android:id="@+id/dev_experiments_divider"
                         android:layout_width="match_parent"

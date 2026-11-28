@@ -211,6 +211,23 @@ public static class UiPrefs
         editor.Apply();
     }
 
+    private const string ExperimentalPluginSduiKey = "exp_plugin_sdui_enabled";
+
+    /// <summary>
+    /// 实验开关：是否允许在插件详情页为支持扩展 RPC 的第三方插件提取并原生渲染 SDUI 面板（默认关闭）。
+    /// 仅影响界面展示与按需生成，不改变任何权限审批、写操作门禁或宿主安全策略。
+    /// </summary>
+    public static bool ExperimentalPluginSduiEnabled(Context context) =>
+        context.GetSharedPreferences(File, FileCreationMode.Private)!.GetBoolean(ExperimentalPluginSduiKey, false);
+
+    /// <summary>写入实验开关偏好；关闭后插件详情页会立即隐藏 SDUI 卡片，已生成的缓存保留。</summary>
+    public static void SetExperimentalPluginSduiEnabled(Context context, bool enabled)
+    {
+        var editor = context.GetSharedPreferences(File, FileCreationMode.Private)!.Edit()!;
+        editor.PutBoolean(ExperimentalPluginSduiKey, enabled);
+        editor.Apply();
+    }
+
     /// <summary>
     /// 把外观模式偏好映射到 AppCompat 的默认夜间模式。Application 启动时调用一次即可覆盖后续 Activity。
     /// </summary>

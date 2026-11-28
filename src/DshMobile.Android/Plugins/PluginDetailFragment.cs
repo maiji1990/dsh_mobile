@@ -9,8 +9,10 @@ using DshMobile.Agent.Domain;
 using DshMobile.Agent.Engines;
 using DshMobile.Agent.Presentation;
 using DshMobile.Agent.Rendering;
+using DshMobile.Agent.Sdui;
 using DshMobile.App.Bridge;
 using DshMobile.App.Chat;
+using DshMobile.App.Plugins.Sdui;
 using DshMobile.App.Ui;
 using DshMobile.Runtime.Hosting;
 using Google.Android.Material.AppBar;
@@ -20,6 +22,7 @@ using Google.Android.Material.ProgressIndicator;
 using Google.Android.Material.Snackbar;
 using Google.Android.Material.TextField;
 using Fragment = AndroidX.Fragment.App.Fragment;
+using OperationCanceledException = System.OperationCanceledException;
 
 namespace DshMobile.App.Plugins;
 
@@ -75,6 +78,18 @@ public sealed class PluginDetailFragment : Fragment
 
     private View _webUiCard = null!;
     private MaterialButton _webUiActionButton = null!;
+
+    private View _sduiCard = null!;
+    private TextView _sduiBodyView = null!;
+    private TextView _sduiErrorView = null!;
+    private MaterialButton _sduiPrimaryButton = null!;
+    private MaterialButton _sduiRegenerateButton = null!;
+    private MaterialButton _sduiClearButton = null!;
+    private PluginSduiLoadResult? _sduiResult;
+    private string? _sduiLoadedKey;
+    private string? _sduiErrorText;
+    private int _sduiStatusRes;
+    private bool _sduiGenerating;
 
     private View _configCard = null!;
     private View _configLiveBadge = null!;
@@ -174,6 +189,13 @@ public sealed class PluginDetailFragment : Fragment
         _webUiCard = view.FindViewById(Resource.Id.plugin_detail_webui_card)!;
         _webUiActionButton = view.FindViewById<MaterialButton>(Resource.Id.plugin_detail_webui_action_btn)!;
 
+        _sduiCard = view.FindViewById(Resource.Id.plugin_detail_sdui_card)!;
+        _sduiBodyView = view.FindViewById<TextView>(Resource.Id.plugin_detail_sdui_body)!;
+        _sduiErrorView = view.FindViewById<TextView>(Resource.Id.plugin_detail_sdui_error)!;
+        _sduiPrimaryButton = view.FindViewById<MaterialButton>(Resource.Id.plugin_detail_sdui_primary_btn)!;
+        _sduiRegenerateButton = view.FindViewById<MaterialButton>(Resource.Id.plugin_detail_sdui_regen_btn)!;
+        _sduiClearButton = view.FindViewById<MaterialButton>(Resource.Id.plugin_detail_sdui_clear_btn)!;
+
         _configCard = view.FindViewById(Resource.Id.plugin_detail_config_card)!;
         _configLiveBadge = view.FindViewById(Resource.Id.plugin_detail_config_live_badge)!;
         _configResetAllButton = view.FindViewById<MaterialButton>(Resource.Id.plugin_detail_config_reset_all_btn)!;
@@ -202,6 +224,9 @@ public sealed class PluginDetailFragment : Fragment
         _uninstallButton.Click += (_, _) => ConfirmUninstallCurrentPlugin();
         _upgradeButton.Click += (_, _) => ConfirmUpgradeCurrentPlugin();
         _webUiActionButton.Click += (_, _) => HandleWebUiGuideAction();
+        _sduiPrimaryButton.Click += (_, _) => HandleSduiPrimaryAction();
+        _sduiRegenerateButton.Click += (_, _) => _ = GenerateSduiAsync();
+        _sduiClearButton.Click += (_, _) => _ = ClearSduiCacheAsync();
         _configResetAllButton.Click += (_, _) => ConfirmResetAllSettings();
 
         Edges.ClampMaxWidth(_scrollContent);
@@ -213,14 +238,34 @@ public sealed class PluginDetailFragment : Fragment
         base.OnStart();
         _viewModel.StateChanged += OnStateChanged;
         _bridge.Changed += OnBridgeChanged;
+        _bridge.Agent.PluginSduiGenerationCoordinator.StateChanged += OnSduiGenerationStateChanged;
+        // 进入页面先同步一次应用级协调器快照，恢复上次未完成的生成中状态。
+        SyncSduiGenerationSnapshot(
+            _bridge.Agent.PluginSduiGenerationCoordinator.GetSnapshot(_viewModel.State.PackageName),
+            reloadWhenCompleted: false);
         Render(_viewModel.State);
         _ = LoadDetailAsync();
+    }
+
+    public override void OnResume()
+    {
+        base.OnResume();
+        if (_viewModel is null)
+        {
+            return;
+        }
+
+        // 从息屏、后台或原生 SDUI 面板返回时，以协调器快照恢复按钮并在结果过期时重读缓存。
+        SyncSduiGenerationSnapshot(
+            _bridge.Agent.PluginSduiGenerationCoordinator.GetSnapshot(_viewModel.State.PackageName),
+            reloadWhenCompleted: true);
     }
 
     public override void OnStop()
     {
         _viewModel.StateChanged -= OnStateChanged;
         _bridge.Changed -= OnBridgeChanged;
+        _bridge.Agent.PluginSduiGenerationCoordinator.StateChanged -= OnSduiGenerationStateChanged;
         base.OnStop();
     }
 
@@ -297,6 +342,86 @@ public sealed class PluginDetailFragment : Fragment
         }
     }
 
+    /// <summary>
+    /// 应用级协调器状态变化回调：事件可能来自后台线程，统一切回主线程后再触碰视图字段，
+    /// 且只处理当前页面正在查看的插件包。
+    /// </summary>
+    private void OnSduiGenerationStateChanged(PluginSduiGenerationSnapshot snapshot)
+    {
+        if (!IsAdded || View is null)
+        {
+            return;
+        }
+
+        Activity?.RunOnUiThread(() =>
+        {
+            if (!IsAdded || View is null || _viewModel is null)
+            {
+                return;
+            }
+
+            // 生成刚完成时由同步逻辑按当前包名+版本重读缓存，刷新卡片正文与按钮。
+            SyncSduiGenerationSnapshot(snapshot, reloadWhenCompleted: false);
+        });
+    }
+
+    /// <summary>
+    /// 把协调器快照同步到 SDUI 卡片：恢复生成中标记与最终结果；
+    /// 生成刚从进行中转为完成（或 <paramref name="reloadWhenCompleted"/> 下结果已过期）时重读缓存。
+    /// </summary>
+    private void SyncSduiGenerationSnapshot(PluginSduiGenerationSnapshot snapshot, bool reloadWhenCompleted)
+    {
+        var state = _viewModel.State;
+        if (string.IsNullOrWhiteSpace(state.PackageName) ||
+            !string.Equals(snapshot.PackageName, state.PackageName, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        var wasGenerating = _sduiGenerating;
+        _sduiGenerating = snapshot.IsGenerating;
+
+        if (!snapshot.IsGenerating && snapshot.Result is { } result)
+        {
+            var stale = reloadWhenCompleted && IsSduiResultStale(result);
+            _sduiResult = result;
+            _sduiStatusRes = 0;
+            _sduiErrorText = null;
+            ScheduleRender();
+
+            // 仅成功产物需要重读缓存；失败结果直接按稳定诊断展示，不重复请求。
+            if (result.Found && (wasGenerating || stale))
+            {
+                _ = LoadSduiAsync(state.PackageName, state.Version);
+            }
+
+            return;
+        }
+
+        ScheduleRender();
+    }
+
+    /// <summary>判断协调器结果是否已与卡片不同：包名@版本键、命中状态或文档来源/版本任一变化即视为过期。</summary>
+    private bool IsSduiResultStale(PluginSduiLoadResult result)
+    {
+        var state = _viewModel.State;
+        var key = $"{state.PackageName}@{state.Version}";
+        if (!string.Equals(_sduiLoadedKey, key, StringComparison.Ordinal))
+        {
+            return true;
+        }
+        if (_sduiResult is not { } current || current.Found != result.Found)
+        {
+            return true;
+        }
+        if (!current.Found)
+        {
+            return false;
+        }
+        return !string.Equals(current.Source, result.Source, StringComparison.Ordinal) ||
+               !string.Equals(current.Document?.PluginVersion, result.Document?.PluginVersion, StringComparison.Ordinal);
+    }
+
     private void Render(PluginDetailUiState state)
     {
         var context = RequireContext();
@@ -341,6 +466,9 @@ public sealed class PluginDetailFragment : Fragment
 
         // 3. 页面修改插件生效引导卡
         RenderWebUiGuideCard(context, state, hostReady, busy);
+
+        // 3.5 实验性原生 SDUI 面板卡（默认关闭，仅开发者选项开启后显示）
+        RenderSduiCard(context, state);
 
         // 4. 官方 settings/* 实时配置卡
         RenderSettingsSection(state, busy);
@@ -583,6 +711,315 @@ public sealed class PluginDetailFragment : Fragment
         {
             _webUiActionButton.SetText(Resource.String.plugin_detail_webui_action_start);
             _webUiActionButton.Enabled = !busy;
+        }
+    }
+
+    /// <summary>
+    /// 渲染实验性 SDUI 卡片：仅在开发者选项开启实验开关且插件已安装时显示。
+    /// 首次进入按「包名@版本」读取一次缓存（缓存优先、回退包内置清单），失败只展示稳定诊断键。
+    /// </summary>
+    private void RenderSduiCard(Context context, PluginDetailUiState state)
+    {
+        if (!UiPrefs.ExperimentalPluginSduiEnabled(context) ||
+            !state.IsInstalled ||
+            string.IsNullOrWhiteSpace(state.PackageName))
+        {
+            _sduiCard.Visibility = ViewStates.Gone;
+            return;
+        }
+
+        _sduiCard.Visibility = ViewStates.Visible;
+        var busy = _sduiGenerating || state.IsLoading;
+        var key = $"{state.PackageName}@{state.Version}";
+        if (!string.Equals(_sduiLoadedKey, key, StringComparison.Ordinal))
+        {
+            _sduiLoadedKey = key;
+            _sduiResult = null;
+            _sduiStatusRes = 0;
+            _sduiErrorText = null;
+            _ = LoadSduiAsync(state.PackageName, state.Version);
+        }
+
+        var hasDocument = _sduiResult is { Found: true, Document: not null };
+        _sduiPrimaryButton.Enabled = !busy;
+        _sduiRegenerateButton.Visibility = hasDocument ? ViewStates.Visible : ViewStates.Gone;
+        _sduiClearButton.Visibility = hasDocument ? ViewStates.Visible : ViewStates.Gone;
+        _sduiRegenerateButton.Enabled = !busy;
+        _sduiClearButton.Enabled = !busy;
+
+        _sduiPrimaryButton.SetText(hasDocument
+            ? Resource.String.plugin_detail_sdui_open_btn
+            : Resource.String.plugin_detail_sdui_generate_btn);
+
+        if (_sduiGenerating)
+        {
+            _sduiBodyView.SetText(Resource.String.plugin_detail_sdui_generating);
+        }
+        else if (_sduiStatusRes != 0)
+        {
+            _sduiBodyView.SetText(_sduiStatusRes);
+        }
+        else if (_sduiResult is { } result)
+        {
+            RenderSduiLoadResult(context, result, state.Version);
+        }
+        else
+        {
+            _sduiBodyView.SetText(Resource.String.plugin_detail_sdui_loading);
+        }
+
+        RenderSduiDiagnostic(context);
+    }
+
+    private void RenderSduiLoadResult(Context context, PluginSduiLoadResult result, string? fallbackVersion)
+    {
+        if (result is { Found: true, Document: { } document })
+        {
+            var version = !string.IsNullOrWhiteSpace(document.PluginVersion)
+                ? document.PluginVersion.Trim()
+                : (!string.IsNullOrWhiteSpace(fallbackVersion) ? fallbackVersion.Trim() : "—");
+            var fromCache = string.Equals(result.Source, PluginSduiStore.CacheSource, StringComparison.Ordinal);
+            var source = GetString(fromCache
+                ? Resource.String.plugin_detail_sdui_source_cache
+                : Resource.String.plugin_detail_sdui_source_manifest);
+            _sduiBodyView.Text = Rows.Fmt(
+                context,
+                fromCache
+                    ? Resource.String.plugin_detail_sdui_cached_fmt
+                    : Resource.String.plugin_detail_sdui_manifest_fmt,
+                version,
+                source);
+            return;
+        }
+
+        _sduiBodyView.SetText(Resource.String.plugin_detail_sdui_not_generated);
+    }
+
+    private void RenderSduiDiagnostic(Context context)
+    {
+        var result = _sduiResult;
+        var text = _sduiErrorText;
+        if (text is null && result is { Found: false, DiagnosticKey: { } diagnosticKey })
+        {
+            // 首次进入尚无生成产物属于正常空状态，不把“未找到清单/缓存”渲染成红色错误。
+            if (IsInitialSduiLookupDiagnostic(diagnosticKey))
+            {
+                _sduiErrorView.Visibility = ViewStates.Gone;
+                _sduiErrorView.Text = string.Empty;
+                return;
+            }
+
+            text = BuildSduiDiagnosticText(context, diagnosticKey, result.ValidationErrors);
+        }
+
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            _sduiErrorView.Visibility = ViewStates.Gone;
+            _sduiErrorView.Text = string.Empty;
+            return;
+        }
+
+        _sduiErrorView.Visibility = ViewStates.Visible;
+        _sduiErrorView.Text = text;
+    }
+
+    private static bool IsInitialSduiLookupDiagnostic(string diagnosticKey) =>
+        diagnosticKey is PluginSduiStore.ManifestUnavailableDiagnostic
+            or PluginSduiStore.NotFoundDiagnostic
+            or "plugin_sdui.manifest_missing";
+
+    private static string BuildSduiDiagnosticText(
+        Context context,
+        string diagnosticKey,
+        IReadOnlyList<string>? validationErrors)
+    {
+        var text = MapSduiDiagnostic(context, diagnosticKey)
+                   ?? Rows.Fmt(context, Resource.String.plugin_detail_sdui_diagnostic_fmt, diagnosticKey);
+        if (validationErrors is { Count: > 0 })
+        {
+            text = $"{text} {string.Join("；", validationErrors.Take(3))}";
+        }
+        return text;
+    }
+
+    private static string? MapSduiDiagnostic(Context context, string diagnosticKey) => diagnosticKey switch
+    {
+        PluginSduiGeneratorService.GeneratorUnavailableDiagnostic =>
+            context.GetString(Resource.String.plugin_detail_sdui_err_generator_unavailable),
+        PluginSduiGeneratorService.GenerationTimeoutDiagnostic =>
+            context.GetString(Resource.String.plugin_detail_sdui_err_generation_timeout),
+        PluginSduiGeneratorService.InputRequiredDiagnostic =>
+            context.GetString(Resource.String.plugin_detail_sdui_err_input_required),
+        PluginSduiGeneratorService.SchemaInvalidDiagnostic =>
+            context.GetString(Resource.String.plugin_detail_sdui_err_schema_invalid),
+        PluginSduiGeneratorService.EmptyOutputDiagnostic =>
+            context.GetString(Resource.String.plugin_detail_sdui_err_empty_output),
+        PluginSduiStore.ManifestUnavailableDiagnostic or PluginSduiStore.NotFoundDiagnostic
+            or "plugin_sdui.manifest_missing" =>
+            context.GetString(Resource.String.plugin_detail_sdui_err_manifest_unavailable),
+        PluginSduiStore.InvalidDocumentDiagnostic =>
+            context.GetString(Resource.String.plugin_detail_sdui_err_invalid_document),
+        _ => null,
+    };
+
+    /// <summary>首次进入或缓存失效时读取 SDUI 文档；不阻塞首屏，也不展示插件内容或路径。</summary>
+    private async Task LoadSduiAsync(string packageName, string? version)
+    {
+        var ct = _viewLifecycleCts?.Token ?? CancellationToken.None;
+        try
+        {
+            var result = await _bridge.Agent.PluginSduiStore
+                .LoadAsync(packageName, version, ct)
+                .ConfigureAwait(false);
+            if (ct.IsCancellationRequested)
+            {
+                return;
+            }
+            _sduiResult = result;
+            _sduiErrorText = null;
+            ScheduleRender();
+        }
+        catch (OperationCanceledException)
+        {
+            // 页面销毁或切换插件导致取消：保持静默。
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _sduiResult = new PluginSduiLoadResult(
+                false,
+                DiagnosticKey: PluginSduiStore.ManifestUnavailableDiagnostic);
+            ScheduleRender();
+        }
+    }
+
+    /// <summary>
+    /// 主按钮：已有文档时打开 SDUI 原生面板页；没有文档时直接触发生成。
+    /// </summary>
+    private void HandleSduiPrimaryAction()
+    {
+        if (_sduiResult is { Found: true, Document: not null })
+        {
+            var state = _viewModel.State;
+            StartActivity(PluginSduiActivity.CreateIntent(RequireContext(), state.PackageName, state.Version));
+            return;
+        }
+
+        _ = GenerateSduiAsync();
+    }
+
+    /// <summary>让 Agent 只读分析插件并生成 SDUI 文档；成功与失败都落到卡片正文或诊断文本。</summary>
+    private async Task GenerateSduiAsync()
+    {
+        var state = _viewModel.State;
+        var packageName = state.PackageName;
+        if (_sduiGenerating || string.IsNullOrWhiteSpace(packageName))
+        {
+            return;
+        }
+
+        if (_bridge.Runtime.Host?.State != DshHostState.Ready)
+        {
+            _sduiErrorText = GetString(Resource.String.plugin_detail_sdui_host_required);
+            ScheduleRender();
+            return;
+        }
+
+        _sduiGenerating = true;
+        _sduiStatusRes = 0;
+        _sduiErrorText = null;
+        ScheduleRender();
+
+        var ct = _viewLifecycleCts?.Token ?? CancellationToken.None;
+        try
+        {
+            // 生成由应用级协调器持有生命周期：不传页面令牌，页面销毁不会取消后台生成；
+            // 同一包名已有在途任务时直接加入并共享结果。
+            var snapshot = await _bridge.Agent.PluginSduiGenerationCoordinator
+                .StartOrJoinAsync(packageName, state.Version, state.SettingsNamespace)
+                .ConfigureAwait(false);
+            if (ct.IsCancellationRequested)
+            {
+                return;
+            }
+
+            _sduiGenerating = snapshot.IsGenerating;
+            if (snapshot.Result is { } result)
+            {
+                _sduiResult = result;
+                _sduiStatusRes = 0;
+                _sduiErrorText = null;
+            }
+
+            if (snapshot.Result is { Found: true })
+            {
+                // 生成成功后按同一「包名@版本」重读缓存，确保展示的是刚通过校验并落盘的文档。
+                _sduiStatusRes = Resource.String.plugin_detail_sdui_generated;
+                await LoadSduiAsync(packageName, state.Version).ConfigureAwait(false);
+            }
+            else
+            {
+                ScheduleRender();
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // 页面销毁时仅停止本地等待，应用级协调器仍在后台完成生成。
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _sduiResult = new PluginSduiLoadResult(
+                false,
+                DiagnosticKey: PluginSduiGeneratorService.SaveFailedDiagnostic);
+            _sduiGenerating = false;
+            ScheduleRender();
+        }
+        finally
+        {
+            _sduiGenerating = false;
+        }
+    }
+
+    /// <summary>清除该插件的全部版本化缓存；若插件仍自带清单，则如实回退展示清单来源。</summary>
+    private async Task ClearSduiCacheAsync()
+    {
+        var state = _viewModel.State;
+        var packageName = state.PackageName;
+        if (_sduiGenerating || string.IsNullOrWhiteSpace(packageName))
+        {
+            return;
+        }
+
+        var ct = _viewLifecycleCts?.Token ?? CancellationToken.None;
+        try
+        {
+            var cleared = await _bridge.Agent.PluginSduiStore
+                .ClearCachedAsync(packageName, ct)
+                .ConfigureAwait(false);
+            // 缓存已清除：同步清掉应用级协调器的旧快照，避免返回页面时又按旧结果重读。
+            _bridge.Agent.PluginSduiGenerationCoordinator.ClearSnapshot(packageName);
+            var reloaded = await _bridge.Agent.PluginSduiStore
+                .LoadAsync(packageName, state.Version, ct)
+                .ConfigureAwait(false);
+            if (ct.IsCancellationRequested)
+            {
+                return;
+            }
+
+            _sduiResult = reloaded;
+            _sduiStatusRes = cleared
+                ? Resource.String.plugin_detail_sdui_cleared
+                : Resource.String.plugin_detail_sdui_clear_none;
+            _sduiErrorText = null;
+            ScheduleRender();
+        }
+        catch (OperationCanceledException)
+        {
+            // 页面销毁导致取消：保持静默。
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _sduiErrorText = GetString(Resource.String.plugin_detail_sdui_err_manifest_unavailable);
+            ScheduleRender();
         }
     }
 

@@ -1038,6 +1038,27 @@ public sealed class RemoteDshGatewayClient : DefaultDshGateway, IDisposable
         return dtoOutcome.Map(MapSettingsNamespace);
     }
 
+    /// <summary>
+    /// Slice 1A：白名单校验通过后把插件扩展 RPC 直通到 <c>POST /api/&lt;endpoint&gt;</c>；
+    /// 任何未通过校验的端点（核心命名空间、路径穿越、控制字符等）都在联网前 fail-closed。
+    /// </summary>
+    public override async Task<Outcome<JsonElement>> InvokePluginRpcAsync(
+        string endpoint,
+        JsonElement args,
+        CancellationToken ct = default)
+    {
+        if (!PluginRpcEndpointValidator.IsAllowedExtensionEndpoint(endpoint))
+        {
+            return Outcome<JsonElement>.Fail(DshFailureCode.InvalidState, "plugin_sdui.forbidden_rpc_endpoint");
+        }
+
+        // 未定义/空的 JsonElement 不能直接序列化，统一规范化为空对象参数。
+        var normalizedArgs = args.ValueKind is JsonValueKind.Undefined or JsonValueKind.Null
+            ? RemoteWireCodec.EmptyArgs
+            : args;
+        return await CallRawAsync(endpoint.Trim(), normalizedArgs, ct).ConfigureAwait(false);
+    }
+
     private static SettingsNamespaceView MapSettingsNamespace(WireSettingsNamespaceView wire) =>
         new(
             Namespace: wire.Ns,

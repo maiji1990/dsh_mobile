@@ -294,6 +294,8 @@
     <string name="dev_pty_confirm_title">PTY 自检</string>
     <string name="dev_pty_confirm">用 C# + libdshmobile_native 打开一个 guest 登录 shell，自动执行 tty / stty / 调整窗口大小 / Ctrl-C / exit，并检查没有残留进程（用于验收）。</string>
     <string name="dev_pty_start">开始自检</string>
+    <string name="dev_exp_sdui">实验功能：第三方插件原生面板（SDUI）</string>
+    <string name="dev_exp_sdui_sub">开启后可在插件详情页提取并原生渲染支持扩展 RPC 的第三方插件（默认关闭）</string>
 
     <string name="files_empty">此文件夹为空</string>
     <string name="files_protected_short">受保护</string>

@@ -62,6 +62,13 @@ public sealed record GuestLocalPackageDetail(
     public const string OriginReadme = "readme";
 }
 
+/// <summary>本地已安装包 <c>dshmobile.sdui.json</c> 清单的受控只读读取结果（Slice 1A）。</summary>
+public sealed record GuestLocalSduiManifestResult(
+    bool Ok,
+    string Code,
+    string? JsonContent = null,
+    string? Diagnostic = null);
+
 /// <summary>
 /// Runtime 侧受控插件管理执行器（PR-07, N-07-01；ADR-0034 增强）：
 /// L0 复用 <c>dsh plugin --profile web list --json --depth 0</c> 与边界内安全符号链接解析补充完整包元信息与本地详情文档；
@@ -85,6 +92,15 @@ public sealed class GuestPluginService
 
     /// <summary>本地详情查询未定位到目标包时的稳定错误码。</summary>
     public const string PackageNotFoundCode = "PLUGIN_NOT_FOUND";
+
+    /// <summary>本地 <c>dshmobile.sdui.json</c> 清单文件名。</summary>
+    public const string SduiManifestFileName = "dshmobile.sdui.json";
+
+    /// <summary>本地 SDUI 清单单次最大读取字节数（256 KiB）。</summary>
+    public const int MaxLocalSduiManifestBytes = 256 * 1024;
+
+    /// <summary>本地 SDUI 清单超过大小上限时的稳定错误码。</summary>
+    public const string SduiManifestTooLargeCode = "PLUGIN_SDUI_MANIFEST_TOO_LARGE";
 
     /// <summary>目标包随 DSH 层内置发布、不得在 web profile 中覆盖升级时的稳定错误码。</summary>
     public const string ShippedPackageCode = "PLUGIN_SHIPPED_PACKAGE";
@@ -305,6 +321,81 @@ public sealed class GuestPluginService
         }
 
         return Task.Run(() => ReadLocalPackageDetailCore(trimmedName!, language, ct), ct);
+    }
+
+    /// <summary>
+    /// Slice 1A：在安全路径边界内只读本地已安装包的 <c>dshmobile.sdui.json</c> 扩展清单，不启动 guest 进程。
+    /// 先查 <c>profiles/web/node_modules</c>，未命中时回退只读层 <c>layers/dsh/node_modules</c>；
+    /// 清单缺失、超过 256 KiB 或无法读取时均 fail-closed，绝不返回边界外的文件内容。
+    /// </summary>
+    public GuestLocalSduiManifestResult ReadLocalSduiManifest(string packageName, CancellationToken ct = default)
+    {
+        ct.ThrowIfCancellationRequested();
+        var trimmedName = packageName?.Trim();
+        if (!PluginCommandRules.IsValidPackageName(trimmedName))
+        {
+            return new GuestLocalSduiManifestResult(false, RuntimeErrorCodes.BadRequest, Diagnostic: "invalid package name");
+        }
+
+        var packageSegments = trimmedName!.Split('/');
+        var relativeSegments = new string[packageSegments.Length + 1];
+        packageSegments.CopyTo(relativeSegments, 0);
+        relativeSegments[^1] = SduiManifestFileName;
+
+        foreach (var nodeModulesDir in new[]
+                 {
+                     WebProfileNodeModulesHostDir(_layout),
+                     DshRuntimeNodeModulesHostDir(_layout),
+                 })
+        {
+            ct.ThrowIfCancellationRequested();
+            var manifestPath = TryResolvePathWithinBoundary(nodeModulesDir, relativeSegments, expectDirectory: false);
+            if (manifestPath is null)
+            {
+                continue;
+            }
+
+            long manifestLength;
+            try
+            {
+                manifestLength = new FileInfo(manifestPath).Length;
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                return new GuestLocalSduiManifestResult(
+                    false,
+                    RuntimeErrorCodes.Upstream,
+                    Diagnostic: "dshmobile.sdui.json metadata could not be read");
+            }
+
+            // 超限清单直接拒绝，避免把被截断的 JSON 交给上层解析。
+            if (manifestLength > MaxLocalSduiManifestBytes)
+            {
+                return new GuestLocalSduiManifestResult(
+                    false,
+                    SduiManifestTooLargeCode,
+                    Diagnostic: "dshmobile.sdui.json exceeds 256 KiB");
+            }
+
+            if (!TryReadBoundedUtf8Text(manifestPath, MaxLocalSduiManifestBytes, out var jsonContent))
+            {
+                return new GuestLocalSduiManifestResult(
+                    false,
+                    RuntimeErrorCodes.Upstream,
+                    Diagnostic: "dshmobile.sdui.json could not be read");
+            }
+
+            return new GuestLocalSduiManifestResult(true, RuntimeErrorCodes.Ok, jsonContent);
+        }
+
+        return new GuestLocalSduiManifestResult(
+            false,
+            PackageNotFoundCode,
+            Diagnostic: "dshmobile.sdui.json not found in local profile or runtime layer");
     }
 
     /// <summary>解析 <c>dsh plugin list --json --depth 0</c> 的 pnpm JSON 输出，容忍前导告警行。</summary>

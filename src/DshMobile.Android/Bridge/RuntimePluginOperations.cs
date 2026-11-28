@@ -73,6 +73,19 @@ internal sealed class RuntimePluginOperations(
             HasCustomWebUi: detail.HasCustomWebUi));
     }
 
+    public async Task<Outcome<string>> ReadLocalSduiManifestAsync(string packageName, CancellationToken ct = default)
+    {
+        var result = await runtime.ReadLocalPluginSduiManifestAsync(packageName, ct).ConfigureAwait(false);
+        if (!result.Ok)
+        {
+            return Outcome<string>.Fail(MapCode(result.Code), result.Diagnostic ?? result.Code);
+        }
+
+        return result.JsonContent is { } jsonContent
+            ? Outcome<string>.Ok(jsonContent)
+            : Outcome<string>.Fail(DshFailureCode.ProtocolMismatch, "plugin_sdui.manifest_missing");
+    }
+
     public async Task<Outcome<Unit>> InstallPackageAsync(string packageSpec, CancellationToken ct = default)
     {
         var result = await runtime.InstallProfilePluginAsync(packageSpec, ct).ConfigureAwait(false);
@@ -121,6 +134,7 @@ internal sealed class RuntimePluginOperations(
         RuntimeErrorCodes.NotImplemented => DshFailureCode.Unsupported,
         GuestPluginService.PackageNotFoundCode => DshFailureCode.Unavailable,
         GuestPluginService.ShippedPackageCode => DshFailureCode.InvalidState,
+        GuestPluginService.SduiManifestTooLargeCode => DshFailureCode.InvalidState,
         _ => DshFailureCode.ProcessExited,
     };
 }

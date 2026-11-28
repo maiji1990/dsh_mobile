@@ -622,6 +622,108 @@ public sealed class GuestPluginServiceTests : IDisposable
         Assert.Null(host.TryBuildBrowserLaunchUri());
     }
 
+    [Fact]
+    public void ReadLocalSduiManifest_ReadsProfileManifestAndFallsBackToRuntimeLayer()
+    {
+        var layout = CreateLayout();
+
+        var profilePkgDir = Path.Combine(GuestPluginService.WebProfileNodeModulesHostDir(layout), "sdui-demo");
+        Directory.CreateDirectory(profilePkgDir);
+        File.WriteAllText(
+            Path.Combine(profilePkgDir, GuestPluginService.SduiManifestFileName),
+            """{"version":1,"screens":[{"id":"home"}]}""");
+
+        var svc = new GuestPluginService(layout);
+
+        var profileResult = svc.ReadLocalSduiManifest("sdui-demo");
+        Assert.True(profileResult.Ok);
+        Assert.Equal(RuntimeErrorCodes.Ok, profileResult.Code);
+        Assert.Equal("""{"version":1,"screens":[{"id":"home"}]}""", profileResult.JsonContent);
+        Assert.Null(profileResult.Diagnostic);
+
+        // 同名的清单在 web profile 未命中时回退只读 DSH 层（含 scoped 包）。
+        var runtimePkgDir = Path.Combine(
+            GuestPluginService.DshRuntimeNodeModulesHostDir(layout), "@deepseek-ai", "builtin-sdui");
+        Directory.CreateDirectory(runtimePkgDir);
+        File.WriteAllText(
+            Path.Combine(runtimePkgDir, GuestPluginService.SduiManifestFileName),
+            """{"version":1,"origin":"dsh-runtime"}""");
+
+        var runtimeResult = svc.ReadLocalSduiManifest("@deepseek-ai/builtin-sdui");
+        Assert.True(runtimeResult.Ok);
+        Assert.Equal("""{"version":1,"origin":"dsh-runtime"}""", runtimeResult.JsonContent);
+    }
+
+    [Theory]
+    [InlineData("../evil")]
+    [InlineData("@scope/../evil")]
+    [InlineData("pkg/../../evil")]
+    [InlineData("pkg;rm -rf")]
+    [InlineData("pkg/sub")]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void ReadLocalSduiManifest_RejectsInvalidPackageNames(string packageName)
+    {
+        var layout = CreateLayout();
+        var svc = new GuestPluginService(layout);
+
+        var result = svc.ReadLocalSduiManifest(packageName);
+
+        Assert.False(result.Ok);
+        Assert.Equal(RuntimeErrorCodes.BadRequest, result.Code);
+        Assert.Null(result.JsonContent);
+    }
+
+    [Fact]
+    public void ReadLocalSduiManifest_DoesNotFollowSymlinkEscapingNodeModules()
+    {
+        var layout = CreateLayout();
+        var nodeModulesDir = GuestPluginService.WebProfileNodeModulesHostDir(layout);
+        Directory.CreateDirectory(nodeModulesDir);
+
+        var outsideDir = Path.Combine(_dir, "outside-sdui");
+        Directory.CreateDirectory(outsideDir);
+        File.WriteAllText(
+            Path.Combine(outsideDir, GuestPluginService.SduiManifestFileName),
+            """{"secret":true}""");
+
+        // 包目录符号链接指向 node_modules 之外，必须被边界解析拒绝。
+        CreateDirectoryLinkForTest(
+            Path.Combine(nodeModulesDir, "escape-sdui"),
+            relativeTarget: Path.GetRelativePath(nodeModulesDir, outsideDir),
+            absoluteTarget: outsideDir);
+
+        var svc = new GuestPluginService(layout);
+        var result = svc.ReadLocalSduiManifest("escape-sdui");
+
+        Assert.False(result.Ok);
+        Assert.Equal(GuestPluginService.PackageNotFoundCode, result.Code);
+        Assert.Null(result.JsonContent);
+    }
+
+    [Fact]
+    public void ReadLocalSduiManifest_RejectsManifestOver256KiB()
+    {
+        var layout = CreateLayout();
+        var pkgDir = Path.Combine(GuestPluginService.WebProfileNodeModulesHostDir(layout), "oversized-sdui");
+        Directory.CreateDirectory(pkgDir);
+
+        var oversized = new string('x', GuestPluginService.MaxLocalSduiManifestBytes + 1);
+        File.WriteAllText(
+            Path.Combine(pkgDir, GuestPluginService.SduiManifestFileName),
+            oversized,
+            new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
+
+        var svc = new GuestPluginService(layout);
+        var result = svc.ReadLocalSduiManifest("oversized-sdui");
+
+        Assert.False(result.Ok);
+        Assert.Equal(GuestPluginService.SduiManifestTooLargeCode, result.Code);
+        Assert.Null(result.JsonContent);
+        Assert.NotNull(result.Diagnostic);
+        Assert.DoesNotContain(oversized[..64], result.Diagnostic!, StringComparison.Ordinal);
+    }
+
     private static void CreateDirectoryLinkForTest(string linkPath, string relativeTarget, string absoluteTarget)
     {
         try

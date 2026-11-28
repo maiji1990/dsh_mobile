@@ -67,6 +67,18 @@ public interface IPluginGateway
     Task<Outcome<SettingsNamespaceView>> ReplaceSettingsAsync(string ns, JsonElement section, long? expectedRevision = null, CancellationToken ct = default);
 }
 
+/// <summary>
+/// 受控插件 SDUI 扩展 RPC 通道：仅允许经 <see cref="PluginRpcEndpointValidator"/> 白名单校验的
+/// 非核心 <c>namespace/method</c> 端点，未实现或校验失败时一律 fail-closed。
+/// </summary>
+public interface IPluginExtensionGateway
+{
+    Task<Outcome<JsonElement>> InvokePluginRpcAsync(
+        string endpoint,
+        JsonElement args,
+        CancellationToken ct = default);
+}
+
 /// <summary>Live session follow stream & forwarded Host event stream facet.</summary>
 public interface IEventGateway
 {
@@ -75,7 +87,7 @@ public interface IEventGateway
     Task<Outcome<IAsyncDisposable>> FollowWorkspaceAsync(Func<WorkspaceFollowFrame, ValueTask> onFrame, CancellationToken ct = default);
 }
 
-/// <summary>Composite protocol-agnostic gateway exposing capabilities and all 8 Facets.</summary>
+/// <summary>Composite protocol-agnostic gateway exposing capabilities and all 9 Facets.</summary>
 public interface IDshGateway :
     ISessionGateway,
     IPromptGateway,
@@ -84,6 +96,7 @@ public interface IDshGateway :
     IProviderGateway,
     ICredentialGateway,
     IPluginGateway,
+    IPluginExtensionGateway,
     IEventGateway
 {
     DshCapabilities Capabilities { get; }
@@ -138,6 +151,7 @@ public abstract class DefaultDshGateway : IDshGateway
     public virtual Task<Outcome<SettingsDescribeSnapshotView>> DescribeSettingsAsync(CancellationToken ct = default) => Unavailable<SettingsDescribeSnapshotView>();
     public virtual Task<Outcome<SettingsNamespaceView>> MutateSettingsAsync(string ns, IReadOnlyList<SettingsPathOp> ops, long? expectedRevision = null, CancellationToken ct = default) => Unavailable<SettingsNamespaceView>();
     public virtual Task<Outcome<SettingsNamespaceView>> ReplaceSettingsAsync(string ns, JsonElement section, long? expectedRevision = null, CancellationToken ct = default) => Unavailable<SettingsNamespaceView>();
+    public virtual Task<Outcome<JsonElement>> InvokePluginRpcAsync(string endpoint, JsonElement args, CancellationToken ct = default) => Unavailable<JsonElement>();
     public virtual Task<Outcome<IAsyncDisposable>> FollowSessionAsync(string sessionId, Func<SessionFollowUpdate, ValueTask> onUpdate, int? maxMessages = null, bool activate = true, CancellationToken ct = default) => Unavailable<IAsyncDisposable>();
     public virtual Task<Outcome<IAsyncDisposable>> FollowWorkspaceAsync(Func<WorkspaceFollowFrame, ValueTask> onFrame, CancellationToken ct = default) => Unavailable<IAsyncDisposable>();
 }
