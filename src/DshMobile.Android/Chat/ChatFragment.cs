@@ -888,18 +888,26 @@ public sealed class ChatFragment : Fragment
     /// <summary>
     /// 区分软硬键盘：软键盘 Enter 保持换行；物理键盘 Enter 发送，Shift+Enter 继续换行。
     /// </summary>
+    /// <remarks>
+    /// .NET for Android 在挂有 <see cref="View.KeyPress"/> 处理器时，会把 <see cref="View.KeyEventArgs.Handled"/>
+    /// 的初值设为 <c>true</c>（见运行时 <c>IOnKeyListenerImplementor.OnKey</c> 的 IL：newobj 前先 ldc.i4.1）。
+    /// 因此凡是本处理器不消费的按键（退格、删除、方向键、剪切/复制/粘贴等）都必须显式置 false，
+    /// 否则 <see cref="View.DispatchKeyEvent"/> 会在交给 TextView 之前就吞掉事件，表现为“输入框删不掉字”。
+    /// </remarks>
     private void OnInputKeyPress(object? sender, View.KeyEventArgs e)
     {
         if (e.Event is not KeyEvent key
             || key.Action != KeyEventActions.Down
             || key.KeyCode != Keycode.Enter)
         {
+            e.Handled = false;
             return;
         }
 
         // FLAG_SOFT_KEYBOARD = 0x2：来自软键盘的按键继续交给 EditText 插入换行。
         if ((((int)key.Flags) & 0x2) != 0 || key.IsShiftPressed)
         {
+            e.Handled = false;
             return;
         }
 
