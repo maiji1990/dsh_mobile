@@ -2,6 +2,7 @@ using Android.Content;
 using DshMobile.Agent.Engines;
 using DshMobile.Agent.Presentation;
 using DshMobile.Agent.Protocol;
+using DshMobile.Agent.Sdui;
 using DshMobile.Agent.Transport;
 using DshMobile.App.Notifications;
 using DshMobile.Application.Runtime;
@@ -83,6 +84,10 @@ public sealed class AgentConnectionScope : IDisposable
         _pluginOperations = new RuntimePluginOperations(
             runtime,
             restartHostAsync ?? (ct => runtime.RestartWebHostAsync(ct)));
+        // 实验性 SDUI：缓存根目录固定为 user-data/.dsh/dshmobile，存储内部再追加 sdui-cache/。
+        PluginSduiStore = new PluginSduiStore(Path.Combine(layout.UserDataDir, ".dsh", "dshmobile"), _pluginOperations);
+        // 应用级生成协调器：跨页面复用后台生成任务，页面销毁不再取消在途生成。
+        PluginSduiGenerationCoordinator = new PluginSduiGenerationCoordinator(_gateway, PluginSduiStore, _hiddenStore);
         _pluginCatalogSearch = new NpmRegistryPluginSearchService();
         _pluginInventoryService = new PluginInventoryService(_gateway, _pluginOperations, _pluginCatalogSearch);
         Plugins = new PluginsViewModel(_gateway, _pluginInventoryService, _pluginCatalogSearch);
@@ -110,6 +115,22 @@ public sealed class AgentConnectionScope : IDisposable
     /// <summary>按页面作用域创建插件详情与官方 <c>settings/*</c> 实时配置 ViewModel（ADR-0034）。</summary>
     public PluginDetailViewModel CreatePluginDetailViewModel() =>
         new(_gateway, _pluginInventoryService, _pluginOperations, _pluginCatalogSearch);
+
+    /// <summary>实验性插件 SDUI 文档存储（版本化缓存 + 包内置清单回退），供详情页与生成服务共享。</summary>
+    public PluginSduiStore PluginSduiStore { get; }
+
+    /// <summary>
+    /// 应用级插件 SDUI 生成协调器（第 4 项精修）：以包名为粒度合并并复用后台生成任务，
+    /// 页面销毁不取消生成；回到页面时从快照恢复按钮与结果状态。
+    /// </summary>
+    public PluginSduiGenerationCoordinator PluginSduiGenerationCoordinator { get; }
+
+    /// <summary>按次创建插件 SDUI 文档生成服务；复用同一网关、缓存存储与本机隐藏会话表。</summary>
+    public PluginSduiGeneratorService CreatePluginSduiGeneratorService() =>
+        new(_gateway, PluginSduiStore, _hiddenStore);
+
+    /// <summary>按页面作用域创建插件 SDUI 渲染 ViewModel；调用方负责释放。</summary>
+    public PluginSduiViewModel CreatePluginSduiViewModel() => new(_gateway);
 
     public InboxViewModel Inbox { get; }
 
@@ -446,6 +467,8 @@ public sealed class AgentConnectionScope : IDisposable
         _requests.RequestsChanged -= OnRequestsChanged;
         _connection.GenerationChanged -= OnGenerationChanged;
         _stoppingHook.Dispose();
+        // 先取消并收敛所有在途 SDUI 生成，避免作用域释放后仍有后台任务引用网关。
+        PluginSduiGenerationCoordinator.Dispose();
         lock (_leaseSyncGate)
         {
             UpdateLeaseSlot(ref _chatLease, false, WorkLeaseKind.Chat, "chat.turn");

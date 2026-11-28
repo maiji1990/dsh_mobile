@@ -93,6 +93,63 @@
     <string name="plugin_detail_webui_action_start">启动 DSH 使完整 WebUI 生效</string>
     <string name="plugin_detail_webui_action_open_browser">在应用内浏览器（Custom Tabs）中打开完整 WebUI</string>
 
+    <!-- 实验性原生插件面板（SDUI，Slice 2A；默认关闭，仅开发者选项显式开启后展示） -->
+    <string name="plugin_detail_sdui_title">原生插件面板（实验）</string>
+    <string name="plugin_detail_sdui_body">开启实验开关后，可为支持扩展 RPC 的第三方插件提取并原生渲染 SDUI 面板；尚未读取缓存。</string>
+    <string name="plugin_detail_sdui_loading">正在读取 SDUI 缓存…</string>
+    <string name="plugin_detail_sdui_not_generated">尚未生成原生面板缓存。可让 Agent 只读分析该插件后生成，生成过程不会修改插件文件。</string>
+    <string name="plugin_detail_sdui_cached_fmt">已生成原生面板缓存（插件 v%1$s，来源：%2$s）。</string>
+    <string name="plugin_detail_sdui_manifest_fmt">插件内置 SDUI 清单可用（插件 v%1$s，来源：%2$s）。</string>
+    <string name="plugin_detail_sdui_source_cache">版本化缓存</string>
+    <string name="plugin_detail_sdui_source_manifest">包内置清单</string>
+    <string name="plugin_detail_sdui_generate_btn">生成原生面板</string>
+    <string name="plugin_detail_sdui_open_btn">打开原生面板</string>
+    <string name="plugin_detail_sdui_regen_btn">重新生成</string>
+    <string name="plugin_detail_sdui_clear_btn">清除缓存</string>
+    <string name="plugin_detail_sdui_generating">正在让 Agent 只读分析插件并生成原生面板，可能需要数十秒…</string>
+    <string name="plugin_detail_sdui_generated">原生面板已生成并写入版本化缓存。</string>
+    <string name="plugin_detail_sdui_cleared">已清除该插件的 SDUI 缓存。</string>
+    <string name="plugin_detail_sdui_clear_none">没有可清除的 SDUI 缓存。</string>
+    <string name="plugin_detail_sdui_open_pending">原生面板页将在下一阶段（Slice 2B）接入。</string>
+    <string name="plugin_detail_sdui_host_required">需先启动 DSH 才能让 Agent 分析插件并生成原生面板。</string>
+    <string name="plugin_detail_sdui_diagnostic_fmt">诊断：%1$s</string>
+    <string name="plugin_detail_sdui_err_generator_unavailable">生成服务不可用：网关未连接或未声明 Prompt 能力。</string>
+    <string name="plugin_detail_sdui_err_generation_timeout">生成超时，未得到完整文档。</string>
+    <string name="plugin_detail_sdui_err_input_required">Agent 请求用户输入，已取消本轮生成。</string>
+    <string name="plugin_detail_sdui_err_schema_invalid">生成的 SDUI 文档未通过安全校验。</string>
+    <string name="plugin_detail_sdui_err_empty_output">Agent 未返回有效文档。</string>
+    <string name="plugin_detail_sdui_err_manifest_unavailable">未找到可用的 SDUI 清单或缓存，可尝试重新生成。</string>
+    <string name="plugin_detail_sdui_err_invalid_document">SDUI 文档未通过安全校验，已拒绝渲染。</string>
+
+    <!-- SDUI 原生面板页（Slice 2B-1：全静态 XML 布局，原生渲染零动态拼装） -->
+    <string name="plugin_sdui_title">原生面板（实验）</string>
+    <string name="plugin_sdui_refresh">刷新</string>
+    <string name="plugin_sdui_loading">正在加载原生面板…</string>
+    <string name="plugin_sdui_source_cache">来源：本地缓存</string>
+    <string name="plugin_sdui_source_manifest">来源：插件包内置</string>
+    <string name="plugin_sdui_feedback_refreshing">正在刷新数据…</string>
+    <string name="plugin_sdui_feedback_refreshed">数据已刷新</string>
+    <string name="plugin_sdui_more_actions">更多</string>
+    <string name="plugin_sdui_external_link_btn">打开外部链接</string>
+    <string name="plugin_sdui_action_done">操作已完成</string>
+    <string name="plugin_sdui_action_failed">操作未完成，请稍后重试</string>
+    <string name="plugin_sdui_empty_title">暂无内容</string>
+    <string name="plugin_sdui_empty_text">当前没有可显示的数据</string>
+    <string name="plugin_sdui_source_err_title">数据加载失败</string>
+    <string name="plugin_sdui_source_err_msg">请稍后重试，或确认插件仍在运行</string>
+    <string name="plugin_sdui_action_result_title">上次操作结果</string>
+    <string name="plugin_sdui_action_result_ok">成功</string>
+    <string name="plugin_sdui_action_result_fail">失败</string>
+    <string name="plugin_sdui_action_result_elapsed">耗时</string>
+    <string name="plugin_sdui_action_result_endpoint">端点</string>
+    <string name="plugin_sdui_action_result_error_code">错误码</string>
+    <string name="plugin_sdui_settings_header_title">插件配置</string>
+    <string name="plugin_sdui_form_title">填写表单</string>
+    <string name="plugin_sdui_form_submit">提交</string>
+    <string name="plugin_sdui_form_cancel">取消</string>
+    <string name="plugin_sdui_form_required">请填写此必填项</string>
+    <string name="plugin_sdui_form_invalid">请检查填写内容后重试</string>
+
     <!-- 官方实时配置区块 -->
     <string name="plugin_detail_config_title">实时配置</string>
     <string name="plugin_detail_config_live_badge">修改后自动热生效</string>

@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 列表小节标题：纯静态文本，语义标题样式由主题统一提供 -->
+<TextView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/sdui_list_header_title"
+    style="@style/Widget.DshMobile.SectionHeader"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content" />

@@ -471,6 +471,13 @@ public interface IPluginOperations
     Task<Outcome<PluginLocalPackageDetailView>> ReadLocalPackageDetailAsync(string packageName, string language, CancellationToken ct = default) =>
         Task.FromResult(Outcome<PluginLocalPackageDetailView>.Fail(DshFailureCode.Unsupported, "plugins.local_detail_unavailable"));
 
+    /// <summary>
+    /// Slice 1A：只读本地已安装包的 <c>dshmobile.sdui.json</c> 扩展清单。
+    /// 默认实现 fail-closed，由运行时桥接层覆盖为安全边界内的文件读取。
+    /// </summary>
+    Task<Outcome<string>> ReadLocalSduiManifestAsync(string packageName, CancellationToken ct = default) =>
+        Task.FromResult(Outcome<string>.Fail(DshFailureCode.Unsupported, "plugins.local_sdui_unavailable"));
+
     IReadOnlySet<string> GetNativeTrimmedEntryIds() => EmptyStringSet;
 
     bool IsFullWebUiCompatEnabled => false;

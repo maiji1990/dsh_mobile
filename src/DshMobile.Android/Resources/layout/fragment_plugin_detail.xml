@@ -401,7 +401,109 @@
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
 
-            <!-- 3. 页面修改插件生效引导卡（仅 HasCustomWebUi == true 时显示） -->
+            <!-- 3. 实验性原生 SDUI 面板卡（默认隐藏，仅在开发者选项开启实验开关后显示） -->
+            <com.google.android.material.card.MaterialCardView
+                android:id="@+id/plugin_detail_sdui_card"
+                style="@style/Widget.DshMobile.Card.Group"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="12dp"
+                android:visibility="gone">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:padding="16dp">
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:gravity="center_vertical"
+                        android:orientation="horizontal">
+
+                        <ImageView
+                            android:layout_width="18dp"
+                            android:layout_height="18dp"
+                            android:importantForAccessibility="no"
+                            android:src="@drawable/ic_extension"
+                            app:tint="?attr/colorPrimary" />
+
+                        <TextView
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_marginStart="8dp"
+                            android:layout_weight="1"
+                            android:text="@string/plugin_detail_sdui_title"
+                            android:textAppearance="?attr/textAppearanceTitleMedium"
+                            android:textColor="?attr/colorOnSurface" />
+                    </LinearLayout>
+
+                    <TextView
+                        android:id="@+id/plugin_detail_sdui_body"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        android:text="@string/plugin_detail_sdui_body"
+                        android:textAppearance="?attr/textAppearanceBodySmall"
+                        android:textColor="?attr/colorOnSurfaceVariant" />
+
+                    <!-- 诊断 / 报错文本：稳定诊断键，绝不展示插件内容或路径 -->
+                    <TextView
+                        android:id="@+id/plugin_detail_sdui_error"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        android:background="?attr/colorSurfaceContainerHigh"
+                        android:paddingStart="10dp"
+                        android:paddingTop="8dp"
+                        android:paddingEnd="10dp"
+                        android:paddingBottom="8dp"
+                        android:textAppearance="?attr/textAppearanceBodySmall"
+                        android:textColor="?attr/colorError"
+                        android:visibility="gone" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/plugin_detail_sdui_primary_btn"
+                        style="@style/Widget.Material3.Button.TonalButton"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="12dp"
+                        android:text="@string/plugin_detail_sdui_generate_btn"
+                        app:icon="@drawable/ic_extension"
+                        app:iconSize="16dp" />
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="4dp"
+                        android:orientation="horizontal">
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/plugin_detail_sdui_regen_btn"
+                            style="@style/Widget.Material3.Button.TextButton"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:minWidth="0dp"
+                            android:paddingStart="8dp"
+                            android:paddingEnd="8dp"
+                            android:text="@string/plugin_detail_sdui_regen_btn" />
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/plugin_detail_sdui_clear_btn"
+                            style="@style/Widget.Material3.Button.TextButton"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:minWidth="0dp"
+                            android:paddingStart="8dp"
+                            android:paddingEnd="8dp"
+                            android:text="@string/plugin_detail_sdui_clear_btn"
+                            android:textColor="?attr/colorError" />
+                    </LinearLayout>
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+
+            <!-- 4. 页面修改插件生效引导卡（仅 HasCustomWebUi == true 时显示） -->
             <com.google.android.material.card.MaterialCardView
                 android:id="@+id/plugin_detail_webui_card"
                 style="@style/Widget.DshMobile.Card.Group"
@@ -460,7 +562,7 @@
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
 
-            <!-- 4. 官方 settings/* 实时配置卡（已安装插件展示） -->
+            <!-- 5. 官方 settings/* 实时配置卡（已安装插件展示） -->
             <com.google.android.material.card.MaterialCardView
                 android:id="@+id/plugin_detail_config_card"
                 style="@style/Widget.DshMobile.Card.Group"
@@ -552,7 +654,7 @@
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
 
-            <!-- 5. 详情文档卡（纯托管 Markdown 原生渲染） -->
+            <!-- 6. 详情文档卡（纯托管 Markdown 原生渲染） -->
             <com.google.android.material.card.MaterialCardView
                 android:id="@+id/plugin_detail_doc_card"
                 style="@style/Widget.DshMobile.Card.Group"

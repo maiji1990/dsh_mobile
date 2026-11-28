@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 单行文本表单字段：横屏软键盘保留 flagNoExtractUi，必填错误由 TextInputLayout 就地展示 -->
+<com.google.android.material.textfield.TextInputLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/sdui_form_input_layout"
+    style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:layout_marginTop="4dp"
+    android:layout_marginBottom="4dp">
+
+    <com.google.android.material.textfield.TextInputEditText
+        android:id="@+id/sdui_form_input_edit"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:imeOptions="flagNoExtractUi"
+        android:importantForAutofill="noExcludeDescendants"
+        android:inputType="text"
+        android:maxLines="1" />
+</com.google.android.material.textfield.TextInputLayout>

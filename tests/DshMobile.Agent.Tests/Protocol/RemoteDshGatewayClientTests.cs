@@ -784,4 +784,80 @@ public sealed class RemoteDshGatewayClientTests
             Assert.Equal(8, argsEl.GetProperty("expectedRevision").GetInt64());
         }
     }
+
+    [Fact]
+    public async Task InvokePluginRpcAsync_BlocksReservedAndMalformedEndpointsWithoutTouchingNetwork()
+    {
+        var requestedPaths = new List<string>();
+        await using var server = new FakeRemoteServer();
+        server.OnHttpRequest = request =>
+        {
+            requestedPaths.Add(request.Path);
+            return Task.FromResult(FakeRemoteServer.HttpResponseData.Json(404, "{}"));
+        };
+
+        await using var conn = new DshRemoteConnection(new RemoteConnectionOptions(server.BaseUri), () => DummyToken);
+        using var gw = new RemoteDshGatewayClient(conn);
+
+        // 核心命名空间即使完全合法也必须在联网前被白名单拒绝。
+        var blockedCore = await gw.InvokePluginRpcAsync("pluginManager/listBundles", RemoteWireCodec.EmptyArgs);
+        Assert.False(blockedCore.IsOk);
+        Assert.Equal(DshFailureCode.InvalidState, blockedCore.Error!.Code);
+        Assert.Equal("plugin_sdui.forbidden_rpc_endpoint", blockedCore.Error.DiagnosticKey);
+
+        // 路径穿越同样在联网前被拒绝。
+        var blockedTraversal = await gw.InvokePluginRpcAsync("demo/../session/list", RemoteWireCodec.EmptyArgs);
+        Assert.False(blockedTraversal.IsOk);
+        Assert.Equal(DshFailureCode.InvalidState, blockedTraversal.Error!.Code);
+
+        // 大小写不敏感地拦截核心空间。
+        var blockedCaseVariant = await gw.InvokePluginRpcAsync("SETTINGS/describe", RemoteWireCodec.EmptyArgs);
+        Assert.False(blockedCaseVariant.IsOk);
+        Assert.Equal(DshFailureCode.InvalidState, blockedCaseVariant.Error!.Code);
+
+        Assert.Empty(requestedPaths);
+    }
+
+    [Fact]
+    public async Task InvokePluginRpcAsync_ForwardsAllowedEndpointAndNormalizesEmptyArgs()
+    {
+        string? capturedPath = null;
+        string? capturedBody = null;
+
+        await using var server = new FakeRemoteServer();
+        server.OnHttpRequest = request =>
+        {
+            if (request.Path == "/connect")
+            {
+                return Task.FromResult(new FakeRemoteServer.HttpResponseData(
+                    302, "Found", [("Location", "/"), ("Set-Cookie", $"dsh-auth-{server.Port}=ck-sdui; HttpOnly")], []));
+            }
+
+            capturedPath = request.Path;
+            capturedBody = Encoding.UTF8.GetString(request.Body);
+            var rpcId = ParseRpcId(request.Body);
+            return Task.FromResult(FakeRemoteServer.HttpResponseData.Json(200,
+                WrapOk(rpcId, """{"echoed":true,"endpoint":"demo/echo"}""")));
+        };
+        server.OnWebSocketConnected = async (_, ws, ct) =>
+        {
+            var openFrame = await FakeRemoteServer.ReceiveTextAsync(ws, ct);
+            using var openDoc = JsonDocument.Parse(openFrame!);
+            await FakeRemoteServer.SendTextAsync(ws, ReadyFrame(openDoc.RootElement.GetProperty("streamId").GetString()!), ct);
+            await FakeRemoteServer.ReceiveTextAsync(ws, ct);
+        };
+
+        await using var conn = new DshRemoteConnection(new RemoteConnectionOptions(server.BaseUri), () => DummyToken);
+        using var gw = new RemoteDshGatewayClient(conn);
+
+        var outcome = await gw.InvokePluginRpcAsync("demo/echo", default);
+        Assert.True(outcome.IsOk);
+        Assert.True(outcome.Value.TryGetProperty("echoed", out var echoed) && echoed.GetBoolean());
+
+        Assert.Equal("/api/demo/echo", capturedPath);
+        using var requestDoc = JsonDocument.Parse(capturedBody!);
+        var argsElement = requestDoc.RootElement.GetProperty("payload").GetProperty("args");
+        Assert.Equal(JsonValueKind.Object, argsElement.ValueKind);
+        Assert.Empty(argsElement.EnumerateObject());
+    }
 }

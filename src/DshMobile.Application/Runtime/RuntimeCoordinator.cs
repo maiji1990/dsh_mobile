@@ -1244,6 +1244,18 @@ public sealed class RuntimeCoordinator : IDisposable
         return svc.ReadLocalPackageDetailAsync(packageName, language ?? string.Empty, ct);
     }
 
+    /// <summary>
+    /// Slice 1A：在安全路径边界内只读本地已安装包的 <c>dshmobile.sdui.json</c> 扩展清单，不启动 guest 进程。
+    /// </summary>
+    public Task<GuestLocalSduiManifestResult> ReadLocalPluginSduiManifestAsync(
+        string packageName,
+        CancellationToken ct = default)
+    {
+        ct.ThrowIfCancellationRequested();
+        var svc = CreateGuestPluginService();
+        return Task.FromResult(svc.ReadLocalSduiManifest(packageName, ct));
+    }
+
     private GuestPluginService CreateGuestPluginService() => new(_layout, _options.GuestShellRunner);
 
     private RuntimeStartResult Refused(string message)

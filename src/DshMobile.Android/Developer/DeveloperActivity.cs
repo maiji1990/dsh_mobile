@@ -34,6 +34,18 @@ public sealed class DeveloperActivity : DshActivity
         BindTool(Resource.Id.dev_row_diag, Resource.Drawable.ic_build, Resource.String.dev_diag, Resource.String.dev_diag_sub, () => _ = _bridge.RunDiagnosticsAsync());
         BindTool(Resource.Id.dev_row_probe, Resource.Drawable.ic_code, Resource.String.dev_probe, Resource.String.dev_probe_sub, () => _ = _bridge.RunProbesAsync());
         BindTool(Resource.Id.dev_row_pty, Resource.Drawable.ic_terminal, Resource.String.dev_pty, Resource.String.dev_pty_sub, ConfirmPtyProbe);
+
+        // 实验功能开关：第三方插件原生面板（SDUI）。只写入 UI 偏好，不触碰权限或安全门禁。
+        var sduiRow = FindViewById(Resource.Id.dev_row_exp_sdui)!;
+        Rows.BindSwitchRow(
+            sduiRow,
+            Resource.Drawable.ic_extension,
+            GetString(Resource.String.dev_exp_sdui),
+            GetString(Resource.String.dev_exp_sdui_sub),
+            UiPrefs.ExperimentalPluginSduiEnabled(this),
+            enabled => UiPrefs.SetExperimentalPluginSduiEnabled(this, enabled));
+        _tools.Add(sduiRow);
+
 #if DSH_DIAGNOSTICS
         var expRow = FindViewById(Resource.Id.dev_row_experiments)!;
         FindViewById(Resource.Id.dev_experiments_divider)!.Visibility = ViewStates.Visible;
