@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Diagnostics;
 using System.Globalization;
 using System.Net;
 using System.Net.Sockets;
@@ -372,6 +373,72 @@ public sealed class LoopbackPortalProxyTests
         {
             Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
         }
+    }
+
+    [Fact]
+    public async Task RequestsConcurrentWithDispose_GetExplicit401InsteadOfConnectionReset()
+    {
+        await using var harness = new Harness();
+        using var client = CreateHttpClient();
+        var launch = harness.Proxy.TryIssueLaunchUri();
+        Assert.NotNull(launch);
+
+        string secret;
+        using (var redemption = await client.GetAsync(launch))
+        {
+            Assert.Equal(HttpStatusCode.SeeOther, redemption.StatusCode);
+            secret = ExtractPortalSecret(redemption);
+        }
+
+        harness.Proxy.Dispose();
+        var since = Stopwatch.StartNew();
+
+        // 旧实现：排空窗口内接受连接后立刻回复 401 并关闭，入站请求字节尚未读取 —— Windows 上关闭含未读数据的
+        // socket 会发出 RST，客户端拿到 HttpRequestException 而不是 401。并发请求让这个竞态稳定复现。
+        var attempts = Enumerable.Range(0, 10)
+            .Select(async _ =>
+            {
+                try
+                {
+                    using var response = await SendGetAsync(
+                        client,
+                        $"http://127.0.0.1:{launch.Port}/",
+                        PortalCookie(secret));
+                    return (HttpStatusCode?)response.StatusCode;
+                }
+                catch (HttpRequestException e) when (IsRefusedAfterDrainWindow(e, since.Elapsed))
+                {
+                    // 排空窗口结束后监听器已停止，连接被拒绝属于预期；只接受这一种失败形态。
+                    return null;
+                }
+            })
+            .ToArray();
+
+        var statuses = await Task.WhenAll(attempts);
+
+        Assert.Contains(statuses, status => status is not null);
+        Assert.All(
+            statuses,
+            status => Assert.True(
+                status is null || status == HttpStatusCode.Unauthorized,
+                $"排空窗口内的请求必须拿到明确的 401，实际为 {status?.ToString() ?? "连接被拒绝"}"));
+    }
+
+    /// <summary>仅在排空窗口结束后，才把“连接被拒绝”视为预期结果；其他任何 <see cref="HttpRequestException"/>（RST 等）都算回归。</summary>
+    private static bool IsRefusedAfterDrainWindow(HttpRequestException exception, TimeSpan elapsed)
+    {
+        if (elapsed < TimeSpan.FromSeconds(1))
+        {
+            return false;
+        }
+        for (var inner = exception.InnerException; inner is not null; inner = inner.InnerException)
+        {
+            if (inner is SocketException { SocketErrorCode: SocketError.ConnectionRefused })
+            {
+                return true;
+            }
+        }
+        return false;
     }
 
     [Fact]

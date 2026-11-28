@@ -35,6 +35,13 @@ public sealed class LoopbackPortalProxy : IDisposable
     /// </summary>
     private static readonly TimeSpan DisposeDrainWindow = TimeSpan.FromSeconds(1);
 
+    /// <summary>
+    /// 排空窗口内读取入站数据的单次上限：请求与 <see cref="Dispose"/> 并发时，先消费请求字节再回复 <c>401</c>，
+    /// 避免关闭仍带未读数据的 socket（Windows 上会发出 RST，客户端把 <c>401</c> 看成连接重置）——
+    /// 这正是排空窗口要消除的失败形态。安静连接最多等这么久，不会拖住监听器关闭。
+    /// </summary>
+    private static readonly TimeSpan InboundDrainTimeout = TimeSpan.FromMilliseconds(500);
+
     private readonly Func<int?> _getUpstreamPort;
     private readonly IDshTokenSource _tokenSource;
     private readonly Func<bool> _isUpstreamEligible;
@@ -360,7 +367,7 @@ public sealed class LoopbackPortalProxy : IDisposable
     {
         if (Volatile.Read(ref _disposed) != 0)
         {
-            await WriteUnauthorizedAsync(client, ct).ConfigureAwait(false);
+            await RejectAfterDisposeAsync(client, reader, ct).ConfigureAwait(false);
             return;
         }
 
@@ -976,6 +983,61 @@ public sealed class LoopbackPortalProxy : IDisposable
     {
         _log?.Invoke("portal: rejected unauthorized request");
         return WriteErrorAsync(client, 401, "Unauthorized", UnauthorizedBody, clearCookie: true, ct);
+    }
+
+    // ------------------------------------------------------------------------------------------------
+    // 释放排空窗口的收尾
+    // ------------------------------------------------------------------------------------------------
+
+    /// <summary>
+    /// 排空窗口内处理一个释放后才被接受的连接：先有界消费入站请求头，回复 <c>401</c>，再半关闭并排空剩余入站数据。
+    /// 关闭仍带未读入站数据的 socket 会发出 RST（Windows 上稳定复现，Linux 上也会给客户端制造竞态），
+    /// 浏览器把已经收到的 <c>401</c> 看成“连接被重置”并抛出 <c>HttpRequestException</c>；
+    /// 这正好违背排空窗口“明确 401 而不是重置”的目的，所以必须先读后关。
+    /// </summary>
+    private async Task RejectAfterDisposeAsync(
+        NetworkStream client,
+        ConnectionReader reader,
+        CancellationToken ct)
+    {
+        using (var readDeadline = CancellationTokenSource.CreateLinkedTokenSource(ct))
+        {
+            readDeadline.CancelAfter(InboundDrainTimeout);
+            try
+            {
+                await reader.ReadHeadAsync(readDeadline.Token).ConfigureAwait(false);
+            }
+            catch (Exception e) when (e is OperationCanceledException or IOException or SocketException or ObjectDisposedException)
+            {
+                // 对端没有在期限内发来完整请求头（或连接已中断）：仍回复 401，语义不受影响。
+            }
+        }
+
+        await WriteUnauthorizedAsync(client, ct).ConfigureAwait(false);
+
+        try
+        {
+            client.Socket.Shutdown(SocketShutdown.Send);
+        }
+        catch (Exception e) when (e is SocketException or ObjectDisposedException)
+        {
+            // 对端已先关闭：没有需要排空的入站数据。
+            return;
+        }
+
+        using var discardDeadline = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        discardDeadline.CancelAfter(InboundDrainTimeout);
+        var buffer = new byte[1024];
+        try
+        {
+            while (await client.ReadAsync(buffer.AsMemory(), discardDeadline.Token).ConfigureAwait(false) > 0)
+            {
+            }
+        }
+        catch (Exception e) when (e is OperationCanceledException or IOException or SocketException or ObjectDisposedException)
+        {
+            // 排空仅用于避免 RST，读失败无需向调用方报告。
+        }
     }
 
     // ------------------------------------------------------------------------------------------------
